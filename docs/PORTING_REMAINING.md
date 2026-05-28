@@ -24,35 +24,53 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
 
 The export surface is broad, but several areas still need deeper behavioral parity rather than name-only compatibility:
 
+## Resume Queue
+
+When more goal budget is available, continue from the behavioral parity audits below. The next pass should stay test-driven: compare the Python upstream method contract, add focused tests for the missing or placeholder behavior, then implement the smallest TS-compatible behavior that keeps decorators standard-only.
+
 1. Storage backends
    - `memory/storage/backend.py`
    - `memory/storage/lancedb_storage.py`
    - `memory/storage/qdrant_edge_storage.py`
    - `knowledge/storage/*`
    - Verify sync/async save/search/delete/update/reset semantics and metadata filtering.
+   - Add tests for vector store lifecycle, id overwrite/update behavior, reset semantics, and metadata filter matching before filling implementation gaps.
 
 2. LLM providers
    - OpenAI, Azure, Anthropic, Bedrock, Gemini provider classes.
    - Fill `to_config_dict`, context window, function calling support, multimodal support, file uploader, response-chain/reset APIs.
+   - Keep provider tests adapter-level and mock network calls. Do not introduce live API keys or provider-specific SDK side effects into the default test gate.
 
 3. Flow and persistence
    - `Flow` checkpoint/fork/resume/pending feedback/memory methods.
    - `SQLiteFlowPersistence` method parity and real persistence behavior.
    - Locked dict/list proxy behavior.
+   - Prioritize persistence replay and resume behavior because it affects user-visible workflow recovery.
 
 4. Unified memory
    - Async aliases and record/scope/category listing.
    - `remember_many`, `extract_memories`, `update`, `drain_writes`, `close`.
    - `MemoryScope` / `MemorySlice` methods like `bind`, `read_only`, `tree`, `list_categories`.
+   - Confirm the intended TS shape for scoped memory before widening public types, so Python aliases do not force an awkward API.
 
 5. RAG clients
    - ChromaDB/Qdrant client method parity.
    - Async aliases and collection lifecycle behavior.
+   - Cover collection creation, deletion, upsert/search, and metadata filters with fake clients before adding optional real-client integration.
 
 6. Evaluation and tracing listeners
    - Agent evaluator display/event helper methods.
    - Evaluation trace callback listener hooks.
    - Telemetry span methods are mostly compatibility placeholders and should be audited.
+   - Separate no-op compatibility shims from behavior-bearing event hooks in tests, so placeholders stay intentional.
+
+## Suggested Next Order
+
+1. Start with storage and RAG parity because they share save/search/delete/filter semantics and are easiest to validate with deterministic fake backends.
+2. Move to `Flow` persistence after storage because checkpoint/resume tests are broader and may need storage decisions.
+3. Audit unified memory once storage primitives are stable.
+4. Finish provider-specific LLM compatibility after the core runtime behavior is stable.
+5. Sweep evaluator/tracing compatibility last, separating documented no-ops from missing behavior.
 
 ## Useful Audit Commands
 
