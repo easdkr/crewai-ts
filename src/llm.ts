@@ -1,0 +1,1964 @@
+import { AsyncLocalStorage } from "node:async_hooks";
+import { randomUUID } from "node:crypto";
+
+import type { ToolCalling } from "./tools.js";
+import type { LLMMessage, MaybePromise, Tool } from "./types.js";
+import {
+  LLMCallCompletedEvent,
+  LLMCallFailedEvent,
+  LLMCallStartedEvent,
+  LLMCallType,
+  LLMStreamChunkEvent,
+  LLMThinkingChunkEvent,
+  ToolUsageErrorEvent,
+  ToolUsageFinishedEvent,
+  ToolUsageStartedEvent,
+  crewaiEventBus,
+  type LLMToolCall,
+} from "./events.js";
+import {
+  LLMCallHookContext,
+  runAfterLlmCallHooks,
+  runBeforeLlmCallHooks,
+} from "./hooks.js";
+
+export type LLMResponse = string | ToolCalling;
+
+export type LLMCallOptions = {
+  tools?: readonly Tool[];
+  responseModel?: unknown;
+  signal?: AbortSignal;
+  metadata?: Record<string, unknown>;
+};
+
+export type JsonResponseFormat = {
+  type: "json_object";
+};
+export const JsonResponseFormat = Object.freeze({ kind: "JsonResponseFormat" });
+
+export const CACHE_BREAKPOINT_KEY = "cache_breakpoint";
+
+export type CacheBreakpointMessage<T extends Record<string, unknown> = LLMMessage> = T & {
+  cache_breakpoint: true;
+};
+
+export type UsageMetricsOptions = UsageMetricsLike;
+
+export type UsageMetrics = {
+  totalTokens: number;
+  promptTokens: number;
+  cachedPromptTokens: number;
+  completionTokens: number;
+  reasoningTokens: number;
+  cacheCreationTokens: number;
+  successfulRequests: number;
+};
+
+export const UsageMetrics = class UsageMetricsValue {
+  totalTokens: number;
+  total_tokens: number;
+  promptTokens: number;
+  prompt_tokens: number;
+  cachedPromptTokens: number;
+  cached_prompt_tokens: number;
+  completionTokens: number;
+  completion_tokens: number;
+  reasoningTokens: number;
+  reasoning_tokens: number;
+  cacheCreationTokens: number;
+  cache_creation_tokens: number;
+  successfulRequests: number;
+  successful_requests: number;
+
+  constructor(options: UsageMetricsLike = {}) {
+    this.totalTokens = options.totalTokens ?? options.total_tokens ?? 0;
+    this.total_tokens = this.totalTokens;
+    this.promptTokens = options.promptTokens ?? options.prompt_tokens ?? 0;
+    this.prompt_tokens = this.promptTokens;
+    this.cachedPromptTokens = options.cachedPromptTokens ?? options.cached_prompt_tokens ?? 0;
+    this.cached_prompt_tokens = this.cachedPromptTokens;
+    this.completionTokens = options.completionTokens ?? options.completion_tokens ?? 0;
+    this.completion_tokens = this.completionTokens;
+    this.reasoningTokens = options.reasoningTokens ?? options.reasoning_tokens ?? 0;
+    this.reasoning_tokens = this.reasoningTokens;
+    this.cacheCreationTokens = options.cacheCreationTokens ?? options.cache_creation_tokens ?? 0;
+    this.cache_creation_tokens = this.cacheCreationTokens;
+    this.successfulRequests = options.successfulRequests ?? options.successful_requests ?? 0;
+    this.successful_requests = this.successfulRequests;
+    defineUsageMetricAliases(this);
+  }
+
+  addUsageMetrics(usageMetrics: UsageMetricsLike): void {
+    const next = addUsageMetrics(this, normalizeUsageMetrics(usageMetrics));
+    this.assign(next);
+  }
+
+  add_usage_metrics(usageMetrics: UsageMetricsLike): void {
+    this.addUsageMetrics(usageMetrics);
+  }
+
+  assign(metrics: UsageMetrics): void {
+    this.totalTokens = metrics.totalTokens;
+    this.total_tokens = metrics.totalTokens;
+    this.promptTokens = metrics.promptTokens;
+    this.prompt_tokens = metrics.promptTokens;
+    this.cachedPromptTokens = metrics.cachedPromptTokens;
+    this.cached_prompt_tokens = metrics.cachedPromptTokens;
+    this.completionTokens = metrics.completionTokens;
+    this.completion_tokens = metrics.completionTokens;
+    this.reasoningTokens = metrics.reasoningTokens;
+    this.reasoning_tokens = metrics.reasoningTokens;
+    this.cacheCreationTokens = metrics.cacheCreationTokens;
+    this.cache_creation_tokens = metrics.cacheCreationTokens;
+    this.successfulRequests = metrics.successfulRequests;
+    this.successful_requests = metrics.successfulRequests;
+  }
+};
+
+export type UsageMetricsLike = Partial<UsageMetrics> & {
+  total_tokens?: number;
+  prompt_tokens?: number;
+  cached_prompt_tokens?: number;
+  completion_tokens?: number;
+  reasoning_tokens?: number;
+  cache_creation_tokens?: number;
+  successful_requests?: number;
+};
+
+export type StructuredOutputValidator<T = unknown> = {
+  name?: string;
+  modelValidate?: (value: unknown) => T;
+  model_validate?: (value: unknown) => T;
+  parse?: (value: unknown) => T;
+  validate?: (value: unknown) => T;
+};
+
+export type LLMEmitCallStartedOptions = {
+  messages: string | readonly LLMMessage[];
+  tools?: readonly Record<string, unknown>[] | null;
+  callbacks?: readonly unknown[] | null;
+  availableFunctions?: Record<string, unknown> | null;
+  available_functions?: Record<string, unknown> | null;
+  fromTask?: unknown;
+  from_task?: unknown;
+  fromAgent?: unknown;
+  from_agent?: unknown;
+};
+
+export type LLMEmitCallCompletedOptions = {
+  response: unknown;
+  callType?: LLMCallType;
+  call_type?: LLMCallType;
+  messages?: string | readonly LLMMessage[] | null;
+  usage?: Record<string, unknown> | null;
+  fromTask?: unknown;
+  from_task?: unknown;
+  fromAgent?: unknown;
+  from_agent?: unknown;
+};
+
+export type LLMEmitCallFailedOptions = {
+  error: unknown;
+  fromTask?: unknown;
+  from_task?: unknown;
+  fromAgent?: unknown;
+  from_agent?: unknown;
+};
+
+export type LLMEmitStreamChunkOptions = {
+  chunk: string;
+  toolCall?: LLMToolCall | null;
+  tool_call?: LLMToolCall | null;
+  callType?: LLMCallType | null;
+  call_type?: LLMCallType | null;
+  responseId?: string | null;
+  response_id?: string | null;
+  fromTask?: unknown;
+  from_task?: unknown;
+  fromAgent?: unknown;
+  from_agent?: unknown;
+};
+
+export type LLMEmitThinkingChunkOptions = {
+  chunk: string;
+  responseId?: string | null;
+  response_id?: string | null;
+  fromTask?: unknown;
+  from_task?: unknown;
+  fromAgent?: unknown;
+  from_agent?: unknown;
+};
+
+export type LLMAvailableFunction = ((args: Record<string, unknown>) => MaybePromise<unknown>) | {
+  run: (args: Record<string, unknown>) => MaybePromise<unknown>;
+};
+
+export type LLMHandleToolExecutionOptions = {
+  functionName?: string;
+  function_name?: string;
+  functionArgs?: Record<string, unknown>;
+  function_args?: Record<string, unknown>;
+  availableFunctions?: Record<string, LLMAvailableFunction>;
+  available_functions?: Record<string, LLMAvailableFunction>;
+  fromTask?: unknown;
+  from_task?: unknown;
+  fromAgent?: unknown;
+  from_agent?: unknown;
+};
+
+export type LLMMessageInput = string | readonly (Partial<LLMMessage> & Record<string, unknown>)[];
+
+export type CreateLLMValue = string | LLM | BaseLLMOptions | (Record<string, unknown> & {
+  model?: unknown;
+  model_name?: unknown;
+  deployment_name?: unknown;
+});
+
+export type CreateLLMEnvironment = Partial<Record<string, string | undefined>>;
+
+export type LLMModelSpec = {
+  provider: string;
+  model: string;
+  originalModel: string;
+  useNative: boolean;
+};
+
+export type LLMFunction = (
+  messages: readonly LLMMessage[],
+  options?: LLMCallOptions,
+) => MaybePromise<LLMResponse>;
+
+export type LLMClient = {
+  call(messages: readonly LLMMessage[], options?: LLMCallOptions): MaybePromise<LLMResponse>;
+  getUsageMetrics?(): UsageMetricsLike;
+  getTokenUsageSummary?(): UsageMetricsLike;
+  get_token_usage_summary?(): UsageMetricsLike;
+  resetUsageMetrics?(): void;
+  reset_usage_metrics?(): void;
+};
+
+export type LLM = LLMFunction | LLMClient;
+
+export const DEFAULT_CONTEXT_WINDOW_SIZE = 4096;
+export const DEFAULT_SUPPORTS_STOP_WORDS = true;
+export const DEFAULT_LLM_MODEL = "gpt-4.1-mini";
+export const JSON_URL = "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json";
+export const LITELLM_PARAMS = ["api_key", "api_base", "api_version"] as const;
+export const UNACCEPTED_LLM_ENV_ATTRIBUTES = [
+  "AWS_ACCESS_KEY_ID",
+  "AWS_SECRET_ACCESS_KEY",
+  "AWS_DEFAULT_REGION",
+] as const;
+export type LLMEnvVarSpec = {
+  key_name?: string;
+  default?: boolean;
+  [key: string]: unknown;
+};
+export const LLM_ENV_VARS: Readonly<Record<string, readonly LLMEnvVarSpec[]>> = {
+  openai: [{ key_name: "OPENAI_API_KEY" }],
+  anthropic: [{ key_name: "ANTHROPIC_API_KEY" }],
+  gemini: [{ key_name: "GEMINI_API_KEY" }],
+  nvidia_nim: [{ key_name: "NVIDIA_NIM_API_KEY" }],
+  groq: [{ key_name: "GROQ_API_KEY" }],
+  huggingface: [{ key_name: "HF_TOKEN" }],
+  sambanova: [{ key_name: "SAMBANOVA_API_KEY" }],
+  watson: [
+    { key_name: "WATSONX_URL" },
+    { key_name: "WATSONX_APIKEY" },
+    { key_name: "WATSONX_PROJECT_ID" },
+  ],
+  ollama: [{ default: true, API_BASE: "http://localhost:11434" }],
+  azure: [
+    { key_name: "model" },
+    { key_name: "AZURE_API_KEY" },
+    { key_name: "AZURE_API_BASE" },
+    { key_name: "AZURE_API_VERSION" },
+  ],
+  cerebras: [{ key_name: "CEREBRAS_API_KEY" }],
+};
+export const ENV_VARS = LLM_ENV_VARS;
+export const SUPPORTED_NATIVE_PROVIDERS = ["openai", "anthropic", "azure", "bedrock", "gemini"] as const;
+export const LLM_PROVIDER_ALIASES: Readonly<Record<string, string>> = {
+  openai: "openai",
+  anthropic: "anthropic",
+  claude: "anthropic",
+  azure: "azure",
+  azure_openai: "azure",
+  google: "gemini",
+  gemini: "gemini",
+  bedrock: "bedrock",
+  aws: "bedrock",
+  openrouter: "openrouter",
+  deepseek: "deepseek",
+  ollama: "ollama",
+  ollama_chat: "ollama_chat",
+  hosted_vllm: "hosted_vllm",
+  cerebras: "cerebras",
+  dashscope: "dashscope",
+};
+export const PROVIDERS = Object.freeze([
+  "openai",
+  "anthropic",
+  "gemini",
+  "nvidia_nim",
+  "groq",
+  "huggingface",
+  "ollama",
+  "watson",
+  "bedrock",
+  "azure",
+  "cerebras",
+  "sambanova",
+] as const);
+export const OPENAI_MODELS = [
+  "gpt-3.5-turbo",
+  "gpt-3.5-turbo-0125",
+  "gpt-3.5-turbo-0301",
+  "gpt-3.5-turbo-0613",
+  "gpt-3.5-turbo-1106",
+  "gpt-3.5-turbo-16k",
+  "gpt-3.5-turbo-16k-0613",
+  "gpt-3.5-turbo-instruct",
+  "gpt-3.5-turbo-instruct-0914",
+  "gpt-4",
+  "gpt-4-0125-preview",
+  "gpt-4-0314",
+  "gpt-4-0613",
+  "gpt-4-1106-preview",
+  "gpt-4-32k",
+  "gpt-4-32k-0314",
+  "gpt-4-32k-0613",
+  "gpt-4-turbo",
+  "gpt-4-turbo-2024-04-09",
+  "gpt-4-turbo-preview",
+  "gpt-4-vision-preview",
+  "gpt-4.1",
+  "gpt-4.1-2025-04-14",
+  "gpt-4.1-mini",
+  "gpt-4.1-mini-2025-04-14",
+  "gpt-4.1-nano",
+  "gpt-4.1-nano-2025-04-14",
+  "gpt-4o",
+  "gpt-4o-2024-05-13",
+  "gpt-4o-2024-08-06",
+  "gpt-4o-2024-11-20",
+  "gpt-4o-audio-preview",
+  "gpt-4o-audio-preview-2024-10-01",
+  "gpt-4o-audio-preview-2024-12-17",
+  "gpt-4o-audio-preview-2025-06-03",
+  "gpt-4o-mini",
+  "gpt-4o-mini-2024-07-18",
+  "gpt-4o-mini-audio-preview",
+  "gpt-4o-mini-audio-preview-2024-12-17",
+  "gpt-4o-mini-realtime-preview",
+  "gpt-4o-mini-realtime-preview-2024-12-17",
+  "gpt-4o-mini-search-preview",
+  "gpt-4o-mini-search-preview-2025-03-11",
+  "gpt-4o-mini-transcribe",
+  "gpt-4o-mini-tts",
+  "gpt-4o-realtime-preview",
+  "gpt-4o-realtime-preview-2024-10-01",
+  "gpt-4o-realtime-preview-2024-12-17",
+  "gpt-4o-realtime-preview-2025-06-03",
+  "gpt-4o-search-preview",
+  "gpt-4o-search-preview-2025-03-11",
+  "gpt-4o-transcribe",
+  "gpt-4o-transcribe-diarize",
+  "gpt-5",
+  "gpt-5-2025-08-07",
+  "gpt-5-chat",
+  "gpt-5-chat-latest",
+  "gpt-5-codex",
+  "gpt-5-mini",
+  "gpt-5-mini-2025-08-07",
+  "gpt-5-nano",
+  "gpt-5-nano-2025-08-07",
+  "gpt-5-pro",
+  "gpt-5-pro-2025-10-06",
+  "gpt-5-search-api",
+  "gpt-5-search-api-2025-10-14",
+  "gpt-audio",
+  "gpt-audio-2025-08-28",
+  "gpt-audio-mini",
+  "gpt-audio-mini-2025-10-06",
+  "gpt-image-1",
+  "gpt-image-1-mini",
+  "gpt-realtime",
+  "gpt-realtime-2025-08-28",
+  "gpt-realtime-mini",
+  "gpt-realtime-mini-2025-10-06",
+  "o1",
+  "o1-preview",
+  "o1-2024-12-17",
+  "o1-mini",
+  "o1-mini-2024-09-12",
+  "o1-pro",
+  "o1-pro-2025-03-19",
+  "o3-mini",
+  "o3",
+  "o4-mini",
+  "whisper-1",
+] as const;
+export const ANTHROPIC_MODELS = [
+  "claude-opus-4-5-20251101",
+  "claude-opus-4-5",
+  "claude-3-7-sonnet-latest",
+  "claude-3-7-sonnet-20250219",
+  "claude-3-5-haiku-latest",
+  "claude-3-5-haiku-20241022",
+  "claude-haiku-4-5",
+  "claude-haiku-4-5-20251001",
+  "claude-sonnet-4-20250514",
+  "claude-sonnet-4-0",
+  "claude-4-sonnet-20250514",
+  "claude-sonnet-4-5",
+  "claude-sonnet-4-5-20250929",
+  "claude-3-5-sonnet-latest",
+  "claude-3-5-sonnet-20241022",
+  "claude-3-5-sonnet-20240620",
+  "claude-opus-4-0",
+  "claude-opus-4-20250514",
+  "claude-4-opus-20250514",
+  "claude-opus-4-1",
+  "claude-opus-4-1-20250805",
+  "claude-3-opus-latest",
+  "claude-3-opus-20240229",
+  "claude-3-sonnet-20240229",
+  "claude-3-haiku-latest",
+  "claude-3-haiku-20240307",
+] as const;
+export const GEMINI_MODELS = [
+  "gemini-3-pro-preview",
+  "gemini-3-flash-preview",
+  "gemini-2.5-pro",
+  "gemini-2.5-pro-preview-03-25",
+  "gemini-2.5-pro-preview-05-06",
+  "gemini-2.5-pro-preview-06-05",
+  "gemini-2.5-flash",
+  "gemini-2.5-flash-preview-05-20",
+  "gemini-2.5-flash-preview-04-17",
+  "gemini-2.5-flash-image",
+  "gemini-2.5-flash-image-preview",
+  "gemini-2.5-flash-lite",
+  "gemini-2.5-flash-lite-preview-06-17",
+  "gemini-2.5-flash-preview-09-2025",
+  "gemini-2.5-flash-lite-preview-09-2025",
+  "gemini-2.5-flash-preview-tts",
+  "gemini-2.5-pro-preview-tts",
+  "gemini-2.5-computer-use-preview-10-2025",
+  "gemini-2.5-pro-exp-03-25",
+  "gemini-2.0-flash",
+  "gemini-2.0-flash-001",
+  "gemini-2.0-flash-exp",
+  "gemini-2.0-flash-exp-image-generation",
+  "gemini-2.0-flash-lite",
+  "gemini-2.0-flash-lite-001",
+  "gemini-2.0-flash-lite-preview",
+  "gemini-2.0-flash-lite-preview-02-05",
+  "gemini-2.0-flash-preview-image-generation",
+  "gemini-2.0-flash-thinking-exp",
+  "gemini-2.0-flash-thinking-exp-01-21",
+  "gemini-2.0-flash-thinking-exp-1219",
+  "gemini-2.0-pro-exp",
+  "gemini-2.0-pro-exp-02-05",
+  "gemini-exp-1206",
+  "gemini-1.5-pro",
+  "gemini-1.5-flash",
+  "gemini-1.5-flash-8b",
+  "gemini-flash-latest",
+  "gemini-flash-lite-latest",
+  "gemini-pro-latest",
+  "gemini-2.0-flash-live-001",
+  "gemini-live-2.5-flash-preview",
+  "gemini-2.5-flash-live-preview",
+  "gemini-robotics-er-1.5-preview",
+  "gemini-gemma-2-27b-it",
+  "gemini-gemma-2-9b-it",
+  "gemma-3-1b-it",
+  "gemma-3-4b-it",
+  "gemma-3-12b-it",
+  "gemma-3-27b-it",
+  "gemma-3n-e2b-it",
+  "gemma-3n-e4b-it",
+  "learnlm-2.0-flash-experimental",
+] as const;
+export const AZURE_MODELS = [
+  "gpt-3.5-turbo",
+  "gpt-3.5-turbo-0301",
+  "gpt-3.5-turbo-0613",
+  "gpt-3.5-turbo-16k",
+  "gpt-3.5-turbo-16k-0613",
+  "gpt-35-turbo",
+  "gpt-35-turbo-0125",
+  "gpt-35-turbo-1106",
+  "gpt-35-turbo-16k-0613",
+  "gpt-35-turbo-instruct-0914",
+  "gpt-4",
+  "gpt-4-0314",
+  "gpt-4-0613",
+  "gpt-4-1106-preview",
+  "gpt-4-0125-preview",
+  "gpt-4-32k",
+  "gpt-4-32k-0314",
+  "gpt-4-32k-0613",
+  "gpt-4-turbo",
+  "gpt-4-turbo-2024-04-09",
+  "gpt-4-vision",
+  "gpt-4o",
+  "gpt-4o-2024-05-13",
+  "gpt-4o-2024-08-06",
+  "gpt-4o-2024-11-20",
+  "gpt-4o-mini",
+  "gpt-5",
+  "o1",
+  "o1-mini",
+  "o1-preview",
+  "o3-mini",
+  "o3",
+  "o4-mini",
+] as const;
+export const BEDROCK_MODELS = [
+  "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+  "us.anthropic.claude-sonnet-4-20250514-v1:0",
+  "us.anthropic.claude-opus-4-5-20251101-v1:0",
+  "us.anthropic.claude-opus-4-20250514-v1:0",
+  "us.anthropic.claude-opus-4-1-20250805-v1:0",
+  "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+  "us.anthropic.claude-sonnet-4-6",
+  "us.anthropic.claude-opus-4-6-v1",
+  "us.anthropic.claude-sonnet-4-5-v1:0",
+  "us.anthropic.claude-opus-4-5-v1:0",
+  "us.anthropic.claude-opus-4-6-v1:0",
+  "us.anthropic.claude-haiku-4-5-v1:0",
+  "eu.anthropic.claude-sonnet-4-5-v1:0",
+  "eu.anthropic.claude-opus-4-5-v1:0",
+  "eu.anthropic.claude-haiku-4-5-v1:0",
+  "apac.anthropic.claude-sonnet-4-5-v1:0",
+  "apac.anthropic.claude-opus-4-5-v1:0",
+  "apac.anthropic.claude-haiku-4-5-v1:0",
+  "global.anthropic.claude-sonnet-4-5-20250929-v1:0",
+  "global.anthropic.claude-sonnet-4-20250514-v1:0",
+  "global.anthropic.claude-opus-4-5-20251101-v1:0",
+  "global.anthropic.claude-opus-4-6-v1",
+  "global.anthropic.claude-haiku-4-5-20251001-v1:0",
+  "global.anthropic.claude-sonnet-4-6",
+  "ai21.jamba-1-5-large-v1:0",
+  "ai21.jamba-1-5-mini-v1:0",
+  "amazon.nova-lite-v1:0",
+  "amazon.nova-lite-v1:0:24k",
+  "amazon.nova-lite-v1:0:300k",
+  "amazon.nova-micro-v1:0",
+  "amazon.nova-micro-v1:0:128k",
+  "amazon.nova-micro-v1:0:24k",
+  "amazon.nova-premier-v1:0",
+  "amazon.nova-premier-v1:0:1000k",
+  "amazon.nova-premier-v1:0:20k",
+  "amazon.nova-premier-v1:0:8k",
+  "amazon.nova-premier-v1:0:mm",
+  "amazon.nova-pro-v1:0",
+  "amazon.nova-pro-v1:0:24k",
+  "amazon.nova-pro-v1:0:300k",
+  "amazon.titan-text-express-v1",
+  "amazon.titan-text-express-v1:0:8k",
+  "amazon.titan-text-lite-v1",
+  "amazon.titan-text-lite-v1:0:4k",
+  "amazon.titan-tg1-large",
+  "anthropic.claude-3-5-haiku-20241022-v1:0",
+  "anthropic.claude-3-5-sonnet-20240620-v1:0",
+  "anthropic.claude-3-5-sonnet-20241022-v2:0",
+  "anthropic.claude-3-7-sonnet-20250219-v1:0",
+  "anthropic.claude-3-haiku-20240307-v1:0",
+  "anthropic.claude-3-haiku-20240307-v1:0:200k",
+  "anthropic.claude-3-haiku-20240307-v1:0:48k",
+  "anthropic.claude-3-opus-20240229-v1:0",
+  "anthropic.claude-3-opus-20240229-v1:0:12k",
+  "anthropic.claude-3-opus-20240229-v1:0:200k",
+  "anthropic.claude-3-opus-20240229-v1:0:28k",
+  "anthropic.claude-3-sonnet-20240229-v1:0",
+  "anthropic.claude-3-sonnet-20240229-v1:0:200k",
+  "anthropic.claude-3-sonnet-20240229-v1:0:28k",
+  "anthropic.claude-haiku-4-5-20251001-v1:0",
+  "anthropic.claude-instant-v1:2:100k",
+  "anthropic.claude-opus-4-5-20251101-v1:0",
+  "anthropic.claude-opus-4-1-20250805-v1:0",
+  "anthropic.claude-opus-4-20250514-v1:0",
+  "anthropic.claude-sonnet-4-20250514-v1:0",
+  "anthropic.claude-sonnet-4-5-20250929-v1:0",
+  "anthropic.claude-v2:0:100k",
+  "anthropic.claude-v2:0:18k",
+  "anthropic.claude-v2:1:18k",
+  "anthropic.claude-v2:1:200k",
+  "cohere.command-r-plus-v1:0",
+  "cohere.command-r-v1:0",
+  "cohere.rerank-v3-5:0",
+  "deepseek.r1-v1:0",
+  "meta.llama3-1-70b-instruct-v1:0",
+  "meta.llama3-1-8b-instruct-v1:0",
+  "meta.llama3-2-11b-instruct-v1:0",
+  "meta.llama3-2-1b-instruct-v1:0",
+  "meta.llama3-2-3b-instruct-v1:0",
+  "meta.llama3-2-90b-instruct-v1:0",
+  "meta.llama3-3-70b-instruct-v1:0",
+  "meta.llama3-70b-instruct-v1:0",
+  "meta.llama3-8b-instruct-v1:0",
+  "meta.llama4-maverick-17b-instruct-v1:0",
+  "meta.llama4-scout-17b-instruct-v1:0",
+  "mistral.mistral-7b-instruct-v0:2",
+  "mistral.mistral-large-2402-v1:0",
+  "mistral.mistral-small-2402-v1:0",
+  "mistral.mixtral-8x7b-instruct-v0:1",
+  "mistral.pixtral-large-2502-v1:0",
+  "openai.gpt-oss-120b-1:0",
+  "openai.gpt-oss-20b-1:0",
+  "qwen.qwen3-32b-v1:0",
+  "qwen.qwen3-coder-30b-a3b-v1:0",
+  "twelvelabs.pegasus-1-2-v1:0",
+] as const;
+export type OpenAIModels = typeof OPENAI_MODELS[number];
+export type AnthropicModels = typeof ANTHROPIC_MODELS[number];
+export type GeminiModels = typeof GEMINI_MODELS[number];
+export type AzureModels = typeof AZURE_MODELS[number];
+export type BedrockModels = typeof BEDROCK_MODELS[number];
+export const OpenAIModels = OPENAI_MODELS;
+export const AnthropicModels = ANTHROPIC_MODELS;
+export const GeminiModels = GEMINI_MODELS;
+export const AzureModels = AZURE_MODELS;
+export const BedrockModels = BEDROCK_MODELS;
+export const MODELS = Object.freeze({
+  openai: OPENAI_MODELS,
+  anthropic: ANTHROPIC_MODELS,
+  gemini: GEMINI_MODELS,
+  azure: AZURE_MODELS,
+  bedrock: BEDROCK_MODELS,
+} as const);
+export const CONTEXT_WINDOW_USAGE_RATIO = 0.85;
+export const MIN_CONTEXT_WINDOW_SIZE = 1024;
+export const MAX_CONTEXT_WINDOW_SIZE = 2097152;
+export const MIN_CONTEXT = MIN_CONTEXT_WINDOW_SIZE;
+export const MAX_CONTEXT = MAX_CONTEXT_WINDOW_SIZE;
+export const ANTHROPIC_PREFIXES = Object.freeze(["anthropic/", "claude-", "claude/"] as const);
+export const Delta = Object.freeze({ kind: "Delta" });
+export const StreamingChoices = Object.freeze({ kind: "StreamingChoices" });
+export class FunctionArgs {
+  name: string;
+  arguments: string;
+
+  constructor(options: { name?: string; arguments?: string } = {}) {
+    this.name = options.name ?? "";
+    this.arguments = options.arguments ?? "";
+  }
+}
+export class AccumulatedToolArgs {
+  function: FunctionArgs;
+
+  constructor(options: { function?: FunctionArgs | { name?: string; arguments?: string } } = {}) {
+    this.function = options.function instanceof FunctionArgs
+      ? options.function
+      : new FunctionArgs(options.function);
+  }
+}
+export const LLM_CONTEXT_WINDOW_SIZES: Readonly<Record<string, number>> = {
+  "gpt-4": 8192,
+  "gpt-4o": 128000,
+  "gpt-4o-mini": 200000,
+  "gpt-4-turbo": 128000,
+  "gpt-4.1": 1047576,
+  "gpt-4.1-mini-2025-04-14": 1047576,
+  "gpt-4.1-nano-2025-04-14": 1047576,
+  "o1-preview": 128000,
+  "o1-mini": 128000,
+  "o3-mini": 200000,
+  "o4-mini": 200000,
+  "gemini-3-pro-preview": 1048576,
+  "gemini-2.0-flash": 1048576,
+  "gemini-2.0-flash-thinking-exp-01-21": 32768,
+  "gemini-2.0-flash-lite-001": 1048576,
+  "gemini-2.0-flash-001": 1048576,
+  "gemini-2.5-flash-preview-04-17": 1048576,
+  "gemini-2.5-pro-exp-03-25": 1048576,
+  "gemini-1.5-pro": 2097152,
+  "gemini-1.5-flash": 1048576,
+  "gemini-1.5-flash-8b": 1048576,
+  "deepseek-chat": 128000,
+  "llama-3.1-70b-versatile": 131072,
+  "llama-3.1-8b-instant": 131072,
+  "llama-3.3-70b-versatile": 128000,
+  "mixtral-8x7b-32768": 32768,
+  "anthropic.claude-v2": 100000,
+  "anthropic.claude-v2:1": 200000,
+  "anthropic.claude-instant-v1": 100000,
+  "anthropic.claude-3-haiku-20240307-v1:0": 200000,
+  "anthropic.claude-3-sonnet-20240229-v1:0": 200000,
+  "anthropic.claude-3-opus-20240229-v1:0": 200000,
+  "anthropic.claude-3-5-sonnet-20240620-v1:0": 200000,
+  "anthropic.claude-3-5-haiku-20241022-v1:0": 200000,
+  "anthropic.claude-3-7-sonnet-20250219-v1:0": 200000,
+  "anthropic.claude-sonnet-4-20250514-v1:0": 200000,
+  "anthropic.claude-opus-4-20250514-v1:0": 200000,
+  "anthropic.claude-sonnet-4-5-20250929-v1:0": 200000,
+  "anthropic.claude-opus-4-5-20251101-v1:0": 200000,
+  "anthropic.claude-haiku-4-5-20251001-v1:0": 200000,
+  "anthropic.claude-opus-4-7": 1000000,
+  "anthropic.claude-sonnet-4-6": 1000000,
+  "amazon.nova-pro-v1:0": 300000,
+  "amazon.nova-lite-v1:0": 300000,
+  "amazon.nova-micro-v1:0": 128000,
+  "meta.llama3-1-8b-instruct-v1:0": 128000,
+  "meta.llama3-1-70b-instruct-v1:0": 128000,
+  "meta.llama3-1-405b-instruct-v1:0": 128000,
+  "mistral-tiny": 32768,
+  "mistral-small-latest": 32768,
+  "mistral-medium-latest": 32768,
+  "mistral-large-latest": 32768,
+};
+
+export type LLMCallContextCallback<T> = (callId: string) => MaybePromise<T>;
+
+const currentCallIdStore = new AsyncLocalStorage<string>();
+const callStopOverrideStore = new AsyncLocalStorage<Map<BaseLLM, readonly string[]>>();
+const registeredProviders = new Map<string, LLMClient>();
+const openAIModelSet = new Set<string>(OPENAI_MODELS);
+const anthropicModelSet = new Set<string>(ANTHROPIC_MODELS);
+const geminiModelSet = new Set<string>(GEMINI_MODELS);
+const azureModelSet = new Set<string>(AZURE_MODELS);
+const bedrockModelSet = new Set<string>(BEDROCK_MODELS);
+const nativeProviderSet = new Set<string>(SUPPORTED_NATIVE_PROVIDERS);
+
+export async function llmCallContext<T>(callback: LLMCallContextCallback<T>): Promise<T> {
+  const callId = randomUUID();
+  return await currentCallIdStore.run(callId, async () => await callback(callId));
+}
+
+export const llm_call_context = llmCallContext;
+
+export function validate_function_name(name: string, provider = "LLM"): string {
+  if (!name) {
+    throw new Error(`${provider} function name cannot be empty`);
+  }
+  if (!/^[A-Za-z_]/.test(name)) {
+    throw new Error(`${provider} function name '${name}' must start with a letter or underscore`);
+  }
+  if (name.length > 64) {
+    throw new Error(`${provider} function name '${name}' exceeds 64 character limit`);
+  }
+  if (!/^[a-z_][a-z0-9_]*$/.test(name)) {
+    throw new Error(`${provider} function name '${name}' contains invalid characters. Only lowercase letters, numbers, and underscores allowed`);
+  }
+  return name;
+}
+
+export function sanitize_function_name(name: string): string {
+  const normalized = name.trim().toLowerCase().replace(/[^a-z0-9_]/g, "_").replace(/_+/g, "_").slice(0, 64);
+  return /^[a-z_]/.test(normalized) ? normalized : `_${normalized}`;
+}
+
+export function extract_tool_info(tool: Record<string, unknown>): [string, string, Record<string, unknown>] {
+  const source = recordOrNull(tool.function) ?? tool;
+  const name = stringOrEmpty(source.name);
+  const description = stringOrEmpty(source.description);
+  const parameters = recordOrNull(source.parameters) ?? argsSchemaParameters(source.args_schema) ?? {};
+  return [name, description, parameters];
+}
+
+export function log_tool_conversion(tool: Record<string, unknown>, provider: string): void {
+  void extract_tool_info(tool);
+  void provider;
+}
+
+export function safe_tool_conversion(tool: Record<string, unknown>, provider: string): [string, string, Record<string, unknown>] {
+  log_tool_conversion(tool, provider);
+  const [name, description, parameters] = extract_tool_info(tool);
+  return [validate_function_name(sanitize_function_name(name), provider), description, parameters];
+}
+
+export function getCurrentCallId(): string {
+  return currentCallIdStore.getStore() ?? randomUUID();
+}
+
+export const get_current_call_id = getCurrentCallId;
+
+export async function callStopOverride<T>(
+  llm: BaseLLM,
+  stop: string | readonly string[] | null,
+  callback: () => MaybePromise<T>,
+): Promise<T> {
+  const current = callStopOverrideStore.getStore();
+  const overrides = new Map(current ?? []);
+  if (stop === null) {
+    overrides.delete(llm);
+  } else {
+    overrides.set(llm, normalizeStopSequences(stop));
+  }
+  return await callStopOverrideStore.run(overrides, async () => await callback());
+}
+
+export const call_stop_override = callStopOverride;
+
+export class FunctionLLM implements LLMClient {
+  private usageMetrics: UsageMetrics = emptyUsageMetrics();
+
+  constructor(private readonly fn: LLMFunction) {}
+
+  async call(messages: readonly LLMMessage[], options?: LLMCallOptions): Promise<LLMResponse> {
+    const response = await this.fn(messages, options);
+    this.usageMetrics = addUsageMetrics(
+      this.usageMetrics,
+      estimateUsageMetrics(messages, response),
+    );
+    return response;
+  }
+
+  getUsageMetrics(): UsageMetrics {
+    return { ...this.usageMetrics };
+  }
+
+  getTokenUsageSummary(): UsageMetrics {
+    return this.getUsageMetrics();
+  }
+
+  resetUsageMetrics(): void {
+    this.usageMetrics = emptyUsageMetrics();
+  }
+}
+
+export function createLLM(
+  llmValue: CreateLLMValue | null | undefined = null,
+  env: CreateLLMEnvironment = process.env,
+): LLMClient | null {
+  if (llmValue == null) {
+    return llmViaEnvironmentOrFallback(env);
+  }
+  if (typeof llmValue === "string") {
+    const spec = resolveLLMModelSpec(llmValue);
+    return new ConfiguredLLM({
+      model: llmValue,
+      provider: spec.provider,
+      is_litellm: !spec.useNative,
+    });
+  }
+  if (typeof llmValue === "function" || isLLMClient(llmValue)) {
+    return createLLMClient(llmValue);
+  }
+  const model = stringProperty(llmValue, "model")
+    ?? stringProperty(llmValue, "model_name")
+    ?? stringProperty(llmValue, "deployment_name")
+    ?? "unknown";
+  const options: ConstructorParameters<typeof ConfiguredLLM>[0] = {
+    model,
+    provider: resolveLLMModelSpec(model, stringProperty(llmValue, "provider")).provider,
+    temperature: numberProperty(llmValue, "temperature"),
+    max_tokens: numberProperty(llmValue, "max_tokens"),
+    max_completion_tokens: numberProperty(llmValue, "max_completion_tokens"),
+    logprobs: numberProperty(llmValue, "logprobs"),
+    timeout: numberProperty(llmValue, "timeout"),
+  };
+  const apiKey = stringProperty(llmValue, "api_key");
+  const baseUrl = stringProperty(llmValue, "base_url");
+  const apiBase = stringProperty(llmValue, "api_base");
+  if (apiKey !== undefined) {
+    options.api_key = apiKey;
+  }
+  if (baseUrl !== undefined) {
+    options.base_url = baseUrl;
+  }
+  if (apiBase !== undefined) {
+    options.api_base = apiBase;
+  }
+  return new ConfiguredLLM(options);
+}
+
+export const create_llm = createLLM;
+
+export function llmViaEnvironmentOrFallback(env: CreateLLMEnvironment = process.env): LLMClient {
+  const model = env.MODEL ?? env.MODEL_NAME ?? env.OPENAI_MODEL_NAME ?? DEFAULT_LLM_MODEL;
+  const baseUrl = env.BASE_URL ?? env.OPENAI_API_BASE ?? env.OPENAI_BASE_URL;
+  const apiBase = env.API_BASE ?? env.AZURE_API_BASE ?? baseUrl;
+  const spec = resolveLLMModelSpec(model);
+  const options: ConstructorParameters<typeof ConfiguredLLM>[0] = {
+    model,
+    provider: spec.provider,
+    is_litellm: !spec.useNative,
+    ...(baseUrl === undefined ? {} : { base_url: baseUrl }),
+    ...(apiBase === undefined ? {} : { api_base: apiBase }),
+  };
+  applyLLMEnvVars(options, spec.provider, env);
+  return new ConfiguredLLM(options);
+}
+
+export const llm_via_environment_or_fallback = llmViaEnvironmentOrFallback;
+
+export function normalizeLLMEnvKeyName(keyName: string): string {
+  for (const pattern of LITELLM_PARAMS) {
+    if (keyName.includes(pattern)) {
+      return pattern;
+    }
+  }
+  return keyName;
+}
+
+export const normalize_llm_env_key_name = normalizeLLMEnvKeyName;
+
+export type BaseLLMOptions = {
+  model: string;
+  temperature?: number | null;
+  apiKey?: string | null;
+  api_key?: string | null;
+  baseUrl?: string | null;
+  base_url?: string | null;
+  provider?: string | null;
+  preferUpload?: boolean;
+  prefer_upload?: boolean;
+  isLitellm?: boolean;
+  is_litellm?: boolean;
+  stop?: string | readonly string[] | null;
+  stopSequences?: string | readonly string[] | null;
+  stop_sequences?: string | readonly string[] | null;
+  additionalParams?: Record<string, unknown>;
+  additional_params?: Record<string, unknown>;
+  responseFormat?: JsonResponseFormat | StructuredOutputValidator | null;
+  response_format?: JsonResponseFormat | StructuredOutputValidator | null;
+  contextWindowSize?: number;
+  context_window_size?: number;
+};
+
+export abstract class BaseLLM implements LLMClient {
+  readonly llmType = "base";
+  readonly llm_type = "base";
+  readonly model: string;
+  readonly temperature: number | null;
+  readonly apiKey: string | null;
+  readonly api_key: string | null;
+  readonly baseUrl: string | null;
+  readonly base_url: string | null;
+  readonly provider: string;
+  readonly preferUpload: boolean;
+  readonly prefer_upload: boolean;
+  readonly isLitellm: boolean;
+  readonly is_litellm: boolean;
+  readonly additionalParams: Record<string, unknown>;
+  readonly additional_params: Record<string, unknown>;
+  readonly responseFormat: JsonResponseFormat | StructuredOutputValidator | null;
+  readonly response_format: JsonResponseFormat | StructuredOutputValidator | null;
+  private contextWindowSize: number;
+  stop: string[];
+  private tokenUsage: UsageMetrics = emptyUsageMetrics();
+
+  constructor(options: BaseLLMOptions) {
+    if (!options.model) {
+      throw new Error("Model name is required and cannot be empty.");
+    }
+    this.model = options.model;
+    this.temperature = options.temperature ?? null;
+    this.apiKey = options.apiKey ?? options.api_key ?? null;
+    this.api_key = this.apiKey;
+    this.baseUrl = options.baseUrl ?? options.base_url ?? null;
+    this.base_url = this.baseUrl;
+    this.provider = options.provider || "openai";
+    this.preferUpload = options.preferUpload ?? options.prefer_upload ?? false;
+    this.prefer_upload = this.preferUpload;
+    this.isLitellm = options.isLitellm ?? options.is_litellm ?? false;
+    this.is_litellm = this.isLitellm;
+    this.stop = normalizeStopSequences(options.stopSequences ?? options.stop_sequences ?? options.stop ?? []);
+    this.additionalParams = { ...(options.additionalParams ?? {}), ...(options.additional_params ?? {}) };
+    this.additional_params = this.additionalParams;
+    this.responseFormat = options.responseFormat ?? options.response_format ?? null;
+    this.response_format = this.responseFormat;
+    this.contextWindowSize = options.contextWindowSize ?? options.context_window_size ?? 0;
+  }
+
+  abstract call(messages: readonly LLMMessage[], options?: LLMCallOptions): MaybePromise<LLMResponse>;
+
+  get stopSequences(): readonly string[] {
+    const override = callStopOverrideStore.getStore()?.get(this);
+    if (override) {
+      return override;
+    }
+    return this.stop;
+  }
+
+  get stop_sequences(): readonly string[] {
+    return this.stopSequences;
+  }
+
+  setStopSequences(stop: string | readonly string[] | null): void {
+    this.stop = normalizeStopSequences(stop);
+  }
+
+  set_stop_sequences(stop: string | readonly string[] | null): void {
+    this.setStopSequences(stop);
+  }
+
+  supportsStopWords(): boolean {
+    if (this.model.toLowerCase().includes("gpt-5")) {
+      return false;
+    }
+    return DEFAULT_SUPPORTS_STOP_WORDS;
+  }
+
+  supports_stop_words(): boolean {
+    return this.supportsStopWords();
+  }
+
+  protected supportsStopWordsImplementation(): boolean {
+    return this.stopSequences.length > 0;
+  }
+
+  protected _supports_stop_words_implementation(): boolean {
+    return this.supportsStopWordsImplementation();
+  }
+
+  applyStopWords(content: string): string {
+    if (this.stopSequences.length === 0 || content.length === 0) {
+      return content;
+    }
+    let earliest = content.length;
+    for (const stop of this.stopSequences) {
+      const index = content.indexOf(stop);
+      if (index !== -1 && index < earliest) {
+        earliest = index;
+      }
+    }
+    return earliest === content.length ? content : content.slice(0, earliest).trim();
+  }
+
+  _apply_stop_words(content: string): string {
+    return this.applyStopWords(content);
+  }
+
+  getContextWindowSize(): number {
+    if (this.contextWindowSize !== 0) {
+      return this.contextWindowSize;
+    }
+    this.contextWindowSize = knownContextWindowSizeForModel(this.model) ?? DEFAULT_CONTEXT_WINDOW_SIZE;
+    return this.contextWindowSize;
+  }
+
+  get_context_window_size(): number {
+    return this.getContextWindowSize();
+  }
+
+  supportsMultimodal(): boolean {
+    return false;
+  }
+
+  supports_multimodal(): boolean {
+    return this.supportsMultimodal();
+  }
+
+  formatTextContent(text: string): { type: "text"; text: string } {
+    return { type: "text", text };
+  }
+
+  format_text_content(text: string): { type: "text"; text: string } {
+    return this.formatTextContent(text);
+  }
+
+  getFileUploader(): null {
+    return null;
+  }
+
+  get_file_uploader(): null {
+    return this.getFileUploader();
+  }
+
+  emitCallStartedEvent(options: LLMEmitCallStartedOptions): void {
+    crewaiEventBus.emit(this, new LLMCallStartedEvent({
+      call_id: getCurrentCallId(),
+      from_task: options.fromTask ?? options.from_task,
+      from_agent: options.fromAgent ?? options.from_agent,
+      model: this.model,
+      messages: serializeLLMEventMessages(options.messages),
+      tools: options.tools ?? null,
+      callbacks: options.callbacks ?? null,
+      available_functions: options.availableFunctions ?? options.available_functions ?? null,
+    }));
+  }
+
+  _emit_call_started_event(options: LLMEmitCallStartedOptions): void {
+    this.emitCallStartedEvent(options);
+  }
+
+  emitCallCompletedEvent(options: LLMEmitCallCompletedOptions): void {
+    crewaiEventBus.emit(this, new LLMCallCompletedEvent({
+      call_id: getCurrentCallId(),
+      from_task: options.fromTask ?? options.from_task,
+      from_agent: options.fromAgent ?? options.from_agent,
+      model: this.model,
+      messages: options.messages === undefined || options.messages === null
+        ? null
+        : serializeLLMEventMessages(options.messages),
+      response: options.response,
+      call_type: options.callType ?? options.call_type ?? LLMCallType.LLM_CALL,
+      usage: options.usage ?? null,
+    }));
+  }
+
+  _emit_call_completed_event(options: LLMEmitCallCompletedOptions): void {
+    this.emitCallCompletedEvent(options);
+  }
+
+  emitCallFailedEvent(options: LLMEmitCallFailedOptions): void {
+    crewaiEventBus.emit(this, new LLMCallFailedEvent({
+      call_id: getCurrentCallId(),
+      from_task: options.fromTask ?? options.from_task,
+      from_agent: options.fromAgent ?? options.from_agent,
+      model: this.model,
+      error: options.error,
+    }));
+  }
+
+  _emit_call_failed_event(options: LLMEmitCallFailedOptions): void {
+    this.emitCallFailedEvent(options);
+  }
+
+  emitStreamChunkEvent(options: LLMEmitStreamChunkOptions): void {
+    crewaiEventBus.emit(this, new LLMStreamChunkEvent({
+      call_id: getCurrentCallId(),
+      from_task: options.fromTask ?? options.from_task,
+      from_agent: options.fromAgent ?? options.from_agent,
+      model: this.model,
+      chunk: options.chunk,
+      tool_call: options.toolCall ?? options.tool_call ?? null,
+      call_type: options.callType ?? options.call_type ?? null,
+      response_id: options.responseId ?? options.response_id ?? null,
+    }));
+  }
+
+  _emit_stream_chunk_event(options: LLMEmitStreamChunkOptions): void {
+    this.emitStreamChunkEvent(options);
+  }
+
+  emitThinkingChunkEvent(options: LLMEmitThinkingChunkOptions): void {
+    crewaiEventBus.emit(this, new LLMThinkingChunkEvent({
+      call_id: getCurrentCallId(),
+      from_task: options.fromTask ?? options.from_task,
+      from_agent: options.fromAgent ?? options.from_agent,
+      model: this.model,
+      chunk: options.chunk,
+      response_id: options.responseId ?? options.response_id ?? null,
+    }));
+  }
+
+  _emit_thinking_chunk_event(options: LLMEmitThinkingChunkOptions): void {
+    this.emitThinkingChunkEvent(options);
+  }
+
+  async handleToolExecution(options: LLMHandleToolExecutionOptions): Promise<string | null> {
+    const functionName = options.functionName ?? options.function_name;
+    const functionArgs = options.functionArgs ?? options.function_args ?? {};
+    const availableFunctions = options.availableFunctions ?? options.available_functions ?? {};
+    if (!functionName) {
+      return null;
+    }
+    const fn = availableFunctions[functionName];
+    if (!fn) {
+      return null;
+    }
+
+    const startedAt = new Date();
+    try {
+      crewaiEventBus.emit(this, new ToolUsageStartedEvent({
+        toolName: functionName,
+        toolArgs: functionArgs,
+        toolClass: "BaseLLM",
+      }));
+      const result = await invokeAvailableFunction(fn, functionArgs);
+      crewaiEventBus.emit(this, new ToolUsageFinishedEvent({
+        toolName: functionName,
+        toolArgs: functionArgs,
+        toolClass: "BaseLLM",
+        startedAt,
+        output: result,
+      }));
+      this.emitCallCompletedEvent({
+        response: result,
+        callType: LLMCallType.TOOL_CALL,
+        from_task: options.fromTask ?? options.from_task,
+        from_agent: options.fromAgent ?? options.from_agent,
+      });
+      return stringifyToolExecutionResult(result);
+    } catch (error) {
+      const errorMessage = `Error executing function '${functionName}': ${error instanceof Error ? error.message : String(error)}`;
+      crewaiEventBus.emit(this, new ToolUsageErrorEvent({
+        toolName: functionName,
+        toolArgs: functionArgs,
+        toolClass: "BaseLLM",
+        error: errorMessage,
+      }));
+      this.emitCallFailedEvent({
+        error: errorMessage,
+        from_task: options.fromTask ?? options.from_task,
+        from_agent: options.fromAgent ?? options.from_agent,
+      });
+      return null;
+    }
+  }
+
+  async _handle_tool_execution(options: LLMHandleToolExecutionOptions): Promise<string | null> {
+    return await this.handleToolExecution(options);
+  }
+
+  formatMessages(messages: LLMMessageInput): LLMMessage[] {
+    if (typeof messages === "string") {
+      return [{ role: "user", content: messages }];
+    }
+    const cleaned = messages.map((message, index) => {
+      if (Array.isArray(message)) {
+        throw new Error(`Message at index ${String(index)} must be a dictionary.`);
+      }
+      if (!isLLMRole(message.role) || typeof message.content !== "string") {
+        throw new Error(`Message at index ${String(index)} must have 'role' and 'content' keys.`);
+      }
+      const copy = { ...message };
+      stripCacheBreakpoint(copy);
+      return copy as LLMMessage;
+    });
+    return this.processMessageFiles(cleaned);
+  }
+
+  _format_messages(messages: LLMMessageInput): LLMMessage[] {
+    return this.formatMessages(messages);
+  }
+
+  processMessageFiles(messages: readonly LLMMessage[]): LLMMessage[] {
+    if (!this.supportsMultimodal() && messages.some((message) => message.files && Object.keys(message.files).length > 0)) {
+      throw new Error(`Model '${this.model}' does not support multimodal input, but files were provided via 'input_files'.`);
+    }
+    return messages.map((message) => ({ ...message }));
+  }
+
+  _process_message_files(messages: readonly LLMMessage[]): LLMMessage[] {
+    return this.processMessageFiles(messages);
+  }
+
+  toConfigDict(): Record<string, unknown> {
+    return {
+      model: this.model,
+      temperature: this.temperature,
+      api_key: this.apiKey,
+      base_url: this.baseUrl,
+      provider: this.provider,
+      prefer_upload: this.preferUpload,
+      is_litellm: this.isLitellm,
+      stop: [...this.stop],
+      additional_params: { ...this.additionalParams },
+      ...(this.responseFormat === null ? {} : { response_format: serializeResponseFormat(this.responseFormat) }),
+    };
+  }
+
+  to_config_dict(): Record<string, unknown> {
+    return this.toConfigDict();
+  }
+
+  trackTokenUsageInternal(usageData: Record<string, unknown>): void {
+    const promptTokens = numberFromUsage(usageData, "prompt_tokens", "prompt_token_count", "input_tokens");
+    const completionTokens = numberFromUsage(usageData, "completion_tokens", "candidates_token_count", "output_tokens");
+    const cachedTokens = numberFromUsage(usageData, "cached_tokens", "cached_prompt_tokens", "cache_read_input_tokens")
+      || nestedNumberFromUsage(usageData, "prompt_tokens_details", "cached_tokens");
+    this.tokenUsage = addUsageMetrics(this.tokenUsage, {
+      ...emptyUsageMetrics(),
+      totalTokens: promptTokens + completionTokens,
+      promptTokens,
+      completionTokens,
+      cachedPromptTokens: cachedTokens,
+      reasoningTokens: numberFromUsage(usageData, "reasoning_tokens"),
+      cacheCreationTokens: numberFromUsage(usageData, "cache_creation_tokens"),
+      successfulRequests: 1,
+    });
+  }
+
+  _track_token_usage_internal(usageData: Record<string, unknown>): void {
+    this.trackTokenUsageInternal(usageData);
+  }
+
+  getUsageMetrics(): UsageMetrics {
+    return { ...this.tokenUsage };
+  }
+
+  getTokenUsageSummary(): UsageMetrics {
+    return this.getUsageMetrics();
+  }
+
+  get_token_usage_summary(): UsageMetrics {
+    return this.getTokenUsageSummary();
+  }
+
+  resetUsageMetrics(): void {
+    this.tokenUsage = emptyUsageMetrics();
+  }
+
+  reset_usage_metrics(): void {
+    this.resetUsageMetrics();
+  }
+
+  validateStructuredOutput<T = unknown>(
+    response: string,
+    responseFormat: StructuredOutputValidator<T> | null = null,
+  ): string | T {
+    return validateStructuredOutput(response, responseFormat);
+  }
+
+  _validate_structured_output<T = unknown>(
+    response: string,
+    responseFormat: StructuredOutputValidator<T> | null = null,
+  ): string | T {
+    return this.validateStructuredOutput(response, responseFormat);
+  }
+
+  static validateStructuredOutput<T = unknown>(
+    response: string,
+    responseFormat: StructuredOutputValidator<T> | null = null,
+  ): string | T {
+    return validateStructuredOutput(response, responseFormat);
+  }
+
+  static _validate_structured_output<T = unknown>(
+    response: string,
+    responseFormat: StructuredOutputValidator<T> | null = null,
+  ): string | T {
+    return validateStructuredOutput(response, responseFormat);
+  }
+
+  static extractProvider(model: string): string {
+    return extractProvider(model);
+  }
+
+  static _extract_provider(model: string): string {
+    return extractProvider(model);
+  }
+
+  static canonicalLLMProvider(provider: string): string {
+    return canonicalLLMProvider(provider);
+  }
+
+  static canonical_llm_provider(provider: string): string {
+    return canonicalLLMProvider(provider);
+  }
+
+  static matchesProviderPattern(model: string, provider: string): boolean {
+    return matchesProviderPattern(model, provider);
+  }
+
+  static _matches_provider_pattern(model: string, provider: string): boolean {
+    return matchesProviderPattern(model, provider);
+  }
+
+  static validateModelInConstants(model: string, provider: string): boolean {
+    return validateModelInConstants(model, provider);
+  }
+
+  static _validate_model_in_constants(model: string, provider: string): boolean {
+    return validateModelInConstants(model, provider);
+  }
+
+  static inferProviderFromModel(model: string): string {
+    return inferProviderFromModel(model);
+  }
+
+  static _infer_provider_from_model(model: string): string {
+    return inferProviderFromModel(model);
+  }
+
+  static resolveLLMModelSpec(model: string, explicitProvider?: string): LLMModelSpec {
+    return resolveLLMModelSpec(model, explicitProvider);
+  }
+
+  static resolve_llm_model_spec(model: string, explicitProvider?: string): LLMModelSpec {
+    return resolveLLMModelSpec(model, explicitProvider);
+  }
+}
+
+export class ConfiguredLLM extends BaseLLM {
+  readonly timeout: number | null;
+  readonly maxTokens: number | null;
+  readonly max_tokens: number | null;
+  readonly maxCompletionTokens: number | null;
+  readonly max_completion_tokens: number | null;
+  readonly logprobs: number | null;
+  readonly apiBase: string | null;
+  readonly api_base: string | null;
+
+  constructor(options: BaseLLMOptions & {
+    timeout?: number | null;
+    maxTokens?: number | null;
+    max_tokens?: number | null;
+    maxCompletionTokens?: number | null;
+    max_completion_tokens?: number | null;
+    logprobs?: number | null;
+    apiBase?: string | null;
+    api_base?: string | null;
+  }) {
+    super(options);
+    this.timeout = options.timeout ?? null;
+    this.maxTokens = options.maxTokens ?? options.max_tokens ?? null;
+    this.max_tokens = this.maxTokens;
+    this.maxCompletionTokens = options.maxCompletionTokens ?? options.max_completion_tokens ?? null;
+    this.max_completion_tokens = this.maxCompletionTokens;
+    this.logprobs = options.logprobs ?? null;
+    this.apiBase = options.apiBase ?? options.api_base ?? this.baseUrl;
+    this.api_base = this.apiBase;
+  }
+
+  async call(messages: readonly LLMMessage[], options?: LLMCallOptions): Promise<LLMResponse> {
+    const provider = resolveLLMProvider(this.model);
+    if (!provider || provider === this) {
+      throw new Error(`No LLM provider registered for model '${this.model}'.`);
+    }
+    return await provider.call(messages, options);
+  }
+
+  override toConfigDict(): Record<string, unknown> {
+    return {
+      ...super.toConfigDict(),
+      ...(this.timeout === null ? {} : { timeout: this.timeout }),
+      ...(this.maxTokens === null ? {} : { max_tokens: this.maxTokens }),
+      ...(this.maxCompletionTokens === null ? {} : { max_completion_tokens: this.maxCompletionTokens }),
+      ...(this.logprobs === null ? {} : { logprobs: this.logprobs }),
+      ...(this.apiBase === null ? {} : { api_base: this.apiBase }),
+    };
+  }
+}
+
+export function createLLMClient(provider: LLM): LLMClient {
+  return typeof provider === "function" ? new FunctionLLM(provider) : provider;
+}
+
+export function registerLLMProvider(model: string, provider: LLM): void {
+  registeredProviders.set(model, createLLMClient(provider));
+}
+
+export function unregisterLLMProvider(model: string): void {
+  registeredProviders.delete(model);
+}
+
+export function clearLLMProviders(): void {
+  registeredProviders.clear();
+}
+
+export function resolveLLMProvider(model: string): LLMClient | null {
+  return registeredProviders.get(model) ?? null;
+}
+
+export async function callLLM(
+  client: LLMClient,
+  messages: readonly LLMMessage[],
+  options: LLMCallOptions = {},
+): Promise<LLMResponse> {
+  return await llmCallContext(async (callId) => {
+    const mutableMessages = messages as LLMMessage[];
+    const model = typeof options.metadata?.model === "string" ? options.metadata.model : null;
+    crewaiEventBus.emit(client, new LLMCallStartedEvent({
+      call_id: callId,
+      from_agent: options.metadata?.agent,
+      from_task: options.metadata?.task,
+      model,
+      messages: serializeLLMMessages(mutableMessages),
+      tools: serializeLLMTools(options.tools),
+    }));
+    const context = new LLMCallHookContext({
+      messages: mutableMessages,
+      llm: client,
+      agent: options.metadata?.agent,
+      task: options.metadata?.task,
+      crew: options.metadata?.crew,
+      iterations: typeof options.metadata?.iterations === "number" ? options.metadata.iterations : 0,
+    });
+    try {
+      await runBeforeLlmCallHooks(context);
+      const response = await client.call(mutableMessages, options);
+      context.response = response;
+      const finalResponse = await runAfterLlmCallHooks(context);
+      crewaiEventBus.emit(client, new LLMCallCompletedEvent({
+        call_id: callId,
+        from_agent: options.metadata?.agent,
+        from_task: options.metadata?.task,
+        model,
+        messages: serializeLLMMessages(mutableMessages),
+        response: finalResponse,
+        call_type: isToolCallingResponse(finalResponse) ? LLMCallType.TOOL_CALL : LLMCallType.LLM_CALL,
+        usage: client.getUsageMetrics?.() ?? client.getTokenUsageSummary?.() ?? client.get_token_usage_summary?.() ?? null,
+      }));
+      return finalResponse;
+    } catch (error) {
+      crewaiEventBus.emit(client, new LLMCallFailedEvent({
+        call_id: callId,
+        from_agent: options.metadata?.agent,
+        from_task: options.metadata?.task,
+        model,
+        error,
+      }));
+      throw error;
+    }
+  });
+}
+
+export function getLLMUsageMetrics(client: LLMClient): UsageMetrics {
+  if (client.getUsageMetrics) {
+    return normalizeUsageMetrics(client.getUsageMetrics());
+  }
+  if (client.getTokenUsageSummary) {
+    return normalizeUsageMetrics(client.getTokenUsageSummary());
+  }
+  if (client.get_token_usage_summary) {
+    return normalizeUsageMetrics(client.get_token_usage_summary());
+  }
+  return emptyUsageMetrics();
+}
+
+export function hasLLMUsageMetrics(client: LLMClient): boolean {
+  return "getUsageMetrics" in client || "getTokenUsageSummary" in client || "get_token_usage_summary" in client;
+}
+
+export function markCacheBreakpoint<T extends Record<string, unknown>>(message: T): CacheBreakpointMessage<T> {
+  return { ...message, cache_breakpoint: true };
+}
+
+export const mark_cache_breakpoint = markCacheBreakpoint;
+
+export function stripCacheBreakpoint(message: Record<string, unknown>): void {
+  delete message.cache_breakpoint;
+}
+
+export const strip_cache_breakpoint = stripCacheBreakpoint;
+
+export function emptyUsageMetrics(): UsageMetrics {
+  return new UsageMetrics();
+}
+
+export function addUsageMetrics(left: UsageMetrics, right: UsageMetrics): UsageMetrics {
+  return new UsageMetrics({
+    totalTokens: left.totalTokens + right.totalTokens,
+    promptTokens: left.promptTokens + right.promptTokens,
+    cachedPromptTokens: left.cachedPromptTokens + right.cachedPromptTokens,
+    completionTokens: left.completionTokens + right.completionTokens,
+    reasoningTokens: left.reasoningTokens + right.reasoningTokens,
+    cacheCreationTokens: left.cacheCreationTokens + right.cacheCreationTokens,
+    successfulRequests: left.successfulRequests + right.successfulRequests,
+  });
+}
+
+export function subtractUsageMetrics(left: UsageMetrics, right: UsageMetrics): UsageMetrics {
+  return new UsageMetrics({
+    totalTokens: Math.max(0, left.totalTokens - right.totalTokens),
+    promptTokens: Math.max(0, left.promptTokens - right.promptTokens),
+    cachedPromptTokens: Math.max(0, left.cachedPromptTokens - right.cachedPromptTokens),
+    completionTokens: Math.max(0, left.completionTokens - right.completionTokens),
+    reasoningTokens: Math.max(0, left.reasoningTokens - right.reasoningTokens),
+    cacheCreationTokens: Math.max(0, left.cacheCreationTokens - right.cacheCreationTokens),
+    successfulRequests: Math.max(0, left.successfulRequests - right.successfulRequests),
+  });
+}
+
+export function isEmptyUsageMetrics(metrics: UsageMetrics): boolean {
+  return Object.values(metrics).every((value) => value === 0);
+}
+
+export function estimateUsageMetrics(
+  messages: readonly LLMMessage[],
+  response: LLMResponse,
+): UsageMetrics {
+  const promptTokens = messages.reduce(
+    (total, message) => total + estimateTokens(message.content),
+    0,
+  );
+  const completionText = typeof response === "string" ? response : JSON.stringify(response);
+  const completionTokens = estimateTokens(completionText);
+  return {
+    ...emptyUsageMetrics(),
+    totalTokens: promptTokens + completionTokens,
+    promptTokens,
+    completionTokens,
+    successfulRequests: 1,
+  };
+}
+
+export function estimateTokens(value: string): number {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return 0;
+  }
+  return Math.max(1, Math.ceil(trimmed.length / 4));
+}
+
+export function validateStructuredOutput<T = unknown>(
+  response: string,
+  responseFormat: StructuredOutputValidator<T> | null = null,
+): string | T {
+  if (responseFormat === null) {
+    return response;
+  }
+  const data = parseStructuredOutputJson(response, validatorName(responseFormat));
+  if (typeof responseFormat.modelValidate === "function") {
+    return responseFormat.modelValidate(data);
+  }
+  if (typeof responseFormat.model_validate === "function") {
+    return responseFormat.model_validate(data);
+  }
+  if (typeof responseFormat.parse === "function") {
+    return responseFormat.parse(data);
+  }
+  if (typeof responseFormat.validate === "function") {
+    return responseFormat.validate(data);
+  }
+  return data as T;
+}
+
+export const validate_structured_output = validateStructuredOutput;
+
+export function extractProvider(model: string): string {
+  const index = model.indexOf("/");
+  return index === -1 ? "openai" : model.slice(0, index);
+}
+
+export const extract_provider = extractProvider;
+
+export function canonicalLLMProvider(provider: string): string {
+  return LLM_PROVIDER_ALIASES[provider.toLowerCase()] ?? provider.toLowerCase();
+}
+
+export const canonical_llm_provider = canonicalLLMProvider;
+
+export function matchesProviderPattern(model: string, provider: string): boolean {
+  const modelLower = model.toLowerCase();
+  const canonicalProvider = canonicalLLMProvider(provider);
+
+  if (canonicalProvider === "openai") {
+    return ["gpt-", "o1", "o3", "o4", "whisper-"].some((prefix) => modelLower.startsWith(prefix));
+  }
+  if (canonicalProvider === "anthropic") {
+    return ["claude-", "anthropic."].some((prefix) => modelLower.startsWith(prefix));
+  }
+  if (canonicalProvider === "gemini") {
+    return ["gemini-", "gemma-", "learnlm-"].some((prefix) => modelLower.startsWith(prefix));
+  }
+  if (canonicalProvider === "bedrock") {
+    return modelLower.includes(".");
+  }
+  if (canonicalProvider === "azure") {
+    return ["gpt-", "gpt-35-", "o1", "o3", "o4", "azure-"].some((prefix) => modelLower.startsWith(prefix));
+  }
+  if (canonicalProvider === "deepseek") {
+    return modelLower.startsWith("deepseek");
+  }
+  if (canonicalProvider === "dashscope") {
+    return modelLower.startsWith("qwen");
+  }
+  return ["ollama", "ollama_chat", "hosted_vllm", "cerebras", "openrouter"].includes(canonicalProvider);
+}
+
+export const matches_provider_pattern = matchesProviderPattern;
+
+export function validateModelInConstants(model: string, provider: string): boolean {
+  const canonicalProvider = canonicalLLMProvider(provider);
+  if (canonicalProvider === "openai" && openAIModelSet.has(model)) {
+    return true;
+  }
+  if (canonicalProvider === "anthropic" && anthropicModelSet.has(model)) {
+    return true;
+  }
+  if (canonicalProvider === "gemini" && geminiModelSet.has(model)) {
+    return true;
+  }
+  if (canonicalProvider === "bedrock" && bedrockModelSet.has(model)) {
+    return true;
+  }
+  if (canonicalProvider === "azure") {
+    return true;
+  }
+  return matchesProviderPattern(model, canonicalProvider);
+}
+
+export const validate_model_in_constants = validateModelInConstants;
+
+export function inferProviderFromModel(model: string): string {
+  if (openAIModelSet.has(model)) {
+    return "openai";
+  }
+  if (anthropicModelSet.has(model)) {
+    return "anthropic";
+  }
+  if (geminiModelSet.has(model)) {
+    return "gemini";
+  }
+  if (bedrockModelSet.has(model)) {
+    return "bedrock";
+  }
+  if (azureModelSet.has(model)) {
+    return "azure";
+  }
+  return "openai";
+}
+
+export const infer_provider_from_model = inferProviderFromModel;
+
+export function resolveLLMModelSpec(model: string, explicitProvider?: string): LLMModelSpec {
+  if (!model) {
+    throw new Error("Model must be a non-empty string.");
+  }
+  if (explicitProvider) {
+    return {
+      provider: canonicalLLMProvider(explicitProvider),
+      model,
+      originalModel: model,
+      useNative: true,
+    };
+  }
+  const separatorIndex = model.indexOf("/");
+  if (separatorIndex !== -1) {
+    const prefix = model.slice(0, separatorIndex);
+    const modelPart = model.slice(separatorIndex + 1);
+    const canonicalProvider = canonicalLLMProvider(prefix);
+    const hasNativeProvider = nativeProviderSet.has(canonicalProvider);
+    const useNative = hasNativeProvider && validateModelInConstants(modelPart, canonicalProvider);
+    return {
+      provider: useNative ? canonicalProvider : prefix,
+      model: modelPart,
+      originalModel: model,
+      useNative,
+    };
+  }
+  return {
+    provider: inferProviderFromModel(model),
+    model,
+    originalModel: model,
+    useNative: true,
+  };
+}
+
+export const resolve_llm_model_spec = resolveLLMModelSpec;
+
+export function contextWindowSizeForModel(model: string): number {
+  validateContextWindowSizes(LLM_CONTEXT_WINDOW_SIZES);
+  return knownContextWindowSizeForModel(model) ?? Math.trunc(DEFAULT_CONTEXT_WINDOW_SIZE * CONTEXT_WINDOW_USAGE_RATIO);
+}
+
+export const context_window_size_for_model = contextWindowSizeForModel;
+
+export function validateContextWindowSizes(sizes: Readonly<Record<string, number>>): void {
+  for (const [model, size] of Object.entries(sizes)) {
+    if (size < MIN_CONTEXT_WINDOW_SIZE || size > MAX_CONTEXT_WINDOW_SIZE) {
+      throw new Error(`Context window for ${model} must be between ${String(MIN_CONTEXT_WINDOW_SIZE)} and ${String(MAX_CONTEXT_WINDOW_SIZE)}.`);
+    }
+  }
+}
+
+export const validate_context_window_sizes = validateContextWindowSizes;
+
+function knownContextWindowSizeForModel(model: string): number | null {
+  const match = Object.entries(LLM_CONTEXT_WINDOW_SIZES)
+    .sort(([left], [right]) => right.length - left.length)
+    .find(([prefix]) => model.startsWith(prefix));
+  return match ? Math.trunc(match[1] * CONTEXT_WINDOW_USAGE_RATIO) : null;
+}
+
+function normalizeUsageMetrics(metrics: UsageMetricsLike): UsageMetrics {
+  return new UsageMetrics({
+    totalTokens: metrics.totalTokens ?? metrics.total_tokens ?? 0,
+    promptTokens: metrics.promptTokens ?? metrics.prompt_tokens ?? 0,
+    cachedPromptTokens: metrics.cachedPromptTokens ?? metrics.cached_prompt_tokens ?? 0,
+    completionTokens: metrics.completionTokens ?? metrics.completion_tokens ?? 0,
+    reasoningTokens: metrics.reasoningTokens ?? metrics.reasoning_tokens ?? 0,
+    cacheCreationTokens: metrics.cacheCreationTokens ?? metrics.cache_creation_tokens ?? 0,
+    successfulRequests: metrics.successfulRequests ?? metrics.successful_requests ?? 0,
+  });
+}
+
+function defineUsageMetricAliases(metrics: UsageMetrics): void {
+  Object.defineProperties(metrics, {
+    total_tokens: { value: metrics.totalTokens, writable: true, enumerable: false, configurable: true },
+    prompt_tokens: { value: metrics.promptTokens, writable: true, enumerable: false, configurable: true },
+    cached_prompt_tokens: { value: metrics.cachedPromptTokens, writable: true, enumerable: false, configurable: true },
+    completion_tokens: { value: metrics.completionTokens, writable: true, enumerable: false, configurable: true },
+    reasoning_tokens: { value: metrics.reasoningTokens, writable: true, enumerable: false, configurable: true },
+    cache_creation_tokens: { value: metrics.cacheCreationTokens, writable: true, enumerable: false, configurable: true },
+    successful_requests: { value: metrics.successfulRequests, writable: true, enumerable: false, configurable: true },
+  });
+}
+
+function parseStructuredOutputJson(response: string, responseFormatName: string): unknown {
+  const trimmed = response.trim();
+  try {
+    if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+      return JSON.parse(trimmed);
+    }
+    const match = /\{.*\}/s.exec(response);
+    if (match) {
+      return JSON.parse(match[0]);
+    }
+    throw new Error("No JSON found in response");
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new Error(`Failed to parse response into ${responseFormatName}: ${detail}`, { cause: error });
+  }
+}
+
+function validatorName(validator: StructuredOutputValidator): string {
+  return validator.name ?? "response_format";
+}
+
+function serializeResponseFormat(responseFormat: JsonResponseFormat | StructuredOutputValidator): unknown {
+  if ("type" in responseFormat) {
+    return { type: "json_object" };
+  }
+  return responseFormat.name ?? "response_format";
+}
+
+function normalizeStopSequences(value: string | readonly string[] | null | undefined): string[] {
+  if (value === null || value === undefined) {
+    return [];
+  }
+  return typeof value === "string" ? [value] : [...value];
+}
+
+function numberFromUsage(data: Record<string, unknown>, ...keys: readonly string[]): number {
+  for (const key of keys) {
+    const value = data[key];
+    if (typeof value === "number") {
+      return value;
+    }
+  }
+  return 0;
+}
+
+function nestedNumberFromUsage(data: Record<string, unknown>, objectKey: string, valueKey: string): number {
+  const nested = data[objectKey];
+  if (!nested || typeof nested !== "object" || Array.isArray(nested)) {
+    return 0;
+  }
+  const value = (nested as Record<string, unknown>)[valueKey];
+  return typeof value === "number" ? value : 0;
+}
+
+function serializeLLMMessages(messages: readonly LLMMessage[]): readonly Record<string, unknown>[] {
+  return messages.map((message) => ({
+    role: message.role,
+    content: message.content,
+    ...(message.files === undefined ? {} : { files: message.files }),
+    ...(message.cache_breakpoint === undefined ? {} : { cache_breakpoint: message.cache_breakpoint }),
+  }));
+}
+
+function serializeLLMEventMessages(messages: string | readonly LLMMessage[]): string | readonly Record<string, unknown>[] {
+  return typeof messages === "string" ? messages : serializeLLMMessages(messages);
+}
+
+function isLLMRole(value: unknown): value is LLMMessage["role"] {
+  return value === "system" || value === "user" || value === "assistant" || value === "tool";
+}
+
+function isLLMClient(value: unknown): value is LLMClient {
+  if (!value || typeof value !== "object" || !("call" in value)) {
+    return false;
+  }
+  return typeof value.call === "function";
+}
+
+function stringProperty(value: Record<string, unknown>, key: string): string | undefined {
+  const property = value[key];
+  return typeof property === "string" ? property : undefined;
+}
+
+function numberProperty(value: Record<string, unknown>, key: string): number | null {
+  const property = value[key];
+  return typeof property === "number" ? property : null;
+}
+
+function recordOrNull(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+function stringOrEmpty(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
+function argsSchemaParameters(value: unknown): Record<string, unknown> | null {
+  const schemaProvider = value as { model_json_schema?: () => unknown; modelJsonSchema?: () => unknown } | null;
+  const schema = schemaProvider?.model_json_schema?.() ?? schemaProvider?.modelJsonSchema?.();
+  return recordOrNull(schema);
+}
+
+function applyLLMEnvVars(
+  options: ConstructorParameters<typeof ConfiguredLLM>[0],
+  provider: string,
+  env: CreateLLMEnvironment,
+): void {
+  for (const spec of LLM_ENV_VARS[provider] ?? []) {
+    const keyName = spec.key_name;
+    if (typeof keyName === "string" && !UNACCEPTED_LLM_ENV_ATTRIBUTES.includes(keyName as typeof UNACCEPTED_LLM_ENV_ATTRIBUTES[number])) {
+      const value = env[keyName];
+      if (value) {
+        const paramKey = normalizeLLMEnvKeyName(keyName.toLowerCase());
+        assignLLMConfigParam(options, paramKey, value);
+      }
+      continue;
+    }
+    if (spec.default === true) {
+      for (const [key, value] of Object.entries(spec)) {
+        if (key !== "prompt" && key !== "key_name" && key !== "default" && typeof value === "string") {
+          assignLLMConfigParam(options, key.toLowerCase(), value);
+        }
+      }
+    }
+  }
+}
+
+function assignLLMConfigParam(
+  options: ConstructorParameters<typeof ConfiguredLLM>[0],
+  key: string,
+  value: string,
+): void {
+  if (key === "model") {
+    options.model = value;
+  } else if (key === "api_key") {
+    options.api_key = value;
+  } else if (key === "api_base") {
+    options.api_base = value;
+    options.base_url ??= value;
+  } else if (key === "api_version") {
+    options.additional_params = { ...(options.additional_params ?? {}), api_version: value };
+  } else if (key === "watsonx_url") {
+    options.base_url = value;
+  } else {
+    options.additional_params = { ...(options.additional_params ?? {}), [key]: value };
+  }
+}
+
+async function invokeAvailableFunction(fn: LLMAvailableFunction, args: Record<string, unknown>): Promise<unknown> {
+  return typeof fn === "function" ? await fn(args) : await fn.run(args);
+}
+
+function stringifyToolExecutionResult(value: unknown): string {
+  if (typeof value === "string") {
+    return value;
+  }
+  if (value === undefined) {
+    return "undefined";
+  }
+  if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") {
+    return value.toString();
+  }
+  if (typeof value === "symbol") {
+    return value.description ?? "Symbol()";
+  }
+  if (typeof value === "function") {
+    return `[function ${value.name || "anonymous"}]`;
+  }
+  return JSON.stringify(value);
+}
+
+function serializeLLMTools(tools: readonly Tool[] | undefined): readonly Record<string, unknown>[] | null {
+  if (!tools || tools.length === 0) {
+    return null;
+  }
+  return tools.map((tool) => ({
+    name: tool.name,
+    description: tool.description ?? null,
+    resultAsAnswer: tool.resultAsAnswer ?? false,
+  }));
+}
+
+function isToolCallingResponse(response: LLMResponse): response is ToolCalling {
+  return typeof response === "object" && "toolName" in response;
+}
