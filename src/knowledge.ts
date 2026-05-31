@@ -1,5 +1,6 @@
 import { extname, isAbsolute, join } from "node:path";
 import { existsSync, readFileSync, statSync } from "node:fs";
+import { inflateRawSync } from "node:zlib";
 import {
   getRagClient,
   type BaseRecord,
@@ -537,6 +538,32 @@ export class PDFKnowledgeSource extends BaseFileKnowledgeSource {
     const extractor = this.extractor ?? defaultPDFTextExtractor;
     return Object.fromEntries(this.safeFilePaths.map((filePath) => [filePath, extractor(filePath, readFileSync(filePath))]));
   }
+
+  override add(): void {
+    if (!this.extractor && Object.keys(this.content).length === 0) {
+      throw new Error("PDFKnowledgeSource default parsing is asynchronous. Use aadd() or pass a synchronous extractor.");
+    }
+    super.add();
+  }
+
+  override async aadd(): Promise<void> {
+    if (this.extractor) {
+      await super.aadd();
+      return;
+    }
+    this.content = await this.loadContentAsync();
+    if (!this.storage) {
+      throw new Error("No storage found to save documents.");
+    }
+    await this.storage.asave(this.chunks());
+  }
+
+  private async loadContentAsync(): Promise<Record<string, string>> {
+    return Object.fromEntries(await Promise.all(this.safeFilePaths.map(async (filePath) => [
+      filePath,
+      await defaultPDFTextExtractorAsync(readFileSync(filePath)),
+    ] as const)));
+  }
 }
 
 export class ExcelKnowledgeSource extends BaseFileKnowledgeSource {
@@ -547,13 +574,7 @@ export class ExcelKnowledgeSource extends BaseFileKnowledgeSource {
   constructor(options: ExcelKnowledgeSourceOptions | string | readonly string[]) {
     super(options);
     this.extractor = isFileKnowledgeOptionsObject(options) && "extractor" in options ? options.extractor ?? null : null;
-    if (this.extractor) {
-      this.model_post_init();
-    } else {
-      this.safeFilePaths = this.processFilePaths();
-      this.safe_file_paths = this.safeFilePaths;
-      this.validateContent();
-    }
+    this.model_post_init();
   }
 
   loadContent(): Record<string, string> {
@@ -1173,11 +1194,11 @@ function parseCsv(content: string): string[][] {
 }
 
 function defaultPDFTextExtractor(filePath: string): string {
-  throw new Error(`PDFKnowledgeSource requires a PDF text extractor for '${filePath}'. Pass { extractor } or install a parser integration in the host app.`);
+  throw new Error(`PDFKnowledgeSource default parsing is asynchronous for '${filePath}'. Use aadd() or pass a synchronous extractor.`);
 }
 
 function defaultExcelTextExtractor(filePath: string): ExcelWorkbookData {
-  throw new Error(`ExcelKnowledgeSource requires an Excel extractor for '${filePath}'. Pass { extractor } or install a parser integration in the host app.`);
+  return parseXlsxWorkbook(readFileSync(filePath));
 }
 
 function excelContentToText(content: ExcelWorkbookData | string): string {
@@ -1203,6 +1224,149 @@ function formatExcelCell(cell: unknown): string {
     return cell.toISOString();
   }
   return JSON.stringify(cell);
+}
+
+async function defaultPDFTextExtractorAsync(bytes: Buffer): Promise<string> {
+  const module = await import("pdf-parse");
+  const PDFParse = module.PDFParse as new (options: { data: Buffer }) => {
+    getText(): Promise<{ text?: string }>;
+    destroy?: () => Promise<void> | void;
+  };
+  const parser = new PDFParse({ data: bytes });
+  try {
+    const result = await parser.getText();
+    return result.text ?? "";
+  } finally {
+    await parser.destroy?.();
+  }
+}
+
+function parseXlsxWorkbook(bytes: Buffer): ExcelWorkbookData {
+  const entries = readZipEntries(bytes);
+  const workbookXml = getZipText(entries, "xl/workbook.xml");
+  const workbookRels = parseRelationships(getZipText(entries, "xl/_rels/workbook.xml.rels", false));
+  const sharedStrings = parseSharedStrings(getZipText(entries, "xl/sharedStrings.xml", false));
+  const result: Record<string, string[][]> = {};
+  for (const sheet of parseWorkbookSheets(workbookXml)) {
+    const target = workbookRels[sheet.rid] ?? `worksheets/sheet${String(Object.keys(result).length + 1)}.xml`;
+    const sheetXml = getZipText(entries, normalizeXlsxPath(`xl/${target}`), false);
+    if (sheetXml) {
+      result[sheet.name] = parseWorksheet(sheetXml, sharedStrings);
+    }
+  }
+  return result;
+}
+
+function readZipEntries(bytes: Buffer): Map<string, Buffer> {
+  const entries = new Map<string, Buffer>();
+  let offset = 0;
+  while (offset + 30 <= bytes.length && bytes.readUInt32LE(offset) === 0x04034b50) {
+    const flags = bytes.readUInt16LE(offset + 6);
+    const method = bytes.readUInt16LE(offset + 8);
+    const compressedSize = bytes.readUInt32LE(offset + 18);
+    const fileNameLength = bytes.readUInt16LE(offset + 26);
+    const extraLength = bytes.readUInt16LE(offset + 28);
+    const nameStart = offset + 30;
+    const dataStart = nameStart + fileNameLength + extraLength;
+    const name = bytes.subarray(nameStart, nameStart + fileNameLength).toString("utf8");
+    if ((flags & 0x08) !== 0) {
+      throw new Error("XLSX ZIP data descriptors are not supported.");
+    }
+    if (method !== 0 && method !== 8) {
+      throw new Error(`Unsupported XLSX ZIP compression method: ${String(method)}.`);
+    }
+    const compressed = bytes.subarray(dataStart, dataStart + compressedSize);
+    entries.set(name, method === 0 ? Buffer.from(compressed) : inflateRawSync(compressed));
+    offset = dataStart + compressedSize;
+  }
+  if (entries.size === 0) {
+    throw new Error("Invalid XLSX archive.");
+  }
+  return entries;
+}
+
+function getZipText(entries: Map<string, Buffer>, path: string, required = true): string {
+  const value = entries.get(path);
+  if (!value) {
+    if (required) {
+      throw new Error(`XLSX archive is missing ${path}.`);
+    }
+    return "";
+  }
+  return value.toString("utf8");
+}
+
+function parseRelationships(xml: string): Record<string, string> {
+  const result: Record<string, string> = {};
+  for (const tag of xml.matchAll(/<Relationship\b([^>]*)\/?>(?:<\/Relationship>)?/g)) {
+    const attrs = parseXmlAttributes(tag[1] ?? "");
+    if (attrs.Id && attrs.Target) {
+      result[attrs.Id] = attrs.Target;
+    }
+  }
+  return result;
+}
+
+function parseWorkbookSheets(xml: string): { name: string; rid: string }[] {
+  return [...xml.matchAll(/<sheet\b([^>]*)\/?>(?:<\/sheet>)?/g)]
+    .map((match) => parseXmlAttributes(match[1] ?? ""))
+    .filter((attrs): attrs is Record<string, string> & { name: string; "r:id": string } => Boolean(attrs.name && attrs["r:id"]))
+    .map((attrs) => ({ name: attrs.name, rid: attrs["r:id"] }));
+}
+
+function parseSharedStrings(xml: string): string[] {
+  return [...xml.matchAll(/<si\b[^>]*>([\s\S]*?)<\/si>/g)]
+    .map((match) => [...(match[1] ?? "").matchAll(/<t\b[^>]*>([\s\S]*?)<\/t>/g)]
+      .map((textMatch) => decodeXml(textMatch[1] ?? ""))
+      .join(""));
+}
+
+function parseWorksheet(xml: string, sharedStrings: readonly string[]): string[][] {
+  const rows: string[][] = [];
+  for (const rowMatch of xml.matchAll(/<row\b[^>]*>([\s\S]*?)<\/row>/g)) {
+    const row: string[] = [];
+    for (const cellMatch of (rowMatch[1] ?? "").matchAll(/<c\b([^>]*)>([\s\S]*?)<\/c>/g)) {
+      const attrs = parseXmlAttributes(cellMatch[1] ?? "");
+      const body = cellMatch[2] ?? "";
+      const value = firstXmlText(body, "v");
+      row.push(attrs.t === "s" ? sharedStrings[Number(value)] ?? "" : decodeXml(value));
+    }
+    rows.push(row);
+  }
+  return rows;
+}
+
+function firstXmlText(xml: string, tag: string): string {
+  const match = new RegExp(`<${tag}\\b[^>]*>([\\s\\S]*?)<\\/${tag}>`).exec(xml);
+  return match ? match[1] ?? "" : "";
+}
+
+function parseXmlAttributes(raw: string): Record<string, string> {
+  return Object.fromEntries([...raw.matchAll(/([\w:-]+)="([^"]*)"/g)].map((match) => [match[1] ?? "", decodeXml(match[2] ?? "")]));
+}
+
+function decodeXml(value: string): string {
+  return value
+    .replaceAll("&lt;", "<")
+    .replaceAll("&gt;", ">")
+    .replaceAll("&quot;", "\"")
+    .replaceAll("&apos;", "'")
+    .replaceAll("&amp;", "&");
+}
+
+function normalizeXlsxPath(path: string): string {
+  const parts: string[] = [];
+  for (const part of path.split("/")) {
+    if (!part || part === ".") {
+      continue;
+    }
+    if (part === "..") {
+      parts.pop();
+    } else {
+      parts.push(part);
+    }
+  }
+  return parts.join("/");
 }
 
 function isHttpUrl(value: string): boolean {

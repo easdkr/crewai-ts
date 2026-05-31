@@ -18234,12 +18234,16 @@ describe("knowledge", () => {
     source.model_post_init();
   });
 
-  it("selects PDF and Excel knowledge sources with optional host extractors", () => {
+  it("selects PDF and Excel knowledge sources with optional host extractors", async () => {
     const baseDirectory = mkdtempSync(join(tmpdir(), "crewai-ts-knowledge-sources-"));
     const pdfPath = join(baseDirectory, "notes.pdf");
     const xlsxPath = join(baseDirectory, "facts.xlsx");
     writeFileSync(pdfPath, "fake pdf bytes", "utf8");
     writeFileSync(xlsxPath, "fake excel bytes", "utf8");
+    const parsedXlsxPath = join(baseDirectory, "parsed.xlsx");
+    writeFileSync(parsedXlsxPath, createMinimalXlsxArchive(), "binary");
+    const parsedPdfPath = join(baseDirectory, "parsed.pdf");
+    writeFileSync(parsedPdfPath, createMinimalPdf("Async PDF text"));
 
     const pdfSource = new PDFKnowledgeSource({
       file_path: pdfPath,
@@ -18254,6 +18258,17 @@ describe("knowledge", () => {
         ],
       }),
     });
+    const parsedExcelSource = new ExcelKnowledgeSource({ file_path: parsedXlsxPath });
+    const savedPdfChunks: readonly string[][] = [];
+    const parsedPdfSource = new PDFKnowledgeSource({
+      file_path: parsedPdfPath,
+      storage: {
+        save: vi.fn(),
+        asave: vi.fn((chunks: readonly string[]) => {
+          (savedPdfChunks as string[][]).push([...chunks]);
+        }),
+      } as unknown as BaseKnowledgeStorage,
+    });
 
     expect(SourceHelper.is_supported_file(pdfPath)).toBe(true);
     expect(SourceHelper.get_source(pdfPath)).toBeInstanceOf(PDFKnowledgeSource);
@@ -18264,6 +18279,16 @@ describe("knowledge", () => {
     expect(excelSource.chunks()[0]).toContain("Decorators standard");
     expect((excelSource._load_content() as Record<string, string>)[xlsxPath]).toContain("Decorators standard");
     expect(excelSource._process_file_paths()).toEqual([xlsxPath]);
+    expect(parsedExcelSource.chunks()[0]).toContain("Sheet: Crew Facts");
+    expect(parsedExcelSource.chunks()[0]).toContain("CrewAI ported");
+    await parsedPdfSource.aadd();
+    expect(savedPdfChunks[0]?.join("\n")).toContain("Async PDF text");
+    expect(() => {
+      new PDFKnowledgeSource({
+        file_path: parsedPdfPath,
+        storage: { save: vi.fn(), asave: vi.fn() } as unknown as BaseKnowledgeStorage,
+      }).add();
+    }).toThrow("Use aadd()");
     expect(() => new CrewDoclingSource(pdfPath)).toThrow("CrewDoclingSource requires");
     expect(() => SourceHelper.getSource("notes.md")).toThrow("Unsupported file type");
   });
@@ -20039,6 +20064,48 @@ function createZipArchive(files: Record<string, string>): Buffer {
     parts.push(header, nameBytes, data);
   }
   return Buffer.concat(parts);
+}
+
+function createMinimalXlsxArchive(): Buffer {
+  return createZipArchive({
+    "xl/workbook.xml": [
+      '<?xml version="1.0" encoding="UTF-8"?>',
+      '<workbook xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">',
+      '<sheets><sheet name="Crew Facts" sheetId="1" r:id="rId1"/></sheets>',
+      "</workbook>",
+    ].join(""),
+    "xl/_rels/workbook.xml.rels": [
+      '<?xml version="1.0" encoding="UTF-8"?>',
+      '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">',
+      '<Relationship Id="rId1" Type="worksheet" Target="worksheets/sheet1.xml"/>',
+      "</Relationships>",
+    ].join(""),
+    "xl/sharedStrings.xml": [
+      '<?xml version="1.0" encoding="UTF-8"?>',
+      "<sst><si><t>CrewAI</t></si><si><t>ported</t></si></sst>",
+    ].join(""),
+    "xl/worksheets/sheet1.xml": [
+      '<?xml version="1.0" encoding="UTF-8"?>',
+      '<worksheet><sheetData><row r="1">',
+      '<c r="A1" t="s"><v>0</v></c><c r="B1" t="s"><v>1</v></c>',
+      "</row></sheetData></worksheet>",
+    ].join(""),
+  });
+}
+
+function createMinimalPdf(text: string): Buffer {
+  return Buffer.from([
+    "%PDF-1.1",
+    "1 0 obj<<>>endobj",
+    `2 0 obj<< /Length ${String(text.length + 32)} >>stream`,
+    `BT /F1 12 Tf 72 720 Td (${text}) Tj ET`,
+    "endstream endobj",
+    "3 0 obj<< /Type /Page /Contents 2 0 R >>endobj",
+    "4 0 obj<< /Type /Pages /Kids [3 0 R] /Count 1 >>endobj",
+    "5 0 obj<< /Type /Catalog /Pages 4 0 R >>endobj",
+    "trailer<< /Root 5 0 R >>",
+    "%%EOF",
+  ].join("\n"));
 }
 
 function createTestJwt(options: {

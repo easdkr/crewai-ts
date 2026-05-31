@@ -1964,6 +1964,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
+    "pdf-parse": "^2.4.5",
     "yaml": "^2.9.0"
   }
 }
