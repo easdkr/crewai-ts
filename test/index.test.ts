@@ -5880,6 +5880,31 @@ describe("flow runtime", () => {
     expect(getFlowMetadata(flow).map((entry) => entry.kind)).toEqual(["start", "listen"]);
   });
 
+  it("exposes upstream snake_case flow state properties", async () => {
+    class PropertyAliasFlow extends Flow<{ id: string; events: string[] }> {
+      constructor() {
+        super({ initialState: { id: "flow-alias", events: [] } });
+      }
+
+      begin() {
+        this.state.events.push("begin");
+        return "ready";
+      }
+    }
+
+    const initializer = decorateMethod(PropertyAliasFlow, "begin", start() as unknown as Decorator);
+    const flow = new PropertyAliasFlow();
+    initializer.call(flow);
+
+    expect(flow.flow_id).toBe("flow-alias");
+    expect(flow.pending_feedback).toBeNull();
+
+    await flow.kickoff();
+
+    expect(flow.method_outputs).toEqual(["ready"]);
+    expect(flow.flow_id).toBe("flow-alias");
+  });
+
   it("supports routers plus and/or flow conditions", async () => {
     class RoutingFlow extends Flow<{ events: string[] }> {
       constructor() {

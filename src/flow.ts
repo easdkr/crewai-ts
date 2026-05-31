@@ -902,6 +902,10 @@ export class Flow<TState extends object = Record<string, unknown>> {
     return this.pendingFeedbackContext ? { ...this.pendingFeedbackContext } : null;
   }
 
+  get pending_feedback(): PendingFeedbackContext | null {
+    return this.pendingFeedback;
+  }
+
   static async fromPending<TFlow extends Flow<object>>(
     this: new () => TFlow,
     flowId: string,
@@ -1002,6 +1006,14 @@ export class Flow<TState extends object = Record<string, unknown>> {
 
   get methodOutputs(): readonly unknown[] {
     return [...this.runtimeMethodOutputs];
+  }
+
+  get method_outputs(): readonly unknown[] {
+    return this.methodOutputs;
+  }
+
+  get flow_id(): string {
+    return this.flowPersistenceId();
   }
 
   get completedMethods(): ReadonlySet<string> {
