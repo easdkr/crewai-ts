@@ -64,6 +64,8 @@ type KnowledgeEntry = {
 export type KnowledgeOptions = {
   sources?: readonly KnowledgeSource[];
   collectionName?: string | null;
+  collection_name?: string | null;
+  storage?: BaseKnowledgeStorage | null;
 };
 
 export type KnowledgeStorageOptions = {
@@ -290,15 +292,23 @@ export class SourceHelper {
 export class Knowledge {
   readonly sources: readonly KnowledgeSource[];
   readonly collectionName: string | null;
+  readonly collection_name: string | null;
+  readonly storage: BaseKnowledgeStorage | null;
   private entries: KnowledgeEntry[] = [];
 
   constructor(options: KnowledgeOptions = {}) {
     this.sources = options.sources ?? [];
-    this.collectionName = options.collectionName ?? null;
+    this.collectionName = options.collectionName ?? options.collection_name ?? null;
+    this.collection_name = this.collectionName;
+    this.storage = options.storage ?? null;
     this.addSources();
   }
 
   addSources(sources: readonly KnowledgeSource[] = this.sources): void {
+    if (this.storage) {
+      this.storage.save(this.documentsFromSources(sources));
+      return;
+    }
     for (const source of sources) {
       for (const chunk of source.chunks()) {
         this.entries.push({
@@ -308,6 +318,22 @@ export class Knowledge {
         });
       }
     }
+  }
+
+  add_sources(): void {
+    this.addSources();
+  }
+
+  async aaddSources(sources: readonly KnowledgeSource[] = this.sources): Promise<void> {
+    if (this.storage) {
+      await this.storage.asave(this.documentsFromSources(sources));
+      return;
+    }
+    this.addSources(sources);
+  }
+
+  async aadd_sources(): Promise<void> {
+    await this.aaddSources();
   }
 
   add(content: string, options: { source?: string | null; metadata?: Record<string, unknown> | null } = {}): void {
@@ -326,6 +352,9 @@ export class Knowledge {
     const queries: readonly string[] = typeof query === "string" ? [query] : query;
     const resultsLimit = options.resultsLimit ?? 5;
     const scoreThreshold = options.scoreThreshold === undefined ? 0.1 : options.scoreThreshold;
+    if (this.storage) {
+      return this.storage.search(queries, resultsLimit, null, scoreThreshold ?? 0).map(searchResultToKnowledgeResult);
+    }
     const queryTerms = new Set(queries.flatMap((value) => [...tokenize(value)]));
     return this.entries
       .map((entry) => ({
@@ -337,8 +366,34 @@ export class Knowledge {
       .slice(0, resultsLimit);
   }
 
+  async aquery(query: string | readonly string[], options: KnowledgeQueryOptions = {}): Promise<KnowledgeSearchResult[]> {
+    const queries: readonly string[] = typeof query === "string" ? [query] : query;
+    const resultsLimit = options.resultsLimit ?? 5;
+    const scoreThreshold = options.scoreThreshold === undefined ? 0.1 : options.scoreThreshold;
+    if (this.storage) {
+      return (await this.storage.asearch(queries, resultsLimit, null, scoreThreshold ?? 0)).map(searchResultToKnowledgeResult);
+    }
+    return this.query(queries, options);
+  }
+
   reset(): void {
+    if (this.storage) {
+      this.storage.reset();
+      return;
+    }
     this.entries = [];
+  }
+
+  async areset(): Promise<void> {
+    if (this.storage) {
+      await this.storage.areset();
+      return;
+    }
+    this.reset();
+  }
+
+  private documentsFromSources(sources: readonly KnowledgeSource[]): string[] {
+    return sources.flatMap((source) => [...source.chunks()]);
   }
 }
 
@@ -506,6 +561,16 @@ export function extractKnowledgeContext(results: readonly KnowledgeSearchResult[
     .filter(Boolean)
     .join("\n");
   return content ? `Additional Information: ${content}` : "";
+}
+
+function searchResultToKnowledgeResult(result: SearchResult): KnowledgeSearchResult {
+  const metadata = result.metadata ?? {};
+  return {
+    content: result.content,
+    score: result.score ?? 0,
+    source: typeof metadata.source === "string" ? metadata.source : null,
+    metadata,
+  };
 }
 
 function tokenize(value: string): Set<string> {

@@ -4221,6 +4221,28 @@ describe("RAG configuration and factories", () => {
     expect(fake.collections.has("knowledge_docs")).toBe(false);
   });
 
+  it("routes Knowledge through storage-backed sync and async upstream aliases", async () => {
+    const fake = new FakeChromaClient();
+    const client = new ChromaDBClient(fake, (texts: readonly string[]) => texts.map((text) => [text.length]));
+    const storage = new KnowledgeStorage({ client, collectionName: "docs" });
+    const knowledge = new Knowledge({
+      sources: [new StringKnowledgeSource("CrewAI storage-backed knowledge")],
+      storage,
+    });
+
+    expect(knowledge.query(["storage-backed"], { scoreThreshold: 0.1 })).toHaveLength(1);
+    expect(await knowledge.aquery(["CrewAI"], { scoreThreshold: 0.1 })).toHaveLength(1);
+
+    knowledge.reset();
+    expect(knowledge.query(["CrewAI"], { scoreThreshold: 0.1 })).toEqual([]);
+
+    await knowledge.aadd_sources();
+    expect(await knowledge.aquery(["knowledge"], { scoreThreshold: 0.1 })).toHaveLength(1);
+
+    await knowledge.areset();
+    expect(await knowledge.aquery(["knowledge"], { scoreThreshold: 0.1 })).toEqual([]);
+  });
+
   it("normalizes and validates embedding vectors", () => {
     expect(normalizeEmbeddings([1, 2, 3])).toEqual([[1, 2, 3]]);
     expect(normalizeEmbeddings([[1, 2], [3, 4]])).toEqual([[1, 2], [3, 4]]);
