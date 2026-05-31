@@ -53,6 +53,8 @@ import {
   KnowledgeSearchQueryFailedEvent,
   LLMGuardrailCompletedEvent,
   LLMGuardrailStartedEvent,
+  LiteAgentExecutionCompletedEvent,
+  LiteAgentExecutionErrorEvent,
   MemoryRetrievalCompletedEvent,
   MemoryRetrievalFailedEvent,
   MemoryRetrievalStartedEvent,
@@ -64,13 +66,14 @@ import { coerceSecurityConfig, type Fingerprint, type SecurityConfig } from "./s
 import { coerceCheckpointConfig, RuntimeState, type CheckpointConfig, type CheckpointOption } from "./state.js";
 import type { ExecutionContext } from "./context.js";
 import type { AgentStep, AgentStepCallback, InputValues, LLM, LLMMessage, Tool } from "./types.js";
-import type { Memory, MemoryScope } from "./memory.js";
+import { createMemoryTools as createAgentMemoryTools, type Memory, type MemoryScope } from "./memory.js";
 import { renderInputFiles, withReadFileTool, type InputFiles } from "./input-files.js";
 import { Skill, formatSkillContext } from "./skills.js";
 import type { EmbedderConfig } from "./rag.js";
 import { CREWAI_TRAINED_AGENTS_FILE_ENV, TRAINED_AGENTS_DATA_FILE, TRAINING_DATA_FILE } from "./settings.js";
 import { CrewTrainingHandler } from "./training-handler.js";
 import { Prompts, type StandardPromptResult, type SystemPromptResult } from "./prompts.js";
+import { LiteAgentOutput, type TodoExecutionResultOptions } from "./lite-agent-output.js";
 
 export type AgentGuardrailResult =
   | readonly [boolean, unknown]
@@ -194,6 +197,13 @@ export type AgentExecutionPromptBuild = readonly [
   SystemPromptResult | StandardPromptResult,
   string[],
   (() => boolean) | null,
+];
+
+export type AgentPreparedKickoff = readonly [
+  Record<string, unknown>,
+  Record<string, unknown>,
+  Record<string, unknown>,
+  readonly Tool[],
 ];
 
 export class Agent {
@@ -1458,6 +1468,247 @@ export class Agent {
     return await this.kickoffAsync(input, options);
   }
 
+  prepareKickoff(
+    messages: AgentKickoffInput,
+    responseFormat: unknown = null,
+    inputFiles?: InputFiles,
+  ): AgentPreparedKickoff {
+    const formatted = formatKickoffInput(messages, inputFiles);
+    const rawTools = this.memory
+      ? mergeAgentTools(this.tools, createAgentMemoryTools(this.memory))
+      : [...this.tools];
+    const [prompt, stopWords, rpmLimitFn] = this.buildExecutionPrompt(rawTools);
+    const executor = isRecord(this.agentExecutor) ? this.agentExecutor : {};
+    executor.agent = this;
+    executor.prompt = prompt;
+    executor.max_iter = this.maxIter;
+    executor.maxIter = this.maxIter;
+    executor.response_model = responseFormat;
+    executor.responseModel = responseFormat;
+    if (typeof executor.invoke !== "function") {
+      executor.invoke = (inputs: Record<string, unknown>) => ({ output: stringifyKickoffInput(inputs.input) });
+    }
+    if (typeof executor.ainvoke !== "function") {
+      executor.ainvoke = async (inputs: Record<string, unknown>) => await Promise.resolve(
+        (executor.invoke as (payload: Record<string, unknown>) => unknown)(inputs),
+      );
+    }
+    if (!isRecord(executor.state)) {
+      executor.state = {};
+    }
+    const state = executor.state as Record<string, unknown>;
+    if (!Array.isArray(state.messages)) {
+      state.messages = [];
+    }
+    this.agentExecutor = executor;
+    this.agent_executor = executor;
+    this.updateExecutorParameters(null, rawTools, rawTools, prompt, stopWords, rpmLimitFn);
+    const inputs: Record<string, unknown> = {
+      input: formatted.prompt,
+      tool_names: rawTools.map((tool: Tool) => sanitizeToolName(tool.name)).join(", "),
+      tools: renderToolsDescription(rawTools),
+    };
+    if (Object.keys(formatted.inputFiles).length > 0) {
+      inputs.files = formatted.inputFiles;
+    }
+    const agentInfo = this.kickoffAgentInfo(rawTools);
+    return [executor, inputs, agentInfo, rawTools];
+  }
+
+  _prepare_kickoff(
+    messages: AgentKickoffInput,
+    response_format: unknown = null,
+    input_files?: InputFiles,
+  ): AgentPreparedKickoff {
+    return this.prepareKickoff(messages, response_format, input_files);
+  }
+
+  finalizeKickoff(
+    output: LiteAgentOutput,
+    executor: Record<string, unknown>,
+    inputs: Record<string, unknown>,
+    responseFormat: unknown,
+    messages: AgentKickoffInput,
+    agentInfo: Record<string, unknown>,
+  ): LiteAgentOutput {
+    const guardedOutput = this.processKickoffGuardrail(output, executor, inputs, responseFormat);
+    this.saveKickoffToMemory(messages, guardedOutput.raw);
+    crewaiEventBus.emit(this, new LiteAgentExecutionCompletedEvent({
+      agentInfo,
+      output: guardedOutput,
+    }));
+    return guardedOutput;
+  }
+
+  _finalize_kickoff(
+    output: LiteAgentOutput,
+    executor: Record<string, unknown>,
+    inputs: Record<string, unknown>,
+    response_format: unknown,
+    messages: AgentKickoffInput,
+    agent_info: Record<string, unknown>,
+  ): LiteAgentOutput {
+    return this.finalizeKickoff(output, executor, inputs, response_format, messages, agent_info);
+  }
+
+  emitKickoffError(agentInfo: Record<string, unknown>, error: unknown): never {
+    crewaiEventBus.emit(this, new LiteAgentExecutionErrorEvent({ agentInfo, error }));
+    throw error;
+  }
+
+  _emit_kickoff_error(agent_info: Record<string, unknown>, error: unknown): never {
+    this.emitKickoffError(agent_info, error);
+  }
+
+  saveKickoffToMemory(messages: AgentKickoffInput, outputText: string): void {
+    if (!this.memory) {
+      return;
+    }
+    const input = typeof messages === "string"
+      ? messages
+      : messages.map((message) => message.content).filter(Boolean).join("\n") || "User request";
+    this.memory.remember(`Input: ${input}\nAgent: ${this.role}\nResult: ${outputText}`, {
+      agentRole: this.role,
+      source: "agent_kickoff",
+    });
+  }
+
+  _save_kickoff_to_memory(messages: AgentKickoffInput, output_text: string): void {
+    this.saveKickoffToMemory(messages, output_text);
+  }
+
+  buildOutputFromResult(
+    result: Record<string, unknown>,
+    executor: Record<string, unknown>,
+    responseFormat: unknown = null,
+  ): LiteAgentOutput {
+    const output = result.output;
+    const raw = stringifyKickoffOutput(output);
+    return new LiteAgentOutput({
+      raw,
+      pydantic: parseAgentKickoffStructuredOutput(raw, responseFormat),
+      agentRole: this.role,
+      usageMetrics: this.getUsageMetrics(),
+      messages: executorMessages(executor),
+      plan: stringRecordValue(readRecordValue(executor, "state"), "plan"),
+      todos: executorTodos(executor),
+      replanCount: numericRecordValue(readRecordValue(executor, "state"), "replan_count")
+        ?? numericRecordValue(readRecordValue(executor, "state"), "replanCount")
+        ?? 0,
+      lastReplanReason: stringRecordValue(readRecordValue(executor, "state"), "last_replan_reason")
+        ?? stringRecordValue(readRecordValue(executor, "state"), "lastReplanReason"),
+    });
+  }
+
+  _build_output_from_result(
+    result: Record<string, unknown>,
+    executor: Record<string, unknown>,
+    response_format: unknown = null,
+  ): LiteAgentOutput {
+    return this.buildOutputFromResult(result, executor, response_format);
+  }
+
+  executeAndBuildOutput(
+    executor: Record<string, unknown>,
+    inputs: Record<string, unknown>,
+    responseFormat: unknown = null,
+  ): LiteAgentOutput {
+    const invoke = readRecordValue(executor, "invoke");
+    if (typeof invoke !== "function") {
+      throw new Error("Agent executor is not initialized.");
+    }
+    const result: unknown = (invoke as (payload: Record<string, unknown>) => unknown).call(executor, inputs);
+    if (isPromiseLike(result)) {
+      throw new Error("Agent execution returned a Promise. Use _execute_and_build_output_async for async executors.");
+    }
+    return this.buildOutputFromResult(normalizeExecutorResult(result), executor, responseFormat);
+  }
+
+  _execute_and_build_output(
+    executor: Record<string, unknown>,
+    inputs: Record<string, unknown>,
+    response_format: unknown = null,
+  ): LiteAgentOutput {
+    return this.executeAndBuildOutput(executor, inputs, response_format);
+  }
+
+  async executeAndBuildOutputAsync(
+    executor: Record<string, unknown>,
+    inputs: Record<string, unknown>,
+    responseFormat: unknown = null,
+  ): Promise<LiteAgentOutput> {
+    const ainvoke = readRecordValue(executor, "ainvoke") ?? readRecordValue(executor, "invoke");
+    if (typeof ainvoke !== "function") {
+      throw new Error("Agent executor is not initialized.");
+    }
+    const result: unknown = await (ainvoke as (payload: Record<string, unknown>) => unknown).call(executor, inputs);
+    return this.buildOutputFromResult(normalizeExecutorResult(result), executor, responseFormat);
+  }
+
+  async _execute_and_build_output_async(
+    executor: Record<string, unknown>,
+    inputs: Record<string, unknown>,
+    response_format: unknown = null,
+  ): Promise<LiteAgentOutput> {
+    return await this.executeAndBuildOutputAsync(executor, inputs, response_format);
+  }
+
+  processKickoffGuardrail(
+    output: LiteAgentOutput,
+    executor: Record<string, unknown>,
+    inputs: Record<string, unknown>,
+    responseFormat: unknown = null,
+    retryCount = 0,
+  ): LiteAgentOutput {
+    if (!this.guardrail) {
+      return output;
+    }
+    const result = normalizeAgentGuardrailResult(this.guardrail(output.raw) as AgentGuardrailResult);
+    crewaiEventBus.emit(this, new LLMGuardrailStartedEvent({
+      guardrail: this.guardrail,
+      retry_count: retryCount,
+      from_agent: this,
+    }));
+    crewaiEventBus.emit(this, new LLMGuardrailCompletedEvent({
+      success: result.success,
+      result: result.result ?? null,
+      ...(result.success ? {} : { error: result.error ?? result.result }),
+      retry_count: retryCount,
+      from_agent: this,
+    }));
+    if (result.success) {
+      return result.result === undefined || result.result === null
+        ? output
+        : liteAgentOutputFromGuardrail(output, result.result);
+    }
+    if (retryCount >= this.guardrailMaxRetries) {
+      throw new Error(`Agent's guardrail failed validation after ${String(this.guardrailMaxRetries)} retries. Last error: ${String(result.error ?? result.result)}`);
+    }
+    const nextOutput = this.executeAndBuildOutput(executor, inputs, responseFormat);
+    return this.processKickoffGuardrail(nextOutput, executor, inputs, responseFormat, retryCount + 1);
+  }
+
+  _process_kickoff_guardrail(
+    output: LiteAgentOutput,
+    executor: Record<string, unknown>,
+    inputs: Record<string, unknown>,
+    response_format: unknown = null,
+    retry_count = 0,
+  ): LiteAgentOutput {
+    return this.processKickoffGuardrail(output, executor, inputs, response_format, retry_count);
+  }
+
+  private kickoffAgentInfo(tools: readonly Tool[]): Record<string, unknown> {
+    return {
+      id: this.key,
+      role: this.role,
+      goal: this.goal,
+      backstory: this.backstory,
+      tools,
+      verbose: this.verbose,
+    };
+  }
+
   getUsageMetrics(): UsageMetrics {
     return { ...this.usageMetrics };
   }
@@ -1970,6 +2221,127 @@ function formatKickoffInput(input: AgentKickoffInput, explicitInputFiles?: Input
     prompt,
     inputFiles: { ...messageInputFiles, ...(explicitInputFiles ?? {}) },
   };
+}
+
+function mergeAgentTools(baseTools: readonly Tool[], additionalTools: readonly Tool[]): Tool[] {
+  const byName = new Map<string, Tool>();
+  for (const tool of baseTools) {
+    byName.set(sanitizeToolName(tool.name), tool);
+  }
+  for (const tool of additionalTools) {
+    const name = sanitizeToolName(tool.name);
+    if (!byName.has(name)) {
+      byName.set(name, tool);
+    }
+  }
+  return [...byName.values()];
+}
+
+function stringifyKickoffInput(input: unknown): string {
+  return typeof input === "string" ? input : JSON.stringify(input);
+}
+
+function stringifyKickoffOutput(output: unknown): string {
+  if (typeof output === "string") {
+    return output;
+  }
+  if (output === undefined || output === null) {
+    return "";
+  }
+  return JSON.stringify(output);
+}
+
+function parseAgentKickoffStructuredOutput(raw: string, responseFormat: unknown): unknown {
+  if (!responseFormat) {
+    return null;
+  }
+  try {
+    return JSON.parse(raw) as unknown;
+  } catch {
+    return null;
+  }
+}
+
+function normalizeExecutorResult(result: unknown): Record<string, unknown> {
+  if (isRecord(result)) {
+    return result;
+  }
+  return { output: result };
+}
+
+function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
+  return Boolean(value && typeof value === "object" && "then" in value && typeof (value as { then?: unknown }).then === "function");
+}
+
+function executorState(executor: Record<string, unknown>): Record<string, unknown> {
+  const state = readRecordValue(executor, "state");
+  return isRecord(state) ? state : {};
+}
+
+function executorMessages(executor: Record<string, unknown>): LLMMessage[] {
+  const messages = readRecordValue(executorState(executor), "messages");
+  if (!Array.isArray(messages)) {
+    return [];
+  }
+  return messages.filter((message): message is LLMMessage => (
+    isRecord(message)
+    && typeof message.role === "string"
+    && typeof message.content === "string"
+  )).map((message) => ({ ...message }));
+}
+
+function executorTodos(executor: Record<string, unknown>): TodoExecutionResultOptions[] {
+  const state = executorState(executor);
+  const todos = readRecordValue(state, "todos");
+  const items = readRecordValue(todos, "items");
+  if (!Array.isArray(items)) {
+    return [];
+  }
+  return items.filter((item): item is TodoExecutionResultOptions => (
+    isRecord(item)
+    && typeof item.description === "string"
+    && typeof item.status === "string"
+  )).map((item) => ({
+    stepNumber: numericRecordValue(item, "stepNumber") ?? numericRecordValue(item, "step_number") ?? 0,
+    description: item.description,
+    status: item.status,
+    result: stringRecordValue(item, "result"),
+  }));
+}
+
+function numericRecordValue(value: unknown, key: string): number | null {
+  const field = readRecordValue(value, key);
+  return typeof field === "number" ? field : null;
+}
+
+function liteAgentOutputFromGuardrail(previous: LiteAgentOutput, result: unknown): LiteAgentOutput {
+  if (result instanceof LiteAgentOutput) {
+    return result;
+  }
+  if (typeof result === "string") {
+    return new LiteAgentOutput({
+      raw: result,
+      pydantic: previous.pydantic,
+      agentRole: previous.agentRole,
+      usageMetrics: previous.usageMetrics,
+      messages: previous.messages,
+      plan: previous.plan,
+      todos: previous.todos,
+      replanCount: previous.replanCount,
+      lastReplanReason: previous.lastReplanReason,
+    });
+  }
+  return new LiteAgentOutput({
+    raw: stringifyKickoffOutput(result),
+    pydantic: result,
+    agentRole: previous.agentRole,
+    usageMetrics: previous.usageMetrics,
+    messages: previous.messages,
+    plan: previous.plan,
+    todos: previous.todos,
+    replanCount: previous.replanCount,
+    lastReplanReason: previous.lastReplanReason,
+  });
 }
 
 function promptWithRenderedInputFiles(prompt: string, inputFiles?: InputFiles): string {

@@ -9112,6 +9112,79 @@ describe("agent planning", () => {
     await expect(agentInstance.akickoff("Third")).resolves.toContain("Third");
   });
 
+  it("exposes upstream Agent direct kickoff helper methods", async () => {
+    const events: CrewAIEvent[] = [];
+    crewaiEventBus.on("lite_agent_execution_completed", (_source, event) => {
+      events.push(event);
+    });
+    crewaiEventBus.on("lite_agent_execution_error", (_source, event) => {
+      events.push(event);
+    });
+    const memory = new Memory();
+    const executor = {
+      state: {
+        messages: [{ role: "user", content: "Research CrewAI" }],
+        plan: "Search then answer",
+        todos: {
+          items: [
+            { stepNumber: 1, description: "Search", status: "completed", result: "ok" },
+          ],
+        },
+        replan_count: 1,
+        last_replan_reason: "Need fresher sources",
+      },
+      invoke: vi.fn(() => ({ output: "{\"summary\":\"done\"}" })),
+      ainvoke: vi.fn(() => Promise.resolve({ output: "async done" })),
+    };
+    let guardrailCalls = 0;
+    const agentInstance = new Agent({
+      role: "Researcher",
+      goal: "Find facts",
+      backstory: "Careful analyst",
+      memory,
+      agentExecutor: executor,
+      guardrail: (output) => {
+        guardrailCalls += 1;
+        return guardrailCalls === 1 ? [false, "needs retry"] : [true, `${output} checked`];
+      },
+      guardrailMaxRetries: 1,
+    });
+
+    const [preparedExecutor, inputs, agentInfo, parsedTools] = agentInstance._prepare_kickoff(
+      [{ role: "user", content: "Research CrewAI", files: { notes: { content: "CrewAI notes" } } }],
+      { summary: "string" },
+      { brief: { content: "Brief" } },
+    );
+    expect(preparedExecutor).toBe(executor);
+    expect(inputs).toMatchObject({
+      input: "Research CrewAI",
+      files: {
+        notes: { content: "CrewAI notes" },
+        brief: { content: "Brief" },
+      },
+    });
+    expect(agentInfo.role).toBe("Researcher");
+    expect(parsedTools.map((toolInstance) => toolInstance.name)).toEqual(["search_memory", "save_to_memory"]);
+
+    const output = agentInstance._execute_and_build_output(preparedExecutor, inputs, { summary: "string" });
+    expect(output).toBeInstanceOf(LiteAgentOutput);
+    expect(output.raw).toBe("{\"summary\":\"done\"}");
+    expect(output.pydantic).toEqual({ summary: "done" });
+    expect(output.plan).toBe("Search then answer");
+    expect(output.todos[0]?.description).toBe("Search");
+    await expect(agentInstance._execute_and_build_output_async(preparedExecutor, inputs))
+      .resolves.toMatchObject({ raw: "async done" });
+
+    const finalized = agentInstance._finalize_kickoff(output, preparedExecutor, inputs, null, "Research CrewAI", agentInfo);
+    expect(finalized.raw).toBe("{\"summary\":\"done\"} checked");
+    expect(memory.recall("Research CrewAI", { limit: 1 })).toHaveLength(1);
+    expect(events[0]).toBeInstanceOf(LiteAgentExecutionCompletedEvent);
+
+    expect(() => agentInstance._emit_kickoff_error(agentInfo, new Error("direct boom")))
+      .toThrow("direct boom");
+    expect(events[1]).toBeInstanceOf(LiteAgentExecutionErrorEvent);
+  });
+
   it("accepts direct agent kickoff message lists and extracts message files", async () => {
     const prompts: string[] = [];
     const agentInstance = new Agent({
