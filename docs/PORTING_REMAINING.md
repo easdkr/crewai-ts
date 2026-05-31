@@ -194,6 +194,7 @@ When more goal budget is available, continue from the behavioral parity audits b
   - A2A dynamic response models now default `a2a_ids` to an empty list and enforce upstream-style maximum delegation count plus allowed-agent validation.
   - A2A update handler registry now maps streaming, polling, and push-notification config classes to their concrete handler classes, with streaming as the default.
   - A2A client configs now default `updates` to `StreamingConfig`, matching upstream default update handling.
+  - A2A server configs now expose upstream-style AgentCard defaults, security/signing/extension fields, and deprecated `preferred_transport` migration.
 - Added security compatibility behavior:
   - `SecurityConfig.validate_fingerprint` now exposes upstream-style fingerprint coercion for null, seed strings, dicts, and `Fingerprint` instances.
 - Added guardrail compatibility behavior:

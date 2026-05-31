@@ -2940,6 +2940,13 @@ describe("a2a utilities", () => {
     expect(server.transport.preferred).toBe(A2ATransport.GRPC);
     expect(server.transport.grpc?.reflection_enabled).toBe(true);
     expect(server.transport.jsonrpc.rpcPath).toBe("/rpc");
+    const defaultServer = new A2AServerConfig({ preferred_transport: A2ATransport.HTTP_JSON });
+    expect(defaultServer.version).toBe("1.0.0");
+    expect(defaultServer.default_input_modes).toEqual(["text/plain", "application/json"]);
+    expect(defaultServer.default_output_modes).toEqual(["text/plain", "application/json"]);
+    expect(defaultServer.capabilities).toMatchObject({ streaming: true, push_notifications: false });
+    expect(defaultServer.supports_authenticated_extended_card).toBe(false);
+    expect(defaultServer.transport.preferred).toBe(A2ATransport.HTTP_JSON);
   });
 
   it("negotiates A2A transport by client preference, server preference, and fallback", () => {

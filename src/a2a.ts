@@ -2877,29 +2877,139 @@ export class A2AClientConfig {
 export class A2AConfig extends A2AClientConfig {}
 
 export type A2AServerConfigOptions = {
+  name?: string | null;
+  description?: string | null;
+  version?: string;
+  skills?: readonly unknown[];
+  defaultInputModes?: readonly string[];
+  default_input_modes?: readonly string[];
+  defaultOutputModes?: readonly string[];
+  default_output_modes?: readonly string[];
+  capabilities?: Record<string, unknown>;
+  provider?: unknown;
+  documentationUrl?: string | null;
+  documentation_url?: string | null;
+  iconUrl?: string | null;
+  icon_url?: string | null;
+  additionalInterfaces?: readonly A2AAgentInterface[];
+  additional_interfaces?: readonly A2AAgentInterface[];
+  security?: readonly Record<string, readonly string[]>[];
+  securitySchemes?: Record<string, unknown>;
+  security_schemes?: Record<string, unknown>;
+  supportsAuthenticatedExtendedCard?: boolean;
+  supports_authenticated_extended_card?: boolean;
+  extendedSkills?: readonly unknown[];
+  extended_skills?: readonly unknown[];
+  url?: string | null;
+  signingConfig?: unknown;
+  signing_config?: unknown;
+  signatures?: readonly unknown[] | null;
+  serverExtensions?: readonly unknown[];
+  server_extensions?: readonly unknown[];
+  pushNotifications?: ServerPushNotificationConfig | null;
+  push_notifications?: ServerPushNotificationConfig | null;
   host?: string;
   port?: number;
   endpoint?: string;
   protocolVersion?: A2AProtocolVersion;
   protocol_version?: A2AProtocolVersion;
   transport?: ServerTransportConfig;
+  preferredTransport?: A2ATransportProtocol | null;
+  preferred_transport?: A2ATransportProtocol | null;
+  auth?: unknown;
 };
 
 export class A2AServerConfig {
+  readonly name: string | null;
+  readonly description: string | null;
+  readonly version: string;
+  readonly skills: readonly unknown[];
+  readonly defaultInputModes: readonly string[];
+  readonly default_input_modes: readonly string[];
+  readonly defaultOutputModes: readonly string[];
+  readonly default_output_modes: readonly string[];
+  readonly capabilities: Record<string, unknown>;
+  readonly provider: unknown;
+  readonly documentationUrl: string | null;
+  readonly documentation_url: string | null;
+  readonly iconUrl: string | null;
+  readonly icon_url: string | null;
+  readonly additionalInterfaces: readonly A2AAgentInterface[];
+  readonly additional_interfaces: readonly A2AAgentInterface[];
+  readonly security: readonly Record<string, readonly string[]>[];
+  readonly securitySchemes: Record<string, unknown>;
+  readonly security_schemes: Record<string, unknown>;
+  readonly supportsAuthenticatedExtendedCard: boolean;
+  readonly supports_authenticated_extended_card: boolean;
+  readonly extendedSkills: readonly unknown[];
+  readonly extended_skills: readonly unknown[];
+  readonly url: string | null;
+  readonly signingConfig: unknown;
+  readonly signing_config: unknown;
+  readonly signatures: readonly unknown[] | null;
+  readonly serverExtensions: readonly unknown[];
+  readonly server_extensions: readonly unknown[];
+  readonly pushNotifications: ServerPushNotificationConfig | null;
+  readonly push_notifications: ServerPushNotificationConfig | null;
   readonly host: string;
   readonly port: number;
   readonly endpoint: string;
   readonly protocolVersion: A2AProtocolVersion;
   readonly protocol_version: A2AProtocolVersion;
   readonly transport: ServerTransportConfig;
+  readonly preferredTransport: A2ATransportProtocol | null;
+  readonly preferred_transport: A2ATransportProtocol | null;
+  readonly auth: unknown;
 
   constructor(options: A2AServerConfigOptions = {}) {
+    this.name = options.name ?? null;
+    this.description = options.description ?? null;
+    this.version = options.version ?? "1.0.0";
+    this.skills = [...(options.skills ?? [])];
+    this.defaultInputModes = [...(options.defaultInputModes ?? options.default_input_modes ?? [TEXT_PLAIN, APPLICATION_JSON])];
+    this.default_input_modes = this.defaultInputModes;
+    this.defaultOutputModes = [...(options.defaultOutputModes ?? options.default_output_modes ?? [TEXT_PLAIN, APPLICATION_JSON])];
+    this.default_output_modes = this.defaultOutputModes;
+    this.capabilities = { streaming: true, push_notifications: false, ...(options.capabilities ?? {}) };
+    this.provider = options.provider ?? null;
+    this.documentationUrl = options.documentationUrl ?? options.documentation_url ?? null;
+    this.documentation_url = this.documentationUrl;
+    this.iconUrl = options.iconUrl ?? options.icon_url ?? null;
+    this.icon_url = this.iconUrl;
+    this.additionalInterfaces = [...(options.additionalInterfaces ?? options.additional_interfaces ?? [])];
+    this.additional_interfaces = this.additionalInterfaces;
+    this.security = [...(options.security ?? [])];
+    this.securitySchemes = { ...(options.securitySchemes ?? options.security_schemes ?? {}) };
+    this.security_schemes = this.securitySchemes;
+    this.supportsAuthenticatedExtendedCard = options.supportsAuthenticatedExtendedCard ?? options.supports_authenticated_extended_card ?? false;
+    this.supports_authenticated_extended_card = this.supportsAuthenticatedExtendedCard;
+    this.extendedSkills = [...(options.extendedSkills ?? options.extended_skills ?? [])];
+    this.extended_skills = this.extendedSkills;
+    this.url = options.url ?? null;
+    this.signingConfig = options.signingConfig ?? options.signing_config ?? null;
+    this.signing_config = this.signingConfig;
+    this.signatures = options.signatures ? [...options.signatures] : null;
+    this.serverExtensions = [...(options.serverExtensions ?? options.server_extensions ?? [])];
+    this.server_extensions = this.serverExtensions;
+    this.pushNotifications = options.pushNotifications ?? options.push_notifications ?? null;
+    this.push_notifications = this.pushNotifications;
     this.host = options.host ?? "0.0.0.0";
     this.port = options.port ?? 8000;
     this.endpoint = options.endpoint ?? `http://${this.host}:${String(this.port)}`;
     this.protocolVersion = options.protocolVersion ?? options.protocol_version ?? "0.3.0";
     this.protocol_version = this.protocolVersion;
-    this.transport = options.transport ?? new ServerTransportConfig();
+    this.preferredTransport = options.preferredTransport ?? options.preferred_transport ?? null;
+    this.preferred_transport = this.preferredTransport;
+    const transport = options.transport ?? new ServerTransportConfig();
+    this.transport = this.preferredTransport
+      ? new ServerTransportConfig({
+        preferred: this.preferredTransport,
+        jsonrpc: transport.jsonrpc,
+        grpc: transport.grpc,
+        httpJson: transport.httpJson,
+      })
+      : transport;
+    this.auth = options.auth ?? null;
   }
 }
 
