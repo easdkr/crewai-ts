@@ -559,9 +559,9 @@ export class BaseEmbeddingsProvider<TEmbeddingFunction extends TypedEmbeddingFun
 export type BaseEmbeddingsCallable<TInput = Embeddable> = TypedEmbeddingFunction<TInput>;
 export const BaseEmbeddingsCallable = Function;
 
-const defaultEmbeddingCallable: TypedEmbeddingFunction = (input: Embeddable) => {
-  const values = Array.isArray(input) ? input : [input];
-  return values.map(() => [0]);
+const unimplementedCustomEmbeddingCallable: TypedEmbeddingFunction = (input: Embeddable) => {
+  void input;
+  throw new Error("Subclasses must implement __call__ method");
 };
 
 export class OpenAIEmbeddingFunction {
@@ -788,7 +788,7 @@ export class CohereProvider extends BaseEmbeddingsProvider {
 }
 
 export class CustomEmbeddingFunction {
-  constructor(readonly embeddingCallable: TypedEmbeddingFunction = defaultEmbeddingCallable) {}
+  constructor(readonly embeddingCallable: TypedEmbeddingFunction = unimplementedCustomEmbeddingCallable) {}
 
   call(input: Embeddable): unknown {
     return this.embeddingCallable(input);
@@ -804,7 +804,8 @@ export class CustomProvider extends BaseEmbeddingsProvider {
 
   constructor(options: CustomProviderConfig = {}) {
     const { embeddingCallable, embedding_callable: embeddingCallableSnake, ...config } = options;
-    super({ ...config, embeddingCallable: embeddingCallable ?? embeddingCallableSnake ?? defaultEmbeddingCallable });
+    const callable = embeddingCallable ?? embeddingCallableSnake;
+    super({ ...config, ...(callable ? { embeddingCallable: callable } : {}) });
   }
 }
 

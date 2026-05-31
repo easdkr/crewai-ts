@@ -7752,6 +7752,7 @@ describe("RAG configuration and factories", () => {
   it("exposes upstream __call__ aliases on embedding functions", () => {
     const custom = new CustomEmbeddingFunction((input) => input.map((value) => [String(value).length]));
     expect(custom.__call__(["CrewAI"])).toEqual([[6]]);
+    expect(() => new CustomEmbeddingFunction().__call__(["CrewAI"])).toThrow("Subclasses must implement __call__ method");
     expect(WatsonXEmbeddingFunction.name()).toBe("watsonx");
   });
 });
