@@ -7546,6 +7546,65 @@ describe("core crew runtime", () => {
     expect(agentInstance.last_messages.at(-1)?.content).toContain("Explain CrewAI memory");
   });
 
+  it("executes agent executor helpers with upstream-compatible payloads and timeout errors", async () => {
+    const syncPayloads: Record<string, unknown>[] = [];
+    const asyncPayloads: Record<string, unknown>[] = [];
+    const taskInstance = new Task({
+      description: "Executor task",
+      expectedOutput: "Done",
+      humanInput: true,
+    });
+    const agentInstance = new Agent({
+      role: "Executor",
+      goal: "Run",
+      backstory: "Compatibility",
+      agentExecutor: {
+        tools_names: "search",
+        tools_description: "Search tool",
+        invoke: (payload: Record<string, unknown>) => {
+          syncPayloads.push(payload);
+          return { output: "sync done" };
+        },
+        ainvoke: (payload: Record<string, unknown>) => {
+          asyncPayloads.push(payload);
+          return Promise.resolve({ output: "async done" });
+        },
+      },
+    });
+
+    await expect(agentInstance._execute_without_timeout("Run now", taskInstance))
+      .resolves.toBe("sync done");
+    await expect(agentInstance._aexecute_without_timeout("Run async", taskInstance))
+      .resolves.toBe("async done");
+
+    expect(syncPayloads[0]).toEqual({
+      input: "Run now",
+      tool_names: "search",
+      tools: "Search tool",
+      ask_for_human_input: true,
+    });
+    expect(asyncPayloads[0]).toMatchObject({
+      input: "Run async",
+      ask_for_human_input: true,
+    });
+
+    const slowAgent = new Agent({
+      role: "Slow",
+      goal: "Run",
+      backstory: "Timeout",
+      agentExecutor: {
+        invoke: async () => await new Promise((resolve) => {
+          setTimeout(() => {
+            resolve({ output: "late" });
+          }, 20);
+        }),
+      },
+    });
+
+    await expect(slowAgent._execute_with_timeout("Slow prompt", taskInstance, 0.001))
+      .rejects.toThrow("Task 'Executor task' execution timed out after 0.001 seconds");
+  });
+
   it("executes OpenAI and LangGraph agent adapters through upstream public methods", async () => {
     const events: string[] = [];
     crewaiEventBus.on("agent_execution_started", (_source, event) => {

@@ -755,6 +755,79 @@ export class Agent {
     await this.cleanupMcpClients();
   }
 
+  async executeWithoutTimeout(taskPrompt: string, task: unknown): Promise<unknown> {
+    const executor = this.agentExecutor;
+    if (!executor || typeof executor !== "object") {
+      throw new Error("Agent executor is not initialized.");
+    }
+    const invoke = readRecordValue(executor, "invoke");
+    if (typeof invoke !== "function") {
+      throw new Error("Agent executor is not initialized.");
+    }
+    const result: unknown = await (invoke as (payload: Record<string, unknown>) => unknown)
+      .call(executor, this.executorPayload(taskPrompt, task));
+    return extractExecutorOutput(result);
+  }
+
+  async _execute_without_timeout(task_prompt: string, task: unknown): Promise<unknown> {
+    return await this.executeWithoutTimeout(task_prompt, task);
+  }
+
+  async executeWithTimeout(taskPrompt: string, task: unknown, timeout: number): Promise<unknown> {
+    return await withExecutionTimeout(
+      this.executeWithoutTimeout(taskPrompt, task),
+      timeout,
+      taskDescriptionForTimeout(task, taskPrompt),
+    );
+  }
+
+  async _execute_with_timeout(task_prompt: string, task: unknown, timeout: number): Promise<unknown> {
+    return await this.executeWithTimeout(task_prompt, task, timeout);
+  }
+
+  async aexecuteWithoutTimeout(taskPrompt: string, task: unknown): Promise<unknown> {
+    const executor = this.agentExecutor;
+    if (!executor || typeof executor !== "object") {
+      throw new Error("Agent executor is not initialized.");
+    }
+    const ainvoke = readRecordValue(executor, "ainvoke") ?? readRecordValue(executor, "invoke");
+    if (typeof ainvoke !== "function") {
+      throw new Error("Agent executor is not initialized.");
+    }
+    const result: unknown = await (ainvoke as (payload: Record<string, unknown>) => unknown)
+      .call(executor, this.executorPayload(taskPrompt, task));
+    return extractExecutorOutput(result);
+  }
+
+  async _aexecute_without_timeout(task_prompt: string, task: unknown): Promise<unknown> {
+    return await this.aexecuteWithoutTimeout(task_prompt, task);
+  }
+
+  async aexecuteWithTimeout(taskPrompt: string, task: unknown, timeout: number): Promise<unknown> {
+    return await withExecutionTimeout(
+      this.aexecuteWithoutTimeout(taskPrompt, task),
+      timeout,
+      taskDescriptionForTimeout(task, taskPrompt),
+    );
+  }
+
+  async _aexecute_with_timeout(task_prompt: string, task: unknown, timeout: number): Promise<unknown> {
+    return await this.aexecuteWithTimeout(task_prompt, task, timeout);
+  }
+
+  private executorPayload(taskPrompt: string, task: unknown): Record<string, unknown> {
+    const toolsNames = readRecordValue(this.agentExecutor, "tools_names")
+      ?? readRecordValue(this.agentExecutor, "toolsNames");
+    const toolsDescription = readRecordValue(this.agentExecutor, "tools_description")
+      ?? readRecordValue(this.agentExecutor, "toolsDescription");
+    return {
+      input: taskPrompt,
+      tool_names: toolsNames,
+      tools: toolsDescription,
+      ask_for_human_input: Boolean(readRecordValue(task, "humanInput") ?? readRecordValue(task, "human_input")),
+    };
+  }
+
   getMultimodalTools(): readonly Tool[] {
     return [new AddImageTool()];
   }
@@ -1831,6 +1904,18 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function readRecordValue(value: unknown, key: string): unknown {
   return isRecord(value) ? value[key] : undefined;
+}
+
+function extractExecutorOutput(result: unknown): unknown {
+  if (isRecord(result) && "output" in result) {
+    return result.output;
+  }
+  return result;
+}
+
+function taskDescriptionForTimeout(task: unknown, fallback: string): string {
+  const description = readRecordValue(task, "description");
+  return typeof description === "string" && description.length > 0 ? description : fallback;
 }
 
 export class AgentGuardrailError extends Error {
