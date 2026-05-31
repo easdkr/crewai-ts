@@ -6563,6 +6563,29 @@ describe("core crew runtime", () => {
     await expect(executor.ainvoke({ input: "Async CrewAI" })).resolves.toEqual({ output: "Async CrewAI" });
   });
 
+  it("keeps AgentExecutor iterations and messages backed by state", () => {
+    const executor = new AgentExecutor({
+      messages: [{ role: "system", content: "You are careful." }],
+    });
+
+    expect(executor.messages).toBe(executor.state.messages);
+    expect(executor.messages).toEqual([{ role: "system", content: "You are careful." }]);
+
+    executor.iterations = 4;
+    expect(executor.state.iterations).toBe(4);
+    executor.state.iterations = 6;
+    expect(executor.iterations).toBe(6);
+
+    executor.messages = [{ role: "user", content: "Start" }];
+    expect(executor.state.messages).toEqual([{ role: "user", content: "Start" }]);
+    executor.state.messages.push({ role: "assistant", content: "Ready" });
+    expect(executor.messages).toHaveLength(2);
+
+    executor.invoke("Summarize CrewAI");
+    expect(executor.iterations).toBe(7);
+    expect(executor.state.messages.at(-1)).toEqual({ role: "user", content: "Summarize CrewAI" });
+  });
+
   it("exposes upstream StepExecutor execute alias for todo items", async () => {
     const prompts: string[] = [];
     const agentInstance = new Agent({

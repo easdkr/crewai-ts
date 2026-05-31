@@ -365,6 +365,26 @@ export class AgentExecutor extends BaseAgentExecutor {
   constructor(options: BaseAgentExecutorOptions & { state?: AgentExecutorState } = {}) {
     super(options);
     this.state = options.state ?? new AgentExecutorState({ messages: this.messages });
+    this.bindStateBackedCompatibilityProperties();
+  }
+
+  private bindStateBackedCompatibilityProperties(): void {
+    Object.defineProperty(this, "iterations", {
+      configurable: true,
+      enumerable: true,
+      get: () => this.state.iterations,
+      set: (value: unknown) => {
+        this.state.iterations = Number(value);
+      },
+    });
+    Object.defineProperty(this, "messages", {
+      configurable: true,
+      enumerable: true,
+      get: () => this.state.messages,
+      set: (value: unknown) => {
+        this.state.messages = Array.isArray(value) ? value as LLMMessage[] : [];
+      },
+    });
   }
 
   get use_stop_words(): boolean {
@@ -764,7 +784,6 @@ export class AgentExecutor extends BaseAgentExecutor {
     if (typeof input === "object" && !Array.isArray(input) && "input" in input) {
       return this.invokeFromInputs(input);
     }
-    this.state.iterations += 1;
     return super.invoke(input as string | readonly LLMMessage[]);
   }
 
