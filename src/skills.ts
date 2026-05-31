@@ -81,6 +81,21 @@ export class SkillFrontmatter {
     this.allowed_tools = this.allowedTools;
     this.version = options.version ?? null;
   }
+
+  static parseAllowedTools<TValues extends Record<string, unknown>>(values: TValues): TValues & { "allowed-tools"?: readonly string[] | null } {
+    const raw = values["allowed-tools"] ?? values.allowed_tools;
+    if (typeof raw !== "string") {
+      return values;
+    }
+    return {
+      ...values,
+      "allowed-tools": normalizeAllowedTools(raw),
+    };
+  }
+
+  static parse_allowed_tools<TValues extends Record<string, unknown>>(values: TValues): TValues & { "allowed-tools"?: readonly string[] | null } {
+    return SkillFrontmatter.parseAllowedTools(values);
+  }
 }
 
 export class Skill {

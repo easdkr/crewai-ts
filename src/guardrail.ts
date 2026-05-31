@@ -45,6 +45,21 @@ export class GuardrailResult {
   static from_tuple(result: readonly [boolean, unknown]): GuardrailResult {
     return GuardrailResult.fromTuple(result);
   }
+
+  static validateResultErrorExclusivity(value: unknown, info: { data?: Record<string, unknown> } = {}): unknown {
+    const values = info.data ?? {};
+    if (values.success === true && value && values.error) {
+      throw new Error("Cannot have both result and error when success is True");
+    }
+    if (values.success === false && value && values.result) {
+      throw new Error("Cannot have both result and error when success is False");
+    }
+    return value;
+  }
+
+  static validate_result_error_exclusivity(value: unknown, info: { data?: Record<string, unknown> } = {}): unknown {
+    return GuardrailResult.validateResultErrorExclusivity(value, info);
+  }
 }
 
 export function serializeGuardrailForJson(value: unknown, fieldName = "guardrail"): string | null {

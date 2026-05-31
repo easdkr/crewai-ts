@@ -171,6 +171,7 @@ import {
   SimpleTokenAuth,
   SkillActivatedEvent,
   StorageBackend,
+  SkillFrontmatter,
   SkillDiscoveryCompletedEvent,
   SkillDownloadCompletedEvent,
   SkillLoadFailedEvent,
@@ -1176,6 +1177,13 @@ describe("formatter and guardrail utilities", () => {
     const failed = StandardGuardrailResult.fromTuple([false, "too short"]);
     expect(passed).toMatchObject({ success: true, result: "clean", error: null });
     expect(failed).toMatchObject({ success: false, result: null, error: "too short" });
+    expect(StandardGuardrailResult.validate_result_error_exclusivity("ok", { data: { success: true } })).toBe("ok");
+    expect(() => StandardGuardrailResult.validate_result_error_exclusivity("bad", {
+      data: { success: true, error: "bad" },
+    })).toThrow("Cannot have both result and error when success is True");
+    expect(() => StandardGuardrailResult.validate_result_error_exclusivity("ok", {
+      data: { success: false, result: "ok" },
+    })).toThrow("Cannot have both result and error when success is False");
     expect(processGuardrail(output, callable)).toMatchObject({
       success: true,
       result: "answer checked",
@@ -1647,6 +1655,16 @@ describe("skills", () => {
 
       expect(() => loadSkillMetadata(skillDir)).toThrow("Directory name 'wrong-dir' does not match skill name 'declared-name'");
       expect(() => parseFrontmatter("name: missing delimiter")).toThrow(SkillParseError);
+      expect(SkillFrontmatter.parse_allowed_tools({
+        name: "tool-skill",
+        description: "Tool skill.",
+        "allowed-tools": "search read_file",
+      })).toMatchObject({ "allowed-tools": ["search", "read_file"] });
+      expect(SkillFrontmatter.parseAllowedTools({
+        name: "tool-skill",
+        description: "Tool skill.",
+        allowed_tools: "search read_file",
+      })).toMatchObject({ "allowed-tools": ["search", "read_file"] });
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
