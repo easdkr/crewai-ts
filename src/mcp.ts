@@ -88,6 +88,10 @@ export class StaticToolFilter {
   call(tool: MCPToolDefinition): boolean {
     return this.filter(tool);
   }
+
+  __call__(tool: MCPToolDefinition): boolean {
+    return this.filter(tool);
+  }
 }
 
 export function createStaticToolFilter(

@@ -2016,6 +2016,8 @@ describe("mcp configuration", () => {
     expect(filter.filter({ name: "read_file" })).toBe(true);
     expect(filter.filter({ name: "write_file" })).toBe(false);
     expect(filter.filter({ name: "search" })).toBe(false);
+    expect(filter.__call__({ name: "read_file" })).toBe(true);
+    expect(filter.__call__({ name: "write_file" })).toBe(false);
     expect(filterFn({ name: "read_file" })).toBe(true);
     expect(filterFn({ name: "delete_file" })).toBe(false);
   });

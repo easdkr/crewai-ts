@@ -175,6 +175,7 @@ When more goal budget is available, continue from the behavioral parity audits b
 - Added MCP compatibility behavior:
   - `MCPClient.list_prompts` and `get_prompt` now normalize SDK prompt responses into upstream-style prompt definition and prompt-content shapes.
   - `MCPToolWrapper._run_async` now returns upstream-style classified execution error strings instead of leaking wrapper execution exceptions.
+  - `StaticToolFilter.__call__` now mirrors upstream callable filter semantics while preserving the existing `filter`/`call` helpers.
 - Added project wrapper compatibility behavior:
   - `TaskMethod` now exposes upstream-style `ensure_task_name` and applies default task names on direct `call`/`invoke` paths.
   - `CrewAIPlugin.get_class_decorator_hook` now exposes a deterministic no-op-compatible mypy plugin hook surface for `CrewBase` decorator metadata.
