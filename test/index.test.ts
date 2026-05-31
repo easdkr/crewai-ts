@@ -131,8 +131,11 @@ import {
   OIDCAuth,
   OutputFormat,
   PDFKnowledgeSource,
+  PollingConfig,
   PollingHandler,
+  PushNotificationConfig,
   PushNotificationHandler,
+  StreamingConfig,
   StreamingHandler,
   MemoryQueryCompletedEvent,
   MemoryQueryFailedEvent,
@@ -445,6 +448,7 @@ import {
   getAllFiles,
   getFiles,
   getI18N,
+  get_handler,
   getLastEventId,
   getPlatformIntegrationToken,
   getTaskFiles,
@@ -2894,6 +2898,13 @@ describe("a2a utilities", () => {
       message: "delegate",
       is_a2a: true,
     })).toThrow("Invalid A2A agent ids: agent-c");
+  });
+
+  it("resolves A2A update handlers from config classes like upstream", () => {
+    expect(get_handler(null)).toBe(StreamingHandler);
+    expect(get_handler(new StreamingConfig())).toBe(StreamingHandler);
+    expect(get_handler(new PollingConfig())).toBe(PollingHandler);
+    expect(get_handler(new PushNotificationConfig({ url: "https://push.example.com/callback" }))).toBe(PushNotificationHandler);
   });
 
   it("models A2A client and server transport configuration with aliases", () => {

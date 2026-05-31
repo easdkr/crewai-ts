@@ -107,6 +107,7 @@ export {
   SigningAlgorithm,
   SimpleTokenAuth,
   SkillNotFoundError,
+  StreamingConfig,
   TEXT_PLAIN,
   TaskNotFoundError,
   TaskNotCancelableError,
@@ -2565,14 +2566,6 @@ export class AgentMeta {
 
 export function process_status_update(update: unknown): unknown {
   return update;
-}
-
-export class StreamingConfig {
-  readonly timeout: number | null;
-
-  constructor(timeout: number | null = null) {
-    this.timeout = timeout;
-  }
 }
 
 export const http_url_adapter = Object.freeze({ kind: "http_url_adapter" });

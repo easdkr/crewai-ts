@@ -220,6 +220,14 @@ export interface PushNotificationResultStore {
   store_result?(task: unknown): Promise<void>;
 }
 
+export class StreamingConfig {
+  readonly timeout: number | null;
+
+  constructor(timeout: number | null = null) {
+    this.timeout = timeout;
+  }
+}
+
 export enum WebhookSignatureMode {
   NONE = "none",
   HMAC_SHA256 = "hmac_sha256",
@@ -1029,6 +1037,10 @@ export class PollingConfig {
     this.interval = interval;
   }
 }
+
+HANDLER_REGISTRY.set(PollingConfig, PollingHandler);
+HANDLER_REGISTRY.set(StreamingConfig, StreamingHandler);
+HANDLER_REGISTRY.set(PushNotificationConfig, PushNotificationHandler);
 
 export type A2AStreamingClient = {
   get_task?: (...args: readonly unknown[]) => Promise<A2ATaskLike>;
@@ -3472,7 +3484,10 @@ export async function cancel(context: A2AExecutionContext, eventQueue: A2AEventQ
 }
 
 export function get_handler(config: unknown): unknown {
-  return config && typeof config === "object" ? HANDLER_REGISTRY.get(config.constructor) ?? HandlerType : HandlerType;
+  if (!config || typeof config !== "object") {
+    return StreamingHandler;
+  }
+  return HANDLER_REGISTRY.get(config.constructor) ?? StreamingHandler;
 }
 
 export function execute_a2a_delegation(options: Record<string, unknown> | string, ..._args: unknown[]): A2ATaskStateResult {
