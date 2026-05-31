@@ -10,7 +10,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `npm run build`
   - `npm run lint`
   - `npm run smoke:pack`
-- Test suite: 336 passing tests.
+- Test suite: 337 passing tests.
 - Root export parity against upstream clone `/tmp/crewai-upstream.lPeuQi/crewAI` at commit `2148c7e`: `total_missing=0`.
 - Public method parity has been tightened for core runtime classes:
   - `ConsoleFormatter`: `missing=0`
@@ -81,7 +81,7 @@ When more goal budget is available, continue from the behavioral parity audits b
   - OpenAI native completion shim now exposes upstream-style SDK response token usage extraction, including cached prompt tokens and reasoning tokens
   - Azure completion shim now exposes upstream-style request parameter builders with Azure OpenAI endpoint model omission, Azure AI model inclusion, `model_extras`, prompt cache keys, drop-params handling, stop words, and custom tools
   - Anthropic completion shim now exposes upstream-style request parameter builders with system prompts, stop sequences, thinking config, custom tool conversion, single-tool forcing, and tool-search injection/deferred loading
-  - Anthropic completion shim now exposes upstream-style SDK response token usage extraction, including cache read and cache creation token fields
+  - Anthropic completion shim now exposes upstream-style SDK response token usage extraction and tool-use/structured-output response extraction, including cache read and cache creation token fields
   - Bedrock completion shim now exposes upstream-style Converse request body builders, including Bedrock message content blocks, system prompts, inference config, toolConfig conversion, guardrail config, and additional model request/response fields
   - Bedrock completion shim now exposes upstream-style Converse token usage extraction/tracking and tool-use/structured-output response extraction, including cache read token fields
   - Gemini completion shim with upstream-style message formatting, generation config builders, tool conversion, function-call and structured-output response extraction, deterministic config, context-window, multimodal/text-formatting, token-usage extraction, response text extraction, property ordering, and content conversion helpers
@@ -104,7 +104,7 @@ When more goal budget is available, continue from the behavioral parity audits b
 
 2. LLM providers
    - OpenAI, Azure, Anthropic, Bedrock, Gemini provider classes.
-   - `to_config_dict`, context window, adapter-level function-calling support, deterministic multimodal support flags, response-chain/reset compatibility, file input content-block conversion, local uploader compatibility, streaming tool-call accumulation, OpenAI/Anthropic/Bedrock SDK usage extraction, Bedrock/Gemini function-call/structured-output response extraction, and OpenAI/Azure/Anthropic/Bedrock/Gemini request builders are now covered for the native provider shims.
+   - `to_config_dict`, context window, adapter-level function-calling support, deterministic multimodal support flags, response-chain/reset compatibility, file input content-block conversion, local uploader compatibility, streaming tool-call accumulation, OpenAI/Anthropic/Bedrock SDK usage extraction, Anthropic/Bedrock/Gemini function-call/structured-output response extraction, and OpenAI/Azure/Anthropic/Bedrock/Gemini request builders are now covered for the native provider shims.
    - Remaining: deeper SDK-backed response translation details.
    - Keep provider tests adapter-level and mock network calls. Do not introduce live API keys or provider-specific SDK side effects into the default test gate.
 

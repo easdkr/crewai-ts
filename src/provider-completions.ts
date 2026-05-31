@@ -250,6 +250,31 @@ export class AnthropicCompletion extends ConfiguredLLM {
     return AnthropicCompletion.extractAnthropicTokenUsage(response);
   }
 
+  static extractToolUsesFromResponse(response: unknown): Record<string, unknown>[] {
+    return anthropicResponseContent(response)
+      .map((block) => readObject(block))
+      .filter((block) => (scalarToString(block.type) ?? "") === "tool_use" || Object.keys(readObject(block.input)).length > 0)
+      .filter((block) => (scalarToString(block.name) ?? "") !== STRUCTURED_OUTPUT_TOOL_NAME);
+  }
+
+  static extract_tool_uses_from_response(response: unknown): Record<string, unknown>[] {
+    return AnthropicCompletion.extractToolUsesFromResponse(response);
+  }
+
+  static extractStructuredOutputFromResponse(response: unknown): Record<string, unknown> | null {
+    for (const block of anthropicResponseContent(response)) {
+      const record = readObject(block);
+      if ((scalarToString(record.name) ?? "") === STRUCTURED_OUTPUT_TOOL_NAME) {
+        return readObject(record.input);
+      }
+    }
+    return null;
+  }
+
+  static extract_structured_output_from_response(response: unknown): Record<string, unknown> | null {
+    return AnthropicCompletion.extractStructuredOutputFromResponse(response);
+  }
+
   override supportsFunctionCalling(): boolean {
     return true;
   }
@@ -1435,6 +1460,11 @@ function geminiResponseSchema(value: unknown): Record<string, unknown> | null {
   return schema && typeof schema === "object" && !Array.isArray(schema)
     ? schema as Record<string, unknown>
     : null;
+}
+
+function anthropicResponseContent(response: unknown): unknown[] {
+  const content = readObject(response).content;
+  return Array.isArray(content) ? content : [];
 }
 
 function bedrockResponseContent(response: unknown): unknown[] {

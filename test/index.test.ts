@@ -8949,6 +8949,29 @@ describe("LLM providers", () => {
     expect(AnthropicCompletion._extract_anthropic_token_usage({})).toEqual({ total_tokens: 0 });
   });
 
+  it("extracts Anthropic tool uses and structured output from response content", () => {
+    const response = {
+      content: [
+        { type: "text", text: "Need search" },
+        { type: "tool_use", id: "tool-1", name: "search_docs", input: { query: "CrewAI" } },
+        { type: "tool_use", id: "tool-2", name: "structured_output", input: { answer: "done", confidence: 0.93 } },
+      ],
+    };
+
+    expect(AnthropicCompletion.extract_structured_output_from_response(response)).toEqual({
+      answer: "done",
+      confidence: 0.93,
+    });
+    expect(AnthropicCompletion.extract_tool_uses_from_response(response)).toEqual([
+      {
+        type: "tool_use",
+        id: "tool-1",
+        name: "search_docs",
+        input: { query: "CrewAI" },
+      },
+    ]);
+  });
+
   it("prepares Bedrock Converse request bodies with tools and provider fields", () => {
     const search = new StructuredTool({
       name: "search docs",
