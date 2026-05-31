@@ -132,6 +132,7 @@ When more goal budget is available, continue from the behavioral parity audits b
 - Added tool compatibility behavior:
   - `BaseTool` / `StructuredTool` now expose upstream-style `tool_type`, `model_post_init`, `validate_max_usage_count`, and `from_langchain` helpers.
   - `ToolUsage` now exposes upstream-style `on_tool_error` and `on_tool_use_finished` event helpers, including snake_case event payload aliases and fingerprint metadata passthrough.
+  - `CacheTools.hit_cache` now exposes the upstream direct cache lookup helper used by the generated cache tool.
 - Added project wrapper compatibility behavior:
   - `TaskMethod` now exposes upstream-style `ensure_task_name` and applies default task names on direct `call`/`invoke` paths.
 - Added A2A auth compatibility behavior:

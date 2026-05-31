@@ -185,6 +185,7 @@ import {
   StateProxy,
   KickoffTaskOutputsSQLiteStorage,
   CacheHandler,
+  CacheTools,
   CrewStructuredTool,
   EnvVar,
   SourceHelper,
@@ -8645,6 +8646,11 @@ describe("tools", () => {
     toolCache.write("lookup", "{\"id\":1}", "cached");
     expect(toolCache.read("lookup", "{\"id\":1}")).toEqual({ hit: true, value: "cached" });
     expect(toolCache.read("lookup", "{\"id\":2}")).toEqual({ hit: false });
+
+    cache.add("search_tool", "{\"query\":\"CrewAI\"}", "cached search");
+    const cacheTools = new CacheTools(cache);
+    expect(cacheTools.hit_cache("tool: search_tool | input: {\"query\":\"CrewAI\"}")).toBe("cached search");
+    expect(cacheTools.hitCache("tool: missing | input: {}")).toBeNull();
   });
 
   it("executes agent actions and reports whether tool output is final", async () => {

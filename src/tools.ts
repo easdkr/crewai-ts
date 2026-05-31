@@ -911,11 +911,23 @@ export class CacheTools {
       name: "Hit Tool Cache",
       description: "Read cached output for a previous tool call.",
       argsSchema: {
-        tool: { type: "string", required: true },
-        input: { type: "string", required: true },
+        key: { type: "string", required: true },
       },
-      func: ({ tool, input }) => this.cacheHandler.read(String(tool), String(input)) ?? "",
+      func: ({ key }) => this.hitCache(String(key)) ?? "",
     });
+  }
+
+  hitCache(key: string): unknown {
+    const match = key.match(/tool:\s*(.*?)\s*\|\s*input:\s*(.*)$/s);
+    if (!match) {
+      return null;
+    }
+    const [, toolPart = "", inputPart = ""] = match;
+    return this.cacheHandler.read(toolPart.trim(), inputPart.trim());
+  }
+
+  hit_cache(key: string): unknown {
+    return this.hitCache(key);
   }
 }
 
