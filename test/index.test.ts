@@ -6687,6 +6687,30 @@ describe("flow runtime", () => {
     expect(getFlowMetadata(flow).map((entry) => entry.kind)).toEqual(["start", "listen"]);
   });
 
+  it("accepts upstream-style direct kickoff inputs", async () => {
+    class DirectInputFlow extends Flow<{ topic?: string; events: string[] }> {
+      constructor() {
+        super({ initialState: { events: [] } });
+      }
+
+      begin(inputs: Record<string, unknown>) {
+        this.state.topic = String(inputs.topic);
+        this.state.events.push(`begin:${this.state.topic}`);
+        return this.state.topic;
+      }
+    }
+
+    const initializer = decorateMethod(DirectInputFlow, "begin", start() as unknown as Decorator);
+    const flow = new DirectInputFlow();
+    initializer.call(flow);
+
+    await expect(flow.kickoff({ topic: "CrewAI" })).resolves.toBe("CrewAI");
+    expect(flow.state).toMatchObject({
+      topic: "CrewAI",
+      events: ["begin:CrewAI"],
+    });
+  });
+
   it("exposes upstream snake_case flow state properties", async () => {
     class PropertyAliasFlow extends Flow<{ id: string; events: string[] }> {
       constructor() {

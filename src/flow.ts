@@ -705,11 +705,22 @@ export class Flow<TState extends object = Record<string, unknown>> {
     crewaiEventBus.emit(this, new FlowCreatedEvent({ flowName: this.flowName() }));
   }
 
-  async kickoff(options: FlowKickoffOptions = {}): Promise<unknown> {
-    return await this.kickoffAsync(options);
+  async kickoff(
+    optionsOrInputs: FlowKickoffOptions | InputValues | null = {},
+    inputFiles: InputFiles | null = null,
+    fromCheckpoint: CheckpointConfig | null = null,
+    restoreFromStateId: string | null = null,
+  ): Promise<unknown> {
+    return await this.kickoffAsync(optionsOrInputs, inputFiles, fromCheckpoint, restoreFromStateId);
   }
 
-  async kickoffAsync(options: FlowKickoffOptions = {}): Promise<unknown> {
+  async kickoffAsync(
+    optionsOrInputs: FlowKickoffOptions | InputValues | null = {},
+    inputFiles: InputFiles | null = null,
+    fromCheckpoint: CheckpointConfig | null = null,
+    restoreFromStateId: string | null = null,
+  ): Promise<unknown> {
+    const options = normalizeFlowKickoffOptions(optionsOrInputs, inputFiles, fromCheckpoint, restoreFromStateId);
     const checkpointConfig = options.fromCheckpoint ?? options.from_checkpoint ?? null;
     if (checkpointConfig?.restoreFrom) {
       const restored = await Flow.fromCheckpoint.call(this.constructor as new () => Flow<object>, checkpointConfig);
@@ -725,9 +736,9 @@ export class Flow<TState extends object = Record<string, unknown>> {
       ...(options.inputFiles ?? options.input_files ?? {}),
       ...extracted.inputFiles,
     };
-    const restoreFromStateId = options.restoreFromStateId ?? options.restore_from_state_id ?? null;
-    const restoredForkState = restoreFromStateId && this.persistence
-      ? await loadPersistedFlowState(this.persistence, restoreFromStateId)
+    const effectiveRestoreFromStateId = options.restoreFromStateId ?? options.restore_from_state_id ?? null;
+    const restoredForkState = effectiveRestoreFromStateId && this.persistence
+      ? await loadPersistedFlowState(this.persistence, effectiveRestoreFromStateId)
       : null;
     if (restoredForkState) {
       const nextStateId = typeof inputs.id === "string" && inputs.id.length > 0
@@ -913,12 +924,22 @@ export class Flow<TState extends object = Record<string, unknown>> {
     return renderInteractive(buildFlowStructure(this), filename, show);
   }
 
-  async akickoff(options: FlowKickoffOptions = {}): Promise<unknown> {
-    return await this.kickoffAsync(options);
+  async akickoff(
+    optionsOrInputs: FlowKickoffOptions | InputValues | null = {},
+    inputFiles: InputFiles | null = null,
+    fromCheckpoint: CheckpointConfig | null = null,
+    restoreFromStateId: string | null = null,
+  ): Promise<unknown> {
+    return await this.kickoffAsync(optionsOrInputs, inputFiles, fromCheckpoint, restoreFromStateId);
   }
 
-  async kickoff_async(options: FlowKickoffOptions = {}): Promise<unknown> {
-    return await this.kickoffAsync(options);
+  async kickoff_async(
+    optionsOrInputs: FlowKickoffOptions | InputValues | null = {},
+    inputFiles: InputFiles | null = null,
+    fromCheckpoint: CheckpointConfig | null = null,
+    restoreFromStateId: string | null = null,
+  ): Promise<unknown> {
+    return await this.kickoffAsync(optionsOrInputs, inputFiles, fromCheckpoint, restoreFromStateId);
   }
 
   async resume(feedback = ""): Promise<unknown> {
@@ -2862,6 +2883,38 @@ function withoutCheckpointOptions(options: FlowKickoffOptions): FlowKickoffOptio
     ...(options.restoreFromStateId === undefined ? {} : { restoreFromStateId: options.restoreFromStateId }),
     ...(options.restore_from_state_id === undefined ? {} : { restore_from_state_id: options.restore_from_state_id }),
   };
+}
+
+function normalizeFlowKickoffOptions(
+  optionsOrInputs: FlowKickoffOptions | InputValues | null,
+  inputFiles: InputFiles | null,
+  fromCheckpoint: CheckpointConfig | null,
+  restoreFromStateId: string | null,
+): FlowKickoffOptions {
+  const base = optionsOrInputs ?? {};
+  const options = isFlowKickoffOptions(base)
+    ? { ...base }
+    : { inputs: base };
+  if (inputFiles !== null) {
+    options.inputFiles = inputFiles;
+  }
+  if (fromCheckpoint !== null) {
+    options.fromCheckpoint = fromCheckpoint;
+  }
+  if (restoreFromStateId !== null) {
+    options.restoreFromStateId = restoreFromStateId;
+  }
+  return options;
+}
+
+function isFlowKickoffOptions(value: FlowKickoffOptions | InputValues): value is FlowKickoffOptions {
+  return Object.hasOwn(value, "inputs")
+    || Object.hasOwn(value, "inputFiles")
+    || Object.hasOwn(value, "input_files")
+    || Object.hasOwn(value, "fromCheckpoint")
+    || Object.hasOwn(value, "from_checkpoint")
+    || Object.hasOwn(value, "restoreFromStateId")
+    || Object.hasOwn(value, "restore_from_state_id");
 }
 
 async function loadPersistedFlowState(
