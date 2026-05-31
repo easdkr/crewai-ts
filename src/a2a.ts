@@ -3749,6 +3749,51 @@ export async function afetch_agent_card(endpoint: string, auth: unknown = null, 
   return fetch_agent_card(endpoint, auth, timeout);
 }
 
+export type A2AAgentSkill = {
+  id: string;
+  name: string;
+  description: string;
+  tags: string[];
+  examples?: string[];
+};
+
+export function task_to_skill(task: {
+  name?: string | null;
+  description: string;
+  expected_output?: string | null;
+  agent?: { role?: string | null } | null;
+}): A2AAgentSkill {
+  const taskName = task.name || task.description.slice(0, 50);
+  const tags = task.agent?.role ? [skillTag(task.agent.role)] : [];
+  return {
+    id: skillId(taskName),
+    name: taskName,
+    description: task.description,
+    tags,
+    ...(task.expected_output ? { examples: [task.expected_output] } : {}),
+  };
+}
+
+export function tool_to_skill(toolName: string, toolDescription: string): A2AAgentSkill {
+  return {
+    id: skillId(toolName),
+    name: toolName,
+    description: toolDescription,
+    tags: [skillTag(toolName)],
+  };
+}
+
+export const _task_to_skill = task_to_skill;
+export const _tool_to_skill = tool_to_skill;
+
+function skillId(value: string): string {
+  return value.toLowerCase().replaceAll(" ", "_");
+}
+
+function skillTag(value: string): string {
+  return value.toLowerCase().replaceAll(" ", "-");
+}
+
 function resolveAgentCardUrl(endpoint: string): string {
   if (endpoint.includes("/.well-known/agent-card.json")) {
     return endpoint;

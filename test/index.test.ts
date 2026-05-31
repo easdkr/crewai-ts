@@ -456,6 +456,8 @@ import {
   getTriggeringEventId,
   fetchRequiredInputs,
   fetch_agent_card,
+  task_to_skill,
+  tool_to_skill,
   generateCrewChatInputs,
   generateCrewDescriptionWithAi,
   generateCrewToolSchema,
@@ -2988,6 +2990,27 @@ describe("a2a utilities", () => {
         timeout_config: 30,
         request_url: "https://remote.example.com/.well-known/agent-card.json",
       },
+    });
+  });
+
+  it("converts tasks and tools to A2A skills like upstream agent cards", () => {
+    expect(task_to_skill({
+      name: "",
+      description: "Research market opportunities for CrewAI adoption across enterprise teams",
+      expected_output: "A concise market brief",
+      agent: { role: "Market Analyst" },
+    })).toEqual({
+      id: "research_market_opportunities_for_crewai_adoption_",
+      name: "Research market opportunities for CrewAI adoption ",
+      description: "Research market opportunities for CrewAI adoption across enterprise teams",
+      tags: ["market-analyst"],
+      examples: ["A concise market brief"],
+    });
+    expect(tool_to_skill("Search Web", "Search public web sources")).toEqual({
+      id: "search_web",
+      name: "Search Web",
+      description: "Search public web sources",
+      tags: ["search-web"],
     });
   });
 
