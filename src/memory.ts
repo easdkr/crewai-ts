@@ -2078,7 +2078,14 @@ export class Memory {
       content,
       options: await this.resolveSaveOptions(content, options),
     })));
-    this.pendingWrites.push(() => this.runResolvedBackgroundSave(items, options));
+    const plannedItems = await Promise.all(items.map(async (item) => {
+      const similarRecords = this.findSimilarRecords(item.content, item.options.scope);
+      const plan = similarRecords.length > 0
+        ? await analyzeForConsolidation(item.content, similarRecords, this.llm as LLM)
+        : new ConsolidationPlan({ actions: [], insertNew: true });
+      return { ...item, similarRecords, plan };
+    }));
+    this.pendingWrites.push(() => this.runResolvedBackgroundSave(plannedItems, options));
     return [];
   }
 
@@ -2473,7 +2480,12 @@ export class Memory {
   }
 
   private runResolvedBackgroundSave(
-    items: readonly { content: string; options: NonNullable<Parameters<Memory["remember"]>[1]> }[],
+    items: readonly {
+      content: string;
+      options: NonNullable<Parameters<Memory["remember"]>[1]>;
+      similarRecords?: readonly MemoryRecord[];
+      plan?: ConsolidationPlan | null;
+    }[],
     eventOptions: Parameters<Memory["remember"]>[1] = {},
   ): MemoryRecord[] {
     crewaiEventBus.emit(this, new MemorySaveStartedEvent({
@@ -2484,17 +2496,7 @@ export class Memory {
     const start = performance.now();
     try {
       const activeItems = deduplicateMemoryBatch(items, this.config);
-      const records = activeItems.map((item) => new MemoryRecord({
-        content: item.content,
-        scope: this.scopePath(item.options.scope),
-        categories: item.options.categories ?? [],
-        metadata: item.options.metadata ?? {},
-        importance: item.options.importance ?? this.config.defaultImportance,
-        source: item.options.source ?? null,
-        private: item.options.private ?? false,
-        embedding: this.embeddingForText(item.content),
-      }));
-      this.records.push(...records);
+      const records = this.applyBatchSavePlans(activeItems);
       crewaiEventBus.emit(this, new MemorySaveCompletedEvent({
         value: `${String(records.length)} memories saved`,
         metadata: eventOptions.metadata ?? {},
@@ -2511,6 +2513,105 @@ export class Memory {
       }));
       throw error;
     }
+  }
+
+  private applyBatchSavePlans(
+    items: readonly {
+      content: string;
+      options: NonNullable<Parameters<Memory["remember"]>[1]>;
+      similarRecords?: readonly MemoryRecord[];
+      plan?: ConsolidationPlan | null;
+    }[],
+  ): MemoryRecord[] {
+    if (!items.some((item) => item.plan)) {
+      const records = items.map((item) => this.createMemoryRecordFromResolvedItem(item));
+      this.records.push(...records);
+      return records;
+    }
+
+    const deletes = new Set<string>();
+    const updates = new Map<string, { content: string; existing: MemoryRecord }>();
+    for (const item of items) {
+      const similarById = new Map((item.similarRecords ?? []).map((record) => [record.id, record]));
+      for (const action of item.plan?.actions ?? []) {
+        if (action.action === "delete" && !deletes.has(action.recordId) && !updates.has(action.recordId)) {
+          deletes.add(action.recordId);
+        } else if (
+          action.action === "update"
+          && action.newContent
+          && !deletes.has(action.recordId)
+          && !updates.has(action.recordId)
+        ) {
+          const existing = similarById.get(action.recordId) ?? this.get_record(action.recordId);
+          if (existing) {
+            updates.set(action.recordId, { content: action.newContent, existing });
+          }
+        }
+      }
+    }
+
+    if (deletes.size > 0) {
+      this.forget({ recordIds: [...deletes] });
+    }
+
+    const updatedRecords = new Map<string, MemoryRecord>();
+    for (const [recordId, update] of updates.entries()) {
+      const existing = this.get_record(recordId) ?? update.existing;
+      const updated = new MemoryRecord({
+        id: existing.id,
+        content: update.content,
+        scope: existing.scope,
+        categories: existing.categories,
+        metadata: existing.metadata,
+        importance: existing.importance,
+        source: existing.source,
+        private: existing.private,
+        createdAt: existing.createdAt,
+        lastAccessed: new Date(),
+        embedding: this.embeddingForText(update.content) ?? existing.embedding ?? null,
+      });
+      this.update(updated);
+      updatedRecords.set(recordId, updated);
+    }
+
+    const inserted = items
+      .filter((item) => item.plan?.insertNew ?? true)
+      .map((item) => this.createMemoryRecordFromResolvedItem(item));
+    this.records.push(...inserted);
+
+    const resultRecords: MemoryRecord[] = [];
+    for (const item of items) {
+      if (item.plan?.insertNew ?? true) {
+        const insertedRecord = inserted.shift();
+        if (insertedRecord) {
+          resultRecords.push(insertedRecord);
+        }
+        continue;
+      }
+      const actions = item.plan?.actions ?? [];
+      const updated = actions
+        .map((action) => updatedRecords.get(action.recordId))
+        .find((record): record is MemoryRecord => record !== undefined);
+      if (updated) {
+        resultRecords.push(updated);
+      } else if (item.similarRecords?.[0]) {
+        resultRecords.push(item.similarRecords[0]);
+      }
+    }
+    return resultRecords;
+  }
+
+  private createMemoryRecordFromResolvedItem(item: { content: string; options: NonNullable<Parameters<Memory["remember"]>[1]> }): MemoryRecord {
+    return new MemoryRecord({
+      content: item.content,
+      scope: this.scopePath(item.options.scope),
+      categories: item.options.categories ?? [],
+      metadata: item.options.metadata ?? {},
+      importance: item.options.importance ?? this.config.defaultImportance,
+      source: item.options.source ?? null,
+      private: item.options.private ?? false,
+      embedding: this.embeddingForText(item.content),
+    });
   }
 
   private embeddingForText(content: string): readonly number[] | null {

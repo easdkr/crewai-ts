@@ -16317,6 +16317,58 @@ describe("memory", () => {
     ]);
     expect(seen).toEqual(["analysis", "analysis"]);
   });
+
+  it("consolidates async batch saves against existing memories with first action winning", async () => {
+    const seen: string[] = [];
+    const memory = new Memory({
+      rootScope: "/crew",
+      consolidation_threshold: 0.1,
+      llm: (messages, options) => {
+        if (options?.responseModel === ConsolidationPlan) {
+          const prompt = messages.at(-1)?.content ?? "";
+          seen.push(prompt.includes("first") ? "first" : "second");
+          return JSON.stringify({
+            actions: [{
+              action: "update",
+              record_id: "shared-record",
+              new_content: prompt.includes("first")
+                ? "first batch consolidation wins"
+                : "second batch consolidation loses",
+              reason: "merge duplicate batch item",
+            }],
+            insert_new: false,
+          });
+        }
+        return JSON.stringify({
+          suggested_scope: "/research",
+          categories: ["batch"],
+          importance: 0.8,
+          extracted_metadata: { entities: [], dates: [], topics: [] },
+        });
+      },
+    });
+    memory.update(new MemoryRecord({
+      id: "shared-record",
+      content: "Batch consolidate shared memory",
+      scope: "/crew/research",
+      categories: ["batch"],
+      importance: 0.7,
+    }));
+
+    await expect(memory.aremember_many([
+      "Batch consolidate first memory",
+      "Batch consolidate second memory",
+    ], {
+      scope: "/research",
+      categories: ["batch"],
+      importance: 0.8,
+    })).resolves.toEqual([]);
+    memory.drain_writes();
+
+    expect(seen).toEqual(["first", "second"]);
+    expect(memory.allRecords()).toHaveLength(1);
+    expect(memory.get_record("shared-record")?.content).toBe("first batch consolidation wins");
+  });
 });
 
 describe("knowledge", () => {
