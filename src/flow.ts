@@ -894,6 +894,147 @@ export class Flow<TState extends object = Record<string, unknown>> {
     this._applyStateUpdates(updates);
   }
 
+  _createInitialState(): TState {
+    const current = Object.keys(this.state).length > 0
+      ? cloneFlowState(this.state)
+      : {} as TState;
+    const record = current as Record<string, unknown>;
+    record.id ??= randomUUID();
+    return current;
+  }
+
+  _create_initial_state(): TState {
+    return this._createInitialState();
+  }
+
+  async _replayRecordedEvents(): Promise<void> {
+    await Promise.resolve();
+  }
+
+  async _replay_recorded_events(): Promise<void> {
+    await this._replayRecordedEvents();
+  }
+
+  async _executeStartMethod(startMethodName: string): Promise<void> {
+    const method = (this as Record<string, unknown>)[startMethodName];
+    if (typeof method !== "function") {
+      throw new Error(`Flow start method '${startMethodName}' is not callable.`);
+    }
+    const enhanced = this._injectTriggerPayloadForStartMethod(method as (...args: unknown[]) => MaybePromise<unknown>);
+    const [result, eventId] = await this._executeMethod(startMethodName, enhanced);
+    await this._executeListeners(startMethodName, result, eventId);
+    if (result !== undefined && result !== null) {
+      await this._executeListeners(stringifyFlowHelperValue(result), result, eventId);
+    }
+  }
+
+  async _execute_start_method(startMethodName: string): Promise<void> {
+    await this._executeStartMethod(startMethodName);
+  }
+
+  _injectTriggerPayloadForStartMethod<TMethod extends (...args: unknown[]) => MaybePromise<unknown>>(originalMethod: TMethod): TMethod {
+    const enhanced = originalMethod.bind(this) as TMethod;
+    Object.defineProperty(enhanced, "name", { value: originalMethod.name, configurable: true });
+    return enhanced;
+  }
+
+  _inject_trigger_payload_for_start_method<TMethod extends (...args: unknown[]) => MaybePromise<unknown>>(originalMethod: TMethod): TMethod {
+    return this._injectTriggerPayloadForStartMethod(originalMethod);
+  }
+
+  async _executeMethod(
+    methodName: string,
+    method: (...args: unknown[]) => MaybePromise<unknown>,
+    ...args: unknown[]
+  ): Promise<[unknown, string | null]> {
+    const result = await method(...args);
+    const eventId = randomUUID();
+    this.runtimeMethodOutputs.push(result);
+    this.runtimeCompletedMethods.add(methodName);
+    this.runtimeMethodExecutionCounts.set(
+      methodName,
+      (this.runtimeMethodExecutionCounts.get(methodName) ?? 0) + 1,
+    );
+    return [result, eventId];
+  }
+
+  async _execute_method(
+    methodName: string,
+    method: (...args: unknown[]) => MaybePromise<unknown>,
+    ...args: unknown[]
+  ): Promise<[unknown, string | null]> {
+    return await this._executeMethod(methodName, method, ...args);
+  }
+
+  _copyAndSerializeState(): Record<string, unknown> {
+    return cloneFlowState(this.state) as Record<string, unknown>;
+  }
+
+  _copy_and_serialize_state(): Record<string, unknown> {
+    return this._copyAndSerializeState();
+  }
+
+  async _executeListeners(triggerMethod: string, result: unknown, triggeringEventId: string | null = null): Promise<void> {
+    for (const listenerName of this._findTriggeredMethods(triggerMethod, false)) {
+      await this._executeSingleListener(listenerName, result, triggeringEventId);
+    }
+  }
+
+  async _execute_listeners(triggerMethod: string, result: unknown, triggeringEventId: string | null = null): Promise<void> {
+    await this._executeListeners(triggerMethod, result, triggeringEventId);
+  }
+
+  _evaluateCondition(condition: string | FlowCondition, triggerMethod: string, listenerName: string): boolean {
+    void listenerName;
+    return typeof condition === "string"
+      ? condition === triggerMethod
+      : conditionIncludesTrigger(condition, triggerMethod);
+  }
+
+  _evaluate_condition(condition: string | FlowCondition, triggerMethod: string, listenerName: string): boolean {
+    return this._evaluateCondition(condition, triggerMethod, listenerName);
+  }
+
+  _findTriggeredMethods(triggerMethod: string, routerOnly: boolean): string[] {
+    return getFlowMetadata(this)
+      .filter((entry) => (routerOnly ? entry.kind === "router" : entry.kind !== "router"))
+      .filter((entry) => entry.condition && this._evaluateCondition(entry.condition, triggerMethod, String(entry.name)))
+      .map((entry) => String(entry.name));
+  }
+
+  _find_triggered_methods(triggerMethod: string, routerOnly: boolean): string[] {
+    return this._findTriggeredMethods(triggerMethod, routerOnly);
+  }
+
+  async _checkpointStateForAsk(): Promise<void> {
+    await this.saveState("_ask_checkpoint");
+  }
+
+  async _checkpoint_state_for_ask(): Promise<void> {
+    await this._checkpointStateForAsk();
+  }
+
+  _collapseToOutcome(feedback: string, outcomes: readonly string[]): string {
+    return collapseFeedbackToOutcome(feedback, outcomes, outcomes[0] ?? null) ?? "";
+  }
+
+  _collapse_to_outcome(feedback: string, outcomes: readonly string[]): string {
+    return this._collapseToOutcome(feedback, outcomes);
+  }
+
+  _logFlowEvent(message: string, color = "yellow", level: "info" | "warning" = "info"): void {
+    void color;
+    if (level === "warning") {
+      console.warn(message);
+      return;
+    }
+    console.info(message);
+  }
+
+  _log_flow_event(message: string, color = "yellow", level: "info" | "warning" = "info"): void {
+    this._logFlowEvent(message, color, level);
+  }
+
   _markOrListenerFired(listenerName: string): boolean {
     if (this.firedOrListeners.has(listenerName)) {
       return false;
@@ -1945,6 +2086,43 @@ export class Flow<TState extends object = Record<string, unknown>> {
     });
     return feedback ?? "";
   }
+}
+
+export class _FlowGeneric<TState extends object = Record<string, unknown>> extends Flow<TState> {}
+
+export class StateWithId {
+  id: string;
+
+  constructor(id: string = randomUUID()) {
+    this.id = id;
+  }
+}
+
+export class FeedbackOutcome {
+  readonly outcome: string;
+
+  constructor(outcome: string) {
+    this.outcome = outcome;
+  }
+}
+
+export async function _run_flow<TState extends object>(flow: Flow<TState>, options: FlowKickoffOptions | InputValues | null = {}): Promise<unknown> {
+  return await flow.kickoffAsync(options);
+}
+
+export function run_flow<TState extends object>(flow: Flow<TState>, options: FlowKickoffOptions | InputValues | null = {}): Promise<unknown> {
+  return _run_flow(flow, options);
+}
+
+export function prepare_kwargs(...args: unknown[]): [unknown[], Record<string, unknown>] {
+  const maybeKwargs = args.at(-1);
+  return maybeKwargs && typeof maybeKwargs === "object" && !Array.isArray(maybeKwargs)
+    ? [args.slice(0, -1), maybeKwargs as Record<string, unknown>]
+    : [args, {}];
+}
+
+export function enhanced_method<TArgs extends unknown[], TResult>(method: (...args: TArgs) => TResult): (...args: TArgs) => TResult {
+  return (...args: TArgs) => method(...args);
 }
 
 function normalizeInputProviderResponse(value: string | InputResponse | null): {
@@ -3181,6 +3359,22 @@ function stringifyRouterOutput(output: unknown): string {
     return output.toString();
   }
   throw new Error("Flow router methods must return a string, number, boolean, or bigint path.");
+}
+
+function stringifyFlowHelperValue(value: unknown): string {
+  if (
+    typeof value === "string"
+    || typeof value === "number"
+    || typeof value === "boolean"
+    || typeof value === "bigint"
+  ) {
+    return value.toString();
+  }
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return Object.prototype.toString.call(value);
+  }
 }
 
 type FlowCheckpointEntity = {

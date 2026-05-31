@@ -118,6 +118,8 @@ import {
   Fingerprint,
   FileHandler,
   Flow,
+  _FlowGeneric,
+  FeedbackOutcome,
   FlowCreatedEvent,
   FlowFinishedEvent,
   FlowInputReceivedEvent,
@@ -128,6 +130,7 @@ import {
   FlowStreamingOutput,
   FlowMethod,
   FlowTrackable,
+  StateWithId,
   GoalAchievedEarlyEvent,
   GRPCClientConfig,
   GRPCServerConfig,
@@ -397,6 +400,10 @@ import {
   get_crewai_version,
   getLLMUsageMetrics,
   humanFeedback,
+  prepare_kwargs,
+  enhanced_method,
+  run_flow,
+  _run_flow,
   importAndValidateDefinition,
   interpolateOnly,
   listen,
@@ -11065,6 +11072,60 @@ describe("flow runtime", () => {
     expect(racingGroup?.[1]).toBe("handler");
     expect([...(racingGroup?.[0] ?? [])].sort()).toEqual(["a", "b"]);
     expect(flow._get_racing_group_for_listeners(["a", "afterC"])).toBeNull();
+  });
+
+  it("exposes upstream Flow execution helper aliases", async () => {
+    class HelperFlow extends Flow<{ id?: string; events: string[] }> {
+      constructor() {
+        super({ initialState: { events: [] } });
+      }
+
+      begin() {
+        this.state.events.push("begin");
+        return "begin-output";
+      }
+
+      next(value: string) {
+        this.state.events.push(`next:${value}`);
+        return "done";
+      }
+    }
+
+    const initializers = [
+      decorateMethod(HelperFlow, "begin", start() as unknown as Decorator),
+      decorateMethod(HelperFlow, "next", listen("begin") as unknown as Decorator),
+    ];
+    const flow = new HelperFlow();
+    initializers.forEach((initializer) => {
+      initializer.call(flow);
+    });
+
+    expect(flow._create_initial_state().id).toEqual(expect.any(String));
+    expect(flow._find_triggered_methods("begin", false)).toEqual(["next"]);
+    expect(flow._evaluate_condition("begin", "begin", "next")).toBe(true);
+    const [result, eventId] = await flow._execute_method("begin", flow._inject_trigger_payload_for_start_method(flow.begin.bind(flow)));
+    expect(result).toBe("begin-output");
+    expect(eventId).toEqual(expect.any(String));
+    await flow._execute_listeners("begin", result, eventId);
+    expect(flow.state.events).toEqual(["begin", "next:begin-output"]);
+    expect(flow._copy_and_serialize_state()).toMatchObject({ events: ["begin", "next:begin-output"] });
+    expect(flow._collapse_to_outcome("please approve", ["approved", "rejected"])).toBe("approved");
+    await expect(flow._replay_recorded_events()).resolves.toBeUndefined();
+    await expect(flow._checkpoint_state_for_ask()).resolves.toBeUndefined();
+    expect(new StateWithId().id).toEqual(expect.any(String));
+    expect(new FeedbackOutcome("approved").outcome).toBe("approved");
+    expect(new _FlowGeneric()).toBeInstanceOf(Flow);
+    expect(prepare_kwargs("arg", { kw: "value" })).toEqual([["arg"], { kw: "value" }]);
+    expect(enhanced_method((value: string) => `wrapped:${value}`)("ok")).toBe("wrapped:ok");
+    await expect(_run_flow(flow, {})).resolves.toBeDefined();
+    await expect(run_flow(flow, {})).resolves.toBeDefined();
+    const infoSpy = vi.spyOn(console, "info").mockImplementation(() => {});
+    try {
+      flow._log_flow_event("flow helper log");
+      expect(infoSpy).toHaveBeenCalledWith("flow helper log");
+    } finally {
+      infoSpy.mockRestore();
+    }
   });
 
   it("supports routers plus and/or flow conditions", async () => {
