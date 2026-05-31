@@ -38,12 +38,14 @@ export class InternalInstructor {
   readonly model: unknown;
   readonly agent: unknown;
   readonly llm: unknown;
+  readonly _client: unknown;
 
   constructor(content: string, model: unknown, agent: unknown = null, llm: unknown = null) {
     this.content = content;
     this.model = model;
     this.agent = agent;
     this.llm = llm ?? resolveInstructorAgentLlm(agent);
+    this._client = this._create_instructor_client();
   }
 
   toJson(): string {
@@ -68,6 +70,47 @@ export class InternalInstructor {
 
   to_pydantic(): unknown {
     return this.toPydantic();
+  }
+
+  _create_instructor_client(): unknown {
+    const llm = this.llm;
+    if (!isValidInstructorLlm(llm)) {
+      throw new Error("LLM must be a string or have a model attribute");
+    }
+    return {
+      provider: this._extract_provider(),
+      model: typeof llm === "string" ? llm : llm && typeof llm === "object" ? (llm as Record<string, unknown>).model : null,
+      chat: {
+        completions: {
+          create: (options: { messages?: readonly LLMMessage[]; response_model?: unknown; responseModel?: unknown }) => {
+            if (!hasInstructorCall(llm)) {
+              throw new Error("InternalInstructor requires an LLM client with a call method in TypeScript.");
+            }
+            return llm.call(options.messages ?? [], {
+              responseModel: options.responseModel ?? options.response_model ?? this.model,
+            });
+          },
+        },
+      },
+    };
+  }
+
+  _extract_provider(): string {
+    const llm = this.llm;
+    if (llm && typeof llm === "object" && "provider" in llm) {
+      const provider = Reflect.get(llm, "provider");
+      if (typeof provider === "string" && provider.length > 0) {
+        return provider;
+      }
+    }
+    const model = typeof llm === "string"
+      ? llm
+      : llm && typeof llm === "object" && "model" in llm
+        ? Reflect.get(llm, "model")
+        : null;
+    return typeof model === "string" && model.includes("/")
+      ? model.split("/", 1)[0] || "openai"
+      : "openai";
   }
 }
 
@@ -311,6 +354,10 @@ function isValidInstructorLlm(llm: unknown): boolean {
   return llm !== null
     && llm !== undefined
     && (typeof llm === "string" || typeof llm === "function" || (typeof llm === "object" && ("model" in llm || "call" in llm)));
+}
+
+function hasInstructorCall(llm: unknown): llm is { call(messages: readonly LLMMessage[], options?: Record<string, unknown>): unknown } {
+  return Boolean(llm && typeof llm === "object" && "call" in llm && typeof (llm as { call?: unknown }).call === "function");
 }
 
 function callInstructorLlm(llm: unknown, messages: readonly LLMMessage[], model: unknown): unknown {

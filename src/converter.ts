@@ -1,5 +1,6 @@
 import type { LLMClient } from "./llm.js";
 import type { LLMMessage } from "./types.js";
+import { InternalInstructor } from "./utilities.js";
 
 export type StructuredModel<T = unknown> =
   | ((value: unknown) => T)
@@ -101,7 +102,7 @@ export class Converter<T = unknown> {
   async toPydantic(currentAttempt = 1): Promise<T> {
     try {
       const response = await this.llm.call(this.buildMessages(), { responseModel: this.model });
-      return coerceResponseToModel(response, this.model);
+      return this._coerce_response_to_pydantic(response);
     } catch (error) {
       if (currentAttempt < this.maxAttempts) {
         return await this.toPydantic(currentAttempt + 1);
@@ -144,6 +145,14 @@ export class Converter<T = unknown> {
 
   ato_json(currentAttempt = 1): Promise<string | ConverterError> {
     return this.atoJson(currentAttempt);
+  }
+
+  _coerce_response_to_pydantic(response: unknown): T {
+    return coerceResponseToModel(response, this.model);
+  }
+
+  _create_instructor(): InternalInstructor {
+    return new InternalInstructor(this.text, this.model, null, this.llm);
   }
 }
 

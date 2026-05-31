@@ -1627,6 +1627,8 @@ describe("training utilities", () => {
 
     expect(instructor.to_pydantic()).toEqual({ summary: "CrewAI port", score: 9 });
     expect(instructor.to_json()).toBe(JSON.stringify({ summary: "CrewAI port", score: 9 }, null, 2));
+    expect(instructor._extract_provider()).toBe("openai");
+    expect(instructor._create_instructor_client()).toMatchObject({ provider: "openai", model: "test-model" });
     expect(calls[0]?.messages).toEqual([{ role: "user", content: "Summarize CrewAI" }]);
     expect(calls[0]?.options?.responseModel).toBe(model);
   });
@@ -6280,6 +6282,8 @@ describe("converter utilities", () => {
     });
 
     await expect(converter.to_pydantic()).resolves.toEqual({ summary: "converted" });
+    expect(converter._coerce_response_to_pydantic("{\"summary\":\"coerced\"}")).toEqual({ summary: "coerced" });
+    expect(converter._create_instructor()).toBeInstanceOf(InternalInstructor);
     await expect(converter.to_json()).resolves.toBe("{\"summary\":\"converted\"}");
     expect(calls).toBe(3);
 
