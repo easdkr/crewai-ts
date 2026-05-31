@@ -97,6 +97,26 @@ const STANDARD_CATALOG_REQUIRED_FIELDS: Record<string, readonly (readonly string
   Slider: [["value"]],
 };
 export const BASIC_CATALOG_COMPONENTS = new Set(ComponentName);
+const BASIC_CATALOG_REQUIRED_FIELDS: Record<string, readonly (readonly string[])[]> = {
+  Text: [["id"], ["text"]],
+  Image: [["id"], ["url"]],
+  Icon: [["id"], ["name"]],
+  Video: [["id"], ["url"]],
+  AudioPlayer: [["id"], ["url"]],
+  Row: [["id"], ["children"]],
+  Column: [["id"], ["children"]],
+  List: [["id"], ["children"]],
+  Card: [["id"], ["child"]],
+  Tabs: [["id"], ["tabs"]],
+  Modal: [["id"], ["trigger"], ["content"]],
+  Divider: [["id"]],
+  Button: [["id"], ["child"], ["action"]],
+  TextField: [["id"], ["label"]],
+  CheckBox: [["id"], ["label"], ["value"]],
+  ChoicePicker: [["id"], ["options"], ["value"]],
+  Slider: [["id"], ["value"], ["max"]],
+  DateTimeInput: [["id"], ["value"]],
+};
 export const BASIC_CATALOG_FUNCTIONS = new Set(FunctionName);
 export const V09_ICON_NAMES = new Set(IconNameV09);
 
@@ -384,8 +404,19 @@ export function validateCatalogComponentsV09(message: A2UIMessageV09): void {
   }
   const errors = components
     .filter((entry) => entry && typeof entry === "object")
-    .map((entry) => (entry as A2UIRecord).component)
-    .filter((name) => typeof name === "string" && !BASIC_CATALOG_COMPONENTS.has(name as typeof ComponentName[number]));
+    .flatMap((entry) => {
+      const entryRecord = entry as A2UIRecord;
+      const name = entryRecord.component;
+      if (typeof name !== "string" || !BASIC_CATALOG_COMPONENTS.has(name as typeof ComponentName[number])) {
+        return [];
+      }
+      return missingRequiredBasicCatalogFields(name, entryRecord).map((field) => ({
+        component_id: entryRecord.id ?? "<unknown>",
+        component_type: name,
+        field,
+        message: `Field '${field}' is required`,
+      }));
+    });
   if (errors.length > 0) {
     throw new A2UIValidationError(`v0.9 catalog validation failed: ${String(errors.length)} error(s)`, errors);
   }
@@ -682,6 +713,14 @@ function missingRequiredCatalogFields(componentName: string, props: unknown): st
     return (STANDARD_CATALOG_REQUIRED_FIELDS[componentName] ?? []).map((fields) => fields[0] ?? "");
   }
   const fieldGroups = STANDARD_CATALOG_REQUIRED_FIELDS[componentName] ?? [];
+  return missingRequiredFieldGroups(fieldGroups, props);
+}
+
+function missingRequiredBasicCatalogFields(componentName: string, props: A2UIRecord): string[] {
+  return missingRequiredFieldGroups(BASIC_CATALOG_REQUIRED_FIELDS[componentName] ?? [], props);
+}
+
+function missingRequiredFieldGroups(fieldGroups: readonly (readonly string[])[], props: A2UIRecord): string[] {
   const missing: string[] = [];
   for (const fields of fieldGroups) {
     if (!fields.some((field) => field in props && props[field] !== undefined && props[field] !== null)) {

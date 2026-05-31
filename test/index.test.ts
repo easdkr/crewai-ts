@@ -541,6 +541,8 @@ import {
   LanceDBStorage,
   validateJwtToken,
   validate_a2ui_message,
+  validate_a2ui_message_v09,
+  validate_catalog_components_v09,
   ensureAllPropertiesRequired,
   ensureTypeInSchemas,
   stripNullFromTypes,
@@ -2837,6 +2839,38 @@ describe("a2a utilities", () => {
         }],
       },
     }, { validate_catalog: true })).toThrow(A2UIValidationError);
+  });
+
+  it("validates A2UI v0.9 basic catalog components like upstream", () => {
+    const unknownComponent = validate_a2ui_message_v09({
+      version: "v0.9",
+      updateComponents: {
+        surfaceId: "surface",
+        components: [{
+          id: "custom",
+          component: "CustomWidget",
+        }],
+      },
+    });
+
+    expect(() => {
+      validate_catalog_components_v09(unknownComponent);
+    }).not.toThrow();
+
+    const missingText = validate_a2ui_message_v09({
+      version: "v0.9",
+      updateComponents: {
+        surfaceId: "surface",
+        components: [{
+          id: "title",
+          component: "Text",
+        }],
+      },
+    });
+
+    expect(() => {
+      validate_catalog_components_v09(missingText);
+    }).toThrow(A2UIValidationError);
   });
 
   it("activates A2UI server hooks only for declared client extensions", async () => {
