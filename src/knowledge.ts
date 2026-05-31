@@ -2,8 +2,13 @@ import { extname, isAbsolute, join } from "node:path";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { inflateRawSync } from "node:zlib";
 import {
+  buildEmbedder,
+  ChromaDBConfig,
+  createRagClient,
   getRagClient,
   type BaseRecord,
+  type EmbedderConfig,
+  type EmbeddingFunction,
   type RagClient,
   type SearchResult,
 } from "./rag.js";
@@ -221,6 +226,7 @@ export type KnowledgeStorageOptions = {
   collectionName?: string | null;
   collection_name?: string | null;
   client?: RagClient | null;
+  embedder?: EmbedderConfig | null;
 };
 
 export class StringKnowledgeSource implements KnowledgeSource {
@@ -925,13 +931,27 @@ export abstract class BaseKnowledgeStorage {
 export class KnowledgeStorage extends BaseKnowledgeStorage {
   readonly collectionName: string | null;
   readonly collection_name: string | null;
-  private readonly client: RagClient | null;
+  readonly embedder: EmbedderConfig | null;
+  private client: RagClient | null;
 
   constructor(options: KnowledgeStorageOptions = {}) {
     super();
     this.collectionName = options.collectionName ?? options.collection_name ?? null;
     this.collection_name = this.collectionName;
     this.client = options.client ?? null;
+    this.embedder = options.embedder ?? null;
+    this._init_client();
+  }
+
+  _init_client(): this {
+    if (this.embedder && !this.client) {
+      const embedder = buildEmbedder(this.embedder);
+      const embeddingFunction: EmbeddingFunction = (input: unknown) => embedder(input as Parameters<typeof embedder>[0]);
+      this.client = createRagClient(new ChromaDBConfig({
+        embeddingFunction,
+      }));
+    }
+    return this;
   }
 
   search(

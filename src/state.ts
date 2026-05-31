@@ -677,13 +677,18 @@ export class CheckpointConfig {
     this.onEvents = [...(options.onEvents ?? options.on_events ?? ["task_completed"])];
     this.on_events = this.onEvents;
     this.provider = options.provider ?? new JsonProvider();
-    if (this.provider instanceof SqliteProvider && !extname(this.location)) {
-      this.location = `${this.location}.db`;
-    }
     this.maxCheckpoints = options.maxCheckpoints ?? options.max_checkpoints ?? null;
     this.max_checkpoints = this.maxCheckpoints;
     this.restoreFrom = options.restoreFrom ?? options.restore_from ?? null;
     this.restore_from = this.restoreFrom;
+    this._register_handlers();
+  }
+
+  _register_handlers(): this {
+    if (this.provider instanceof SqliteProvider && !extname(this.location)) {
+      this.location = `${this.location}.db`;
+    }
+    return this;
   }
 
   get triggerAll(): boolean {

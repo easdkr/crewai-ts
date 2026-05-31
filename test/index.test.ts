@@ -7080,6 +7080,27 @@ describe("RAG configuration and factories", () => {
     expect(fake.collections.has("knowledge_docs")).toBe(false);
   });
 
+  it("initializes KnowledgeStorage clients from upstream embedder config", () => {
+    const seen: unknown[] = [];
+    const client = {
+      search: vi.fn(() => []),
+    } as unknown as RagClient;
+    registerRagClientFactory("chromadb", (config) => {
+      seen.push(config);
+      return client;
+    });
+
+    const storage = new KnowledgeStorage({
+      collectionName: "docs",
+      embedder: (texts: readonly unknown[]) => texts.map((text) => [String(text).length]),
+    });
+
+    expect(storage._init_client()).toBe(storage);
+    expect(storage._get_client()).toBe(client);
+    expect(seen[0]).toBeInstanceOf(ChromaDBConfig);
+    expect((seen[0] as ChromaDBConfig).embedding_function(["CrewAI"])).toEqual([[6]]);
+  });
+
   it("raises upstream-style knowledge storage errors for embedding dimension mismatches", async () => {
     const storage = new KnowledgeStorage({
       client: {
@@ -19678,6 +19699,7 @@ describe("checkpoint state providers", () => {
     expect(all.triggerAll).toBe(true);
     expect(all.maxCheckpoints).toBe(3);
     expect(all.restoreFrom).toBe("/tmp/cp.json");
+    expect(all._register_handlers()).toBe(all);
     expect(detectProvider("/tmp/checkpoint.json")).toBeInstanceOf(JsonProvider);
   });
 
