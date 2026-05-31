@@ -11,7 +11,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `npm run lint`
   - `npm run smoke:pack`
   - `python3 scripts/check-export-parity.py`
-- Test suite: 450 passing tests.
+- Test suite: 451 passing tests.
 - Root export parity against upstream clone `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `5cdc420`: `total_missing=0`.
 - Public method parity has been tightened for core runtime classes:
   - `ConsoleFormatter`: `missing=0`
@@ -217,6 +217,7 @@ When more goal budget is available, continue from the behavioral parity audits b
   - `GuardrailResult.validate_result_error_exclusivity` now exposes the upstream validator helper for result/error mutual exclusivity.
 - Added skills compatibility behavior:
   - `SkillFrontmatter.parse_allowed_tools` now exposes the upstream frontmatter pre-parse helper for space-delimited allowed tool lists.
+  - `SkillCacheManager.store` now unpacks registry tar.gz and zip archive bytes into the local cache with upstream-style metadata and path traversal protection.
 - Added i18n compatibility behavior:
   - `I18N.load_prompts` now exposes upstream-style prompt catalog reload semantics for custom prompt files and default prompts.
 - Added LiteAgent compatibility behavior:

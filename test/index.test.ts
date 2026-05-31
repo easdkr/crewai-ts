@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { gzipSync } from "node:zlib";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -1769,6 +1770,48 @@ describe("skills", () => {
       expect(cache.listCached()).toMatchObject([{ org: "org", name: "cached-skill", version: "0.1.0" }]);
       expect(cache.invalidate("org", "cached-skill")).toBe(true);
       expect(() => resolveRegistryRef("@org/missing", null, { cwd: dir, cacheRoot })).toThrow(SkillNotCachedError);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("stores registry tar and zip archives with upstream cache metadata", () => {
+    const dir = mkdtempSync(join(tmpdir(), "crewai-ts-skill-archive-"));
+    const cacheRoot = join(dir, "cache");
+    try {
+      const archive = createTarGzArchive({
+        "SKILL.md": [
+          "---",
+          "name: archive-skill",
+          "description: Archived skill.",
+          "---",
+          "Archived instructions.",
+        ].join("\n"),
+        "references/guide.md": "Read this first.",
+      });
+      const cache = new SkillCacheManager(cacheRoot);
+      const storedPath = cache.store("org", "archive-skill", "2.0.0", archive);
+
+      expect(readFileSync(join(storedPath, "SKILL.md"), "utf8")).toContain("Archived instructions.");
+      expect(readFileSync(join(storedPath, "references", "guide.md"), "utf8")).toBe("Read this first.");
+      expect(cache.getCachedPath("org", "archive-skill")).toBe(storedPath);
+      expect(cache.listCached()).toMatchObject([{ org: "org", name: "archive-skill", version: "2.0.0" }]);
+
+      const maliciousArchive = createTarGzArchive({ "../escape.txt": "nope" });
+      expect(() => cache.store("org", "bad-skill", null, maliciousArchive)).toThrow("Blocked path traversal attempt");
+
+      const zipArchive = createZipArchive({
+        "SKILL.md": [
+          "---",
+          "name: zip-skill",
+          "description: Zipped skill.",
+          "---",
+          "Zipped instructions.",
+        ].join("\n"),
+        "assets/example.txt": "zip asset",
+      });
+      const zipPath = cache.store("org", "zip-skill", null, zipArchive);
+      expect(readFileSync(join(zipPath, "assets", "example.txt"), "utf8")).toBe("zip asset");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -16590,6 +16633,63 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => {
     setTimeout(resolve, ms);
   });
+}
+
+function createTarGzArchive(files: Record<string, string>): Buffer {
+  const blocks: Buffer[] = [];
+  for (const [name, content] of Object.entries(files)) {
+    const data = Buffer.from(content);
+    blocks.push(createTarHeader(name, data.length, "0"));
+    blocks.push(data);
+    const padding = (512 - (data.length % 512)) % 512;
+    if (padding > 0) {
+      blocks.push(Buffer.alloc(padding));
+    }
+  }
+  blocks.push(Buffer.alloc(1024));
+  return gzipSync(Buffer.concat(blocks));
+}
+
+function createTarHeader(name: string, size: number, typeflag: "0" | "5"): Buffer {
+  const header = Buffer.alloc(512, 0);
+  header.write(name, 0, Math.min(Buffer.byteLength(name), 100), "utf8");
+  header.write("0000777\0", 100, "ascii");
+  header.write("0000000\0", 108, "ascii");
+  header.write("0000000\0", 116, "ascii");
+  header.write(size.toString(8).padStart(11, "0") + "\0", 124, "ascii");
+  header.write("00000000000\0", 136, "ascii");
+  header.fill(" ", 148, 156);
+  header.write(typeflag, 156, "ascii");
+  header.write("ustar\0", 257, "ascii");
+  header.write("00", 263, "ascii");
+  let checksum = 0;
+  for (const byte of header) {
+    checksum += byte;
+  }
+  header.write(checksum.toString(8).padStart(6, "0") + "\0 ", 148, "ascii");
+  return header;
+}
+
+function createZipArchive(files: Record<string, string>): Buffer {
+  const parts: Buffer[] = [];
+  for (const [name, content] of Object.entries(files)) {
+    const nameBytes = Buffer.from(name);
+    const data = Buffer.from(content);
+    const header = Buffer.alloc(30);
+    header.writeUInt32LE(0x04034b50, 0);
+    header.writeUInt16LE(20, 4);
+    header.writeUInt16LE(0, 6);
+    header.writeUInt16LE(0, 8);
+    header.writeUInt16LE(0, 10);
+    header.writeUInt16LE(0, 12);
+    header.writeUInt32LE(0, 14);
+    header.writeUInt32LE(data.length, 18);
+    header.writeUInt32LE(data.length, 22);
+    header.writeUInt16LE(nameBytes.length, 26);
+    header.writeUInt16LE(0, 28);
+    parts.push(header, nameBytes, data);
+  }
+  return Buffer.concat(parts);
 }
 
 function createTestJwt(options: {

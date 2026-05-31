@@ -1,6 +1,7 @@
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { basename, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
+import { gunzipSync } from "node:zlib";
 
 import { parse as parseYaml } from "yaml";
 
@@ -211,6 +212,22 @@ export class SkillCacheManager {
 
   store_directory(org: string, name: string, version: string | null, source_directory: string): string {
     return this.storeDirectory(org, name, version, source_directory);
+  }
+
+  store(org: string, name: string, version: string | null, archiveBytes: Uint8Array): string {
+    const skillDir = this.skillDir(org, name);
+    if (existsSync(skillDir)) {
+      rmSync(skillDir, { recursive: true, force: true });
+    }
+    mkdirSync(skillDir, { recursive: true });
+    try {
+      extractSkillArchive(archiveBytes, skillDir);
+      this.writeMetadata(skillDir, org, name, version);
+      return skillDir;
+    } catch (error) {
+      rmSync(skillDir, { recursive: true, force: true });
+      throw error;
+    }
   }
 
   listCached(): SkillMetadata[] {
@@ -473,6 +490,109 @@ function normalizeAllowedTools(value: unknown): readonly string[] | null {
     return value.map(String);
   }
   return null;
+}
+
+function extractSkillArchive(archiveBytes: Uint8Array, destination: string): void {
+  const buffer = Buffer.from(archiveBytes);
+  if (buffer.length >= 4 && buffer.readUInt32LE(0) === 0x04034b50) {
+    extractZipArchive(buffer, destination);
+    return;
+  }
+  extractTarGzArchive(buffer, destination);
+}
+
+function extractTarGzArchive(archiveBytes: Uint8Array, destination: string): void {
+  const tar = gunzipSync(archiveBytes);
+  const destinationRoot = resolve(destination);
+  let offset = 0;
+  while (offset + 512 <= tar.length) {
+    const header = tar.subarray(offset, offset + 512);
+    offset += 512;
+    if (header.every((byte) => byte === 0)) {
+      break;
+    }
+    const name = readTarString(header, 0, 100);
+    const prefix = readTarString(header, 345, 155);
+    const entryName = prefix ? `${prefix}/${name}` : name;
+    const size = readTarOctal(header, 124, 12);
+    const typeflag = readTarString(header, 156, 1) || "0";
+    const entryData = tar.subarray(offset, offset + size);
+    offset += size + ((512 - (size % 512)) % 512);
+    if (!entryName) {
+      continue;
+    }
+    const target = resolve(destination, entryName);
+    if (!target.startsWith(`${destinationRoot}/`) && target !== destinationRoot) {
+      throw new Error(`Blocked path traversal attempt: ${JSON.stringify(entryName)}`);
+    }
+    if (typeflag === "5") {
+      mkdirSync(target, { recursive: true });
+      continue;
+    }
+    if (typeflag === "0" || typeflag === "\0") {
+      mkdirSync(dirname(target), { recursive: true });
+      writeFileSync(target, entryData);
+    }
+  }
+}
+
+function readTarString(buffer: Buffer, offset: number, length: number): string {
+  const slice = buffer.subarray(offset, offset + length);
+  const end = slice.indexOf(0);
+  return slice.subarray(0, end >= 0 ? end : slice.length).toString("utf8").trim();
+}
+
+function readTarOctal(buffer: Buffer, offset: number, length: number): number {
+  const raw = readTarString(buffer, offset, length).trim();
+  return raw ? Number.parseInt(raw, 8) : 0;
+}
+
+function extractZipArchive(zip: Buffer, destination: string): void {
+  const destinationRoot = resolve(destination);
+  let offset = 0;
+  let extracted = false;
+  while (offset + 30 <= zip.length) {
+    const signature = zip.readUInt32LE(offset);
+    if (signature === 0x02014b50 || signature === 0x06054b50) {
+      break;
+    }
+    if (signature !== 0x04034b50) {
+      if (!extracted) {
+        throw new Error("Invalid ZIP archive");
+      }
+      break;
+    }
+    const flags = zip.readUInt16LE(offset + 6);
+    const compression = zip.readUInt16LE(offset + 8);
+    const compressedSize = zip.readUInt32LE(offset + 18);
+    const fileNameLength = zip.readUInt16LE(offset + 26);
+    const extraLength = zip.readUInt16LE(offset + 28);
+    const nameStart = offset + 30;
+    const dataStart = nameStart + fileNameLength + extraLength;
+    const dataEnd = dataStart + compressedSize;
+    const entryName = zip.subarray(nameStart, nameStart + fileNameLength).toString("utf8");
+    if ((flags & 0x08) !== 0) {
+      throw new Error("ZIP data descriptors are not supported");
+    }
+    if (compression !== 0) {
+      throw new Error("Only uncompressed ZIP entries are supported");
+    }
+    if (dataEnd > zip.length) {
+      throw new Error("Invalid ZIP archive");
+    }
+    const target = resolve(destination, entryName);
+    if (!target.startsWith(`${destinationRoot}/`) && target !== destinationRoot) {
+      throw new Error(`Blocked path traversal attempt: ${JSON.stringify(entryName)}`);
+    }
+    if (entryName.endsWith("/")) {
+      mkdirSync(target, { recursive: true });
+    } else {
+      mkdirSync(dirname(target), { recursive: true });
+      writeFileSync(target, zip.subarray(dataStart, dataEnd));
+    }
+    extracted = true;
+    offset = dataEnd;
+  }
 }
 
 function normalizeMetadata(value: unknown): Record<string, string> | null {
