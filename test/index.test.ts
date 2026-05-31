@@ -2845,6 +2845,25 @@ describe("a2a utilities", () => {
       caCertPath: "/ca.pem",
     });
     expect(new TLSConfig({ verify: false }).getHttpxSslContext()).toBe(false);
+    expect(new TLSConfig({ verify: false }).get_grpc_credentials()).toBeNull();
+
+    const tlsDir = mkdtempSync(join(tmpdir(), "crewai-ts-tls-"));
+    const certPath = join(tlsDir, "client.pem");
+    const keyPath = join(tlsDir, "client.key");
+    const caPath = join(tlsDir, "ca.pem");
+    writeFileSync(certPath, "cert");
+    writeFileSync(keyPath, "key");
+    writeFileSync(caPath, "ca");
+    expect(new TLSConfig({
+      clientCertPath: certPath,
+      clientKeyPath: keyPath,
+      caCertPath: caPath,
+    }).getGrpcCredentials()).toEqual({
+      rootCertificates: Buffer.from("ca"),
+      privateKey: Buffer.from("key"),
+      certificateChain: Buffer.from("cert"),
+    });
+    rmSync(tlsDir, { recursive: true, force: true });
   });
 
   it("fetches and caches OAuth2 client credentials tokens for A2A auth", async () => {

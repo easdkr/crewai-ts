@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { readFileSync } from "node:fs";
 
 import { validateJwtToken } from "./auth.js";
 import {
@@ -931,6 +932,29 @@ export class TLSConfig {
 
   get_httpx_ssl_context(): boolean | string | { clientCertPath: string; clientKeyPath: string; caCertPath: string | null } {
     return this.getHttpxSslContext();
+  }
+
+  getGrpcCredentials(): {
+    rootCertificates: Buffer | null;
+    privateKey: Buffer | null;
+    certificateChain: Buffer | null;
+  } | null {
+    if (!this.verify && !this.clientCertPath) {
+      return null;
+    }
+    return {
+      rootCertificates: this.caCertPath ? readFileSync(this.caCertPath) : null,
+      privateKey: this.clientCertPath && this.clientKeyPath ? readFileSync(this.clientKeyPath) : null,
+      certificateChain: this.clientCertPath && this.clientKeyPath ? readFileSync(this.clientCertPath) : null,
+    };
+  }
+
+  get_grpc_credentials(): {
+    rootCertificates: Buffer | null;
+    privateKey: Buffer | null;
+    certificateChain: Buffer | null;
+  } | null {
+    return this.getGrpcCredentials();
   }
 }
 
