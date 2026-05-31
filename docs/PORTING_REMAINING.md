@@ -11,7 +11,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `npm run lint`
   - `npm run smoke:pack`
   - `python3 scripts/check-export-parity.py`
-- Test suite: 370 passing tests.
+- Test suite: 371 passing tests.
 - Root export parity against upstream clone `/tmp/crewai-upstream.lPeuQi/crewAI` at commit `2148c7e`: `total_missing=0`.
 - Public method parity has been tightened for core runtime classes:
   - `ConsoleFormatter`: `missing=0`
@@ -45,6 +45,7 @@ When more goal budget is available, continue from the behavioral parity audits b
 ## Completed In Current Flow/Persistence Pass
 
 - Added upstream snake_case method compatibility for `JsonFlowPersistence` and `SQLiteFlowPersistence`:
+  - `SQLiteFlowPersistence.init_db`
   - `save_state` / `load_state`
   - `save_pending_feedback` / `load_pending_feedback`
   - `clear_pending_feedback`

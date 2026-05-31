@@ -218,6 +218,10 @@ export class SQLiteFlowPersistence implements FlowPersistence {
     });
   }
 
+  init_db(): void {
+    this.initDb();
+  }
+
   saveState(flowId: string, methodName: string, state: Record<string, unknown>): Promise<void> {
     this.withDb((db) => {
       this.insertState(db, flowId, methodName, state);

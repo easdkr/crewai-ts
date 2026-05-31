@@ -6917,6 +6917,20 @@ describe("flow runtime", () => {
     }
   });
 
+  it("exposes upstream SQLiteFlowPersistence init_db alias", async () => {
+    const sqliteDirectory = mkdtempSync(join(tmpdir(), "crewai-ts-flow-sqlite-init-"));
+    const backend = new SQLiteFlowPersistence(join(sqliteDirectory, "flows.db"));
+
+    expect(Object.hasOwn(SQLiteFlowPersistence.prototype, "init_db")).toBe(true);
+    backend.init_db();
+    await backend.save_state("init-flow", "begin", { id: "init-flow", events: ["begin"] });
+
+    await expect(backend.load_state("init-flow")).resolves.toEqual({
+      id: "init-flow",
+      events: ["begin"],
+    });
+  });
+
   it("persists flow state after method completion and restores it with fromState", async () => {
     const directory = mkdtempSync(join(tmpdir(), "crewai-ts-flow-state-"));
     const persistence = new JsonFlowPersistence(directory);
