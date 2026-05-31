@@ -199,6 +199,8 @@ export {
   sign_agent_card,
   CommonParams,
   CoercedSecretStr,
+  SecretStr,
+  _coerce_secret_str,
   ConversationState,
   HANDLER_REGISTRY,
   HandlerType,

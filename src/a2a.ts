@@ -1224,7 +1224,35 @@ export const JWTAlgorithm = Object.freeze([
   "PS384",
   "PS512",
 ] as const);
-export const CoercedSecretStr = Object.freeze({ kind: "CoercedSecretStr" });
+
+export class SecretStr {
+  readonly value: string;
+
+  constructor(value: string) {
+    this.value = value;
+  }
+
+  get_secret_value(): string {
+    return this.value;
+  }
+
+  getSecretValue(): string {
+    return this.get_secret_value();
+  }
+
+  toString(): string {
+    return "**********";
+  }
+}
+
+export function _coerce_secret_str(value: string | SecretStr | null | undefined): SecretStr | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  return value instanceof SecretStr ? value : new SecretStr(value);
+}
+
+export const CoercedSecretStr = Object.freeze({ kind: "CoercedSecretStr", coerce: _coerce_secret_str });
 export type RedisCacheConfig = {
   cache?: string;
   endpoint?: string;

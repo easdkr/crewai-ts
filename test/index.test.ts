@@ -258,8 +258,10 @@ import {
   ServerExtensionRegistry,
   SQLiteFlowPersistence,
   SimpleTokenAuth,
+  SecretStr,
   SkillActivatedEvent,
   StorageBackend,
+  _coerce_secret_str,
   SkillFrontmatter,
   SkillDiscoveryCompletedEvent,
   SkillDownloadCompletedEvent,
@@ -4670,6 +4672,13 @@ describe("a2a utilities", () => {
   });
 
   it("authenticates A2A simple server tokens", async () => {
+    const secret = _coerce_secret_str("expected");
+    expect(secret).toBeInstanceOf(SecretStr);
+    expect(secret?.get_secret_value()).toBe("expected");
+    expect(String(secret)).toBe("**********");
+    expect(_coerce_secret_str(secret)).toBe(secret);
+    expect(_coerce_secret_str(null)).toBeNull();
+
     const auth = new SimpleTokenAuth({ token: "expected" });
     await expect(auth.authenticate("expected")).resolves.toBeInstanceOf(AuthenticatedUser);
     await expect(auth.authenticate("expected")).resolves.toMatchObject({
