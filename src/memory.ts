@@ -829,6 +829,7 @@ export class Memory {
   readonly rootScope: string | null;
   readonly llm: LLM | null;
   private readonly records: MemoryRecord[] = [];
+  private readonly pendingWrites: Array<() => MemoryRecord[]> = [];
 
   constructor(options: MemoryOptions = {}) {
     this.readOnly = options.readOnly ?? false;
@@ -887,9 +888,12 @@ export class Memory {
   }
 
   rememberMany(contents: readonly string[], options: Parameters<Memory["remember"]>[1] = {}): MemoryRecord[] {
-    return contents
-      .map((content) => this.remember(content, options))
-      .filter((record): record is MemoryRecord => record !== null);
+    if (contents.length === 0 || this.readOnly) {
+      return [];
+    }
+    const values = [...contents];
+    this.pendingWrites.push(() => this.runBackgroundSave(values, options));
+    return [];
   }
 
   remember_many(contents: readonly string[], options: Parameters<Memory["remember"]>[1] = {}): MemoryRecord[] {
@@ -921,6 +925,7 @@ export class Memory {
   ): MemoryMatch[] {
     const limit = options.limit ?? 10;
     const scoreThreshold = options.scoreThreshold ?? null;
+    this.drainWrites();
     crewaiEventBus.emit(this, new MemoryQueryStartedEvent({ query, limit, scoreThreshold }));
     const start = performance.now();
     try {
@@ -982,7 +987,12 @@ export class Memory {
     return memoryRecord;
   }
 
-  drainWrites(): void {}
+  drainWrites(): void {
+    while (this.pendingWrites.length > 0) {
+      const write = this.pendingWrites.shift();
+      write?.();
+    }
+  }
 
   drain_writes(): void {
     this.drainWrites();
@@ -1063,6 +1073,42 @@ export class Memory {
 
   allRecords(): readonly MemoryRecord[] {
     return this.records;
+  }
+
+  private runBackgroundSave(contents: readonly string[], options: Parameters<Memory["remember"]>[1] = {}): MemoryRecord[] {
+    crewaiEventBus.emit(this, new MemorySaveStartedEvent({
+      value: `${String(contents.length)} memories (background)`,
+      metadata: options.metadata ?? null,
+      agentRole: options.agentRole ?? null,
+    }));
+    const start = performance.now();
+    try {
+      const records = contents.map((content) => new MemoryRecord({
+        content,
+        scope: this.scopePath(options.scope),
+        categories: options.categories ?? [],
+        metadata: options.metadata ?? {},
+        importance: options.importance ?? 0.5,
+        source: options.source ?? null,
+        private: options.private ?? false,
+      }));
+      this.records.push(...records);
+      crewaiEventBus.emit(this, new MemorySaveCompletedEvent({
+        value: `${String(records.length)} memories saved`,
+        metadata: options.metadata ?? {},
+        agentRole: options.agentRole ?? null,
+        saveTimeMs: performance.now() - start,
+      }));
+      return records;
+    } catch (error) {
+      crewaiEventBus.emit(this, new MemorySaveFailedEvent({
+        value: "background save",
+        metadata: options.metadata ?? null,
+        agentRole: options.agentRole ?? null,
+        error,
+      }));
+      throw error;
+    }
   }
 
   private scopePath(scope: string | null | undefined): string {
@@ -1445,10 +1491,14 @@ export class RememberTool extends BaseTool {
 
   protected _run(args: Record<string, unknown>): string {
     const contents = Array.isArray(args.contents) ? args.contents.map(toMemoryToolString) : [toMemoryToolString(args.contents)];
-    const records = contents
-      .map((content) => this.memory.remember(content))
-      .filter((record): record is MemoryRecord => record !== null);
-    return `Saved ${String(records.length)} item${records.length === 1 ? "" : "s"} to memory.`;
+    if (contents.length === 1) {
+      const record = this.memory.remember(contents[0] ?? "");
+      return record
+        ? `Saved to memory (scope=${record.scope}, importance=${record.importance.toFixed(1)}).`
+        : "Memory is read-only; nothing was saved.";
+    }
+    this.memory.remember_many(contents);
+    return `Saving ${String(contents.length)} items to memory in background.`;
   }
 }
 

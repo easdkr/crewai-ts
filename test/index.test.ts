@@ -147,6 +147,7 @@ import {
   MemoryAnalysis,
   MemoryRecord,
   MemorySlice,
+  RememberTool,
   QueryAnalysis,
   MCPServerHTTP,
   MCPServerSSE,
@@ -6879,7 +6880,7 @@ describe("flow runtime", () => {
     ], { categories: ["batch"] });
 
     expect(single).toBeInstanceOf(MemoryRecord);
-    expect(batch).toHaveLength(2);
+    expect(batch).toEqual([]);
     expect(flow.recall("standard decorators", { scoreThreshold: null })[0]?.record.scope)
       .toBe("/flow/memory-flow");
     expect(flow.recall("batch", { categories: ["batch"], scoreThreshold: null })).toHaveLength(2);
@@ -10494,7 +10495,7 @@ describe("memory", () => {
       memory,
     }).kickoff();
 
-    expect(output.raw).toBe("Saved 1 item to memory.");
+    expect(output.raw).toBe("Saved to memory (scope=/, importance=0.5).");
     expect(memory.recall("decorators")[0]?.record.content).toBe("Prefer standard decorators");
     expect(seen).toEqual([
       "memory_save_started:Prefer standard decorators",
@@ -10562,6 +10563,52 @@ describe("memory", () => {
     expect(writableSlice.remember("Writable slice memory", { categories: ["slice"] })?.scope)
       .toBe("/projects/alpha");
     expect(writableSlice.list_categories()).toEqual({ notes: 1, planning: 1, slice: 1 });
+  });
+
+  it("queues remember_many writes until recall or drain_writes applies the read barrier", () => {
+    const memory = new Memory();
+    const seen: string[] = [];
+    crewaiEventBus.on("memory_save_started", (_source, event) => {
+      seen.push(`${event.type}:${event.value ?? ""}`);
+    });
+    crewaiEventBus.on("memory_save_completed", (_source, event) => {
+      seen.push(`${event.type}:${event.value}`);
+    });
+
+    expect(memory.remember_many(["Queued alpha memory", "Queued beta memory"], {
+      categories: ["batch"],
+    })).toEqual([]);
+    expect(memory.allRecords()).toHaveLength(0);
+
+    expect(memory.recall("alpha", { scoreThreshold: null })[0]?.record.content).toBe("Queued alpha memory");
+    expect(memory.allRecords()).toHaveLength(2);
+    expect(seen).toEqual([
+      "memory_save_started:2 memories (background)",
+      "memory_save_completed:2 memories saved",
+    ]);
+
+    expect(memory.rememberMany(["Queued gamma memory"], { categories: ["batch"] })).toEqual([]);
+    expect(memory.allRecords()).toHaveLength(2);
+    memory.drain_writes();
+    expect(memory.allRecords().map((record) => record.content)).toContain("Queued gamma memory");
+  });
+
+  it("uses upstream remember tool responses for single and background batch saves", () => {
+    const memory = new Memory();
+    const toolInstance = new RememberTool({ memory });
+
+    expect(toolInstance.run({ contents: ["Single memory"] })).toMatch(/^Saved to memory \(scope=\/, importance=0\.5\)\.$/);
+    expect(memory.allRecords()).toHaveLength(1);
+
+    expect(toolInstance.run({ contents: ["Batch memory A", "Batch memory B"] }))
+      .toBe("Saving 2 items to memory in background.");
+    expect(memory.allRecords()).toHaveLength(1);
+    memory.drain_writes();
+    expect(memory.allRecords().map((record) => record.content)).toEqual([
+      "Single memory",
+      "Batch memory A",
+      "Batch memory B",
+    ]);
   });
 });
 

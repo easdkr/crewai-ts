@@ -10,7 +10,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `npm run build`
   - `npm run lint`
   - `npm run smoke:pack`
-- Test suite: 315 passing tests.
+- Test suite: 317 passing tests.
 - Root export parity against upstream clone `/tmp/crewai-upstream.lPeuQi/crewAI` at commit `2148c7e`: `total_missing=0`.
 - Public method parity has been tightened for core runtime classes:
   - `ConsoleFormatter`: `missing=0`
@@ -54,6 +54,7 @@ When more goal budget is available, continue from the behavioral parity audits b
   - `Flow.extract_memories`
 - Added unified memory compatibility helpers used by Flow and scoped views:
   - `Memory.remember_many`, `extract_memories`, `update`, `drain_writes`, `close`
+  - upstream-style `remember_many` background write semantics with `recall`/`drain_writes` read barriers and batch `RememberTool` responses
   - `MemoryScope` / `MemorySlice` `remember_many`, `extract_memories`, and `bind`
   - `MemoryScope` relative sub-scope writes/recalls plus `read_only`, `tree`, and `list_categories`
   - `MemorySlice` upstream-style default read-only writes, opt-in writable slices, category-filtered recall, `tree`, and `list_categories`
@@ -105,7 +106,7 @@ When more goal budget is available, continue from the behavioral parity audits b
    - Async aliases and record/scope/category listing.
    - `remember_many`, `extract_memories`, `update`, `drain_writes`, `close`.
    - `MemoryScope` / `MemorySlice` scoped writes/recalls, `bind`, `read_only`, `tree`, and `list_categories`.
-   - These compatibility helpers are now present in the deterministic TS memory shim; remaining work is deeper async/background write and LLM-powered extraction parity.
+   - These compatibility helpers are now present in the deterministic TS memory shim; remaining work is deeper executor-backed async writes and LLM-powered extraction parity.
 
 5. RAG clients
    - ChromaDB/Qdrant client method parity.
