@@ -373,8 +373,10 @@ import {
   SentenceTransformerProvider,
   Text2VecProvider,
   VertexAIProvider,
+  VoyageAIEmbeddingFunction,
   VoyageAIProvider,
   RoboflowProvider,
+  WatsonXEmbeddingFunction,
   WatsonXProvider,
   ResponsesAPIResult,
   EntraIdProvider,
@@ -4783,6 +4785,7 @@ describe("RAG configuration and factories", () => {
       truncation: true,
       max_retries: 0,
     });
+    expect(VoyageAIEmbeddingFunction.name()).toBe("voyageai");
     expect(vertex).toMatchObject({
       provider: "google-vertex",
       project_id: "gcp-project",
@@ -4854,6 +4857,14 @@ describe("RAG configuration and factories", () => {
       batch_size: 100,
       concurrency_limit: 10,
     });
+    expect(WatsonXEmbeddingFunction.name()).toBe("watsonx");
+    expect(new WatsonXProvider({
+      api_key: "watson-test",
+      url: "https://watson.example",
+      model_id: "ibm/slate-125m-english-rtrvr",
+      project_id: "project",
+    }).validate_space_or_project()).toBeInstanceOf(WatsonXProvider);
+    expect(() => watsonx.validateSpaceOrProject()).toThrow("One of 'space_id' or 'project_id' must be provided");
   });
 });
 

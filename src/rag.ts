@@ -522,6 +522,10 @@ export class HuggingFaceProvider extends BaseEmbeddingsProvider {
 }
 
 export class WatsonXEmbeddingFunction {
+  static name(): string {
+    return "watsonx";
+  }
+
   call(input: Embeddable): unknown {
     return defaultEmbeddingCallable(input);
   }
@@ -547,6 +551,17 @@ export class WatsonXProvider extends BaseEmbeddingsProvider {
       retry_status_codes: null,
       ...options,
     });
+  }
+
+  validateSpaceOrProject(): this {
+    if (!this.config.space_id && !this.config.project_id) {
+      throw new Error("One of 'space_id' or 'project_id' must be provided");
+    }
+    return this;
+  }
+
+  validate_space_or_project(): this {
+    return this.validateSpaceOrProject();
   }
 }
 
@@ -666,6 +681,10 @@ export class Text2VecProvider extends BaseEmbeddingsProvider {
 }
 
 export class VoyageAIEmbeddingFunction {
+  static name(): string {
+    return "voyageai";
+  }
+
   call(input: Embeddable): unknown {
     return defaultEmbeddingCallable(input);
   }

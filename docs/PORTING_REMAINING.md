@@ -45,6 +45,7 @@ When more goal budget is available, continue from the behavioral parity audits b
 - Added upstream-style `KnowledgeStorage._get_client` plus collection-name helper aliases for storage extension compatibility.
 - Added embedding provider config-field compatibility for OpenAI, Azure, SentenceTransformer, VoyageAI, VertexAI, HuggingFace, Instructor, Jina, Ollama, OpenCLIP, Text2Vec, Google Generative AI, Bedrock, Cohere, ONNX, Roboflow, and WatsonX defaults plus direct provider attribute access.
 - Added upstream-style embedding factory fallback so built-in provider specs instantiate their provider classes when no custom builder is registered.
+- Added VoyageAI and WatsonX embedding function `name()` helpers plus WatsonX `validate_space_or_project` parity.
 
 ## Completed In Current Flow/Persistence Pass
 
