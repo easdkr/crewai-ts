@@ -541,6 +541,8 @@ import {
   resolveRefs,
   runWithExecutionContext,
   runCrewTool,
+  checkConditionalSkip,
+  check_conditional_skip,
   prepareTaskExecution,
   prepareKickoff,
   prepare_task_execution,
@@ -5709,6 +5711,59 @@ describe("crew execution utilities", () => {
     expect(logs).toEqual([]);
     expect(() => prepareTaskExecution({}, { description: "No agent" }, 0, null, [], null))
       .toThrow("Ensure that either the task has an assigned agent or a manager agent is provided.");
+  });
+
+  it("logs and stores skipped conditional task outputs", () => {
+    const log = vi.fn();
+    const storeExecutionLog = vi.fn();
+    const skippedOutput = new TaskOutput({
+      description: "Conditional",
+      raw: "skipped",
+      agent: "Researcher",
+    });
+    const previousOutput = new TaskOutput({
+      description: "Previous",
+      raw: "previous",
+      agent: "Researcher",
+    });
+    const task = {
+      description: "Only run when needed",
+      should_execute: vi.fn(() => false),
+      get_skipped_task_output: vi.fn(() => skippedOutput),
+    };
+    const crew = {
+      _logger: { log },
+      _store_execution_log: storeExecutionLog,
+    };
+
+    const result = checkConditionalSkip(crew, task, [previousOutput], 3, false);
+
+    expect(result).toBe(skippedOutput);
+    expect(task.should_execute).toHaveBeenCalledWith(previousOutput);
+    expect(task.get_skipped_task_output).toHaveBeenCalledOnce();
+    expect(log).toHaveBeenCalledWith(
+      "debug",
+      "Skipping conditional task: Only run when needed",
+      { color: "yellow" },
+    );
+    expect(storeExecutionLog).toHaveBeenCalledWith(task, skippedOutput, 3);
+  });
+
+  it("does not store replayed conditional skips and preserves non-skip behavior", () => {
+    const storeExecutionLog = vi.fn();
+    const replayedTask = {
+      description: "Replay conditional",
+      shouldExecute: vi.fn(() => false),
+      getSkippedTaskOutput: vi.fn(() => "skipped"),
+    };
+
+    expect(check_conditional_skip({ _storeExecutionLog: storeExecutionLog }, replayedTask, ["previous"], 2, true))
+      .toBe("skipped");
+    expect(storeExecutionLog).not.toHaveBeenCalled();
+    expect(checkConditionalSkip({}, { should_execute: vi.fn(() => true) }, ["previous"]))
+      .toBeNull();
+    expect(checkConditionalSkip({}, { should_execute: vi.fn(() => false) }, []))
+      .toBeNull();
   });
 
   it("prepares kickoff inputs, files, events, agents, and planning hooks", () => {

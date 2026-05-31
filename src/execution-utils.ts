@@ -213,11 +213,35 @@ export function prepareTaskExecution(crew: Record<string, unknown>, task: Record
 
 export const prepare_task_execution = prepareTaskExecution;
 
-export function checkConditionalSkip(_crew: unknown, task: { should_execute?: (output: unknown) => boolean; get_skipped_task_output?: () => unknown }, taskOutputs: readonly unknown[]): unknown {
+export function checkConditionalSkip(
+  crew: Record<string, unknown>,
+  task: Record<string, unknown>,
+  taskOutputs: readonly unknown[],
+  taskIndex = 0,
+  wasReplayed = false,
+): unknown {
   const previous = taskOutputs.at(-1);
-  return previous !== undefined && task.should_execute && !task.should_execute(previous)
-    ? task.get_skipped_task_output?.() ?? null
+  const shouldExecute = task.should_execute ?? task.shouldExecute;
+  if (previous === undefined || typeof shouldExecute !== "function" || callUnknown(shouldExecute, task, previous)) {
+    return null;
+  }
+  const logger = crew._logger ?? crew.logger;
+  callNamed(
+    logger,
+    ["log"],
+    logger,
+    "debug",
+    `Skipping conditional task: ${safeString(task.description)}`,
+    { color: "yellow" },
+  );
+  const getSkippedTaskOutput = task.get_skipped_task_output ?? task.getSkippedTaskOutput;
+  const skippedTaskOutput = typeof getSkippedTaskOutput === "function"
+    ? callUnknown(getSkippedTaskOutput, task)
     : null;
+  if (!wasReplayed) {
+    callNamed(crew, ["_store_execution_log", "_storeExecutionLog", "storeExecutionLog", "store_execution_log"], crew, task, skippedTaskOutput, taskIndex);
+  }
+  return skippedTaskOutput;
 }
 
 export const check_conditional_skip = checkConditionalSkip;
