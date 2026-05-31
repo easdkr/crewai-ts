@@ -4243,6 +4243,24 @@ describe("RAG configuration and factories", () => {
     expect(await knowledge.aquery(["knowledge"], { scoreThreshold: 0.1 })).toEqual([]);
   });
 
+  it("lets knowledge sources save themselves through upstream add aliases", async () => {
+    const fake = new FakeChromaClient();
+    const client = new ChromaDBClient(fake, (texts: readonly string[]) => texts.map((text) => [text.length]));
+    const storage = new KnowledgeStorage({ client, collectionName: "source_docs" });
+    const source = new StringKnowledgeSource({
+      content: "CrewAI source add alias",
+      storage,
+    });
+
+    source.add();
+    expect(storage.search(["alias"], 5, {}, 0.1)).toHaveLength(1);
+
+    storage.reset();
+    await source.aadd();
+    expect(await storage.asearch(["CrewAI"], 5, {}, 0.1)).toHaveLength(1);
+    expect(source.get_embeddings()).toEqual([]);
+  });
+
   it("normalizes and validates embedding vectors", () => {
     expect(normalizeEmbeddings([1, 2, 3])).toEqual([[1, 2, 3]]);
     expect(normalizeEmbeddings([[1, 2], [3, 4]])).toEqual([[1, 2], [3, 4]]);

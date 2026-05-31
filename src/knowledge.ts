@@ -22,7 +22,12 @@ export type KnowledgeQueryOptions = {
 export type KnowledgeSource = {
   readonly sourceType?: string;
   readonly metadata?: Record<string, unknown>;
+  storage?: BaseKnowledgeStorage | null;
   chunks(): readonly string[];
+  add?(): void;
+  aadd?(): Promise<void>;
+  get_embeddings?(): readonly unknown[];
+  validate_content?(): unknown;
 };
 
 export type StringKnowledgeSourceOptions = {
@@ -30,6 +35,9 @@ export type StringKnowledgeSourceOptions = {
   chunkSize?: number;
   chunkOverlap?: number;
   metadata?: Record<string, unknown>;
+  storage?: BaseKnowledgeStorage | null;
+  collectionName?: string | null;
+  collection_name?: string | null;
 };
 
 export type FileKnowledgeSourceOptions = {
@@ -39,6 +47,9 @@ export type FileKnowledgeSourceOptions = {
   chunkSize?: number;
   chunkOverlap?: number;
   metadata?: Record<string, unknown>;
+  storage?: BaseKnowledgeStorage | null;
+  collectionName?: string | null;
+  collection_name?: string | null;
 };
 
 export type PDFTextExtractor = (filePath: string, bytes: Buffer) => string;
@@ -80,6 +91,9 @@ export class StringKnowledgeSource implements KnowledgeSource {
   readonly chunkSize: number;
   readonly chunkOverlap: number;
   readonly metadata: Record<string, unknown>;
+  readonly collectionName: string | null;
+  readonly collection_name: string | null;
+  storage: BaseKnowledgeStorage | null;
 
   constructor(options: StringKnowledgeSourceOptions | string) {
     const normalized = typeof options === "string" ? { content: options } : options;
@@ -87,12 +101,26 @@ export class StringKnowledgeSource implements KnowledgeSource {
     this.chunkSize = normalized.chunkSize ?? 4000;
     this.chunkOverlap = normalized.chunkOverlap ?? 200;
     this.metadata = normalized.metadata ?? {};
+    this.storage = normalized.storage ?? null;
+    this.collectionName = normalized.collectionName ?? normalized.collection_name ?? null;
+    this.collection_name = this.collectionName;
     if (this.chunkSize <= 0) {
       throw new Error("StringKnowledgeSource chunkSize must be a positive number.");
     }
     if (this.chunkOverlap < 0 || this.chunkOverlap >= this.chunkSize) {
       throw new Error("StringKnowledgeSource chunkOverlap must be smaller than chunkSize.");
     }
+    this.validate_content();
+  }
+
+  validateContent(): void {
+    if (typeof this.content !== "string") {
+      throw new Error("StringKnowledgeSource only accepts string content");
+    }
+  }
+
+  validate_content(): void {
+    this.validateContent();
   }
 
   chunks(): readonly string[] {
@@ -106,6 +134,36 @@ export class StringKnowledgeSource implements KnowledgeSource {
     }
     return chunks;
   }
+
+  add(): void {
+    this.saveDocuments(this.chunks());
+  }
+
+  async aadd(): Promise<void> {
+    await this.asaveDocuments(this.chunks());
+  }
+
+  getEmbeddings(): readonly unknown[] {
+    return [];
+  }
+
+  get_embeddings(): readonly unknown[] {
+    return this.getEmbeddings();
+  }
+
+  private saveDocuments(documents: readonly string[]): void {
+    if (!this.storage) {
+      throw new Error("No storage found to save documents.");
+    }
+    this.storage.save(documents);
+  }
+
+  private async asaveDocuments(documents: readonly string[]): Promise<void> {
+    if (!this.storage) {
+      throw new Error("No storage found to save documents.");
+    }
+    await this.storage.asave(documents);
+  }
 }
 
 abstract class BaseTextKnowledgeSource implements KnowledgeSource {
@@ -113,11 +171,17 @@ abstract class BaseTextKnowledgeSource implements KnowledgeSource {
   readonly chunkSize: number;
   readonly chunkOverlap: number;
   readonly metadata: Record<string, unknown>;
+  readonly collectionName: string | null;
+  readonly collection_name: string | null;
+  storage: BaseKnowledgeStorage | null;
 
-  protected constructor(options: Pick<FileKnowledgeSourceOptions, "chunkSize" | "chunkOverlap" | "metadata">) {
+  protected constructor(options: Pick<FileKnowledgeSourceOptions, "chunkSize" | "chunkOverlap" | "metadata" | "storage" | "collectionName" | "collection_name">) {
     this.chunkSize = options.chunkSize ?? 4000;
     this.chunkOverlap = options.chunkOverlap ?? 200;
     this.metadata = options.metadata ?? {};
+    this.storage = options.storage ?? null;
+    this.collectionName = options.collectionName ?? options.collection_name ?? null;
+    this.collection_name = this.collectionName;
     if (this.chunkSize <= 0) {
       throw new Error(`${this.constructor.name} chunkSize must be a positive number.`);
     }
@@ -130,7 +194,45 @@ abstract class BaseTextKnowledgeSource implements KnowledgeSource {
     return chunkText(this.loadText(), this.chunkSize, this.chunkOverlap);
   }
 
+  validateContent(): void {
+    void this.loadText();
+  }
+
+  validate_content(): void {
+    this.validateContent();
+  }
+
+  add(): void {
+    this.saveDocuments(this.chunks());
+  }
+
+  async aadd(): Promise<void> {
+    await this.asaveDocuments(this.chunks());
+  }
+
+  getEmbeddings(): readonly unknown[] {
+    return [];
+  }
+
+  get_embeddings(): readonly unknown[] {
+    return this.getEmbeddings();
+  }
+
   protected abstract loadText(): string;
+
+  private saveDocuments(documents: readonly string[]): void {
+    if (!this.storage) {
+      throw new Error("No storage found to save documents.");
+    }
+    this.storage.save(documents);
+  }
+
+  private async asaveDocuments(documents: readonly string[]): Promise<void> {
+    if (!this.storage) {
+      throw new Error("No storage found to save documents.");
+    }
+    await this.storage.asave(documents);
+  }
 }
 
 export class TextFileKnowledgeSource extends BaseTextKnowledgeSource {
