@@ -17874,6 +17874,60 @@ describe("crew memory reset", () => {
     expect(taskInstance.output).toBeNull();
   });
 
+  it("exposes upstream-style memory reset helper methods", () => {
+    const memory = new Memory();
+    memory.remember("CrewAI memory helper reset.");
+    const agentKnowledge = new Knowledge({
+      sources: [new StringKnowledgeSource("Agent knowledge helper reset.")],
+    });
+    const agent = new Agent({
+      role: "Researcher",
+      goal: "Use knowledge",
+      backstory: "Careful analyst",
+      knowledge: agentKnowledge,
+    });
+    const crewInstance = new Crew({
+      agents: [agent],
+      memory,
+    });
+
+    const systems = crewInstance._get_memory_systems();
+    expect(systems.memory.name).toBe("Memory");
+    expect(systems.agent_knowledge.name).toBe("Agent Knowledge");
+
+    crewInstance._reset_specific_memory("memory");
+    expect(memory.recall("helper", { scoreThreshold: null })).toEqual([]);
+
+    const resetSpy = vi.fn();
+    crewInstance._reset_memory_system(crewInstance, "Task Output", resetSpy);
+    expect(resetSpy).toHaveBeenCalledWith(crewInstance);
+
+    crewInstance._reset_all_memories();
+    expect(agentKnowledge.query("helper", { scoreThreshold: null })).toEqual([]);
+  });
+
+  it("sets trigger context injection on the first task through the upstream helper", () => {
+    const firstTask = new Task({
+      description: "Handle trigger",
+      expectedOutput: "Handled",
+    });
+    const secondTask = new Task({
+      description: "Follow up",
+      expectedOutput: "Done",
+    });
+    const crewInstance = new Crew({
+      tasks: [firstTask, secondTask],
+      checkpoint_inputs: {
+        crewai_trigger_payload: { source: "webhook" },
+      },
+    });
+
+    crewInstance._set_allow_crewai_trigger_context_for_first_task();
+
+    expect(firstTask.allow_crewai_trigger_context).toBe(true);
+    expect(secondTask.allow_crewai_trigger_context).toBeNull();
+  });
+
   it("runs upstream-style reset memories command for crews and flows", () => {
     const crewCommands: string[] = [];
     const flowMemory = new Memory();

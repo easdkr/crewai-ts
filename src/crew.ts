@@ -85,6 +85,14 @@ export type ResetMemoriesCommandType =
   | "entity"
   | "external";
 
+type NormalizedResetMemoriesCommandType = Exclude<ReturnType<typeof normalizeResetMemoriesCommandType>, "all">;
+
+type MemorySystemConfig = {
+  system: Memory | MemoryScope | readonly Knowledge[] | Crew | null;
+  name: string;
+  reset: (system: Memory | MemoryScope | readonly Knowledge[] | Crew) => void;
+};
+
 export type CrewOptions = {
   id?: string;
   name?: string | null;
@@ -1330,6 +1338,46 @@ export class Crew {
     this.resetMemories(commandType);
   }
 
+  resetMemorySystem(
+    system: Memory | MemoryScope | readonly Knowledge[] | Crew,
+    _name: string,
+    resetFn: (system: Memory | MemoryScope | readonly Knowledge[] | Crew) => void,
+  ): void {
+    resetFn(system);
+  }
+
+  _reset_memory_system(
+    system: Memory | MemoryScope | readonly Knowledge[] | Crew,
+    name: string,
+    reset_fn: (system: Memory | MemoryScope | readonly Knowledge[] | Crew) => void,
+  ): void {
+    this.resetMemorySystem(system, name, reset_fn);
+  }
+
+  resetAllMemories(): void {
+    this.resetAvailableMemorySystems();
+  }
+
+  _reset_all_memories(): void {
+    this.resetAllMemories();
+  }
+
+  resetSpecificMemory(memoryType: NormalizedResetMemoriesCommandType): void {
+    this.resetSpecificMemorySystem(memoryType);
+  }
+
+  _reset_specific_memory(memory_type: NormalizedResetMemoriesCommandType): void {
+    this.resetSpecificMemory(memory_type);
+  }
+
+  getMemorySystems(): Record<NormalizedResetMemoriesCommandType, MemorySystemConfig> {
+    return this.buildMemorySystems();
+  }
+
+  _get_memory_systems(): Record<NormalizedResetMemoriesCommandType, MemorySystemConfig> {
+    return this.getMemorySystems();
+  }
+
   fetchInputs(): Set<string> {
     const requiredInputs = new Set<string>();
     for (const task of this.tasks) {
@@ -1353,6 +1401,24 @@ export class Crew {
 
   reset_knowledge(knowledges: readonly Knowledge[]): void {
     this.resetKnowledge(knowledges);
+  }
+
+  setAllowCrewaiTriggerContextForFirstTask(inputs: InputValues | null = this.checkpointInputs): void {
+    const firstTask = this.tasks[0];
+    if (
+      this.process === Process.sequential
+      && firstTask
+      && firstTask.allowCrewaiTriggerContext === null
+      && inputs
+      && inputs.crewai_trigger_payload
+    ) {
+      firstTask.allowCrewaiTriggerContext = true;
+      firstTask.allow_crewai_trigger_context = true;
+    }
+  }
+
+  _set_allow_crewai_trigger_context_for_first_task(inputs?: InputValues | null): void {
+    this.setAllowCrewaiTriggerContextForFirstTask(inputs ?? this.checkpointInputs);
   }
 
   getAgentToUse(task: Task): Agent | null {
@@ -1468,26 +1534,22 @@ export class Crew {
   }
 
   private resetAvailableMemorySystems(): void {
-    for (const config of Object.values(this.getMemorySystems())) {
+    for (const config of Object.values(this.buildMemorySystems())) {
       if (config.system) {
         config.reset(config.system);
       }
     }
   }
 
-  private resetSpecificMemorySystem(memoryType: Exclude<ReturnType<typeof normalizeResetMemoriesCommandType>, "all">): void {
-    const config = this.getMemorySystems()[memoryType];
+  private resetSpecificMemorySystem(memoryType: NormalizedResetMemoriesCommandType): void {
+    const config = this.buildMemorySystems()[memoryType];
     if (!config.system) {
       throw new Error(`${config.name} memory system is not initialized`);
     }
     config.reset(config.system);
   }
 
-  private getMemorySystems(): Record<Exclude<ReturnType<typeof normalizeResetMemoriesCommandType>, "all">, {
-    system: Memory | MemoryScope | readonly Knowledge[] | Crew | null;
-    name: string;
-    reset: (system: Memory | MemoryScope | readonly Knowledge[] | Crew) => void;
-  }> {
+  private buildMemorySystems(): Record<NormalizedResetMemoriesCommandType, MemorySystemConfig> {
     const agentKnowledges = this.agents
       .map((agent) => agent.knowledge)
       .filter((knowledge): knowledge is Knowledge => knowledge !== null);
