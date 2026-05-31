@@ -29,6 +29,8 @@ export type LLMResponse = string | ToolCalling;
 
 export type LLMCallOptions = {
   tools?: readonly Tool[];
+  availableFunctions?: Record<string, unknown>;
+  available_functions?: Record<string, unknown>;
   responseModel?: unknown;
   signal?: AbortSignal;
   metadata?: Record<string, unknown>;
@@ -1665,6 +1667,7 @@ export async function callLLM(
       model,
       messages: serializeLLMMessages(mutableMessages),
       tools: serializeLLMTools(options.tools),
+      available_functions: options.availableFunctions ?? options.available_functions ?? null,
     }));
     const context = new LLMCallHookContext({
       messages: mutableMessages,
@@ -2233,15 +2236,25 @@ function stringifyToolExecutionResult(value: unknown): string {
   return JSON.stringify(value);
 }
 
-function serializeLLMTools(tools: readonly Tool[] | undefined): readonly Record<string, unknown>[] | null {
+function serializeLLMTools(tools: readonly unknown[] | undefined): readonly Record<string, unknown>[] | null {
   if (!tools || tools.length === 0) {
     return null;
   }
-  return tools.map((tool) => ({
-    name: tool.name,
-    description: tool.description ?? null,
-    resultAsAnswer: tool.resultAsAnswer ?? false,
-  }));
+  return tools.map((tool) => {
+    if (isToolLike(tool)) {
+      return {
+        name: tool.name,
+        description: tool.description ?? null,
+        resultAsAnswer: tool.resultAsAnswer ?? false,
+      };
+    }
+    return recordOrNull(tool) ?? { value: String(tool) };
+  });
+}
+
+function isToolLike(value: unknown): value is Tool {
+  const record = recordOrNull(value);
+  return record !== null && typeof record.name === "string" && "run" in record;
 }
 
 function isToolCallingResponse(response: LLMResponse): response is ToolCalling {

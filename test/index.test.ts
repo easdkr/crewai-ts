@@ -388,6 +388,7 @@ import {
   generateCrewDescriptionWithAi,
   generateCrewToolSchema,
   generateInputDescriptionWithAi,
+  handleUserInput,
   generateModelDescription,
   getToolNames,
   forceAdditionalPropertiesFalse,
@@ -3759,6 +3760,39 @@ describe("crew chat utilities", () => {
     await expect(createToolFunction(crewInstance, messages)({ topic: "TS" })).resolves.toContain("Research TS");
     expect(crewInstance.chatLlm).toBe("gpt-4o-mini");
     expect(seenInputs[0]?.crew_chat_messages).toBe(JSON.stringify(messages));
+  });
+
+  it("passes crew chat tool schema and functions through user input handling", async () => {
+    const messages: LLMMessage[] = [];
+    const toolSchema = generateCrewToolSchema(new ChatInputs({
+      crew_name: "research_crew",
+      crew_description: "Research topics",
+      inputs: [new ChatInputField({ name: "topic", description: "Topic to research" })],
+    }));
+    const availableFunctions = {
+      research_crew: () => "crew result",
+    };
+    const seenOptions: LLMCallOptions[] = [];
+
+    await handleUserInput(
+      "Please research CrewAI",
+      {
+        call: (_messages: readonly LLMMessage[], options?: LLMCallOptions) => {
+          seenOptions.push(options ?? {});
+          return "Calling the crew now.";
+        },
+      },
+      messages,
+      toolSchema,
+      availableFunctions,
+    );
+
+    expect(seenOptions[0]?.tools).toEqual([toolSchema]);
+    expect(seenOptions[0]?.availableFunctions).toBe(availableFunctions);
+    expect(messages).toEqual([
+      { role: "user", content: "Please research CrewAI" },
+      { role: "assistant", content: "Calling the crew now." },
+    ]);
   });
 
   it("checks conversational crew version compatibility", () => {

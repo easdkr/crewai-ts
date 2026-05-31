@@ -177,9 +177,10 @@ export async function handleUserInput(
     return;
   }
   messages.push({ role: "user", content: userInput });
-  void crewToolSchema;
-  void availableFunctions;
-  const response = await callLLM(createLLMClient(chatLlm), messages);
+  const response = await callLLM(createLLMClient(chatLlm), messages, {
+    tools: [crewToolSchema] as never,
+    availableFunctions,
+  });
   messages.push({ role: "assistant", content: stringifyLlmResponse(response) });
 }
 
