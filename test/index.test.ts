@@ -451,6 +451,7 @@ import {
   InternalInstructor,
   InstructorProvider,
   JinaProvider,
+  OllamaEmbeddingFunction,
   OllamaProvider,
   ONNXProvider,
   OpenCLIPProvider,
@@ -7134,7 +7135,20 @@ describe("RAG configuration and factories", () => {
     });
     expect(await registered(["CrewAI"])).toEqual([[6, 3]]);
     expect(() => buildEmbedderFromDict({ provider: "custom", config: {} })).toThrow("embedding_callable");
-    expect(buildEmbedderFromDict({ provider: "ollama", config: { model_name: "nomic-embed-text" } })(["CrewAI"])).toEqual([[0]]);
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ embedding: [0.1, 0.2, 0.3] }),
+    } as Response);
+    await expect(buildEmbedderFromDict({ provider: "ollama", config: { model_name: "nomic-embed-text" } })(["CrewAI"]))
+      .resolves.toEqual([[0.1, 0.2, 0.3]]);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:11434/api/embeddings",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ model: "nomic-embed-text", prompt: "CrewAI" }),
+      }),
+    );
+    fetchMock.mockRestore();
   });
 
   it("exposes upstream embedding provider config fields and defaults", () => {
@@ -7282,6 +7296,42 @@ describe("RAG configuration and factories", () => {
       project_id: "project",
     }).validate_space_or_project()).toBeInstanceOf(WatsonXProvider);
     expect(() => watsonx.validateSpaceOrProject()).toThrow("One of 'space_id' or 'project_id' must be provided");
+  });
+
+  it("calls Ollama's embeddings API for local embedding providers", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ embedding: [1, 2] }),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ embeddings: [[3, 4]] }),
+      } as Response);
+
+    const embeddingFunction = new OllamaEmbeddingFunction({
+      url: "http://ollama.local/api/embeddings",
+      model_name: "nomic-embed-text",
+    });
+
+    await expect(embeddingFunction.__call__(["first", "second"])).resolves.toEqual([[1, 2], [3, 4]]);
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "http://ollama.local/api/embeddings",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ model: "nomic-embed-text", prompt: "first" }),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "http://ollama.local/api/embeddings",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ model: "nomic-embed-text", prompt: "second" }),
+      }),
+    );
+    fetchMock.mockRestore();
   });
 
   it("exposes upstream __call__ aliases on embedding functions", () => {

@@ -313,7 +313,7 @@ export const JinaProviderConfig = Object.freeze({ kind: "JinaProviderConfig" });
 export type JinaProviderSpec = BaseProviderSpec<"jina", JinaProviderConfig>;
 export const JinaProviderSpec = providerSpecMarker("JinaProviderSpec");
 
-export type OllamaProviderConfig = { url?: string; model_name?: string };
+export type OllamaProviderConfig = { url?: string; model_name?: string; model?: string };
 export const OllamaProviderConfig = Object.freeze({ kind: "OllamaProviderConfig" });
 export type OllamaProviderSpec = BaseProviderSpec<"ollama", OllamaProviderConfig>;
 export const OllamaProviderSpec = providerSpecMarker("OllamaProviderSpec");
@@ -607,13 +607,72 @@ export class JinaProvider extends BaseEmbeddingsProvider {
   }
 }
 
+export class OllamaEmbeddingFunction {
+  readonly url: string;
+  readonly model_name: string;
+
+  constructor(options: OllamaProviderConfig & { url: string; model_name: string }) {
+    this.url = options.url;
+    this.model_name = options.model_name;
+  }
+
+  async call(input: Embeddable): Promise<Embeddings> {
+    const values = Array.isArray(input) ? input : [input];
+    const embeddings: Embedding[] = [];
+    for (const value of values) {
+      embeddings.push(await this.embedSingle(String(value)));
+    }
+    return embeddings;
+  }
+
+  async __call__(input: Embeddable): Promise<Embeddings> {
+    return this.call(input);
+  }
+
+  asCallable(): TypedEmbeddingFunction {
+    const callable: TypedEmbeddingFunction = (input: Embeddable) => this.call(input);
+    callable.embedQuery = callable;
+    callable.embed_query = callable;
+    return callable;
+  }
+
+  private async embedSingle(prompt: string): Promise<Embedding> {
+    const response = await fetch(this.url, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ model: this.model_name, prompt }),
+    });
+    if (!response.ok) {
+      throw new Error(`Ollama embeddings request failed with status ${String(response.status)}`);
+    }
+    return extractOllamaEmbedding(await response.json());
+  }
+}
+
+function extractOllamaEmbedding(payload: unknown): Embedding {
+  if (isRecord(payload) && isNumberArray(payload.embedding)) {
+    return payload.embedding;
+  }
+  if (isRecord(payload) && Array.isArray(payload.embeddings) && isNumberArray(payload.embeddings[0])) {
+    return payload.embeddings[0];
+  }
+  throw new Error("Ollama embeddings response did not include an embedding.");
+}
+
+function isNumberArray(value: unknown): value is number[] {
+  return Array.isArray(value) && value.every((item) => typeof item === "number");
+}
+
 export class OllamaProvider extends BaseEmbeddingsProvider {
   readonly provider = "ollama";
 
   constructor(options: OllamaProviderConfig = {}) {
+    const url = options.url ?? "http://localhost:11434/api/embeddings";
+    const modelName = options.model_name ?? options.model ?? "";
     super({
-      embeddingCallable: defaultEmbeddingCallable,
-      url: "http://localhost:11434/api/embeddings",
+      embeddingCallable: new OllamaEmbeddingFunction({ ...options, url, model_name: modelName }).asCallable(),
+      url,
+      model_name: modelName,
       ...options,
     });
   }

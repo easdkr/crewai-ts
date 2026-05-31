@@ -1914,6 +1914,7 @@ export {
   MAX_COLLECTION_LENGTH,
   MIN_COLLECTION_LENGTH,
   NumberType,
+  OllamaEmbeddingFunction,
   OllamaProvider,
   OllamaProviderConfig,
   OllamaProviderSpec,
