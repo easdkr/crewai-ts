@@ -622,6 +622,10 @@ export class FlowMethod {
     return this._instance ? this._meth(this._instance, ...args) : this._meth(...args);
   }
 
+  __call__(...args: unknown[]): unknown {
+    return this.call(...args);
+  }
+
   unwrap(): (...args: unknown[]) => unknown {
     return this._meth;
   }

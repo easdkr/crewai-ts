@@ -89,6 +89,7 @@ import {
   FlowPlotEvent,
   FlowStartedEvent,
   FlowStreamingOutput,
+  FlowMethod,
   FlowTrackable,
   GoalAchievedEarlyEvent,
   GRPCServerConfig,
@@ -132,6 +133,7 @@ import {
   LiteAgentExecutionCompletedEvent,
   LiteAgentExecutionErrorEvent,
   LiteAgentExecutionStartedEvent,
+  LLMCallHookContext,
   LLMCallCompletedEvent,
   LLMCallFailedEvent,
   LLMCallStartedEvent,
@@ -239,6 +241,8 @@ import {
   StructuredTool,
   SemanticQualityEvaluator,
   Task,
+  BoundTaskMethod,
+  DecoratedMethod,
   TaskMethod,
   TaskEvaluator,
   TaskEvaluationEvent,
@@ -570,6 +574,10 @@ import {
   TraceBatchManager,
   TraceCollectionListener,
   TraceEvent,
+  AfterLLMCallHookMethod,
+  AfterToolCallHookMethod,
+  BeforeLLMCallHookMethod,
+  BeforeToolCallHookMethod,
   WorkosProvider,
   OutputParserError,
   OptionalDependencyError,
@@ -9760,7 +9768,21 @@ describe("project config mapping", () => {
 
     expect((wrapped.invoke() as Task).name).toBe("researchTask");
     expect((wrapped.call(null) as Task).name).toBe("researchTask");
+    expect((wrapped.__call__() as Task).name).toBe("researchTask");
     expect(wrapped.ensure_task_name({ name: "" })).toEqual({ name: "researchTask" });
+  });
+
+  it("exposes upstream callable aliases on project and flow wrappers", () => {
+    const decorated = new DecoratedMethod((value: unknown) => `decorated:${String(value)}`);
+    const taskMethod = new TaskMethod(function buildTask() {
+      return new Task({ description: "Build task", expectedOutput: "Done" });
+    });
+    const boundTask = new BoundTaskMethod(taskMethod, {});
+    const flowMethod = new FlowMethod((value: unknown) => `flow:${String(value)}`);
+
+    expect(decorated.__call__("CrewAI")).toBe("decorated:CrewAI");
+    expect((boundTask.__call__() as Task).name).toBe("buildTask");
+    expect(flowMethod.__call__("CrewAI")).toBe("flow:CrewAI");
   });
 
   it("loads YAML config and resolves decorated method references", async () => {
@@ -16527,6 +16549,24 @@ describe("runtime state", () => {
 });
 
 describe("global hooks", () => {
+  it("exposes upstream callable aliases on filtered hook wrappers", () => {
+    const llmContext = new LLMCallHookContext({ messages: [{ role: "user", content: "hello" }] });
+    const toolContext = new ToolCallHookContext({
+      tool: new StructuredTool({
+        name: "search",
+        description: "Search",
+        argsSchema: {},
+        func: () => "result",
+      }),
+      toolInput: {},
+    });
+
+    expect(new BeforeLLMCallHookMethod((context) => context instanceof LLMCallHookContext).__call__(llmContext)).toBe(true);
+    expect(new AfterLLMCallHookMethod(() => "rewritten").__call__(llmContext)).toBe("rewritten");
+    expect(new BeforeToolCallHookMethod((context) => (context as ToolCallHookContext).tool_name === "search").__call__(toolContext)).toBe(true);
+    expect(new AfterToolCallHookMethod(() => "checked").__call__(toolContext)).toBe("checked");
+  });
+
   it("runs before and after LLM hooks around agent LLM calls", async () => {
     beforeLlmCall((context) => {
       const userMessage = context.messages.find((message) => message.role === "user");

@@ -44,6 +44,10 @@ export class DecoratedMethod {
     return this._meth(...args);
   }
 
+  __call__(...args: readonly unknown[]): unknown {
+    return this.invoke(...args);
+  }
+
   unwrap(): AnyFunction {
     return this._meth;
   }
@@ -125,6 +129,10 @@ export class BoundTaskMethod {
 
   call(...args: readonly unknown[]): unknown {
     return this.taskMethod.call(this.instance, ...args);
+  }
+
+  __call__(...args: readonly unknown[]): unknown {
+    return this.call(...args);
   }
 }
 

@@ -161,6 +161,10 @@ class HookMethod {
   call(...args: unknown[]): unknown {
     return this._meth(...args);
   }
+
+  __call__(...args: unknown[]): unknown {
+    return this.call(...args);
+  }
 }
 
 export class BeforeLLMCallHookMethod extends HookMethod {
