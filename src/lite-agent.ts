@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { Agent, type CodeExecutionMode } from "./agent.js";
 import {
+  AgentLogsExecutionEvent,
   LLMGuardrailCompletedEvent,
   LLMGuardrailStartedEvent,
   LiteAgentExecutionCompletedEvent,
@@ -13,11 +14,12 @@ import {
   crewaiEventBus,
 } from "./events.js";
 import { getAfterLlmCallHooks, getBeforeLlmCallHooks, type AfterLLMCallHook, type BeforeLLMCallHook } from "./hooks.js";
+import { I18N_DEFAULT } from "./i18n.js";
 import { extractInputFilesFromInputs, type InputFiles } from "./input-files.js";
 import { createLLM, emptyUsageMetrics, type LLM, type LLMClient, type UsageMetrics } from "./llm.js";
 import { LiteAgentOutput } from "./lite-agent-output.js";
 import { Memory, type MemoryScope } from "./memory.js";
-import { parseTools } from "./agent-utils.js";
+import { getToolNames, parseTools, renderTextDescriptionAndArgs } from "./agent-utils.js";
 import type { AgentStepCallback, LLMMessage, Tool } from "./types.js";
 
 export type LiteAgentGuardrailResult =
@@ -324,6 +326,50 @@ export class LiteAgent {
     return this._formatMessages(messages, response_format, input_files);
   }
 
+  _getDefaultSystemPrompt(responseFormat: unknown = null): string {
+    const activeResponseFormat = responseFormat ?? this.responseFormat;
+    let prompt = this.tools.length > 0
+      ? I18N_DEFAULT.slice("lite_agent_system_prompt_with_tools").replace("{role}", this.role)
+        .replace("{backstory}", this.backstory)
+        .replace("{goal}", this.goal)
+        .replace("{tools}", renderTextDescriptionAndArgs(this.tools))
+        .replace("{tool_names}", getToolNames(this.tools))
+      : I18N_DEFAULT.slice("lite_agent_system_prompt_without_tools").replace("{role}", this.role)
+        .replace("{backstory}", this.backstory)
+        .replace("{goal}", this.goal);
+    if (activeResponseFormat) {
+      prompt += I18N_DEFAULT.slice("lite_agent_response_format").replace(
+        "{response_format}",
+        JSON.stringify(this._serializeResponseFormat(activeResponseFormat), null, 2),
+      );
+    }
+    return prompt;
+  }
+
+  _get_default_system_prompt(response_format: unknown = null): string {
+    return this._getDefaultSystemPrompt(response_format);
+  }
+
+  _serializeResponseFormat(value: unknown): unknown {
+    return serializeLiteAgentResponseFormat(value);
+  }
+
+  _serialize_response_format(value: unknown): unknown {
+    return this._serializeResponseFormat(value);
+  }
+
+  _showLogs(formattedAnswer: unknown): void {
+    crewaiEventBus.emit(this, new AgentLogsExecutionEvent({
+      agent_role: this.role,
+      formatted_answer: formattedAnswer,
+      verbose: this.verbose,
+    }));
+  }
+
+  _show_logs(formatted_answer: unknown): void {
+    this._showLogs(formatted_answer);
+  }
+
   _getLastUserContent(): string {
     for (let index = this.currentMessages.length - 1; index >= 0; index -= 1) {
       const message = this.currentMessages[index];
@@ -553,6 +599,25 @@ function parseStructuredOutput(raw: string, responseFormat: unknown): unknown {
   } catch {
     return null;
   }
+}
+
+function serializeLiteAgentResponseFormat(value: unknown): unknown {
+  if (value === null || value === undefined) {
+    return value;
+  }
+  if (typeof value === "function" && value.name) {
+    return value.name;
+  }
+  if (typeof value === "object") {
+    const maybeNamed = value as { name?: unknown; type?: unknown };
+    if (typeof maybeNamed.name === "string") {
+      return maybeNamed.name;
+    }
+    if (maybeNamed.type === "json_object") {
+      return { type: "json_object" };
+    }
+  }
+  return value;
 }
 
 function normalizeLiteAgentGuardrailResult(result: LiteAgentGuardrailResult): { success: boolean; result?: unknown; error?: unknown } {

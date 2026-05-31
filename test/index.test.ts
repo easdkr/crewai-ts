@@ -20288,6 +20288,10 @@ describe("lite agent", () => {
     expect(agent.key).toHaveLength(36);
     expect(agent._original_role).toBe("Helper Agent");
     expect(agent._format_messages("hello")).toEqual([{ role: "user", content: "hello" }]);
+    expect(agent._get_default_system_prompt()).toContain("You are Helper Agent.");
+    expect(agent._get_default_system_prompt({ name: "SummaryModel" })).toContain("SummaryModel");
+    expect(agent._serialize_response_format({ type: "json_object" })).toEqual({ type: "json_object" });
+    expect(agent._serialize_response_format({ name: "SummaryModel" })).toBe("SummaryModel");
     agent._append_message({ role: "system", content: "System prompt" });
     agent._append_message({ role: "user", content: "Latest question" });
     expect(agent._get_last_user_content()).toBe("Latest question");
@@ -20295,6 +20299,13 @@ describe("lite agent", () => {
       { role: "system", content: "System prompt" },
       { role: "user", content: "Latest question" },
     ]);
+    const logs: AgentLogsExecutionEvent[] = [];
+    crewaiEventBus.on("agent_logs_execution", (_source, event) => {
+      logs.push(event);
+    });
+    agent._show_logs({ output: "done" });
+    expect(logs).toHaveLength(1);
+    expect(logs[0]?.agent_role).toBe("Helper Agent");
     expect(() => LiteAgent.validate_guardrail_function(() => [true, "ok"]))
       .toThrow("Guardrail function must accept exactly 1 parameter");
   });
