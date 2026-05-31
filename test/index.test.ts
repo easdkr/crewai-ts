@@ -7826,6 +7826,55 @@ describe("flow runtime", () => {
       .rejects.toThrow("No persisted state found");
   });
 
+  it("forks kickoff state from restore_from_state_id without reusing the source id", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "crewai-ts-flow-fork-state-"));
+    const persistence = new JsonFlowPersistence(directory);
+    await persistence.saveState("source-flow", "finish", {
+      id: "source-flow",
+      topic: "CrewAI",
+      events: ["stored"],
+    });
+
+    class ForkStateFlow extends Flow<{ id: string; topic?: string; events: string[] }> {
+      constructor() {
+        super({
+          initialState: { id: "fresh-flow", events: [] },
+          persistence,
+        });
+      }
+
+      begin() {
+        this.state.events.push(`begin:${this.state.id}:${this.state.topic ?? ""}`);
+        return this.state.events;
+      }
+    }
+
+    const initializer = decorateMethod(ForkStateFlow, "begin", start() as unknown as Decorator);
+    const flow = new ForkStateFlow();
+    initializer.call(flow);
+
+    await flow.kickoff({
+      inputs: { id: "fork-flow" },
+      restore_from_state_id: "source-flow",
+    });
+
+    expect(flow.state).toEqual({
+      id: "fork-flow",
+      topic: "CrewAI",
+      events: ["stored", "begin:fork-flow:CrewAI"],
+    });
+    await expect(persistence.loadState("source-flow")).resolves.toMatchObject({
+      id: "source-flow",
+      topic: "CrewAI",
+      events: ["stored"],
+    });
+    await expect(persistence.loadState("fork-flow")).resolves.toMatchObject({
+      id: "fork-flow",
+      topic: "CrewAI",
+      events: ["stored", "begin:fork-flow:CrewAI"],
+    });
+  });
+
   it("supports upstream-style @persist on a flow method", async () => {
     const directory = mkdtempSync(join(tmpdir(), "crewai-ts-flow-method-persist-"));
     const persistence = new JsonFlowPersistence(directory);

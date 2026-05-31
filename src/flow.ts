@@ -465,6 +465,8 @@ export type FlowKickoffOptions = {
   input_files?: InputFiles;
   fromCheckpoint?: CheckpointConfig | null;
   from_checkpoint?: CheckpointConfig | null;
+  restoreFromStateId?: string | null;
+  restore_from_state_id?: string | null;
 };
 
 export type FlowExecutionTraceEntry = {
@@ -723,8 +725,24 @@ export class Flow<TState extends object = Record<string, unknown>> {
       ...(options.inputFiles ?? options.input_files ?? {}),
       ...extracted.inputFiles,
     };
+    const restoreFromStateId = options.restoreFromStateId ?? options.restore_from_state_id ?? null;
+    const restoredForkState = restoreFromStateId && this.persistence
+      ? await loadPersistedFlowState(this.persistence, restoreFromStateId)
+      : null;
+    if (restoredForkState) {
+      const nextStateId = typeof inputs.id === "string" && inputs.id.length > 0
+        ? inputs.id
+        : randomUUID();
+      this.state = { ...restoredForkState, id: nextStateId } as TState;
+    }
     this.lastInputs = inputs;
-    Object.assign(this.state, inputs);
+    if (restoredForkState) {
+      const { id: _id, ...filteredInputs } = inputs;
+      void _id;
+      Object.assign(this.state, filteredInputs);
+    } else {
+      Object.assign(this.state, inputs);
+    }
     const flowName = this.flowName();
     this.currentFlowRequestId = randomUUID();
     crewaiEventBus.emit(this, new FlowStartedEvent({ flowName, inputs }));
@@ -2841,7 +2859,22 @@ function withoutCheckpointOptions(options: FlowKickoffOptions): FlowKickoffOptio
     ...(options.inputs === undefined ? {} : { inputs: options.inputs }),
     ...(options.inputFiles === undefined ? {} : { inputFiles: options.inputFiles }),
     ...(options.input_files === undefined ? {} : { input_files: options.input_files }),
+    ...(options.restoreFromStateId === undefined ? {} : { restoreFromStateId: options.restoreFromStateId }),
+    ...(options.restore_from_state_id === undefined ? {} : { restore_from_state_id: options.restore_from_state_id }),
   };
+}
+
+async function loadPersistedFlowState(
+  persistence: FlowPersistence,
+  flowId: string,
+): Promise<Record<string, unknown> | null> {
+  if (persistence.loadState) {
+    return await persistence.loadState(flowId);
+  }
+  if (persistence.load_state) {
+    return await persistence.load_state(flowId);
+  }
+  return null;
 }
 
 function nestedConditionSatisfied(
