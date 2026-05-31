@@ -3992,11 +3992,12 @@ describe("telemetry compatibility", () => {
     try {
       const handler = new FirstTimeTraceHandler();
       const batchManager = new TraceBatchManager();
-      batchManager.initialize_batch(
+      const batch = batchManager.initialize_batch(
         { trace_id: "trace-1", user_id: "user-1" },
         { execution_type: "crew", crew_name: "Demo Crew" },
         true,
       );
+      expect(batch.version).toBe("1.14.6");
       batchManager.add_event(new TraceEvent({ type: "default_env", source_type: "test" }));
 
       expect(handler.initialize_for_first_time_user()).toBe(true);

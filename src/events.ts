@@ -24,6 +24,7 @@ import {
   shouldAutoCollectFirstTimeTraces,
 } from "./tracing-utils.js";
 import type { InputValues } from "./types.js";
+import { __version__ } from "./version.js";
 
 export type EventType =
   | "crew_kickoff_started"
@@ -3771,7 +3772,7 @@ export class TraceBatch {
     execution_metadata?: Record<string, unknown>;
     events?: BaseEvent[];
   } = {}) {
-    this.version = options.version ?? "0.0.0";
+    this.version = options.version ?? __version__;
     this.batchId = options.batchId ?? options.batch_id ?? randomUUID();
     this.batch_id = this.batchId;
     this.userContext = options.userContext ?? options.user_context ?? {};
