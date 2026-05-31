@@ -193,6 +193,7 @@ import {
   StructuredTool,
   SemanticQualityEvaluator,
   Task,
+  TaskMethod,
   TaskEvaluator,
   TaskEvaluationEvent,
   TaskOutputStorageHandler,
@@ -8127,6 +8128,20 @@ describe("flow runtime", () => {
 });
 
 describe("project config mapping", () => {
+  it("ensures upstream task method wrappers set default task names", () => {
+    function researchTask() {
+      return new Task({
+        description: "Research CrewAI",
+        expectedOutput: "A concise brief",
+      });
+    }
+    const wrapped = new TaskMethod(researchTask);
+
+    expect((wrapped.invoke() as Task).name).toBe("researchTask");
+    expect((wrapped.call(null) as Task).name).toBe("researchTask");
+    expect(wrapped.ensure_task_name({ name: "" })).toEqual({ name: "researchTask" });
+  });
+
   it("loads YAML config and resolves decorated method references", async () => {
     const baseDirectory = mkdtempSync(join(tmpdir(), "crewai-ts-config-"));
     writeFileSync(

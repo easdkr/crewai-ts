@@ -63,6 +63,26 @@ export class AgentMethod extends DecoratedMethod {
 
 export class TaskMethod extends DecoratedMethod {
   readonly is_task = true;
+
+  ensureTaskName<TResult>(result: TResult): TResult {
+    const candidate: unknown = result;
+    if (typeof candidate === "object" && candidate !== null && "name" in candidate && !Reflect.get(candidate, "name")) {
+      Reflect.set(candidate, "name", this.__name__);
+    }
+    return result;
+  }
+
+  ensure_task_name<TResult>(result: TResult): TResult {
+    return this.ensureTaskName(result);
+  }
+
+  override call(thisArg: unknown, ...args: readonly unknown[]): unknown {
+    return this.ensureTaskName(super.call(thisArg, ...args));
+  }
+
+  override invoke(...args: readonly unknown[]): unknown {
+    return this.ensureTaskName(super.invoke(...args));
+  }
 }
 
 export class CrewMethod extends DecoratedMethod {
@@ -104,11 +124,7 @@ export class BoundTaskMethod {
   }
 
   call(...args: readonly unknown[]): unknown {
-    const result = this.taskMethod.call(this.instance, ...args);
-    if (result && typeof result === "object" && "name" in result && !Reflect.get(result, "name")) {
-      Reflect.set(result, "name", this.taskMethod.__name__);
-    }
-    return result;
+    return this.taskMethod.call(this.instance, ...args);
   }
 }
 
