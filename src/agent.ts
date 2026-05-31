@@ -70,6 +70,7 @@ import { Skill, formatSkillContext } from "./skills.js";
 import type { EmbedderConfig } from "./rag.js";
 import { CREWAI_TRAINED_AGENTS_FILE_ENV, TRAINED_AGENTS_DATA_FILE, TRAINING_DATA_FILE } from "./settings.js";
 import { CrewTrainingHandler } from "./training-handler.js";
+import { Prompts, type StandardPromptResult, type SystemPromptResult } from "./prompts.js";
 
 export type AgentGuardrailResult =
   | readonly [boolean, unknown]
@@ -188,6 +189,12 @@ export type AgentExecutionOptions = {
 };
 
 export type AgentKickoffInput = string | readonly LLMMessage[];
+
+export type AgentExecutionPromptBuild = readonly [
+  SystemPromptResult | StandardPromptResult,
+  string[],
+  (() => boolean) | null,
+];
 
 export class Agent {
   readonly entityType = "agent";
@@ -1084,6 +1091,133 @@ export class Agent {
     return this.createAgentExecutor();
   }
 
+  prepareTaskExecution(task: unknown, context: string | null = null): string {
+    if (isRecord(task)) {
+      this._injectDateToTask(task);
+    }
+    this.toolsHandler.lastUsedTool = null;
+    this.toolsHandler.last_used_tool = null;
+    const prompt = taskPrompt(task);
+    const withContext = context ? `${prompt}\n\nContext:\n${context}` : prompt;
+    return this.retrieveMemoryContext(task, withContext);
+  }
+
+  _prepare_task_execution(task: unknown, context: string | null = null): string {
+    return this.prepareTaskExecution(task, context);
+  }
+
+  async handleExecutionError(
+    error: unknown,
+    task: unknown,
+    context: string | null = null,
+    tools: readonly Tool[] = [],
+  ): Promise<string> {
+    this.checkExecutionError(error, task);
+    return await this.execute_task({ task: task as { prompt?: () => string; description?: string } | string, context, tools });
+  }
+
+  async _handle_execution_error(
+    error: unknown,
+    task: unknown,
+    context: string | null = null,
+    tools: readonly Tool[] = [],
+  ): Promise<string> {
+    return await this.handleExecutionError(error, task, context, tools);
+  }
+
+  async handleExecutionErrorAsync(
+    error: unknown,
+    task: unknown,
+    context: string | null = null,
+    tools: readonly Tool[] = [],
+  ): Promise<string> {
+    this.checkExecutionError(error, task);
+    return await this.aexecute_task({ task: task as { prompt?: () => string; description?: string } | string, context, tools });
+  }
+
+  async _handle_execution_error_async(
+    error: unknown,
+    task: unknown,
+    context: string | null = null,
+    tools: readonly Tool[] = [],
+  ): Promise<string> {
+    return await this.handleExecutionErrorAsync(error, task, context, tools);
+  }
+
+  buildExecutionPrompt(rawTools: readonly Tool[]): AgentExecutionPromptBuild {
+    const prompt = new Prompts({
+      agent: this,
+      hasTools: rawTools.length > 0,
+      useNativeToolCalling: this.supportsNativeToolCalling(rawTools),
+      useSystemPrompt: this.useSystemPrompt,
+      systemTemplate: this.systemTemplate,
+      promptTemplate: this.promptTemplate,
+      responseTemplate: this.responseTemplate,
+    }).taskExecution();
+    const stopWords = ["Observation"];
+    if (this.responseTemplate && this.responseTemplate.includes("{{ .Response }}")) {
+      const suffix = this.responseTemplate.split("{{ .Response }}")[1]?.trim();
+      if (suffix) {
+        stopWords.push(suffix);
+      }
+    }
+    const rpmLimitFn = this.rpmController
+      ? () => {
+        void this.rpmController?.waitForSlot();
+        return true;
+      }
+      : null;
+    return [prompt, stopWords, rpmLimitFn];
+  }
+
+  _build_execution_prompt(raw_tools: readonly Tool[]): AgentExecutionPromptBuild {
+    return this.buildExecutionPrompt(raw_tools);
+  }
+
+  updateExecutorParameters(
+    task: unknown,
+    tools: readonly Tool[],
+    rawTools: readonly Tool[],
+    prompt: SystemPromptResult | StandardPromptResult,
+    stopWords: readonly string[],
+    rpmLimitFn: (() => boolean) | null,
+  ): void {
+    const executor = this.agentExecutor;
+    if (!isRecord(executor)) {
+      throw new Error("Agent executor is not initialized.");
+    }
+    if (task !== null && task !== undefined) {
+      executor.task = task;
+    }
+    executor.llm = this.llm;
+    executor.tools = [...tools];
+    executor.original_tools = [...rawTools];
+    executor.originalTools = [...rawTools];
+    executor.prompt = prompt;
+    executor.stop_words = [...stopWords];
+    executor.stopWords = [...stopWords];
+    executor.stop = [...stopWords];
+    executor.tools_names = tools.map((tool) => sanitizeToolName(tool.name)).join(", ");
+    executor.toolsNames = executor.tools_names;
+    executor.tools_description = renderToolsDescription(tools);
+    executor.toolsDescription = executor.tools_description;
+    executor.tools_handler = this.toolsHandler;
+    executor.toolsHandler = this.toolsHandler;
+    executor.request_within_rpm_limit = rpmLimitFn;
+    executor.requestWithinRpmLimit = rpmLimitFn;
+  }
+
+  _update_executor_parameters(
+    task: unknown,
+    tools: readonly Tool[],
+    raw_tools: readonly Tool[],
+    prompt: SystemPromptResult | StandardPromptResult,
+    stop_words: readonly string[],
+    rpm_limit_fn: (() => boolean) | null,
+  ): void {
+    this.updateExecutorParameters(task, tools, raw_tools, prompt, stop_words, rpm_limit_fn);
+  }
+
   interpolateInputs(inputs: InputValues): void {
     this.role = interpolateAgentText(this.role, inputs);
     this.goal = interpolateAgentText(this.goal, inputs);
@@ -1841,6 +1975,22 @@ function formatKickoffInput(input: AgentKickoffInput, explicitInputFiles?: Input
 function promptWithRenderedInputFiles(prompt: string, inputFiles?: InputFiles): string {
   const renderedInputFiles = renderInputFiles(inputFiles ?? {});
   return renderedInputFiles ? `${prompt}\n\n${renderedInputFiles}` : prompt;
+}
+
+function taskPrompt(task: unknown): string {
+  if (typeof task === "string") {
+    return task;
+  }
+  const prompt = readRecordValue(task, "prompt");
+  if (typeof prompt === "function") {
+    return String(prompt.call(task));
+  }
+  const description = stringRecordValue(task, "description");
+  const expectedOutput = stringRecordValue(task, "expectedOutput") ?? stringRecordValue(task, "expected_output");
+  if (description && expectedOutput) {
+    return `${description}\nExpected output: ${expectedOutput}`;
+  }
+  return description ?? "";
 }
 
 function interpolateAgentText(value: string, inputs: InputValues): string {

@@ -7605,6 +7605,72 @@ describe("core crew runtime", () => {
       .rejects.toThrow("Task 'Executor task' execution timed out after 0.001 seconds");
   });
 
+  it("exposes upstream Agent execution lifecycle helpers", async () => {
+    const searchTool = new StructuredTool({
+      name: "Search Web",
+      description: "Search the web",
+      func: () => "found",
+    });
+    const taskInstance = new Task({
+      description: "Research CrewAI",
+      expectedOutput: "A concise answer",
+    });
+    const agentInstance = new Agent({
+      role: "Researcher",
+      goal: "Find facts",
+      backstory: "Careful analyst",
+      injectDate: true,
+      responseTemplate: "Final answer: {{ .Response }}\nEND",
+      maxRpm: 60,
+      llm: (messages) => `answer: ${messages.at(-1)?.content ?? ""}`,
+      agentExecutor: {},
+    });
+
+    const prepared = agentInstance._prepare_task_execution(taskInstance, "Prior context");
+    expect(prepared).toContain("Research CrewAI");
+    expect(prepared).toContain("Expected output: A concise answer");
+    expect(prepared).toContain("Current Date:");
+    expect(prepared).toContain("Context:\nPrior context");
+    expect(agentInstance.toolsHandler.last_used_tool).toBeNull();
+
+    const [prompt, stopWords, rpmLimitFn] = agentInstance._build_execution_prompt([searchTool]);
+    expect(prompt.prompt).toContain("Researcher");
+    expect(stopWords).toEqual(expect.arrayContaining(["Observation", "END"]));
+    expect(rpmLimitFn?.()).toBe(true);
+
+    agentInstance._update_executor_parameters(
+      taskInstance,
+      [searchTool],
+      [searchTool],
+      prompt,
+      stopWords,
+      rpmLimitFn,
+    );
+    expect(agentInstance.agentExecutor).toMatchObject({
+      task: taskInstance,
+      tools_names: "search_web",
+      tools_description: "Tool Name: search_web\nTool Arguments: {}\nTool Description: Search the web",
+      stop_words: stopWords,
+      request_within_rpm_limit: rpmLimitFn,
+    });
+
+    let attempts = 0;
+    const retryingAgent = new Agent({
+      role: "Retrying",
+      goal: "Recover",
+      backstory: "Retries once",
+      maxRetryLimit: 1,
+      llm: () => {
+        attempts += 1;
+        return `retry ${String(attempts)}`;
+      },
+    });
+    await expect(retryingAgent._handle_execution_error(new Error("transient"), "Retry task"))
+      .resolves.toBe("retry 1");
+    await expect(retryingAgent._handle_execution_error_async(new Error("transient"), "Retry task"))
+      .rejects.toThrow("transient");
+  });
+
   it("exposes agent task finalization and memory helper methods", async () => {
     const events: CrewAIEvent[] = [];
     crewaiEventBus.on("memory_retrieval_started", (_source, event) => {
