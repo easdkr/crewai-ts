@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { validateJwtToken } from "./auth.js";
 import {
   A2AAgentCardFetchedEvent,
+  A2AAuthenticationFailedEvent,
   A2AConnectionErrorEvent,
   A2AContentTypeNegotiatedEvent,
   A2APollingStartedEvent,
@@ -3626,7 +3627,7 @@ export async function fetch_agent_card(endpoint: string, auth: unknown = null, t
     signal: AbortSignal.timeout(timeout * 1000),
   });
   if (!response.ok) {
-    throw new Error(`Failed to fetch A2A agent card: ${String(response.status)}`);
+    await handleAgentCardFetchError({ endpoint, agentCardUrl, auth, response, start });
   }
   const agentCard = await response.json() as Record<string, unknown>;
   crewaiEventBus.emit(null, new A2AAgentCardFetchedEvent({
@@ -3639,6 +3640,72 @@ export async function fetch_agent_card(endpoint: string, auth: unknown = null, t
     fetch_time_ms: Date.now() - start,
   }));
   return agentCard;
+}
+
+async function handleAgentCardFetchError(options: {
+  endpoint: string;
+  agentCardUrl: string;
+  auth: unknown;
+  response: Response;
+  start: number;
+}): Promise<never> {
+  const responseBody = await safeResponseText(options.response);
+  const elapsedMs = Date.now() - options.start;
+  if (options.response.status === 401) {
+    const wwwAuth = options.response.headers.get("WWW-Authenticate");
+    const errorDetails = ["Authentication failed"];
+    if (wwwAuth) {
+      errorDetails.push(`WWW-Authenticate: ${wwwAuth}`);
+    }
+    if (!options.auth) {
+      errorDetails.push("No auth scheme provided");
+    }
+    const message = errorDetails.join(" | ");
+    crewaiEventBus.emit(null, new A2AAuthenticationFailedEvent({
+      endpoint: options.endpoint,
+      auth_type: authTypeName(options.auth),
+      error: message,
+      status_code: 401,
+      metadata: {
+        elapsed_ms: elapsedMs,
+        response_body: responseBody,
+        www_authenticate: wwwAuth,
+        request_url: options.agentCardUrl,
+      },
+    }));
+    throw new Error(message);
+  }
+  const message = `Failed to fetch A2A agent card: ${String(options.response.status)}`;
+  crewaiEventBus.emit(null, new A2AConnectionErrorEvent({
+    endpoint: options.endpoint,
+    error: message,
+    error_type: "http_error",
+    status_code: options.response.status,
+    operation: "fetch_agent_card",
+    metadata: {
+      elapsed_ms: elapsedMs,
+      response_body: responseBody,
+      request_url: options.agentCardUrl,
+    },
+  }));
+  throw new Error(message);
+}
+
+async function safeResponseText(response: Response): Promise<string | null> {
+  try {
+    const text = await response.text();
+    return text ? text.slice(0, 1000) : null;
+  } catch {
+    return null;
+  }
+}
+
+function authTypeName(auth: unknown): string | null {
+  if (!auth || typeof auth !== "object") {
+    return null;
+  }
+  const constructorName = auth.constructor.name;
+  return constructorName && constructorName !== "Object" ? constructorName : null;
 }
 
 export async function afetch_agent_card(endpoint: string, auth: unknown = null, timeout = 30): Promise<Record<string, unknown>> {

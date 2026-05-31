@@ -14,6 +14,7 @@ import {
   A2AHTTPException,
   A2AEventBase,
   A2AAgentCardFetchedEvent,
+  A2AAuthenticationFailedEvent,
   A2AContentTypeNegotiatedEvent,
   A2AConnectionErrorEvent,
   A2AContextCompletedEvent,
@@ -2934,6 +2935,36 @@ describe("a2a utilities", () => {
       protocol_version: "0.3.0",
       provider: { organization: "Example" },
       cached: false,
+    });
+  });
+
+  it("emits A2A authentication failure events for unauthorized agent-card fetches", async () => {
+    const events: A2AAuthenticationFailedEvent[] = [];
+    crewaiEventBus.on("a2a_authentication_failed", (_source, event) => {
+      events.push(event);
+    });
+    vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: false,
+      status: 401,
+      headers: new Headers({ "WWW-Authenticate": "Bearer realm=\"remote\"" }),
+      text: () => Promise.resolve("unauthorized"),
+      json: () => Promise.resolve({ error: "unauthorized" }),
+    } as Response);
+
+    await expect(fetch_agent_card("https://remote.example.com"))
+      .rejects.toThrow("Authentication failed");
+
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      endpoint: "https://remote.example.com",
+      auth_type: null,
+      status_code: 401,
+      error: "Authentication failed | WWW-Authenticate: Bearer realm=\"remote\" | No auth scheme provided",
+      metadata: {
+        response_body: "unauthorized",
+        www_authenticate: "Bearer realm=\"remote\"",
+        request_url: "https://remote.example.com/.well-known/agent-card.json",
+      },
     });
   });
 
