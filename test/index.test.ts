@@ -9481,6 +9481,71 @@ describe("LLM providers", () => {
     ]);
   });
 
+  it("accumulates Gemini streaming chunks", () => {
+    const gemini = new GeminiCompletion({ model: "gemini-2.5-pro" });
+
+    const accumulated = (gemini as unknown as {
+      _accumulate_stream_chunks(chunks: unknown[]): {
+        text: string;
+        function_calls: Record<string, unknown>[];
+        usage: Record<string, number> | null;
+        thinking_text: string;
+        response_id: string | null;
+      };
+    })._accumulate_stream_chunks([
+      {
+        response_id: "gemini-response-1",
+        usage_metadata: {
+          prompt_token_count: 10,
+          candidates_token_count: 6,
+          thoughts_token_count: 2,
+          total_token_count: 18,
+          cached_content_token_count: 3,
+        },
+        candidates: [{
+          content: {
+            parts: [
+              { text: "Hel" },
+              { text: "thinking", thought: true },
+              { text: "lo" },
+              { functionCall: { name: "search_docs", args: { query: "CrewAI" } } },
+            ],
+          },
+        }],
+      },
+    ]);
+
+    expect(accumulated).toEqual({
+      text: "Hello",
+      function_calls: [{
+        id: "call_0",
+        type: "function",
+        function: { name: "search_docs", arguments: "{\"query\":\"CrewAI\"}" },
+        args: { query: "CrewAI" },
+        index: 0,
+      }],
+      usage: {
+        prompt_token_count: 10,
+        candidates_token_count: 6,
+        completion_tokens: 8,
+        total_token_count: 18,
+        total_tokens: 18,
+        cached_prompt_tokens: 3,
+        reasoning_tokens: 2,
+      },
+      thinking_text: "thinking",
+      response_id: "gemini-response-1",
+    });
+    expect(gemini.get_token_usage_summary()).toMatchObject({
+      promptTokens: 10,
+      completionTokens: 8,
+      totalTokens: 18,
+      cachedPromptTokens: 3,
+      reasoningTokens: 2,
+      successfulRequests: 1,
+    });
+  });
+
   it("prepares Gemini messages and generation config with tools", () => {
     const search = new StructuredTool({
       name: "search docs",

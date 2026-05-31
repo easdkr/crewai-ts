@@ -1336,6 +1336,79 @@ export class GeminiCompletion extends ConfiguredLLM {
   static convert_contents_to_dict(contents: readonly unknown[]): LLMMessage[] {
     return GeminiCompletion.convertContentsToDict(contents);
   }
+
+  accumulateStreamChunks(chunks: readonly unknown[]): {
+    text: string;
+    function_calls: Record<string, unknown>[];
+    usage: Record<string, number> | null;
+    thinking_text: string;
+    response_id: string | null;
+  } {
+    let text = "";
+    let thinkingText = "";
+    let usage: Record<string, number> | null = null;
+    let responseId: string | null = null;
+    const functionCalls: Record<string, unknown>[] = [];
+
+    for (const rawChunk of chunks) {
+      const chunk = readObject(rawChunk);
+      responseId = scalarToString(chunk.response_id ?? chunk.responseId) ?? responseId;
+      if (Object.keys(readObject(chunk.usage_metadata ?? chunk.usageMetadata)).length > 0) {
+        usage = GeminiCompletion.extractTokenUsage(chunk);
+      }
+
+      const candidates = Array.isArray(chunk.candidates) ? chunk.candidates : [];
+      const candidate = readObject(candidates[0]);
+      const parts = Array.isArray(readObject(candidate.content).parts)
+        ? readObject(candidate.content).parts as unknown[]
+        : [];
+
+      for (const rawPart of parts) {
+        const part = readObject(rawPart);
+        const functionCall = readObject(part.functionCall ?? part.function_call);
+        if (Object.keys(functionCall).length > 0) {
+          const index = functionCalls.length;
+          const args = readObject(functionCall.args);
+          functionCalls.push({
+            id: `call_${index.toString()}`,
+            type: "function",
+            function: {
+              name: scalarToString(functionCall.name) ?? "",
+              arguments: JSON.stringify(args),
+            },
+            args,
+            index,
+          });
+        } else if (part.thought === true && typeof part.text === "string") {
+          thinkingText += part.text;
+        } else if (typeof part.text === "string") {
+          text += part.text;
+        }
+      }
+    }
+
+    if (usage) {
+      this.trackTokenUsageInternal(usage);
+    }
+
+    return {
+      text,
+      function_calls: functionCalls,
+      usage,
+      thinking_text: thinkingText,
+      response_id: responseId,
+    };
+  }
+
+  _accumulate_stream_chunks(chunks: readonly unknown[]): {
+    text: string;
+    function_calls: Record<string, unknown>[];
+    usage: Record<string, number> | null;
+    thinking_text: string;
+    response_id: string | null;
+  } {
+    return this.accumulateStreamChunks(chunks);
+  }
 }
 
 export const AzureCompletionParams = Object.freeze({ kind: "AzureCompletionParams" });
