@@ -2018,6 +2018,59 @@ describe("mcp configuration", () => {
       error_type: "timeout",
     });
   });
+
+  it("normalizes MCP prompt listing and retrieval responses like upstream", async () => {
+    class PromptTransport extends BaseTransport {
+      get transportType(): typeof TransportType.STDIO {
+        return TransportType.STDIO;
+      }
+
+      protected createSdkTransport(): ReturnType<BaseTransport["getSdkTransport"]> {
+        return {
+          start: () => Promise.resolve(),
+          send: () => Promise.resolve(),
+          close: () => Promise.resolve(),
+        };
+      }
+    }
+
+    const sdkClient = {
+      listPrompts: vi.fn(() => Promise.resolve({
+        prompts: [
+          { name: "brief", arguments: [{ name: "topic", required: true }] },
+          { name: "review", description: "Review code", arguments: [] },
+        ],
+      })),
+      getPrompt: vi.fn(() => Promise.resolve({
+        messages: [
+          { role: "user", content: { type: "text", text: "Summarize CrewAI" }, ignored: true },
+          { role: "assistant", content: "Ready" },
+        ],
+      })),
+    };
+    const client = new MCPClient(new PromptTransport());
+    Object.assign(client as unknown as { client: unknown; initialized: boolean }, {
+      client: sdkClient,
+      initialized: true,
+    });
+
+    await expect(client.list_prompts()).resolves.toEqual([
+      { name: "brief", description: "", arguments: [{ name: "topic", required: true }] },
+      { name: "review", description: "Review code", arguments: [] },
+    ]);
+    await expect(client.get_prompt("brief", { topic: "CrewAI" })).resolves.toEqual({
+      name: "brief",
+      messages: [
+        { role: "user", content: { type: "text", text: "Summarize CrewAI" } },
+        { role: "assistant", content: "Ready" },
+      ],
+      arguments: { topic: "CrewAI" },
+    });
+    expect(sdkClient.getPrompt).toHaveBeenCalledWith({
+      name: "brief",
+      arguments: { topic: "CrewAI" },
+    });
+  });
 });
 
 describe("orchestration lifecycle events", () => {

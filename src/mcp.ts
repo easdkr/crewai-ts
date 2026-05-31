@@ -636,7 +636,11 @@ export class MCPClient {
       await this.connect();
     }
     const result = await this.retryOperation(async () => await this.session.listPrompts());
-    return result.prompts.map((prompt) => ({ ...prompt }));
+    return result.prompts.map((prompt) => ({
+      name: typeof prompt.name === "string" ? prompt.name : "",
+      description: typeof prompt.description === "string" ? prompt.description : "",
+      arguments: Array.isArray(prompt.arguments) ? prompt.arguments : [],
+    }));
   }
 
   async list_prompts(): Promise<Record<string, unknown>[]> {
@@ -647,7 +651,16 @@ export class MCPClient {
     if (!this.connected) {
       await this.connect();
     }
-    return await this.retryOperation(async () => await this.session.getPrompt({ name, arguments: args ?? undefined }));
+    const argumentsObject = args ?? {};
+    const result = await this.retryOperation(async () => await this.session.getPrompt({ name, arguments: argumentsObject }));
+    const messages = isPlainRecord(result) && Array.isArray(result.messages)
+      ? result.messages.map((message) => normalizePromptMessage(message))
+      : [];
+    return {
+      name,
+      messages,
+      arguments: argumentsObject,
+    };
   }
 
   async get_prompt(name: string, args: Record<string, string> | null = null): Promise<unknown> {
@@ -920,6 +933,16 @@ function stringifyMCPToolResult(result: unknown): string {
     return stringifyUnknown(result.toolResult);
   }
   return stringifyUnknown(result);
+}
+
+function normalizePromptMessage(message: unknown): Record<string, unknown> {
+  if (!isPlainRecord(message)) {
+    return { role: "", content: message };
+  }
+  return {
+    role: typeof message.role === "string" ? message.role : "",
+    content: message.content,
+  };
 }
 
 function stringifyUnknown(value: unknown): string {
