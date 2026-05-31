@@ -716,34 +716,42 @@ export class KnowledgeStorage extends BaseKnowledgeStorage {
     if (documents.length === 0) {
       return;
     }
-    const client = this.getClient() as RagClient & {
-      get_or_create_collection?: (params: Record<string, unknown>) => unknown;
-      add_documents?: (params: { collection_name: string; documents: BaseRecord[] }) => unknown;
-    };
-    client.get_or_create_collection?.({ collection_name: this.ragCollectionName() });
-    const ragDocuments = documents.map((content) => ({ content }));
-    if (client.add_documents) {
-      client.add_documents({ collection_name: this.ragCollectionName(), documents: ragDocuments });
-      return;
+    try {
+      const client = this.getClient() as RagClient & {
+        get_or_create_collection?: (params: Record<string, unknown>) => unknown;
+        add_documents?: (params: { collection_name: string; documents: BaseRecord[] }) => unknown;
+      };
+      client.get_or_create_collection?.({ collection_name: this.ragCollectionName() });
+      const ragDocuments = documents.map((content) => ({ content }));
+      if (client.add_documents) {
+        client.add_documents({ collection_name: this.ragCollectionName(), documents: ragDocuments });
+        return;
+      }
+      client.add?.(this.ragCollectionName(), ragDocuments);
+    } catch (error) {
+      throw normalizeKnowledgeStorageSaveError(error);
     }
-    client.add?.(this.ragCollectionName(), ragDocuments);
   }
 
   async asave(documents: readonly string[]): Promise<void> {
     if (documents.length === 0) {
       return;
     }
-    const client = this.getClient() as RagClient & {
-      aget_or_create_collection?: (params: Record<string, unknown>) => Promise<unknown>;
-      aadd_documents?: (params: { collection_name: string; documents: BaseRecord[] }) => Promise<unknown>;
-    };
-    await client.aget_or_create_collection?.({ collection_name: this.ragCollectionName() });
-    const ragDocuments = documents.map((content) => ({ content }));
-    if (client.aadd_documents) {
-      await client.aadd_documents({ collection_name: this.ragCollectionName(), documents: ragDocuments });
-      return;
+    try {
+      const client = this.getClient() as RagClient & {
+        aget_or_create_collection?: (params: Record<string, unknown>) => Promise<unknown>;
+        aadd_documents?: (params: { collection_name: string; documents: BaseRecord[] }) => Promise<unknown>;
+      };
+      await client.aget_or_create_collection?.({ collection_name: this.ragCollectionName() });
+      const ragDocuments = documents.map((content) => ({ content }));
+      if (client.aadd_documents) {
+        await client.aadd_documents({ collection_name: this.ragCollectionName(), documents: ragDocuments });
+        return;
+      }
+      this.save(documents);
+    } catch (error) {
+      throw normalizeKnowledgeStorageSaveError(error);
     }
-    this.save(documents);
   }
 
   reset(): void {
@@ -794,6 +802,17 @@ function searchResultToKnowledgeResult(result: SearchResult): KnowledgeSearchRes
     source: typeof metadata.source === "string" ? metadata.source : null,
     metadata,
   };
+}
+
+function normalizeKnowledgeStorageSaveError(error: unknown): Error {
+  const message = error instanceof Error ? error.message : String(error);
+  if (message.toLowerCase().includes("dimension mismatch")) {
+    return new Error(
+      "Embedding dimension mismatch. Make sure you're using the same embedding model across all operations with this collection."
+      + "Try resetting the collection using `crewai reset-memories -a`",
+    );
+  }
+  return error instanceof Error ? error : new Error(message);
 }
 
 function tokenize(value: string): Set<string> {

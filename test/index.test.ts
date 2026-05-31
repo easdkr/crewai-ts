@@ -292,6 +292,7 @@ import {
   type MethodExecutionPausedEvent,
   type LLMCallOptions,
   type LLMMessage,
+  type RagClient,
   type UsageMetrics,
   version,
   BaseEvent,
@@ -4261,6 +4262,30 @@ describe("RAG configuration and factories", () => {
 
     await storage.areset();
     expect(fake.collections.has("knowledge_docs")).toBe(false);
+  });
+
+  it("raises upstream-style knowledge storage errors for embedding dimension mismatches", async () => {
+    const storage = new KnowledgeStorage({
+      client: {
+        get_or_create_collection() {},
+        add_documents() {
+          throw new Error("dimension mismatch: expected 1536, got 768");
+        },
+        async aget_or_create_collection() {},
+        aadd_documents() {
+          return Promise.reject(new Error("dimension mismatch: expected 1536, got 768"));
+        },
+      } as unknown as RagClient,
+    });
+
+    expect(() => {
+      storage.save(["mismatched embedding document"]);
+    }).toThrow(
+      "Embedding dimension mismatch. Make sure you're using the same embedding model across all operations with this collection.",
+    );
+    await expect(storage.asave(["mismatched embedding document"])).rejects.toThrow(
+      "Embedding dimension mismatch. Make sure you're using the same embedding model across all operations with this collection.",
+    );
   });
 
   it("routes Knowledge through storage-backed sync and async upstream aliases", async () => {
