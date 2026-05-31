@@ -13467,6 +13467,16 @@ describe("memory", () => {
     expect(memory.list_records().map((record) => record.content)).toEqual(["beta memory"]);
   });
 
+  it("touches Memory records after recall results are returned", () => {
+    const memory = new Memory();
+    const record = memory.remember("touch recall memory");
+    const originalAccessed = record?.lastAccessed?.getTime() ?? 0;
+
+    memory.recall("touch", { limit: 1 });
+
+    expect(memory.get_record(record?.id ?? "")?.lastAccessed?.getTime()).toBeGreaterThan(originalAccessed);
+  });
+
   it("automatically appends relevant crew memories to task prompts", async () => {
     const memory = new Memory();
     memory.remember("Nest should consume crewai-ts as a normal TypeScript library", {

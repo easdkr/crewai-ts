@@ -11,7 +11,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `npm run lint`
   - `npm run smoke:pack`
   - `python3 scripts/check-export-parity.py`
-- Test suite: 412 passing tests.
+- Test suite: 413 passing tests.
 - Root export parity against upstream clone `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `5cdc420`: `total_missing=0`.
 - Public method parity has been tightened for core runtime classes:
   - `ConsoleFormatter`: `missing=0`
@@ -80,6 +80,7 @@ When more goal budget is available, continue from the behavioral parity audits b
   - `Memory` now accepts an upstream-style `embedder` option, stores embeddings on saved records, and routes configured deep/shallow recall through vector-backed RecallFlow/search paths.
   - `Memory.update` now re-embeds records when content changes so vector recall follows updated content.
   - `Memory.forget` and `reset` now cover upstream-style older-than, metadata, record-id, and `scope_prefix` filter aliases.
+  - `Memory.recall` now touches returned records so `lastAccessed` follows upstream read-side maintenance semantics.
   - `Memory.aremember_many` now applies configured LLM save analysis per batch item before pending background writes
   - upstream-style `remember_many` background write semantics with `recall`/`drain_writes` read barriers and batch `RememberTool` responses
   - `MemoryScope` / `MemorySlice` `remember_many`, `extract_memories`, and `bind`

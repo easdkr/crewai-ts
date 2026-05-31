@@ -1805,6 +1805,7 @@ export class Memory {
           source: options.source ?? null,
           includePrivate: options.includePrivate ?? false,
         });
+      this.touchRecords(matches.map((match) => match.record.id));
       crewaiEventBus.emit(this, new MemoryQueryCompletedEvent({
         query,
         results: matches,
@@ -1822,6 +1823,33 @@ export class Memory {
   async arecall(query: string, options: Parameters<Memory["recall"]>[1] = {}): Promise<MemoryMatch[]> {
     await Promise.resolve();
     return this.recall(query, options);
+  }
+
+  private touchRecords(recordIds: readonly string[]): void {
+    if (recordIds.length === 0) {
+      return;
+    }
+    const ids = new Set(recordIds);
+    this.records.forEach((record, index) => {
+      if (!ids.has(record.id)) {
+        return;
+      }
+      const previousAccessed = record.lastAccessed ?? record.createdAt;
+      const touchedAt = new Date(Math.max(Date.now(), previousAccessed.getTime() + 1));
+      this.records[index] = new MemoryRecord({
+        id: record.id,
+        content: record.content,
+        scope: record.scope,
+        categories: record.categories,
+        metadata: record.metadata,
+        importance: record.importance,
+        source: record.source,
+        private: record.private,
+        createdAt: record.createdAt,
+        lastAccessed: touchedAt,
+        embedding: record.embedding ?? null,
+      });
+    });
   }
 
   private shallowRecall(query: string, options: {
@@ -2179,29 +2207,7 @@ export class Memory {
       list_scopes: (scopePrefix = "/") => this.immediateChildScopes(scopePrefix ?? "/"),
       get_scope_info: (scope) => this.scopeInfoForPath(scope),
       touch_records: (recordIds) => {
-        const ids = new Set(recordIds);
-        if (ids.size === 0) {
-          return;
-        }
-        const now = new Date();
-        this.records.forEach((record, index) => {
-          if (!ids.has(record.id)) {
-            return;
-          }
-          this.records[index] = new MemoryRecord({
-            id: record.id,
-            content: record.content,
-            scope: record.scope,
-            categories: record.categories,
-            metadata: record.metadata,
-            importance: record.importance,
-            source: record.source,
-            private: record.private,
-            createdAt: record.createdAt,
-            lastAccessed: now,
-            embedding: record.embedding ?? null,
-          });
-        });
+        this.touchRecords(recordIds);
       },
     };
   }
