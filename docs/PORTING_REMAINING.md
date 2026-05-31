@@ -11,7 +11,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `npm run lint`
   - `npm run smoke:pack`
   - `python3 scripts/check-export-parity.py`
-- Test suite: 426 passing tests.
+- Test suite: 427 passing tests.
 - Root export parity against upstream clone `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `5cdc420`: `total_missing=0`.
 - Public method parity has been tightened for core runtime classes:
   - `ConsoleFormatter`: `missing=0`
@@ -172,6 +172,7 @@ When more goal budget is available, continue from the behavioral parity audits b
   - `CrewAIPlugin.get_class_decorator_hook` now exposes a deterministic no-op-compatible mypy plugin hook surface for `CrewBase` decorator metadata.
 - Added planning compatibility behavior:
   - `StepObservation.coerce_single_refinement_to_list` now exposes the upstream validator helper for single refinement objects.
+  - `PlanningConfig` now accepts and exposes upstream snake_case field names directly alongside TypeScript camelCase aliases.
 - Added rate-limit compatibility behavior:
   - `RPMController.reset_counter` now exposes the upstream reset helper and returns the controller instance.
 - Added A2A auth compatibility behavior:

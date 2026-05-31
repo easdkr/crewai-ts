@@ -4,15 +4,25 @@ export type ReasoningEffort = "low" | "medium" | "high";
 
 export type PlanningConfigOptions = {
   reasoningEffort?: ReasoningEffort;
+  reasoning_effort?: ReasoningEffort;
   observeSteps?: boolean | null;
+  observe_steps?: boolean | null;
   maxAttempts?: number | null;
+  max_attempts?: number | null;
   maxSteps?: number;
+  max_steps?: number;
   systemPrompt?: string | null;
+  system_prompt?: string | null;
   planPrompt?: string | null;
+  plan_prompt?: string | null;
   refinePrompt?: string | null;
+  refine_prompt?: string | null;
   maxReplans?: number;
+  max_replans?: number;
   maxStepIterations?: number;
+  max_step_iterations?: number;
   stepTimeout?: number | null;
+  step_timeout?: number | null;
   llm?: LLM | string | null;
 };
 
@@ -366,28 +376,48 @@ export const FUNCTION_SCHEMA = {
 
 export class PlanningConfig {
   readonly reasoningEffort: ReasoningEffort;
+  readonly reasoning_effort: ReasoningEffort;
   readonly observeSteps: boolean | null;
+  readonly observe_steps: boolean | null;
   readonly maxAttempts: number | null;
+  readonly max_attempts: number | null;
   readonly maxSteps: number;
+  readonly max_steps: number;
   readonly systemPrompt: string | null;
+  readonly system_prompt: string | null;
   readonly planPrompt: string | null;
+  readonly plan_prompt: string | null;
   readonly refinePrompt: string | null;
+  readonly refine_prompt: string | null;
   readonly maxReplans: number;
+  readonly max_replans: number;
   readonly maxStepIterations: number;
+  readonly max_step_iterations: number;
   readonly stepTimeout: number | null;
+  readonly step_timeout: number | null;
   readonly llm: LLM | string | null;
 
   constructor(options: PlanningConfigOptions = {}) {
-    this.reasoningEffort = normalizeReasoningEffort(options.reasoningEffort ?? "medium");
-    this.observeSteps = options.observeSteps ?? null;
-    this.maxAttempts = options.maxAttempts ?? null;
-    this.maxSteps = positiveInteger(options.maxSteps ?? 20, "maxSteps");
-    this.systemPrompt = options.systemPrompt ?? null;
-    this.planPrompt = options.planPrompt ?? null;
-    this.refinePrompt = options.refinePrompt ?? null;
-    this.maxReplans = nonNegativeInteger(options.maxReplans ?? 3, "maxReplans");
-    this.maxStepIterations = positiveInteger(options.maxStepIterations ?? 15, "maxStepIterations");
-    this.stepTimeout = options.stepTimeout ?? null;
+    this.reasoningEffort = normalizeReasoningEffort(options.reasoningEffort ?? options.reasoning_effort ?? "medium");
+    this.reasoning_effort = this.reasoningEffort;
+    this.observeSteps = options.observeSteps ?? options.observe_steps ?? null;
+    this.observe_steps = this.observeSteps;
+    this.maxAttempts = options.maxAttempts ?? options.max_attempts ?? null;
+    this.max_attempts = this.maxAttempts;
+    this.maxSteps = positiveInteger(options.maxSteps ?? options.max_steps ?? 20, "maxSteps");
+    this.max_steps = this.maxSteps;
+    this.systemPrompt = options.systemPrompt ?? options.system_prompt ?? null;
+    this.system_prompt = this.systemPrompt;
+    this.planPrompt = options.planPrompt ?? options.plan_prompt ?? null;
+    this.plan_prompt = this.planPrompt;
+    this.refinePrompt = options.refinePrompt ?? options.refine_prompt ?? null;
+    this.refine_prompt = this.refinePrompt;
+    this.maxReplans = nonNegativeInteger(options.maxReplans ?? options.max_replans ?? 3, "maxReplans");
+    this.max_replans = this.maxReplans;
+    this.maxStepIterations = positiveInteger(options.maxStepIterations ?? options.max_step_iterations ?? 15, "maxStepIterations");
+    this.max_step_iterations = this.maxStepIterations;
+    this.stepTimeout = options.stepTimeout ?? options.step_timeout ?? null;
+    this.step_timeout = this.stepTimeout;
     this.llm = options.llm ?? null;
   }
 }

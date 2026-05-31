@@ -6243,6 +6243,34 @@ describe("agent planning", () => {
     expect(agentInstance.planningConfig?.stepTimeout).toBeNull();
   });
 
+  it("accepts upstream snake_case PlanningConfig fields directly", () => {
+    const config = new PlanningConfig({
+      reasoning_effort: "high",
+      observe_steps: false,
+      max_attempts: 4,
+      max_steps: 7,
+      system_prompt: "Plan carefully",
+      plan_prompt: "Plan {description}",
+      refine_prompt: "Refine {plan}",
+      max_replans: 2,
+      max_step_iterations: 9,
+      step_timeout: 30,
+      llm: "gpt-4o-mini",
+    });
+
+    expect(config.reasoningEffort).toBe("high");
+    expect(config.reasoning_effort).toBe("high");
+    expect(config.observe_steps).toBe(false);
+    expect(config.max_attempts).toBe(4);
+    expect(config.max_steps).toBe(7);
+    expect(config.system_prompt).toBe("Plan carefully");
+    expect(config.plan_prompt).toBe("Plan {description}");
+    expect(config.refine_prompt).toBe("Refine {plan}");
+    expect(config.max_replans).toBe(2);
+    expect(config.max_step_iterations).toBe(9);
+    expect(config.step_timeout).toBe(30);
+  });
+
   it("accepts upstream snake_case Agent options in direct construction", async () => {
     const prompts: string[] = [];
     const steps: AgentStep[] = [];
