@@ -74,6 +74,10 @@ export type GenerateCrewChatInputsOptions = {
   generate_descriptions?: boolean;
 };
 
+export type CrewChatLoader = () => [Crew, string];
+
+let crewChatLoader: CrewChatLoader | null = null;
+
 export function checkConversationalCrewsVersion(crewaiVersion: string, _pyprojectData: Record<string, unknown> = {}): boolean {
   void _pyprojectData;
   if (!isValidVersion(crewaiVersion)) {
@@ -217,8 +221,17 @@ export function initializeChatLlm(crew: Crew): LLM | LLMClient | null {
 
 export const initialize_chat_llm = initializeChatLlm;
 
+export function setCrewChatLoader(loader: CrewChatLoader | null): void {
+  crewChatLoader = loader;
+}
+
+export const set_crew_chat_loader = setCrewChatLoader;
+
 export function loadCrewAndName(): [Crew, string] {
-  throw new Error("load_crew_and_name requires a project-specific crew loader in TypeScript.");
+  if (!crewChatLoader) {
+    throw new Error("load_crew_and_name requires a project-specific crew loader in TypeScript.");
+  }
+  return crewChatLoader();
 }
 
 export const load_crew_and_name = loadCrewAndName;

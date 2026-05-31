@@ -498,6 +498,8 @@ import {
   generateCrewToolSchema,
   generateInputDescriptionWithAi,
   handleUserInput,
+  loadCrewAndName,
+  load_crew_and_name,
   generateModelDescription,
   getToolNames,
   forceAdditionalPropertiesFalse,
@@ -517,6 +519,7 @@ import {
   resolveRefs,
   runWithExecutionContext,
   runCrewTool,
+  setCrewChatLoader,
   processGuardrail,
   processConfig,
   serializeGuardrailForJson,
@@ -5297,6 +5300,21 @@ describe("crew chat utilities", () => {
 
     expect([...crewInstance.fetch_inputs()].sort()).toEqual(["audience", "tone", "topic"]);
     expect([...fetchRequiredInputs(crewInstance)].sort()).toEqual(["audience", "tone", "topic"]);
+  });
+
+  it("loads crews through a project-specific crew chat loader", () => {
+    const crewInstance = new Crew({ agents: [], tasks: [] });
+
+    try {
+      setCrewChatLoader(() => [crewInstance, "ResearchCrew"]);
+
+      expect(loadCrewAndName()).toEqual([crewInstance, "ResearchCrew"]);
+      expect(load_crew_and_name()).toEqual([crewInstance, "ResearchCrew"]);
+    } finally {
+      setCrewChatLoader(null);
+    }
+
+    expect(() => loadCrewAndName()).toThrow("load_crew_and_name requires a project-specific crew loader");
   });
 
   it("generates static crew chat inputs without blocking on an LLM", async () => {

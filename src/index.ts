@@ -634,10 +634,13 @@ export {
   run_chat,
   runCrewTool,
   run_crew_tool,
+  setCrewChatLoader,
+  set_crew_chat_loader,
   showLoading,
   show_loading,
   type ChatInputFieldOptions,
   type ChatInputsOptions,
+  type CrewChatLoader,
   type CrewChatToolSchema,
   type GenerateCrewChatInputsOptions,
 } from "./crew-chat.js";
