@@ -583,6 +583,7 @@ export class Crew {
       for (const callback of this.afterKickoffCallbacks) {
         finalOutput = await callback(finalOutput);
       }
+      finalOutput = this.postKickoff(finalOutput);
       const usageDelta = subtractUsageMetrics(this.calculateUsageMetrics(), beforeUsage);
       this.setUsageMetrics(addUsageMetrics(this.usageMetrics, usageDelta));
       finalOutput = withTokenUsage(finalOutput, usageDelta);
@@ -939,6 +940,255 @@ export class Crew {
       default:
         throw new Error(`Unsupported crew process: ${String(this.process)}`);
     }
+  }
+
+  setupFromConfigCompat(): void {
+    if (!this.config) {
+      throw new Error("Config should not be None.");
+    }
+    this.setupFromConfig(this.config);
+  }
+
+  _setup_from_config(): void {
+    this.setupFromConfigCompat();
+  }
+
+  createTask(taskConfig: Record<string, unknown>): Task {
+    const agentName = typeof taskConfig.agent === "string" ? taskConfig.agent : null;
+    const agent = agentName
+      ? this.agents.find((candidate) => candidate.role === agentName) ?? null
+      : taskConfig.agent instanceof Agent
+        ? taskConfig.agent
+        : null;
+    const { agent: _agent, ...taskOptions } = taskConfig;
+    void _agent;
+    return new Task({
+      ...taskOptions,
+      description: stringifyConfigValue(taskOptions.description),
+      expectedOutput: stringifyConfigValue(taskOptions.expectedOutput ?? taskOptions.expected_output),
+      agent,
+    });
+  }
+
+  _create_task(task_config: Record<string, unknown>): Task {
+    return this.createTask(task_config);
+  }
+
+  async setupForTraining(filename: string): Promise<void> {
+    (this as unknown as { _train: boolean; train: boolean })._train = true;
+    (this as unknown as { train: boolean }).train = true;
+    for (const task of this.tasks) {
+      (task as unknown as { humanInput: boolean; human_input: boolean }).humanInput = true;
+      (task as unknown as { human_input: boolean }).human_input = true;
+    }
+    for (const agent of this.agents) {
+      (agent as unknown as { allowDelegation: boolean; allow_delegation: boolean }).allowDelegation = false;
+      (agent as unknown as { allow_delegation: boolean }).allow_delegation = false;
+    }
+    await mkdir(dirname(filename), { recursive: true });
+    await writeFile(filename, "", { flag: "a" });
+  }
+
+  async _setup_for_training(filename: string): Promise<void> {
+    await this.setupForTraining(filename);
+  }
+
+  postKickoff(result: CrewOutput): CrewOutput {
+    return result;
+  }
+
+  _post_kickoff(result: CrewOutput): CrewOutput {
+    return this.postKickoff(result);
+  }
+
+  async aexecuteTasks(
+    tasks: readonly Task[] = this.tasks,
+    startIndex: number | null = 0,
+    wasReplayed = false,
+    inputs: InputValues = this.checkpointInputs ?? {},
+  ): Promise<CrewOutput> {
+    return await this.executeTasks(tasks, startIndex, wasReplayed, inputs);
+  }
+
+  async _aexecute_tasks(
+    tasks: readonly Task[] = this.tasks,
+    start_index: number | null = 0,
+    was_replayed = false,
+  ): Promise<CrewOutput> {
+    return await this.aexecuteTasks(tasks, start_index, was_replayed);
+  }
+
+  async ahandleConditionalTask(
+    task: ConditionalTask,
+    taskOutputs: TaskOutput[],
+    pendingTasks: (PendingTaskExecution | PendingTaskTuple)[] = [],
+    taskIndex = this.tasks.indexOf(task),
+    wasReplayed = false,
+  ): Promise<TaskOutput | null> {
+    return await this.handleConditionalTaskCompat(task, taskOutputs, pendingTasks, taskIndex, wasReplayed);
+  }
+
+  async _ahandle_conditional_task(
+    task: ConditionalTask,
+    task_outputs: TaskOutput[],
+    pending_tasks: (PendingTaskExecution | PendingTaskTuple)[] = [],
+    task_index = this.tasks.indexOf(task),
+    was_replayed = false,
+  ): Promise<TaskOutput | null> {
+    return await this.ahandleConditionalTask(task, task_outputs, pending_tasks, task_index, was_replayed);
+  }
+
+  async aprocessAsyncTasks(
+    pendingTasks: readonly (PendingTaskExecution | PendingTaskTuple)[],
+    wasReplayed = false,
+  ): Promise<TaskOutput[]> {
+    return await this.processAsyncTaskResults(pendingTasks, wasReplayed);
+  }
+
+  async _aprocess_async_tasks(
+    pending_tasks: readonly (PendingTaskExecution | PendingTaskTuple)[],
+    was_replayed = false,
+  ): Promise<TaskOutput[]> {
+    return await this.aprocessAsyncTasks(pending_tasks, was_replayed);
+  }
+
+  async handleCrewPlanningCompat(): Promise<void> {
+    await this.handleCrewPlanning();
+  }
+
+  async _handle_crew_planning(): Promise<void> {
+    await this.handleCrewPlanningCompat();
+  }
+
+  async executeTasks(
+    tasks: readonly Task[] = this.tasks,
+    startIndex: number | null = 0,
+    wasReplayed = false,
+    inputs: InputValues = this.checkpointInputs ?? {},
+  ): Promise<CrewOutput> {
+    const checkpointStart = this.getExecutionStartIndex(tasks);
+    const effectiveStart = checkpointStart ?? startIndex ?? 0;
+    const tasksOutput: TaskOutput[] = [];
+    const pendingTasks: PendingTaskExecution[] = [];
+    for (const [taskIndex, task] of tasks.entries()) {
+      if (taskIndex < effectiveStart) {
+        if (task.output) {
+          tasksOutput.push(task.output);
+        }
+        continue;
+      }
+      const agent = this.process === Process.hierarchical
+        ? this.getManagerAgent()
+        : task.agent ?? this.agents[taskIndex] ?? this.agents.at(-1) ?? null;
+      const tools = this.process === Process.hierarchical
+        ? this.toolsForHierarchicalTask(task)
+        : this.toolsForTask(task, agent);
+      if (task instanceof ConditionalTask) {
+        const skippedOutput = await this.handleConditionalTaskCompat(
+          task,
+          tasksOutput,
+          pendingTasks,
+          taskIndex,
+          wasReplayed,
+        );
+        if (skippedOutput) {
+          tasksOutput.push(skippedOutput);
+          continue;
+        }
+      }
+      if (task.asyncExecution) {
+        const context = this.contextForTask(task, tasksOutput);
+        pendingTasks.push({
+          task,
+          taskIndex,
+          inputs,
+          promise: task.execute(inputs, agent, tools, this.process === Process.hierarchical, {
+            stepCallbacks: this.stepCallbacksFor(agent),
+            humanInputProvider: this.humanInputProvider,
+            taskCallback: this.taskCallback,
+            functionCallingLlm: this.functionCallingLlm,
+            memory: this.resolvedMemory,
+            knowledge: this.knowledge,
+            ...(context === undefined ? {} : { context }),
+          }),
+        });
+        continue;
+      }
+      if (pendingTasks.length > 0) {
+        tasksOutput.push(...await this.processAsyncTaskResults(pendingTasks, wasReplayed));
+        pendingTasks.length = 0;
+      }
+      const context = this.contextForTask(task, tasksOutput);
+      const output = await task.execute(inputs, agent, tools, this.process === Process.hierarchical, {
+        stepCallbacks: this.stepCallbacksFor(agent),
+        humanInputProvider: this.humanInputProvider,
+        taskCallback: this.taskCallback,
+        functionCallingLlm: this.functionCallingLlm,
+        memory: this.resolvedMemory,
+        knowledge: this.knowledge,
+        ...(context === undefined ? {} : { context }),
+      });
+      await this.processTaskResult(task, output);
+      await this.storeExecutionLog(task, output, taskIndex, inputs, wasReplayed);
+      tasksOutput.push(output);
+    }
+    if (pendingTasks.length > 0) {
+      tasksOutput.push(...await this.processAsyncTaskResults(pendingTasks, wasReplayed));
+    }
+    return this.createCrewOutput(tasksOutput);
+  }
+
+  async _execute_tasks(
+    tasks: readonly Task[] = this.tasks,
+    start_index: number | null = 0,
+    was_replayed = false,
+  ): Promise<CrewOutput> {
+    return await this.executeTasks(tasks, start_index, was_replayed);
+  }
+
+  setTasksCallbacks(): void {
+    for (const task of this.tasks) {
+      if (!task.callback && this.taskCallback) {
+        (task as unknown as { callback: TaskCallback }).callback = this.taskCallback;
+      }
+    }
+  }
+
+  _set_tasks_callbacks(): void {
+    this.setTasksCallbacks();
+  }
+
+  interpolateInputs(inputs: InputValues): void {
+    for (const task of this.tasks) {
+      task.interpolateInputsAndAddConversationHistory(inputs);
+    }
+    for (const agent of this.agents) {
+      agent.interpolateInputs(inputs);
+    }
+  }
+
+  _interpolate_inputs(inputs: InputValues): void {
+    this.interpolateInputs(inputs);
+  }
+
+  finishExecution(finalStringOutput = ""): void {
+    void finalStringOutput;
+    this.rpmController?.reset();
+  }
+
+  _finish_execution(final_string_output = ""): void {
+    this.finishExecution(final_string_output);
+  }
+
+  static showTracingDisabledMessage(): void {
+    if (process.env.CREWAI_TRACING_DISABLED_MESSAGE_SHOWN === "1") {
+      return;
+    }
+    process.env.CREWAI_TRACING_DISABLED_MESSAGE_SHOWN = "1";
+  }
+
+  static _show_tracing_disabled_message(): void {
+    Crew.showTracingDisabledMessage();
   }
 
   private setupFromConfig(config: Record<string, unknown>): void {

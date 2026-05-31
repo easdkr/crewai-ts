@@ -6012,6 +6012,66 @@ describe("crew execution utilities", () => {
       off();
     }
   });
+
+  it("exposes upstream Crew config, training, callback, and execution helpers", async () => {
+    const taskCallback = vi.fn();
+    const crewFromConfig = new Crew({
+      config: {
+        process: "sequential",
+        agents: [
+          { role: "Researcher", goal: "Find {topic}", backstory: "Careful analyst" },
+        ],
+        tasks: [
+          { description: "Research {topic}", expected_output: "A brief", agent: "Researcher" },
+        ],
+      },
+      taskCallback,
+    });
+
+    crewFromConfig._setup_from_config();
+    expect(crewFromConfig.agents[0]).toBeInstanceOf(Agent);
+    expect(crewFromConfig.tasks[0]).toBeInstanceOf(Task);
+    expect(crewFromConfig.tasks[0]?.agent).toBe(crewFromConfig.agents[0]);
+
+    const created = crewFromConfig._create_task({
+      description: "Write {topic}",
+      expected_output: "A report",
+      agent: "Researcher",
+    });
+    expect(created.agent).toBe(crewFromConfig.agents[0]);
+
+    crewFromConfig.tasks.push(created);
+    crewFromConfig._set_tasks_callbacks();
+    expect(crewFromConfig.tasks[0]?.callback).toBe(taskCallback);
+    crewFromConfig._interpolate_inputs({ topic: "CrewAI" });
+    expect(crewFromConfig.agents[0]?.goal).toBe("Find CrewAI");
+    expect(crewFromConfig.tasks[0]?.description).toBe("Research CrewAI");
+
+    const trainingFile = join(mkdtempSync(join(tmpdir(), "crewai-ts-crew-training-helper-")), "training.json");
+    await crewFromConfig._setup_for_training(trainingFile);
+    expect(readFileSync(trainingFile, "utf8")).toBe("");
+    expect(crewFromConfig.tasks.every((task) => task.human_input)).toBe(true);
+    expect(crewFromConfig.agents.some((agent) => agent.allow_delegation)).toBe(false);
+
+    const worker = new Agent({
+      role: "Worker",
+      goal: "Run tasks",
+      backstory: "Reliable",
+      llm: (messages) => `done: ${messages.at(-1)?.content ?? ""}`,
+    });
+    const first = new Task({ description: "First task", expectedOutput: "First result", agent: worker });
+    const second = new Task({ description: "Second task", expectedOutput: "Second result", agent: worker });
+    const executionCrew = new Crew({ agents: [worker], tasks: [first, second] });
+    const output = await executionCrew._execute_tasks([first, second], 0, false);
+    expect(output.raw).toContain("Second task");
+    expect(output.tasksOutput).toHaveLength(2);
+
+    const postOutput = executionCrew._post_kickoff(output);
+    expect(postOutput).toBe(output);
+    executionCrew._finish_execution(output.raw);
+    Crew._show_tracing_disabled_message();
+    expect(process.env.CREWAI_TRACING_DISABLED_MESSAGE_SHOWN).toBe("1");
+  });
 });
 
 describe("converter utilities", () => {
