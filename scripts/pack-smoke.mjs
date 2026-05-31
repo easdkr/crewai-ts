@@ -476,7 +476,7 @@ try {
 
   execFileSync("npm", ["install", "--silent"], { cwd: appDir, stdio: "inherit" });
   const output = execFileSync("node", ["index.mjs"], { cwd: appDir, encoding: "utf8" }).trim();
-  if (output !== "true true true true 0.0.0 sequential") {
+  if (output !== "true true true true 1.14.6 sequential") {
     throw new Error(`Unexpected package import output: ${output}`);
   }
   execFileSync("npx", ["tsc", "--noEmit"], { cwd: appDir, stdio: "inherit" });

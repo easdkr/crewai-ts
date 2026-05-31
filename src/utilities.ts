@@ -1,5 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 
+import { __version__ } from "./version.js";
+
 export class ImportError extends Error {
   constructor(message: string, options?: ErrorOptions) {
     super(message, options);
@@ -320,7 +322,7 @@ export function getProjectDescription(pyprojectPath = "pyproject.toml", require 
 export const get_project_description = getProjectDescription;
 
 export function getCrewaiVersion(): string {
-  return "0.0.0";
+  return __version__;
 }
 
 export const get_crewai_version = getCrewaiVersion;

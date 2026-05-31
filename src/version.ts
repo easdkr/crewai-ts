@@ -1,4 +1,4 @@
-export const __version__ = "0.0.0";
+export const __version__ = "1.14.6";
 export const VERSION = __version__;
 
 export function get_crewai_version(): string {

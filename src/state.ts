@@ -5,6 +5,7 @@ import { randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
 
 import type { BaseEvent, EventType } from "./events.js";
+import { __version__ } from "./version.js";
 
 const requireNodeBuiltin = createRequire(import.meta.url);
 let cachedDatabaseSync: typeof import("node:sqlite").DatabaseSync | null = null;
@@ -256,7 +257,7 @@ export class RuntimeState {
 
   toJSON(): Record<string, unknown> {
     return {
-      crewai_version: "0.0.0",
+      crewai_version: __version__,
       parent_id: this.parentId,
       branch: this.branch,
       entities: this.root.map((entity) => serializeRuntimeEntity(entity)),

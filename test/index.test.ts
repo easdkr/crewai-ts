@@ -285,6 +285,7 @@ import {
   getFlowStructure,
   getHumanFeedbackMetadata,
   get_current_call_id,
+  get_crewai_version,
   getLLMUsageMetrics,
   humanFeedback,
   importAndValidateDefinition,
@@ -587,8 +588,10 @@ afterEach(() => {
 });
 
 describe("package entrypoint", () => {
-  it("exports the package version placeholder", () => {
-    expect(version).toBe("0.0.0");
+  it("exports the upstream CrewAI version", () => {
+    expect(version).toBe("1.14.6");
+    expect(__version__).toBe("1.14.6");
+    expect(get_crewai_version()).toBe("1.14.6");
   });
 });
 
@@ -6631,7 +6634,7 @@ describe("top-level CrewAI exports", () => {
 
     expect(LLM).toBe(ConfiguredLLM);
     expect(llm).toBeInstanceOf(ConfiguredLLM);
-    expect(__version__).toBe("0.0.0");
+    expect(__version__).toBe("1.14.6");
   });
 
   it("exposes upstream plugin and listener setup hooks", () => {
@@ -15293,7 +15296,7 @@ describe("runtime state", () => {
 
     const dumped = JSON.parse(state.to_json()) as Record<string, unknown>;
 
-    expect(dumped.crewai_version).toBe("0.0.0");
+    expect(dumped.crewai_version).toBe("1.14.6");
     expect(dumped.parent_id).toBe("parent456");
     expect(dumped.branch).toBe("experiment");
     expect(dumped.entities).toEqual([

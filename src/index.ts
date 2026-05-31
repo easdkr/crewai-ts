@@ -1,5 +1,7 @@
 import { readFileSync } from "node:fs";
 
+import { __version__ as CREWAI_VERSION } from "./version.js";
+
 export {
   A2AConfig,
   A2AConfigTypes,
@@ -2484,7 +2486,7 @@ export {
   type ToSerializableOptions,
 } from "./utilities.js";
 
-export const version = "0.0.0";
+export const version = CREWAI_VERSION;
 
 export class CrewAIPlugin {
   readonly kind = "CrewAIPlugin";

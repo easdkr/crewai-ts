@@ -196,6 +196,8 @@ When more goal budget is available, continue from the behavioral parity audits b
   - `LiteAgent` now exposes before/after LLM hook getters, an upstream-style `key` property getter, and resolves `memory: true` to a default `Memory` instance.
 - Added token usage compatibility behavior:
   - `TokenProcess` now exposes upstream-style mutable token counters and `sum_*` helpers while preserving message-array prompt token estimation.
+- Added version compatibility behavior:
+  - Root `version`, `__version__`, `get_crewai_version`, and runtime checkpoint metadata now report the upstream CrewAI version from the current upstream clone.
 
 1. Storage backends
    - `memory/storage/backend.py`
