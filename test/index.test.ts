@@ -8643,6 +8643,103 @@ describe("LLM providers", () => {
     expect(azureOpenAI.last_response_id).toBeNull();
   });
 
+  it("prepares OpenAI chat and responses request parameters without SDK side effects", () => {
+    const search = new StructuredTool({
+      name: "search docs",
+      description: "Search documentation",
+      argsSchema: {
+        query: { type: "string", description: "Search query" },
+      },
+      func: () => "result",
+    });
+    const chat = new OpenAICompletion({
+      model: "gpt-4o",
+      temperature: 0.2,
+      top_p: 0.8,
+      frequency_penalty: 0.1,
+      presence_penalty: 0.2,
+      max_tokens: 300,
+      seed: 7,
+      stream: true,
+      response_format: { type: "json_object" },
+      additional_params: { user: "tester", provider: "crewai-internal" },
+    });
+
+    expect((chat as unknown as {
+      _prepare_completion_params(messages: LLMMessage[], tools?: StructuredTool[]): Record<string, unknown>;
+    })._prepare_completion_params([{ role: "user", content: "Find CrewAI" }], [search])).toMatchObject({
+      model: "gpt-4o",
+      messages: [{ role: "user", content: "Find CrewAI" }],
+      stream: true,
+      stream_options: { include_usage: true },
+      temperature: 0.2,
+      top_p: 0.8,
+      frequency_penalty: 0.1,
+      presence_penalty: 0.2,
+      max_tokens: 300,
+      seed: 7,
+      response_format: { type: "json_object" },
+      user: "tester",
+      tools: [{
+        type: "function",
+        function: {
+          name: "search_docs",
+          description: "Search documentation",
+          strict: true,
+          parameters: {
+            type: "object",
+            additionalProperties: false,
+            properties: {
+              query: { type: "string", description: "Search query" },
+            },
+            required: ["query"],
+          },
+        },
+      }],
+      tool_choice: "auto",
+    });
+
+    const responses = new OpenAICompletion({
+      model: "gpt-4.1",
+      api: "responses",
+      instructions: "Follow policy",
+      previous_response_id: "resp-prev",
+      include: ["file_search_call.results"],
+      builtin_tools: ["web_search", "file_search"],
+      auto_chain_reasoning: true,
+      max_completion_tokens: 256,
+      reasoning_effort: "medium",
+      store: false,
+    });
+    const responseParams = (responses as unknown as {
+      _prepare_responses_params(messages: LLMMessage[], tools?: StructuredTool[]): Record<string, unknown>;
+    })._prepare_responses_params([
+      { role: "system", content: "Be concise" },
+      { role: "user", content: "Find CrewAI" },
+    ], [search]);
+
+    expect(responseParams).toMatchObject({
+      model: "gpt-4.1",
+      input: [{ role: "user", content: "Find CrewAI" }],
+      instructions: "Follow policy\n\nBe concise",
+      previous_response_id: "resp-prev",
+      include: ["file_search_call.results", "reasoning.encrypted_content"],
+      store: false,
+      max_output_tokens: 256,
+      reasoning: { effort: "medium" },
+      tools: [
+        { type: "web_search_preview" },
+        { type: "file_search" },
+        {
+          type: "function",
+          name: "search_docs",
+          description: "Search documentation",
+          strict: true,
+        },
+      ],
+    });
+  });
+
   it("exposes Gemini completion provider parity helpers", () => {
     const gemini = new GeminiCompletion({
       model: "gemini-2.5-pro",

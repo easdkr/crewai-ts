@@ -1,5 +1,6 @@
 import { ConfiguredLLM, LocalFileUploader, type BaseLLMOptions, type LLMCallOptions, type LLMResponse } from "./llm.js";
-import type { LLMMessage } from "./types.js";
+import { convertToolsToOpenAISchema } from "./agent-utils.js";
+import type { LLMMessage, Tool } from "./types.js";
 
 export const WebSearchResult = Object.freeze({ kind: "WebSearchResult" });
 export type WebSearchResult = {
@@ -328,6 +329,175 @@ export class OpenAICompletion extends ConfiguredLLM {
     return super.call(messages, options);
   }
 
+  prepareCompletionParams(messages: readonly LLMMessage[], tools: readonly Tool[] | null = null): Record<string, unknown> {
+    const params: Record<string, unknown> = {
+      model: this.model,
+      messages: [...messages],
+      ...this.additionalParams,
+    };
+    if (this.stream) {
+      params.stream = true;
+      params.stream_options = { include_usage: true };
+    }
+    if (this.temperature !== null) {
+      params.temperature = this.temperature;
+    }
+    if (this.topP !== null) {
+      params.top_p = this.topP;
+    }
+    if (this.frequencyPenalty !== null) {
+      params.frequency_penalty = this.frequencyPenalty;
+    }
+    if (this.presencePenalty !== null) {
+      params.presence_penalty = this.presencePenalty;
+    }
+    if (this.maxCompletionTokens !== null) {
+      params.max_completion_tokens = this.maxCompletionTokens;
+    } else if (this.maxTokens !== null) {
+      params.max_tokens = this.maxTokens;
+    }
+    if (this.seed !== null) {
+      params.seed = this.seed;
+    }
+    if (this.logprobs !== null) {
+      params.logprobs = this.logprobs;
+    }
+    if (this.topLogprobs !== null) {
+      params.top_logprobs = this.topLogprobs;
+    }
+    if (this.isO1Model && this.reasoningEffort) {
+      params.reasoning_effort = this.reasoningEffort;
+    }
+    if (this.responseFormat !== null) {
+      params.response_format = this.responseFormat;
+    }
+    if (tools && tools.length > 0) {
+      params.tools = this.convertToolsForInterference(tools);
+      params.tool_choice = "auto";
+    }
+    return stripCrewAISpecificParams(params);
+  }
+
+  _prepare_completion_params(messages: readonly LLMMessage[], tools: readonly Tool[] | null = null): Record<string, unknown> {
+    return this.prepareCompletionParams(messages, tools);
+  }
+
+  prepareResponsesParams(
+    messages: readonly LLMMessage[],
+    tools: readonly Tool[] | null = null,
+    responseModel: unknown = null,
+  ): Record<string, unknown> {
+    let instructions = this.instructions;
+    const inputMessages: LLMMessage[] = [];
+    for (const message of messages) {
+      if (message.role === "system") {
+        instructions = instructions ? `${instructions}\n\n${message.content}` : message.content;
+      } else {
+        inputMessages.push({ ...message });
+      }
+    }
+
+    const includeItems = [...(this.include ?? [])];
+    if (this.autoChainReasoning && !includeItems.includes("reasoning.encrypted_content")) {
+      includeItems.push("reasoning.encrypted_content");
+    }
+    const finalInput: unknown[] = [];
+    if (this.autoChainReasoning && this.reasoningChainItems.length > 0) {
+      finalInput.push(...this.reasoningChainItems);
+    }
+    finalInput.push(...(inputMessages.length > 0 ? inputMessages : messages));
+
+    const params: Record<string, unknown> = {
+      model: this.model,
+      input: finalInput,
+      ...this.additionalParams,
+    };
+    if (instructions) {
+      params.instructions = instructions;
+    }
+    if (this.stream) {
+      params.stream = true;
+    }
+    if (this.store !== null) {
+      params.store = this.store;
+    }
+    if (this.previousResponseId) {
+      params.previous_response_id = this.previousResponseId;
+    } else if (this.autoChain && this.responseChainId) {
+      params.previous_response_id = this.responseChainId;
+    }
+    if (includeItems.length > 0) {
+      params.include = includeItems;
+    }
+    if (this.temperature !== null) {
+      params.temperature = this.temperature;
+    }
+    if (this.topP !== null) {
+      params.top_p = this.topP;
+    }
+    if (this.maxCompletionTokens !== null) {
+      params.max_output_tokens = this.maxCompletionTokens;
+    } else if (this.maxTokens !== null) {
+      params.max_output_tokens = this.maxTokens;
+    }
+    if (this.seed !== null) {
+      params.seed = this.seed;
+    }
+    if (this.reasoningEffort) {
+      params.reasoning = { effort: this.reasoningEffort };
+    }
+    const formatModel = responseModel ?? this.responseFormat;
+    if (formatModel !== null) {
+      params.text = { format: formatModel };
+    }
+    const allTools: Record<string, unknown>[] = [];
+    if (this.builtinTools) {
+      for (const toolName of this.builtinTools) {
+        allTools.push({ type: OpenAICompletion.BUILTIN_TOOL_TYPES[toolName] ?? toolName });
+      }
+    }
+    if (tools && tools.length > 0) {
+      allTools.push(...this.convertToolsForResponses(tools));
+    }
+    if (allTools.length > 0) {
+      params.tools = allTools;
+    }
+    return stripCrewAISpecificParams(params);
+  }
+
+  _prepare_responses_params(
+    messages: readonly LLMMessage[],
+    tools: readonly Tool[] | null = null,
+    responseModel: unknown = null,
+  ): Record<string, unknown> {
+    return this.prepareResponsesParams(messages, tools, responseModel);
+  }
+
+  convertToolsForInterference(tools: readonly Tool[]): Record<string, unknown>[] {
+    return convertToolsToOpenAISchema(tools)[0];
+  }
+
+  _convert_tools_for_interference(tools: readonly Tool[]): Record<string, unknown>[] {
+    return this.convertToolsForInterference(tools);
+  }
+
+  convertToolsForResponses(tools: readonly Tool[]): Record<string, unknown>[] {
+    return this.convertToolsForInterference(tools).map((tool) => {
+      const fn = tool.function;
+      if (!fn || typeof fn !== "object" || Array.isArray(fn)) {
+        return tool;
+      }
+      return {
+        type: "function",
+        ...fn,
+      };
+    });
+  }
+
+  _convert_tools_for_responses(tools: readonly Tool[]): Record<string, unknown>[] {
+    return this.convertToolsForResponses(tools);
+  }
+
   override supportsFunctionCalling(): boolean {
     return !this.isO1Model;
   }
@@ -485,6 +655,21 @@ export class OpenAICompatibleCompletion extends OpenAICompletion {
 
 function stripUndefined<T extends Record<string, unknown>>(value: T): Partial<T> {
   return Object.fromEntries(Object.entries(value).filter(([, entry]) => entry !== undefined)) as Partial<T>;
+}
+
+function stripCrewAISpecificParams(params: Record<string, unknown>): Record<string, unknown> {
+  const blocked = new Set([
+    "callbacks",
+    "available_functions",
+    "from_task",
+    "from_agent",
+    "provider",
+    "api_key",
+    "base_url",
+    "api_base",
+    "timeout",
+  ]);
+  return Object.fromEntries(Object.entries(params).filter(([key]) => !blocked.has(key)));
 }
 
 function normalizeOpenAICompatibleBaseUrl(baseUrl: string, provider: string): string {
