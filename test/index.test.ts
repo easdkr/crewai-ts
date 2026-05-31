@@ -4173,6 +4173,47 @@ describe("RAG configuration and factories", () => {
     expect(() => validateEmbeddings([[Number.NaN]])).toThrow("numeric values");
   });
 
+  it("updates memory storage access times and exposes maintenance hooks", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-05-31T00:00:00.000Z"));
+    const storage = new LanceDBStorage();
+    const record = new MemoryRecord({
+      id: "memory-touch",
+      content: "CrewAI storage maintenance",
+      scope: "/memory/storage",
+      categories: ["storage"],
+      createdAt: "2026-05-30T00:00:00.000Z",
+      lastAccessed: "2026-05-30T00:00:00.000Z",
+      embedding: [1, 0],
+    });
+    storage.save(record);
+
+    vi.setSystemTime(new Date("2026-05-31T00:10:00.000Z"));
+    storage.touch_records(["missing", "memory-touch"]);
+
+    const touched = storage.get_record("memory-touch");
+    expect(touched?.createdAt.toISOString()).toBe("2026-05-30T00:00:00.000Z");
+    expect(touched?.lastAccessed?.toISOString()).toBe("2026-05-31T00:10:00.000Z");
+
+    vi.setSystemTime(new Date("2026-05-31T00:20:00.000Z"));
+    storage.touchRecords(["memory-touch"]);
+    expect(storage.getRecord("memory-touch")?.lastAccessed?.toISOString()).toBe("2026-05-31T00:20:00.000Z");
+
+    expect(() => {
+      storage.optimize();
+    }).not.toThrow();
+    expect(() => {
+      storage.flush_to_central();
+    }).not.toThrow();
+    expect(() => {
+      storage.flushToCentral();
+    }).not.toThrow();
+    expect(() => {
+      storage.close();
+    }).not.toThrow();
+    await expect(storage.aclose()).resolves.toBeUndefined();
+  });
+
   it("builds embedders from custom specs, providers, and registered provider builders", async () => {
     const custom = (input: readonly unknown[]) => input.map((value) => [String(value).length]);
     const customEmbedder = buildEmbedder({ provider: "custom", config: { embedding_callable: custom } });

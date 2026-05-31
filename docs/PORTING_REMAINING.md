@@ -10,7 +10,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `npm run build`
   - `npm run lint`
   - `npm run smoke:pack`
-- Test suite: 314 passing tests.
+- Test suite: 315 passing tests.
 - Root export parity against upstream clone `/tmp/crewai-upstream.lPeuQi/crewAI` at commit `2148c7e`: `total_missing=0`.
 - Public method parity has been tightened for core runtime classes:
   - `ConsoleFormatter`: `missing=0`
@@ -35,6 +35,7 @@ When more goal budget is available, continue from the behavioral parity audits b
   - positional and object-style `search`/`asearch`
   - metadata filters, category filters, scope filters, min score, and limits
   - `delete`/`adelete`, `update`, `get_record`, `list_records`, `get_scope_info`, `list_scopes`, `list_categories`, `count`, and scoped/global `reset`
+  - `touch_records`/`touchRecords`, `optimize`, `flush_to_central`/`flushToCentral`, `close`, and `aclose` maintenance hooks
 - Replaced root placeholder exports for `ChromaDBClient`, `KnowledgeStorage`, and `BaseKnowledgeStorage` with behavior-bearing implementations.
 - Added fake-client-backed RAG tests for ChromaDB and Qdrant collection create/delete/reset, upsert overwrite behavior, search, metadata filters, and async aliases.
 - Added `KnowledgeStorage` tests for collection naming, save/search, async aliases, and reset through the RAG client wrapper.
@@ -82,7 +83,7 @@ When more goal budget is available, continue from the behavioral parity audits b
    - `memory/storage/lancedb_storage.py`
    - `memory/storage/qdrant_edge_storage.py`
    - `knowledge/storage/*`
-   - The deterministic in-memory TypeScript shims now cover sync/async save/search/delete/update/reset semantics and metadata filtering.
+   - The deterministic in-memory TypeScript shims now cover sync/async save/search/delete/update/reset semantics, metadata filtering, access-time touching, and maintenance hook compatibility.
    - Remaining: audit persistence-specific LanceDB/Qdrant Edge details that do not map to the no-SDK TypeScript shim yet, including compaction, central/local shard flushing, and provider-specific index behavior.
 
 2. LLM providers

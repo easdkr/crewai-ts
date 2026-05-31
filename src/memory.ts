@@ -554,6 +554,39 @@ export class QdrantEdgeStorage implements MemoryVectorStorageLike {
     this.records.set(memoryRecord.id, memoryRecord);
   }
 
+  touch_records(record_ids: readonly string[]): void {
+    if (record_ids.length === 0) {
+      return;
+    }
+    const now = new Date();
+    for (const recordId of record_ids) {
+      const existing = this.records.get(recordId);
+      if (!existing) {
+        continue;
+      }
+      const touchedOptions: MemoryRecordOptions = {
+        id: existing.id,
+        content: existing.content,
+        scope: existing.scope,
+        categories: existing.categories,
+        metadata: existing.metadata,
+        importance: existing.importance,
+        source: existing.source,
+        private: existing.private,
+        createdAt: existing.createdAt,
+        lastAccessed: now,
+      };
+      if (existing.embedding !== undefined) {
+        touchedOptions.embedding = existing.embedding;
+      }
+      this.records.set(recordId, new MemoryRecord(touchedOptions));
+    }
+  }
+
+  touchRecords(recordIds: readonly string[]): void {
+    this.touch_records(recordIds);
+  }
+
   list_records(scope_prefix: string | null = null, limit = 200, offset = 0): MemoryRecord[] {
     return [...this.records.values()]
       .filter((record) => !scope_prefix || record.scope.startsWith(normalize_scope_path(scope_prefix)))
@@ -711,7 +744,23 @@ export class QdrantEdgeStorage implements MemoryVectorStorageLike {
     return this.delete(scope_prefix, categories, record_ids, older_than, metadata_filter);
   }
 
+  optimize(): void {
+  }
+
+  flush_to_central(): void {
+  }
+
+  flushToCentral(): void {
+    this.flush_to_central();
+  }
+
   close(): void {
+    this.flush_to_central();
+  }
+
+  async aclose(): Promise<void> {
+    await Promise.resolve();
+    this.close();
   }
 }
 
