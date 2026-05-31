@@ -4,14 +4,14 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
 
 ## Current Verified State
 
-- Full gate passed on 2026-05-31:
+- Full gate passed on 2026-06-01:
   - `npm run check`
   - `npm test`
   - `npm run build`
   - `npm run lint`
   - `npm run smoke:pack`
   - `python3 scripts/check-export-parity.py`
-- Test suite: 476 passing tests.
+- Test suite: 477 passing tests.
 - Root export parity against upstream clone `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `5cdc420`: `total_missing=0`.
 - Public method parity has been tightened for core runtime classes:
   - `ConsoleFormatter`: `missing=0`
@@ -60,6 +60,7 @@ When more goal budget is available, continue from the behavioral parity audits b
 - Added `persistence_type` metadata on `JsonFlowPersistence` to match the persistence backend convention already present on SQLite.
 - Added focused JSON and SQLite tests for these aliases, including pending-feedback round trip and clear semantics.
 - `SQLiteFlowPersistence` now accepts upstream-style model dump state objects through `_to_state_dict` and exposes `_save_state_sql` for internal method parity.
+- `Flow.fromPending` / `from_pending` now matches upstream pending-feedback restore defaults by creating `SQLiteFlowPersistence` when no backend is supplied.
 - Added Flow memory helper parity for auto-created flow memory plus explicit/disabled memory configuration:
   - `Flow.remember`
   - `Flow.recall`

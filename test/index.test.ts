@@ -9028,6 +9028,64 @@ describe("flow runtime", () => {
     });
   });
 
+  it("restores pending feedback with the default SQLite persistence", async () => {
+    const previousDataDir = process.env.CREWAI_TS_DATA_DIR;
+    const previousStorageDir = process.env.CREWAI_STORAGE_DIR;
+    const directory = mkdtempSync(join(tmpdir(), "crewai-ts-flow-default-sqlite-"));
+    process.env.CREWAI_TS_DATA_DIR = directory;
+    process.env.CREWAI_STORAGE_DIR = "flows";
+    try {
+      const persistence = new SQLiteFlowPersistence();
+      const context = {
+        flowName: "DefaultSQLiteFlow",
+        flowClass: "DefaultSQLiteFlow",
+        methodName: "review",
+        output: "draft",
+        message: "Review draft",
+        emit: null,
+        defaultOutcome: null,
+        metadata: {},
+        flowId: "default-sqlite-flow",
+        requestedAt: new Date("2026-01-01T00:00:00.000Z"),
+      };
+
+      await persistence.savePendingFeedback("default-sqlite-flow", context, {
+        id: "default-sqlite-flow",
+        topic: "CrewAI",
+      });
+
+      class DefaultSQLiteFlow extends Flow<{ id: string; topic?: string }> {
+        constructor() {
+          super({ initialState: { id: "default-sqlite-flow" } });
+        }
+      }
+
+      const restored = await DefaultSQLiteFlow.from_pending("default-sqlite-flow");
+
+      expect(restored.pending_feedback).toMatchObject({
+        flowId: "default-sqlite-flow",
+        methodName: "review",
+        output: "draft",
+      });
+      expect(restored.state).toMatchObject({
+        id: "default-sqlite-flow",
+        topic: "CrewAI",
+      });
+    } finally {
+      if (previousDataDir === undefined) {
+        delete process.env.CREWAI_TS_DATA_DIR;
+      } else {
+        process.env.CREWAI_TS_DATA_DIR = previousDataDir;
+      }
+      if (previousStorageDir === undefined) {
+        delete process.env.CREWAI_STORAGE_DIR;
+      } else {
+        process.env.CREWAI_STORAGE_DIR = previousStorageDir;
+      }
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
   it("supports upstream snake_case flow persistence methods for JSON and SQLite backends", async () => {
     const jsonDirectory = mkdtempSync(join(tmpdir(), "crewai-ts-flow-json-snake-"));
     const sqliteDirectory = mkdtempSync(join(tmpdir(), "crewai-ts-flow-sqlite-snake-"));

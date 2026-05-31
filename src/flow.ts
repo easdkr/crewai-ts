@@ -23,7 +23,7 @@ import {
   MethodExecutionStartedEvent,
   crewaiEventBus,
 } from "./events.js";
-import type { FlowPersistence } from "./flow-persistence.js";
+import { SQLiteFlowPersistence, type FlowPersistence } from "./flow-persistence.js";
 import { extractInputFilesFromInputs, type InputFiles } from "./input-files.js";
 import {
   ConsoleInputProvider,
@@ -1048,14 +1048,15 @@ export class Flow<TState extends object = Record<string, unknown>> {
   static async fromPending<TFlow extends Flow<object>>(
     this: new () => TFlow,
     flowId: string,
-    persistence: FlowPersistence,
+    persistence: FlowPersistence | null = null,
   ): Promise<TFlow> {
-    const record = await persistence.loadPendingFeedback(flowId);
+    const persistenceBackend = persistence ?? new SQLiteFlowPersistence();
+    const record = await persistenceBackend.loadPendingFeedback(flowId);
     if (!record) {
-      throw new Error(`No pending feedback found for flow '${flowId}'.`);
+      throw new Error(`No pending feedback found for flow_id: ${flowId}`);
     }
     const flow = new this();
-    flow.persistence = persistence;
+    flow.persistence = persistenceBackend;
     Object.assign(flow.state, record.state);
     flow.pendingFeedbackContext = record.context;
     return flow;
@@ -1064,7 +1065,7 @@ export class Flow<TState extends object = Record<string, unknown>> {
   static async from_pending<TFlow extends Flow<object>>(
     this: new () => TFlow,
     flowId: string,
-    persistence: FlowPersistence,
+    persistence: FlowPersistence | null = null,
   ): Promise<TFlow> {
     return await Flow.fromPending.call(this, flowId, persistence) as TFlow;
   }
