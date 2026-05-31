@@ -216,6 +216,10 @@ export class LLMGuardrail {
     return parseLLMGuardrailResult(response);
   }
 
+  async _validate_output(taskOutput: TaskOutput | LiteAgentOutput): Promise<LLMGuardrailResult> {
+    return this.validateOutput(taskOutput);
+  }
+
   async call(taskOutput: TaskOutput | LiteAgentOutput): Promise<readonly [boolean, unknown]> {
     try {
       const result = await this.validateOutput(taskOutput);

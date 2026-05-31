@@ -1499,6 +1499,7 @@ describe("formatter and guardrail utilities", () => {
     });
 
     await expect(guardrail.validateOutput(output)).resolves.toBeInstanceOf(LLMGuardrailResult);
+    await expect(guardrail._validate_output(output)).resolves.toMatchObject({ valid: false, feedback: "Missing citations" });
     await expect(guardrail.call(output)).resolves.toEqual([false, "Missing citations"]);
     await expect(guardrail.__call__(output)).resolves.toEqual([false, "Missing citations"]);
     await expect(guardrail.asGuardrail()(output)).resolves.toEqual([false, "Missing citations"]);
