@@ -313,6 +313,7 @@ import {
   CrewTestResultEvent,
   Converter,
   ConverterError,
+  asyncConvertToModel,
   EvaluationScore,
   Logger,
   HallucinationGuardrail,
@@ -3618,6 +3619,27 @@ describe("converter utilities", () => {
       maxAttempts: 1,
     });
     await expect(failing.toPydantic()).rejects.toThrow(ConverterError);
+  });
+
+  it("falls back to agent LLM instructions for async partial JSON conversion", async () => {
+    const seenTexts: string[] = [];
+    const result = await asyncConvertToModel(
+      "summary: converted through fallback",
+      null,
+      summaryModel,
+      {
+        llm: {
+          call(messages, options) {
+            seenTexts.push(messages[1]?.content ?? "");
+            expect(options?.responseModel).toBe(summaryModel);
+            return "{\"summary\":\"fallback converted\"}";
+          },
+        },
+      },
+    );
+
+    expect(result).toEqual({ summary: "fallback converted" });
+    expect(seenTexts).toEqual(["summary: converted through fallback"]);
   });
 });
 

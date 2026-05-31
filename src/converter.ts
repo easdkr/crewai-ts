@@ -191,11 +191,24 @@ export async function asyncHandlePartialJson<T>(
   agent: ConversionAgent | null = null,
   converterClass?: typeof Converter<T> | null,
 ): Promise<T | Record<string, unknown> | string> {
-  const handled = handlePartialJson(result, model, isJsonOutput, agent, null);
-  if (typeof handled !== "string" || !agent || !converterClass) {
-    return handled;
+  const match = jsonPattern.exec(result);
+  if (match?.[1]) {
+    try {
+      return validateModel(match[1], model, isJsonOutput);
+    } catch (error) {
+      if (!agent) {
+        return result;
+      }
+      if (error instanceof SyntaxError) {
+        return await convertWithInstructions(result, model, isJsonOutput, agent, converterClass ?? Converter<T>);
+      }
+      throw error;
+    }
   }
-  return await convertWithInstructions(result, model, isJsonOutput, agent, converterClass);
+  if (!agent) {
+    return result;
+  }
+  return await convertWithInstructions(result, model, isJsonOutput, agent, converterClass ?? Converter<T>);
 }
 
 export const async_handle_partial_json = asyncHandlePartialJson;
@@ -286,7 +299,7 @@ export async function asyncConvertToModel<T>(
     if (converterClass) {
       return await convertWithInstructions(result, model, Boolean(outputJson), agent, converterClass);
     }
-    return handlePartialJson(result, model, Boolean(outputJson), agent, converterClass);
+    return await asyncHandlePartialJson(result, model, Boolean(outputJson), agent, converterClass);
   }
 }
 
