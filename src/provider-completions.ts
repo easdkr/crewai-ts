@@ -1,4 +1,4 @@
-import { ConfiguredLLM, CONTEXT_WINDOW_USAGE_RATIO, LocalFileUploader, type BaseLLMOptions, type LLMCallOptions, type LLMResponse } from "./llm.js";
+import { ConfiguredLLM, CONTEXT_WINDOW_USAGE_RATIO, LocalFileUploader, type BaseLLMOptions, type LLMAvailableFunction, type LLMCallOptions, type LLMResponse } from "./llm.js";
 import { convertToolsToOpenAISchema } from "./agent-utils.js";
 import type { LLMMessage, Tool } from "./types.js";
 
@@ -388,6 +388,55 @@ export class AnthropicCompletion extends ConfiguredLLM {
     thinking_blocks: Record<string, unknown>[];
   } {
     return this.accumulateStreamEvents(events, finalMessage);
+  }
+
+  async executeToolsAndCollectResults(
+    toolUses: readonly unknown[],
+    availableFunctions: Record<string, LLMAvailableFunction>,
+  ): Promise<Record<string, unknown>[]> {
+    const toolResults: Record<string, unknown>[] = [];
+    for (const rawToolUse of toolUses) {
+      const toolUse = readObject(rawToolUse);
+      const functionName = scalarToString(toolUse.name) ?? "";
+      const result = await this.handleToolExecution({
+        functionName,
+        functionArgs: readObject(toolUse.input),
+        availableFunctions,
+      });
+      toolResults.push({
+        type: "tool_result",
+        tool_use_id: scalarToString(toolUse.id) ?? "",
+        content: result ?? "Tool execution completed",
+      });
+    }
+    return toolResults;
+  }
+
+  async _execute_tools_and_collect_results(
+    toolUses: readonly unknown[],
+    availableFunctions: Record<string, LLMAvailableFunction>,
+  ): Promise<Record<string, unknown>[]> {
+    return await this.executeToolsAndCollectResults(toolUses, availableFunctions);
+  }
+
+  async executeFirstTool(
+    toolUses: readonly unknown[],
+    availableFunctions: Record<string, LLMAvailableFunction>,
+  ): Promise<string | null> {
+    const toolUse = readObject(toolUses[0]);
+    const functionName = scalarToString(toolUse.name) ?? "";
+    return await this.handleToolExecution({
+      functionName,
+      functionArgs: readObject(toolUse.input),
+      availableFunctions,
+    });
+  }
+
+  async _execute_first_tool(
+    toolUses: readonly unknown[],
+    availableFunctions: Record<string, LLMAvailableFunction>,
+  ): Promise<string | null> {
+    return await this.executeFirstTool(toolUses, availableFunctions);
   }
 
   override supportsFunctionCalling(): boolean {

@@ -9208,6 +9208,36 @@ describe("LLM providers", () => {
     });
   });
 
+  it("executes Anthropic tool uses into Claude tool result blocks", async () => {
+    const anthropic = new AnthropicCompletion({ model: "claude-3-5-sonnet-20241022" });
+    const availableFunctions = {
+      search_docs: ({ query }: { query: string }) => ({ result: `found ${query}` }),
+    };
+
+    const results = await (anthropic as unknown as {
+      _execute_tools_and_collect_results(
+        toolUses: Array<Record<string, unknown>>,
+        availableFunctions: Record<string, unknown>,
+      ): Promise<Record<string, unknown>[]>;
+    })._execute_tools_and_collect_results([
+      { id: "toolu_1", name: "search_docs", input: { query: "CrewAI" } },
+      { id: "toolu_2", name: "missing_tool", input: {} },
+    ], availableFunctions);
+
+    expect(results).toEqual([
+      { type: "tool_result", tool_use_id: "toolu_1", content: "{\"result\":\"found CrewAI\"}" },
+      { type: "tool_result", tool_use_id: "toolu_2", content: "Tool execution completed" },
+    ]);
+    await expect((anthropic as unknown as {
+      _execute_first_tool(
+        toolUses: Array<Record<string, unknown>>,
+        availableFunctions: Record<string, unknown>,
+      ): Promise<string | null>;
+    })._execute_first_tool([
+      { id: "toolu_1", name: "search_docs", input: { query: "CrewAI" } },
+    ], availableFunctions)).resolves.toBe("{\"result\":\"found CrewAI\"}");
+  });
+
   it("prepares Bedrock Converse request bodies with tools and provider fields", () => {
     const search = new StructuredTool({
       name: "search docs",
