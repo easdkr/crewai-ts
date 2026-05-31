@@ -2853,6 +2853,22 @@ export class MemoryScope {
     return this.readOnly;
   }
 
+  _requireMemory(): Memory {
+    return this.memory;
+  }
+
+  _require_memory(): Memory {
+    return this._requireMemory();
+  }
+
+  _scopePath(scope: string | null = "/"): string {
+    return joinScopePaths(this.rootPath, scope ?? "/");
+  }
+
+  _scope_path(scope: string | null = "/"): string {
+    return this._scopePath(scope);
+  }
+
   remember(content: string, options: MemoryRememberOptions = {}): MemoryRecord | null {
     return this.memory.remember(content, { ...options, scope: joinScopePaths(this.rootPath, options.scope ?? "/") });
   }
@@ -2997,6 +3013,14 @@ export class MemorySlice {
 
   get read_only(): boolean {
     return this.readOnly;
+  }
+
+  _requireMemory(): Memory {
+    return this.memory;
+  }
+
+  _require_memory(): Memory {
+    return this._requireMemory();
   }
 
   remember(content: string, options: MemoryRememberOptions = {}): MemoryRecord | null {

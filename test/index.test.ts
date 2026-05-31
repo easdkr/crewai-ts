@@ -17880,11 +17880,17 @@ describe("memory", () => {
     const scope = original.scope("/team");
     const slice = original.slice(["/team"], { readOnly: false });
 
+    expect(scope._require_memory()).toBe(original);
+    expect(scope._scope_path("notes")).toBe("/team/notes");
+    expect(scope._scope_path("/")).toBe("/team");
+    expect(slice._require_memory()).toBe(original);
+
     expect(scope.bind(restored)).toBe(scope);
     scope.remember("scoped rebound");
     expect(restored.list_records().map((record) => record.content)).toEqual(["scoped rebound"]);
 
     expect(slice.bind(restored)).toBe(slice);
+    expect(slice._require_memory()).toBe(restored);
     slice.remember("slice rebound");
     expect(restored.list_records().map((record) => record.content)).toEqual(["slice rebound", "scoped rebound"]);
   });
