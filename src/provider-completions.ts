@@ -1869,7 +1869,10 @@ export class AzureCompletion extends ConfiguredLLM {
     this.is_azure_openai_endpoint = this.isAzureOpenAIEndpoint;
     this.isOpenAIModel = /(?:^|[/:])(gpt-|o1-|text-)/i.test(options.model);
     this.is_openai_model = this.isOpenAIModel;
-    this.credentialScopes = options.credentialScopes ?? options.credential_scopes ?? null;
+    const configuredCredentialScopes = options.credentialScopes ?? options.credential_scopes ?? null;
+    this.credentialScopes = configuredCredentialScopes && configuredCredentialScopes.length > 0
+      ? configuredCredentialScopes
+      : AzureCompletion.credentialScopesFromEnv();
     this.credential_scopes = this.credentialScopes;
     this.responseChainId = options.previousResponseId ?? options.previous_response_id ?? null;
     this.reasoningChainItems = [];
@@ -2031,6 +2034,19 @@ export class AzureCompletion extends ConfiguredLLM {
 
   _convert_tools_for_interference(tools: readonly Tool[]): Record<string, unknown>[] {
     return this.convertToolsForInterference(tools);
+  }
+
+  static credentialScopesFromEnv(env: NodeJS.ProcessEnv = process.env): string[] | null {
+    const raw = env.AZURE_CREDENTIAL_SCOPES;
+    if (!raw) {
+      return null;
+    }
+    const scopes = raw.split(",").map((scope) => scope.trim()).filter((scope) => scope.length > 0);
+    return scopes.length > 0 ? scopes : null;
+  }
+
+  static _credential_scopes_from_env(): string[] | null {
+    return AzureCompletion.credentialScopesFromEnv();
   }
 
   extractAzureTokenUsage(response: unknown): Record<string, number> {

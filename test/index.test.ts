@@ -10053,6 +10053,42 @@ describe("LLM providers", () => {
     })._extract_azure_token_usage({})).toEqual({ total_tokens: 0 });
   });
 
+  it("reads Azure credential scopes from the environment", () => {
+    const previous = process.env.AZURE_CREDENTIAL_SCOPES;
+    try {
+      process.env.AZURE_CREDENTIAL_SCOPES = "https://cognitiveservices.azure.com/.default,  https://management.azure.com/.default ,";
+
+      expect((AzureCompletion as unknown as {
+        _credential_scopes_from_env(): string[] | null;
+      })._credential_scopes_from_env()).toEqual([
+        "https://cognitiveservices.azure.com/.default",
+        "https://management.azure.com/.default",
+      ]);
+      expect(new AzureCompletion({ model: "gpt-4o" }).credential_scopes).toEqual([
+        "https://cognitiveservices.azure.com/.default",
+        "https://management.azure.com/.default",
+      ]);
+      expect(new AzureCompletion({ model: "gpt-4o", credential_scopes: [] }).credential_scopes).toEqual([
+        "https://cognitiveservices.azure.com/.default",
+        "https://management.azure.com/.default",
+      ]);
+      expect(new AzureCompletion({ model: "gpt-4o", credentialScopes: ["custom-scope"] }).credential_scopes).toEqual([
+        "custom-scope",
+      ]);
+
+      process.env.AZURE_CREDENTIAL_SCOPES = " , ";
+      expect((AzureCompletion as unknown as {
+        _credential_scopes_from_env(): string[] | null;
+      })._credential_scopes_from_env()).toBeNull();
+    } finally {
+      if (previous === undefined) {
+        delete process.env.AZURE_CREDENTIAL_SCOPES;
+      } else {
+        process.env.AZURE_CREDENTIAL_SCOPES = previous;
+      }
+    }
+  });
+
   it("exposes upstream AnthropicCompletion aliases directly on the provider class", async () => {
     const anthropic = new AnthropicCompletion({ model: "claude-3-5-sonnet-20241022" });
     for (const methodName of [
