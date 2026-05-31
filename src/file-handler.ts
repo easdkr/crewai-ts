@@ -20,9 +20,16 @@ export type LogEntry = {
 export const LogEntry = Object.freeze({ kind: "LogEntry" });
 
 export class FileHandler {
-  readonly path: string;
+  path: string;
+  _path: string;
 
   constructor(filePath: boolean | string) {
+    this.path = "";
+    this._path = "";
+    this._initialize_path(filePath);
+  }
+
+  _initialize_path(filePath: boolean | string): void {
     if (filePath === true) {
       this.path = "logs.txt";
     } else if (typeof filePath === "string") {
@@ -32,6 +39,7 @@ export class FileHandler {
     } else {
       throw new Error("filePath must be a string or boolean.");
     }
+    this._path = this.path;
   }
 
   async log(entry: LogEntry): Promise<void> {

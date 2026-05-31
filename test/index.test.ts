@@ -70,6 +70,7 @@ import {
   ConditionalTask,
   ConsoleFormatter,
   Crew,
+  CrewJSONEncoder,
   CrewOutput,
   CrewAIPlugin,
   CrewBaseEvent,
@@ -102,6 +103,7 @@ import {
   CircularDependencyError,
   Depends,
   Fingerprint,
+  FileHandler,
   Flow,
   FlowCreatedEvent,
   FlowFinishedEvent,
@@ -17109,6 +17111,37 @@ describe("crew planning", () => {
 });
 
 describe("events", () => {
+  it("exposes upstream utility helpers for JSON encoding and file path initialization", () => {
+    const encoder = new CrewJSONEncoder();
+    const nested = { model_dump: () => ({ nested: true }) };
+    const pydanticLike = {
+      model_dump: () => ({
+        summary: "CrewAI",
+        nested,
+      }),
+    };
+
+    expect(encoder._handle_pydantic_model(pydanticLike)).toEqual({
+      summary: "CrewAI",
+      nested: "[object Object]",
+    });
+    expect(encoder.default(pydanticLike)).toEqual({
+      summary: "CrewAI",
+      nested: "[object Object]",
+    });
+
+    const handler = new FileHandler(true);
+    expect(handler._path).toBe("logs.txt");
+    handler._initialize_path("custom-log");
+    expect(handler.path).toBe("custom-log.txt");
+    expect(handler._path).toBe("custom-log.txt");
+    handler._initialize_path("structured.json");
+    expect(handler.path).toBe("structured.json");
+    expect(() => {
+      handler._initialize_path(null as unknown as string);
+    }).toThrow("filePath must be a string or boolean.");
+  });
+
   it("exposes the upstream ConsoleFormatter lifecycle surface", () => {
     const formatter = new ConsoleFormatter({ verbose: true });
     const printed: unknown[][] = [];

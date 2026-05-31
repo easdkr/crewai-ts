@@ -75,8 +75,48 @@ export const DEFAULT_TTL = 3600;
 
 export class CrewJSONEncoder {
   default(value: unknown): Serializable {
+    if (isPydanticLike(value)) {
+      return this._handle_pydantic_model(value);
+    }
     return toSerializable(value);
   }
+
+  _handle_pydantic_model(value: unknown): Serializable {
+    try {
+      const dumped = modelDump(value);
+      if (dumped && typeof dumped === "object" && !Array.isArray(dumped)) {
+        return Object.fromEntries(Object.entries(dumped).map(([key, item]) => [
+          key,
+          isPydanticLike(item) ? repr(item) : toSerializable(item),
+        ]));
+      }
+      return toSerializable(dumped);
+    } catch (error) {
+      if (error instanceof RangeError) {
+        return repr(value);
+      }
+      throw error;
+    }
+  }
+}
+
+function isPydanticLike(value: unknown): boolean {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const record = value as { model_dump?: unknown; modelDump?: unknown };
+  return typeof record.model_dump === "function" || typeof record.modelDump === "function";
+}
+
+function modelDump(value: unknown): unknown {
+  const record = value as { model_dump?: () => unknown; modelDump?: () => unknown };
+  if (typeof record.model_dump === "function") {
+    return record.model_dump();
+  }
+  if (typeof record.modelDump === "function") {
+    return record.modelDump();
+  }
+  return value;
 }
 
 export class CrewContext {
