@@ -524,6 +524,8 @@ export {
   process_llm_response,
   renderTextDescriptionAndArgs,
   render_text_description_and_args,
+  setCreatePlusClientHook,
+  set_create_plus_client_hook,
   setupNativeTools,
   setup_native_tools,
   showAgentLogs,

@@ -74,6 +74,7 @@ import { CREWAI_TRAINED_AGENTS_FILE_ENV, TRAINED_AGENTS_DATA_FILE, TRAINING_DATA
 import { CrewTrainingHandler } from "./training-handler.js";
 import { Prompts, type StandardPromptResult, type SystemPromptResult } from "./prompts.js";
 import { LiteAgentOutput, type TodoExecutionResultOptions } from "./lite-agent-output.js";
+import { loadAgentFromRepository } from "./agent-utils.js";
 
 export type AgentGuardrailResult =
   | readonly [boolean, unknown]
@@ -308,6 +309,7 @@ export class Agent {
   private lastMessagesValue: LLMMessage[] = [];
 
   constructor(options: AgentOptions) {
+    options = Agent.validateFromRepository(options) as AgentOptions;
     this.role = options.role;
     this.goal = options.goal;
     this.backstory = options.backstory;
@@ -541,6 +543,10 @@ export class Agent {
   }
 
   static validateFromRepository(values: Record<string, unknown>): Record<string, unknown> {
+    const fromRepository = values.from_repository ?? values.fromRepository;
+    if (typeof fromRepository === "string" && fromRepository.length > 0) {
+      return { ...loadAgentFromRepository(fromRepository), ...values };
+    }
     return { ...values };
   }
 

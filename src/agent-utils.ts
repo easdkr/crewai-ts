@@ -3,6 +3,7 @@ import { sanitizeToolName } from "./string-utils.js";
 import { AgentAction, AgentFinish, OutputParserError } from "./agent-parser.js";
 import { BaseTool, ToolResult, type ToolArgsSchema, type ToolArgumentSpec } from "./tools.js";
 import type { LLMMessage, MaybePromise, Tool, ToolContext } from "./types.js";
+import { AgentRepositoryError } from "./errors.js";
 
 export type ToolRunner = (input?: ToolContext | Record<string, unknown> | string) => MaybePromise<unknown>;
 
@@ -265,11 +266,92 @@ export function showAgentLogs(_agent: unknown, _message: string): void {
 
 export const show_agent_logs = showAgentLogs;
 
-export function loadAgentFromRepository(repository: string): never {
-  throw new Error(`Agent repository loading is not available in the local TypeScript runtime: ${repository}`);
+type AgentRepositoryResponse = {
+  status?: number;
+  status_code?: number;
+  ok?: boolean;
+  text?: string | (() => string);
+  json?: Record<string, unknown> | (() => Record<string, unknown>);
+};
+
+type AgentRepositoryClient = {
+  getAgent?: (repository: string) => AgentRepositoryResponse;
+  get_agent?: (repository: string) => AgentRepositoryResponse;
+};
+
+let createPlusClientHook: (() => AgentRepositoryClient) | null = null;
+
+export function setCreatePlusClientHook(hook: (() => AgentRepositoryClient) | null): void {
+  createPlusClientHook = hook;
+}
+
+export const set_create_plus_client_hook = setCreatePlusClientHook;
+
+export function loadAgentFromRepository(repository: string): Record<string, unknown> {
+  if (!repository) {
+    return {};
+  }
+  if (!createPlusClientHook) {
+    return {};
+  }
+  const client = createPlusClientHook();
+  const getAgent = client.getAgent ?? client.get_agent;
+  if (!getAgent) {
+    throw new AgentRepositoryError("Agent repository client does not provide get_agent.");
+  }
+  const response = getAgent.call(client, repository);
+  const status = response.status_code ?? response.status ?? (response.ok === false ? 500 : 200);
+  if (status === 404) {
+    throw new AgentRepositoryError(
+      `Agent ${repository} does not exist, make sure the name is correct or the agent is available on your organization.`,
+    );
+  }
+  if (status !== 200) {
+    throw new AgentRepositoryError(`Agent ${repository} could not be loaded: ${repositoryResponseText(response)}`);
+  }
+  return normalizeRepositoryAgent(repository, repositoryResponseJson(response));
 }
 
 export const load_agent_from_repository = loadAgentFromRepository;
+
+function repositoryResponseText(response: AgentRepositoryResponse): string {
+  return typeof response.text === "function" ? response.text() : response.text ?? "";
+}
+
+function repositoryResponseJson(response: AgentRepositoryResponse): Record<string, unknown> {
+  const payload = typeof response.json === "function" ? response.json() : response.json;
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    throw new AgentRepositoryError("Agent repository response did not include agent attributes.");
+  }
+  return payload;
+}
+
+function normalizeRepositoryAgent(repository: string, agent: Record<string, unknown>): Record<string, unknown> {
+  const attributes: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(agent)) {
+    if (key === "tools") {
+      if (!Array.isArray(value)) {
+        attributes.tools = [];
+        continue;
+      }
+      attributes.tools = value.map((tool) => {
+        if (isRunnableTool(tool)) {
+          return tool;
+        }
+        throw new AgentRepositoryError(
+          `Agent ${repository} includes a repository tool that cannot be synchronously loaded in the TypeScript runtime.`,
+        );
+      });
+      continue;
+    }
+    attributes[key] = value;
+  }
+  return attributes;
+}
+
+function isRunnableTool(value: unknown): value is Tool {
+  return Boolean(value) && typeof value === "object" && typeof (value as { run?: unknown }).run === "function";
+}
 
 export function trackDelegationIfNeeded(toolName: string, args: Record<string, unknown>, task: { incrementDelegations?: (coworker?: unknown) => void } | null = null): void {
   if (DELEGATION_TOOL_NAMES.includes(sanitizeToolName(toolName))) {

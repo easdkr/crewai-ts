@@ -559,6 +559,7 @@ import {
   registerRagClientFactory,
   restoreEventScope,
   resolveRefs,
+  setCreatePlusClientHook,
   runWithExecutionContext,
   runCrewTool,
   checkConditionalSkip,
@@ -9613,6 +9614,44 @@ describe("agent planning", () => {
     expect(copy.agent_knowledge_context).toBe("Agent context");
     expect(copy.execution_context).not.toBe(executionContext);
     expect(copy.execution_context?.currentTaskId).toBe("agent-task");
+  });
+
+  it("merges agent repository attributes through the PlusAPI-compatible hook", () => {
+    const repoTool = {
+      name: "repo_tool",
+      description: "Repository tool",
+      run: () => "repo result",
+    };
+    setCreatePlusClientHook(() => ({
+      get_agent: (repository: string) => ({
+        status_code: 200,
+        json: () => ({
+          role: "Repository Researcher",
+          goal: "Use repository defaults",
+          backstory: "Loaded from repository",
+          allow_delegation: true,
+          tools: [repoTool],
+          repository,
+        }),
+      }),
+    }));
+
+    try {
+      const agentInstance = new Agent({
+        role: "Local override",
+        goal: "Use local goal",
+        backstory: "Local backstory",
+        from_repository: "researcher-template",
+      });
+
+      expect(agentInstance.role).toBe("Local override");
+      expect(agentInstance.goal).toBe("Use local goal");
+      expect(agentInstance.backstory).toBe("Local backstory");
+      expect(agentInstance.allow_delegation).toBe(true);
+      expect(agentInstance.tools).toEqual([repoTool]);
+    } finally {
+      setCreatePlusClientHook(null);
+    }
   });
 
   it("uses PlanningConfig custom prompts and injects the generated plan into execution", async () => {
