@@ -58,6 +58,7 @@ import {
   Agent,
   AgentCardSigningConfig,
   AgentExecutor,
+  CrewAgentExecutor,
   PlannerObserver,
   StepExecutor,
   StepExecutionContext,
@@ -8537,6 +8538,65 @@ describe("core crew runtime", () => {
     executor.invoke("Summarize CrewAI");
     expect(executor.iterations).toBe(7);
     expect(executor.state.messages.at(-1)).toEqual({ role: "user", content: "Summarize CrewAI" });
+  });
+
+  it("exposes upstream CrewAgentExecutor multimodal, native tool, and callback helpers", async () => {
+    const callbackValues: unknown[] = [];
+    const agentInstance = new Agent({
+      role: "Researcher",
+      goal: "Find facts",
+      backstory: "Careful analyst",
+      step_callback: (value) => {
+        callbackValues.push(value);
+      },
+    });
+    const finalTool = new StructuredTool({
+      name: "Final Tool",
+      description: "Return direct result",
+      resultAsAnswer: true,
+      func: (args) => `final:${(args as { topic?: string }).topic ?? ""}`,
+    });
+    const executor = new CrewAgentExecutor({
+      agent: agentInstance,
+      task: { description: "Research CrewAI" },
+      tools: [finalTool],
+      messages: [{ role: "user", content: "Use files" }],
+    });
+
+    executor._inject_multimodal_files({ files: { notes: "notes.txt" } });
+    expect((executor.messages[0] as LLMMessage & { files?: Record<string, unknown> }).files).toEqual({ notes: "notes.txt" });
+    await executor._ainject_multimodal_files({ files: { image: "chart.png" } });
+    expect((executor.messages[0] as LLMMessage & { files?: Record<string, unknown> }).files).toEqual({ image: "chart.png" });
+
+    expect(executor._parse_native_tool_call({
+      id: "call-1",
+      function: { name: "Final Tool", arguments: "{\"topic\":\"CrewAI\"}" },
+    })).toEqual(["call-1", "final_tool", { topic: "CrewAI" }]);
+    const finish = await executor._handle_native_tool_calls([{
+      id: "call-1",
+      function: { name: "Final Tool", arguments: "{\"topic\":\"CrewAI\"}" },
+    }], {
+      final_tool: (args) => finalTool.run(args as Record<string, unknown>),
+    });
+    expect(finish).toBeInstanceOf(AgentFinish);
+    expect(finish?.output).toBe("final:CrewAI");
+    expect(executor.messages.some((message) => (message as { tool_call_id?: string }).tool_call_id === "call-1")).toBe(true);
+
+    const answer = new AgentFinish({ thought: "done", output: "ok", text: "ok" });
+    executor._invoke_step_callback(answer);
+    await executor._ainvoke_step_callback(answer);
+    expect(callbackValues).toEqual([answer, answer]);
+
+    executor._show_start_logs();
+    expect(executor.messages.at(-1)?.content).toContain("Agent Researcher started");
+
+    expect(executor._invoke_loop_react()).toBeInstanceOf(AgentFinish);
+    await expect(executor._ainvoke_loop_react()).resolves.toBeInstanceOf(AgentFinish);
+    await expect(executor._invoke_loop_native_tools()).resolves.toBeInstanceOf(AgentFinish);
+    await expect(executor._ainvoke_loop_native_tools()).resolves.toBeInstanceOf(AgentFinish);
+    expect(executor._invoke_loop_native_no_tools()).toBeInstanceOf(AgentFinish);
+    await expect(executor._ainvoke_loop_native_no_tools()).resolves.toBeInstanceOf(AgentFinish);
+    await expect(executor._ahandle_human_feedback(answer)).resolves.toBe(answer);
   });
 
   it("exposes upstream StepExecutor execute alias for todo items", async () => {

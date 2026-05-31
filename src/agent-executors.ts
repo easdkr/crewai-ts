@@ -3,7 +3,12 @@ import type { CheckpointConfig } from "./state.js";
 import type { Crew } from "./crew.js";
 import { StepObservation, TodoItem, TodoList, TodoStatus } from "./agent-planning.js";
 import { AgentAction, AgentFinish, parseAgentOutput } from "./agent-parser.js";
-import { extractTaskSection, formatMessageForLLM } from "./agent-utils.js";
+import {
+  executeSingleNativeToolCall,
+  extractTaskSection,
+  extractToolCallInfo,
+  formatMessageForLLM,
+} from "./agent-utils.js";
 import { Converter } from "./converter.js";
 import { UsageMetrics, type LLMResponse } from "./llm.js";
 import { StepExecutionContext, StepResult } from "./step-execution-context.js";
@@ -891,6 +896,177 @@ export class CrewAgentExecutor extends BaseAgentExecutor {
     }
     return super.invoke(input);
   }
+
+  _invoke_loop_react(): AgentFinish {
+    const content = this.messages.at(-1)?.content;
+    return new AgentFinish({
+      thought: "",
+      output: typeof content === "string" ? content : stringifyCrewExecutorValue(content),
+      text: typeof content === "string" ? content : stringifyCrewExecutorValue(content),
+    });
+  }
+
+  async _ainvoke_loop_react(): Promise<AgentFinish> {
+    await Promise.resolve();
+    return this._invoke_loop_react();
+  }
+
+  async _invoke_loop_native_tools(): Promise<AgentFinish> {
+    const pendingToolCalls = this.messages
+      .flatMap((message) => {
+        const record = message as unknown as { tool_calls?: readonly unknown[] };
+        return record.tool_calls ?? [];
+      });
+    if (pendingToolCalls.length > 0) {
+      const functions = Object.fromEntries(this.tools.map((tool) => [
+        sanitizeToolName(tool.name),
+        (input?: unknown) => tool.run(input as Record<string, unknown>),
+      ]));
+      const finish = await this._handle_native_tool_calls(pendingToolCalls, functions);
+      if (finish) {
+        return finish;
+      }
+    }
+    return this._invoke_loop_react();
+  }
+
+  async _ainvoke_loop_native_tools(): Promise<AgentFinish> {
+    return await this._invoke_loop_native_tools();
+  }
+
+  _invoke_loop_native_no_tools(): AgentFinish {
+    return this._invoke_loop_react();
+  }
+
+  async _ainvoke_loop_native_no_tools(): Promise<AgentFinish> {
+    await Promise.resolve();
+    return this._invoke_loop_native_no_tools();
+  }
+
+  async _ahandle_human_feedback(formattedAnswer: AgentFinish): Promise<AgentFinish> {
+    await Promise.resolve();
+    return formattedAnswer;
+  }
+
+  _inject_multimodal_files(inputs: { files?: Record<string, unknown> } | null = null): void {
+    const files = { ...(inputs?.files ?? {}) };
+    if (Object.keys(files).length === 0) {
+      return;
+    }
+    for (let index = this.messages.length - 1; index >= 0; index -= 1) {
+      const message = this.messages[index] as unknown as { role?: string; files?: Record<string, unknown> };
+      if (message.role === "user") {
+        message.files = files;
+        return;
+      }
+    }
+  }
+
+  async _ainject_multimodal_files(inputs: { files?: Record<string, unknown> } | null = null): Promise<void> {
+    await Promise.resolve();
+    this._inject_multimodal_files(inputs);
+  }
+
+  _parse_native_tool_call(toolCall: unknown): [string, string, string | Record<string, unknown>] | null {
+    const info = extractToolCallInfo(toolCall);
+    if (!info) {
+      return null;
+    }
+    return [
+      info.id ?? `call_${String(Math.abs(JSON.stringify(toolCall).length))}`,
+      sanitizeToolName(info.toolName),
+      info.arguments ?? {},
+    ];
+  }
+
+  _append_assistant_tool_calls_message(parsedCalls: readonly [string, string, string | Record<string, unknown>][]): void {
+    this.messages.push({
+      role: "assistant",
+      content: null,
+      tool_calls: parsedCalls.map(([callId, funcName, funcArgs]) => ({
+        id: callId,
+        type: "function",
+        function: {
+          name: funcName,
+          arguments: typeof funcArgs === "string" ? funcArgs : JSON.stringify(funcArgs),
+        },
+      })),
+    } as unknown as LLMMessage);
+  }
+
+  async _handle_native_tool_calls(
+    toolCalls: readonly unknown[],
+    availableFunctions: Record<string, (input?: unknown) => MaybePromise<unknown>>,
+  ): Promise<AgentFinish | null> {
+    const parsed = toolCalls
+      .map((toolCall) => this._parse_native_tool_call(toolCall))
+      .filter((item): item is [string, string, string | Record<string, unknown>] => item !== null);
+    if (parsed.length === 0) {
+      return null;
+    }
+    this._append_assistant_tool_calls_message(parsed);
+    for (const [callId, funcName, funcArgs] of parsed) {
+      const result = await executeSingleNativeToolCall(
+        { id: callId, name: funcName, arguments: typeof funcArgs === "string" ? parseNativeCrewArgs(funcArgs) : funcArgs },
+        availableFunctions,
+      );
+      const finish = this._append_tool_result_and_check_finality({
+        callId,
+        funcName,
+        result: result.text,
+      });
+      if (finish) {
+        return finish;
+      }
+    }
+    this.messages.push({ role: "user", content: "Reflect on the tool results and continue." });
+    return null;
+  }
+
+  _append_tool_result_and_check_finality(executionResult: {
+    callId?: string | null;
+    call_id?: string | null;
+    funcName?: string | null;
+    func_name?: string | null;
+    result?: unknown;
+  }): AgentFinish | null {
+    const callId = executionResult.callId ?? executionResult.call_id ?? null;
+    const funcName = executionResult.funcName ?? executionResult.func_name ?? "";
+    const content = stringifyCrewExecutorValue(executionResult.result);
+    this.messages.push({
+      role: "tool",
+      content,
+      tool_call_id: callId ?? funcName,
+    } as unknown as LLMMessage);
+    const originalTool = this.tools.find((tool) => sanitizeToolName(tool.name) === sanitizeToolName(funcName));
+    if (originalTool?.resultAsAnswer) {
+      return new AgentFinish({ thought: "", output: content, text: content });
+    }
+    return null;
+  }
+
+  _invoke_step_callback(formattedAnswer: AgentAction | AgentFinish): void {
+    const callback = (this.agent?.stepCallback ?? this.agent?.step_callback ?? null) as ((value: AgentAction | AgentFinish) => unknown) | null;
+    const result = callback?.(formattedAnswer);
+    if (result && typeof result === "object" && "then" in result) {
+      void result;
+    }
+  }
+
+  async _ainvoke_step_callback(formattedAnswer: AgentAction | AgentFinish): Promise<void> {
+    const callback = (this.agent?.stepCallback ?? this.agent?.step_callback ?? null) as ((value: AgentAction | AgentFinish) => unknown) | null;
+    const result = callback?.(formattedAnswer);
+    if (result && typeof result === "object" && "then" in result) {
+      await (result as PromiseLike<unknown>);
+    }
+  }
+
+  _show_start_logs(): void {
+    this.messages.push({
+      role: "system",
+      content: `Agent ${this.agent?.role ?? "Agent"} started${this.task && typeof this.task === "object" && "description" in this.task ? `: ${String(this.task.description)}` : ""}`,
+    });
+  }
 }
 
 export type StepExecutorOptions = {
@@ -899,6 +1075,34 @@ export type StepExecutorOptions = {
   availableFunctions?: Record<string, unknown>;
   available_functions?: Record<string, unknown>;
 };
+
+function parseNativeCrewArgs(value: string): Record<string, unknown> {
+  if (!value.trim()) {
+    return {};
+  }
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : { input: value };
+  } catch {
+    return { input: value };
+  }
+}
+
+function stringifyCrewExecutorValue(value: unknown): string {
+  if (typeof value === "string") {
+    return value;
+  }
+  if (value === null || value === undefined) {
+    return "";
+  }
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return Object.prototype.toString.call(value);
+  }
+}
 
 export class StepExecutor {
   readonly agent: Agent | null;
