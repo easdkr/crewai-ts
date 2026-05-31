@@ -11815,6 +11815,28 @@ describe("memory", () => {
     });
   });
 
+  it("accepts upstream path arguments for memory slices", () => {
+    const memory = new Memory();
+    memory.remember("Alpha parent", { scope: "/projects/alpha", categories: ["planning"] });
+    memory.remember("Alpha note", { scope: "/projects/alpha/notes", categories: ["notes"] });
+    memory.remember("Beta parent", { scope: "/projects/beta", categories: ["planning"] });
+    memory.remember("Beta note", { scope: "/projects/beta/notes", categories: ["notes"] });
+
+    const slice = memory.slice(["/projects/alpha", "/projects/beta"]);
+
+    expect(slice.list_scopes("/")).toEqual([
+      "/projects/alpha/notes",
+      "/projects/beta/notes",
+    ]);
+    expect(slice.list_categories("/notes")).toEqual({ notes: 2 });
+    expect(slice.info("/notes")).toMatchObject({
+      path: "/notes",
+      recordCount: 2,
+      categories: ["notes"],
+      childScopes: [],
+    });
+  });
+
   it("returns upstream formatted memory trees for path arguments", () => {
     const memory = new Memory({ rootScope: "/root" });
     memory.remember("Alpha parent", { scope: "/projects/alpha" });
