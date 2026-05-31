@@ -324,10 +324,9 @@ export function beforeLlmCall(hook: BeforeLLMCallHook): BeforeLLMCallHook;
 export function beforeLlmCall(options: { agents?: readonly string[] }): MethodDecorator;
 export function beforeLlmCall(value: BeforeLLMCallHook | { agents?: readonly string[] }): BeforeLLMCallHook | MethodDecorator {
   if (typeof value === "function") {
-    registerBeforeLlmCallHook(value);
-    return value;
+    return registerDecoratedHook(value, registerBeforeLlmCallHook, "is_before_llm_call_hook", {});
   }
-  return createMethodHookDecorator("isBeforeLlmCallHook", value.agents);
+  return createHookDecorator(registerBeforeLlmCallHook, "is_before_llm_call_hook", hookFilterOptions(value));
 }
 
 export const before_llm_call = beforeLlmCall;
@@ -336,10 +335,9 @@ export function afterLlmCall(hook: AfterLLMCallHook): AfterLLMCallHook;
 export function afterLlmCall(options: { agents?: readonly string[] }): MethodDecorator;
 export function afterLlmCall(value: AfterLLMCallHook | { agents?: readonly string[] }): AfterLLMCallHook | MethodDecorator {
   if (typeof value === "function") {
-    registerAfterLlmCallHook(value);
-    return value;
+    return registerDecoratedHook(value, registerAfterLlmCallHook, "is_after_llm_call_hook", {});
   }
-  return createMethodHookDecorator("isAfterLlmCallHook", value.agents);
+  return createHookDecorator(registerAfterLlmCallHook, "is_after_llm_call_hook", hookFilterOptions(value));
 }
 
 export const after_llm_call = afterLlmCall;
@@ -348,10 +346,9 @@ export function beforeToolCall(hook: BeforeToolCallHook): BeforeToolCallHook;
 export function beforeToolCall(options: { tools?: readonly string[]; agents?: readonly string[] }): MethodDecorator;
 export function beforeToolCall(value: BeforeToolCallHook | { tools?: readonly string[]; agents?: readonly string[] }): BeforeToolCallHook | MethodDecorator {
   if (typeof value === "function") {
-    registerBeforeToolCallHook(value);
-    return value;
+    return registerDecoratedHook(value, registerBeforeToolCallHook, "is_before_tool_call_hook", {});
   }
-  return createMethodHookDecorator("isBeforeToolCallHook", value.agents, value.tools);
+  return createHookDecorator(registerBeforeToolCallHook, "is_before_tool_call_hook", hookFilterOptions(value));
 }
 
 export const before_tool_call = beforeToolCall;
@@ -360,10 +357,9 @@ export function afterToolCall(hook: AfterToolCallHook): AfterToolCallHook;
 export function afterToolCall(options: { tools?: readonly string[]; agents?: readonly string[] }): MethodDecorator;
 export function afterToolCall(value: AfterToolCallHook | { tools?: readonly string[]; agents?: readonly string[] }): AfterToolCallHook | MethodDecorator {
   if (typeof value === "function") {
-    registerAfterToolCallHook(value);
-    return value;
+    return registerDecoratedHook(value, registerAfterToolCallHook, "is_after_tool_call_hook", {});
   }
-  return createMethodHookDecorator("isAfterToolCallHook", value.agents, value.tools);
+  return createHookDecorator(registerAfterToolCallHook, "is_after_tool_call_hook", hookFilterOptions(value));
 }
 
 export const after_tool_call = afterToolCall;
@@ -424,18 +420,116 @@ function clearHooks(hooks: unknown[]): number {
   return count;
 }
 
-function createMethodHookDecorator(kind: string, agents?: readonly string[], tools?: readonly string[]): MethodDecorator {
-  return (value: object, propertyKey: string | symbol) => {
-    Object.defineProperty(value, propertyKey, {
-      configurable: true,
-      writable: true,
-      value: Object.assign((value as Record<string | symbol, unknown>)[propertyKey] as object, {
-        [kind]: true,
-        ...(agents ? { agents: [...agents] } : {}),
-        ...(tools ? { tools: tools.map(sanitizeHookToolName) } : {}),
-      }),
-    });
+type HookFilterOptions = {
+  agents?: readonly string[];
+  tools?: readonly string[];
+};
+
+type HookRegister<THook> = (hook: THook) => void;
+
+function createHookDecorator<THook extends (context: never) => unknown>(
+  register: HookRegister<THook>,
+  marker: string,
+  options: HookFilterOptions,
+): MethodDecorator {
+  const normalizedOptions = normalizeHookFilterOptions(options);
+  return ((targetOrHook: object, propertyKeyOrContext?: string | symbol | { kind: string; name?: string | symbol }) => {
+    if (typeof targetOrHook === "function" && (propertyKeyOrContext === undefined || isStandardDecoratorContext(propertyKeyOrContext))) {
+      markHook(targetOrHook, marker, normalizedOptions);
+      if (propertyKeyOrContext === undefined) {
+        registerFilteredHook(targetOrHook as THook, register, normalizedOptions);
+      }
+      return targetOrHook;
+    }
+    if (propertyKeyOrContext === undefined || typeof propertyKeyOrContext === "object") {
+      return undefined;
+    }
+    const target = targetOrHook as Record<string | symbol, unknown>;
+    const method = target[propertyKeyOrContext];
+    if (typeof method === "function") {
+      markHook(method, marker, normalizedOptions);
+    }
+    return undefined;
+  }) as MethodDecorator;
+}
+
+function registerDecoratedHook<THook extends (context: never) => unknown>(
+  hook: THook,
+  register: HookRegister<THook>,
+  marker: string,
+  options: HookFilterOptions,
+): THook {
+  const normalizedOptions = normalizeHookFilterOptions(options);
+  markHook(hook, marker, normalizedOptions);
+  registerFilteredHook(hook, register, normalizedOptions);
+  return hook;
+}
+
+function registerFilteredHook<THook extends (context: never) => unknown>(
+  hook: THook,
+  register: HookRegister<THook>,
+  options: HookFilterOptions,
+): void {
+  if (!options.tools?.length && !options.agents?.length) {
+    register(hook);
+    return;
+  }
+  register(((context: never) => {
+    if (!hookContextMatchesFilters(context, options)) {
+      return null;
+    }
+    return hook(context);
+  }) as THook);
+}
+
+function markHook(hook: object, marker: string, options: HookFilterOptions): void {
+  Object.assign(hook, {
+    [marker]: true,
+    ...(options.agents?.length ? { agents: [...options.agents], _filter_agents: [...options.agents] } : {}),
+    ...(options.tools?.length ? { tools: [...options.tools], _filter_tools: [...options.tools] } : {}),
+  });
+}
+
+function normalizeHookFilterOptions(options: HookFilterOptions): HookFilterOptions {
+  return {
+    ...(options.agents ? { agents: [...options.agents] } : {}),
+    ...(options.tools ? { tools: options.tools.map(sanitizeHookToolName) } : {}),
   };
+}
+
+function hookFilterOptions(options: { agents?: readonly string[]; tools?: readonly string[] }): HookFilterOptions {
+  return {
+    ...(options.agents ? { agents: options.agents } : {}),
+    ...(options.tools ? { tools: options.tools } : {}),
+  };
+}
+
+function hookContextMatchesFilters(context: unknown, options: HookFilterOptions): boolean {
+  if (options.tools?.length && hasStringProperty(context, "tool_name") && !options.tools.includes(context.tool_name)) {
+    return false;
+  }
+  const agent = getObjectProperty(context, "agent");
+  if (options.agents?.length && agent && hasStringProperty(agent, "role") && !options.agents.includes(agent.role)) {
+    return false;
+  }
+  return true;
+}
+
+function isStandardDecoratorContext(value: unknown): value is { kind: string } {
+  return typeof value === "object" && value !== null && "kind" in value;
+}
+
+function getObjectProperty(value: unknown, key: string): unknown {
+  return typeof value === "object" && value !== null && key in value
+    ? (value as Record<string, unknown>)[key]
+    : null;
+}
+
+function hasStringProperty<T extends string>(value: unknown, key: T): value is Record<T, string> {
+  return typeof value === "object"
+    && value !== null
+    && key in value
+    && typeof (value as Record<T, unknown>)[key] === "string";
 }
 
 function sanitizeHookToolName(name: string): string {

@@ -219,6 +219,7 @@ import {
   TaskEvaluationEvent,
   TaskOutputStorageHandler,
   TaskOutput,
+  ToolCallHookContext,
   ToolExecutionErrorEvent,
   ToolResult,
   ToolFilterContext,
@@ -15481,6 +15482,39 @@ describe("global hooks", () => {
     const output = await search.arun({ query: "original" });
 
     expect(output).toBe("found hooked query [checked]");
+  });
+
+  it("registers filtered hook decorator factories like upstream", async () => {
+    const toolCalls: string[] = [];
+    const decorateToolHook = beforeToolCall({ tools: ["search web"] }) as unknown as (hook: typeof beforeHook) => typeof beforeHook;
+    const beforeHook = (context: ToolCallHookContext) => {
+      toolCalls.push(context.tool_name);
+      context.tool_input.query = "filtered";
+      return null;
+    };
+    const decoratedToolHook = decorateToolHook(beforeHook) as typeof beforeHook & {
+      is_before_tool_call_hook?: boolean;
+      _filter_tools?: string[];
+    };
+    const search = new StructuredTool({
+      name: "search web",
+      description: "Search",
+      argsSchema: { query: { type: "string" } },
+      func: ({ query }) => `found ${String(query)}`,
+    });
+    const other = new StructuredTool({
+      name: "summarize",
+      description: "Summarize",
+      argsSchema: { query: { type: "string" } },
+      func: ({ query }) => `summary ${String(query)}`,
+    });
+
+    expect(decoratedToolHook).toBe(beforeHook);
+    expect(decoratedToolHook.is_before_tool_call_hook).toBe(true);
+    expect(decoratedToolHook._filter_tools).toEqual(["search_web"]);
+    await expect(other.arun({ query: "original" })).resolves.toBe("summary original");
+    await expect(search.arun({ query: "original" })).resolves.toBe("found filtered");
+    expect(toolCalls).toEqual(["search_web"]);
   });
 
   it("clears registered hooks and returns counts", () => {
