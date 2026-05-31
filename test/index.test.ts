@@ -12613,6 +12613,38 @@ describe("tools", () => {
     toolInstance.model_post_init();
   });
 
+  it("mirrors upstream original tool usage state when converted to structured tool", () => {
+    class EchoTool extends BaseTool {
+      constructor() {
+        super({
+          name: "echo tool",
+          description: "Echo a value",
+          argsSchema: {
+            value: { type: "string", required: true },
+          },
+          maxUsageCount: 2,
+        });
+      }
+
+      protected _run(args: Record<string, unknown>): string {
+        return String(args.value);
+      }
+    }
+
+    const original = new EchoTool();
+    const structured = original.to_structured_tool();
+
+    expect(structured.current_usage_count).toBe(0);
+    expect(original.current_usage_count).toBe(0);
+    expect(structured.invoke({ value: "first" })).toBe("first");
+    expect(structured.current_usage_count).toBe(1);
+    expect(original.current_usage_count).toBe(1);
+    expect(structured.invoke({ value: "second" })).toBe("second");
+    expect(original.has_reached_max_usage_count()).toBe(true);
+    expect(() => structured.invoke({ value: "third" })).toThrow(ToolUsageLimitExceededError);
+    expect(original.current_usage_count).toBe(2);
+  });
+
   it("exports upstream CrewStructuredTool and EnvVar runtime values", async () => {
     function multiply(a: unknown, b: unknown): number {
       return Number(a) * Number(b);

@@ -65,6 +65,8 @@ export type BaseToolOptions = {
   result_as_answer?: boolean;
   maxUsageCount?: number | null;
   max_usage_count?: number | null;
+  currentUsageCount?: number;
+  current_usage_count?: number;
   cacheFunction?: (args: Record<string, unknown>, result: unknown) => boolean;
   cache_function?: (args: Record<string, unknown>, result: unknown) => boolean;
   cache?: ToolCache | false;
@@ -78,6 +80,8 @@ export type AgentLikeForTool = {
 
 export type StructuredToolOptions = BaseToolOptions & {
   func: (args: Record<string, unknown>) => MaybePromise<unknown>;
+  originalTool?: BaseTool | null;
+  original_tool?: BaseTool | null;
 };
 
 export type StructuredToolFromFunctionOptions = Omit<ToolDecoratorOptions, "resultAsAnswer" | "result_as_answer"> & {
@@ -319,6 +323,7 @@ export abstract class BaseTool implements Tool {
     this.descriptionUpdated = options.descriptionUpdated ?? options.description_updated ?? false;
     this.resultAsAnswer = options.resultAsAnswer ?? options.result_as_answer ?? false;
     this.maxUsageCount = maxUsageCount;
+    this.currentUsageCount = options.currentUsageCount ?? options.current_usage_count ?? 0;
     this.cacheFunction = options.cacheFunction ?? options.cache_function ?? (() => true);
     this.cache = options.cache === false ? null : options.cache ?? new InMemoryToolCache();
   }
@@ -558,9 +563,11 @@ export abstract class BaseTool implements Tool {
       argsSchema: this.argsSchema,
       resultAsAnswer: this.resultAsAnswer,
       maxUsageCount: this.maxUsageCount,
+      currentUsageCount: this.currentUsageCount,
       cacheFunction: this.cacheFunction,
       cache,
       func: (args) => this._run(args),
+      originalTool: this,
     });
   }
 
@@ -586,6 +593,11 @@ export abstract class BaseTool implements Tool {
       );
     }
     this.currentUsageCount += 1;
+    this.onUsageClaimed();
+  }
+
+  protected onUsageClaimed(): void {
+    // Hook for structured wrappers that mirror upstream _original_tool usage state.
   }
 
   private writeCache(args: Record<string, unknown>, cacheInput: string, output: unknown): void {
@@ -620,10 +632,12 @@ export function to_langchain(tool: BaseTool): StructuredTool {
 
 export class StructuredTool extends BaseTool {
   private readonly func: (args: Record<string, unknown>) => MaybePromise<unknown>;
+  private readonly originalTool: BaseTool | null;
 
   constructor(options: StructuredToolOptions) {
     super(options);
     this.func = options.func;
+    this.originalTool = options.originalTool ?? options.original_tool ?? null;
   }
 
   static fromFunction(
@@ -690,6 +704,12 @@ export class StructuredTool extends BaseTool {
 
   protected _run(args: Record<string, unknown>): MaybePromise<unknown> {
     return this.func(args);
+  }
+
+  protected onUsageClaimed(): void {
+    if (this.originalTool) {
+      this.originalTool.current_usage_count = this.currentUsageCount;
+    }
   }
 }
 
