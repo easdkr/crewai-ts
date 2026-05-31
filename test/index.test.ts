@@ -448,6 +448,7 @@ import {
   GeminiCompletion,
   GenerativeAiProvider,
   GoogleGenAIVertexEmbeddingFunction,
+  HuggingFaceEmbeddingFunction,
   HuggingFaceProvider,
   InternalInstructor,
   InstructorProvider,
@@ -7414,6 +7415,35 @@ describe("RAG configuration and factories", () => {
     expect(fetchCall[1].body).toBe(JSON.stringify({
       input: ["first", "second"],
       model: "jina-embeddings-v3",
+    }));
+    fetchMock.mockRestore();
+  });
+
+  it("calls HuggingFace's feature-extraction API and normalizes token embeddings", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve([
+        [[1, 3], [3, 5]],
+        [[2, 4], [4, 8]],
+      ]),
+    } as Response);
+
+    const huggingFaceEmbedder = new HuggingFaceEmbeddingFunction({
+      api_key: "hf-test",
+      model_name: "sentence-transformers/all-MiniLM-L6-v2",
+    }).asCallable();
+    await expect(huggingFaceEmbedder(["first", "second"])).resolves.toEqual([[2, 4], [3, 6]]);
+
+    const fetchCall = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(fetchCall[0]).toBe("https://api-inference.huggingface.co/pipeline/feature-extraction/sentence-transformers/all-MiniLM-L6-v2");
+    expect(fetchCall[1].method).toBe("POST");
+    expect(fetchCall[1].headers).toMatchObject({
+      authorization: "Bearer hf-test",
+      "content-type": "application/json",
+    });
+    expect(fetchCall[1].body).toBe(JSON.stringify({
+      inputs: ["first", "second"],
+      options: { wait_for_model: true },
     }));
     fetchMock.mockRestore();
   });

@@ -1897,6 +1897,7 @@ export {
   GenerativeAiProviderSpec,
   GenerativeAiProviderConfig,
   GoogleGenAIVertexEmbeddingFunction,
+  HuggingFaceEmbeddingFunction,
   HuggingFaceProvider,
   HuggingFaceProviderConfig,
   HuggingFaceProviderSpec,

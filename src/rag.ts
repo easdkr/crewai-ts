@@ -276,7 +276,7 @@ export const VertexAIProviderConfig = Object.freeze({ kind: "VertexAIProviderCon
 export type VertexAIProviderSpec = BaseProviderSpec<"google-vertex", VertexAIProviderConfig>;
 export const VertexAIProviderSpec = providerSpecMarker("VertexAIProviderSpec");
 
-export type HuggingFaceProviderConfig = { api_key?: string; model?: string; model_name?: string };
+export type HuggingFaceProviderConfig = { api_key?: string; model?: string; model_name?: string; api_url?: string };
 export const HuggingFaceProviderConfig = Object.freeze({ kind: "HuggingFaceProviderConfig" });
 export type HuggingFaceProviderSpec = BaseProviderSpec<"huggingface", HuggingFaceProviderConfig>;
 export const HuggingFaceProviderSpec = providerSpecMarker("HuggingFaceProviderSpec");
@@ -719,14 +719,108 @@ export class VertexAIProvider extends BaseEmbeddingsProvider {
   }
 }
 
+export class HuggingFaceEmbeddingFunction {
+  readonly api_key: string | null;
+  readonly model_name: string;
+  readonly api_url: string;
+
+  constructor(options: HuggingFaceProviderConfig = {}) {
+    this.api_key = options.api_key ?? null;
+    this.model_name = options.model_name ?? options.model ?? "sentence-transformers/all-MiniLM-L6-v2";
+    this.api_url = options.api_url ?? `https://api-inference.huggingface.co/pipeline/feature-extraction/${encodeModelPath(this.model_name)}`;
+  }
+
+  async call(input: Embeddable): Promise<Embeddings> {
+    const values = Array.isArray(input) ? input.map((value) => String(value)) : [String(input)];
+    const response = await fetch(this.api_url, {
+      method: "POST",
+      headers: this.requestHeaders(),
+      body: JSON.stringify({
+        inputs: values,
+        options: { wait_for_model: true },
+      }),
+    });
+    if (!response.ok) {
+      throw new Error(`HuggingFace embeddings request failed with status ${String(response.status)}`);
+    }
+    return extractHuggingFaceEmbeddings(await response.json(), values.length);
+  }
+
+  async __call__(input: Embeddable): Promise<Embeddings> {
+    return this.call(input);
+  }
+
+  asCallable(): TypedEmbeddingFunction {
+    const callable: TypedEmbeddingFunction = (input: Embeddable) => this.call(input);
+    callable.embedQuery = callable;
+    callable.embed_query = callable;
+    return callable;
+  }
+
+  private requestHeaders(): Record<string, string> {
+    const headers: Record<string, string> = {
+      "content-type": "application/json",
+    };
+    if (this.api_key) {
+      headers.authorization = `Bearer ${this.api_key}`;
+    }
+    return headers;
+  }
+}
+
+function encodeModelPath(modelName: string): string {
+  return modelName.split("/").map((part) => encodeURIComponent(part)).join("/");
+}
+
+function extractHuggingFaceEmbeddings(payload: unknown, expectedCount: number): Embeddings {
+  const value = isRecord(payload) && "embeddings" in payload ? payload.embeddings : payload;
+  if (isNumberArray(value)) {
+    return [value];
+  }
+  if (!Array.isArray(value)) {
+    throw new Error("HuggingFace embeddings response did not include embeddings.");
+  }
+  if (value.every(isNumberArray)) {
+    return value;
+  }
+  if (value.length === expectedCount && value.every(isMatrixOfNumbers)) {
+    return value.map(meanEmbedding);
+  }
+  if (expectedCount === 1 && isMatrixOfNumbers(value)) {
+    return [meanEmbedding(value)];
+  }
+  throw new Error("HuggingFace embeddings response did not include numeric embeddings.");
+}
+
+function isMatrixOfNumbers(value: unknown): value is number[][] {
+  return Array.isArray(value) && value.every(isNumberArray);
+}
+
+function meanEmbedding(matrix: number[][]): Embedding {
+  if (matrix.length === 0) {
+    return [];
+  }
+  const width = matrix[0]?.length ?? 0;
+  const totals = Array.from({ length: width }, () => 0);
+  for (const row of matrix) {
+    for (let index = 0; index < width; index += 1) {
+      totals[index] = (totals[index] ?? 0) + (row[index] ?? 0);
+    }
+  }
+  return totals.map((value) => value / matrix.length);
+}
+
 export class HuggingFaceProvider extends BaseEmbeddingsProvider {
   readonly provider = "huggingface";
 
   constructor(options: HuggingFaceProviderConfig = {}) {
-    super({
-      embeddingCallable: defaultEmbeddingCallable,
+    const config = {
       model_name: "sentence-transformers/all-MiniLM-L6-v2",
       ...options,
+    };
+    super({
+      embeddingCallable: new HuggingFaceEmbeddingFunction(config).asCallable(),
+      ...config,
     });
   }
 }
