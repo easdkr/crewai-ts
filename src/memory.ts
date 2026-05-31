@@ -1597,7 +1597,13 @@ export class MemoryScope {
     return this.listCategories(full);
   }
 
-  tree(full = false, maxDepth = Number.POSITIVE_INFINITY): MemoryTreeNode {
+  tree(full?: boolean, maxDepth?: number): MemoryTreeNode;
+  tree(path: string | null, maxDepth?: number): string;
+  tree(pathOrFull: string | null | boolean = false, maxDepth = Number.POSITIVE_INFINITY): MemoryTreeNode | string {
+    if (typeof pathOrFull === "string" || pathOrFull === null) {
+      return this.memory.tree(joinScopePaths(this.rootPath, pathOrFull ?? "/"), maxDepth);
+    }
+    const full = pathOrFull;
     return treeForRecords(this.memory.allRecords().filter((record) => record.scope.startsWith(this.rootPath)), full, maxDepth);
   }
 

@@ -11642,6 +11642,7 @@ describe("memory", () => {
       .toBe("/projects/alpha/notes");
     expect(alpha.list_categories()).toEqual({ notes: 1, planning: 1 });
     expect(alpha.tree(true).children.projects?.children.alpha?.children.notes?.count).toBe(1);
+    expect(alpha.tree("notes", 0)).toBe("/projects/alpha/notes (1 records)");
 
     const readOnlySlice = memory.slice(["/projects/alpha"]);
     expect(readOnlySlice.readOnly).toBe(true);
