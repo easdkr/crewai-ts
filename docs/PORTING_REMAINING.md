@@ -163,6 +163,7 @@ When more goal budget is available, continue from the behavioral parity audits b
   - Knowledge sources now expose upstream-style `add`, `aadd`, `validate_content`, and `get_embeddings` helpers and can save their chunks through configured storage.
   - `BaseKnowledgeSource` now replaces the root placeholder with chunking, embedding-list, and sync/async storage save helpers.
   - `BaseFileKnowledgeSource` now replaces the root placeholder with upstream-style `file_path` / `file_paths`, `safe_file_paths`, `content`, `convert_to_path`, `load_content`, and validation helpers shared by file-backed sources.
+  - File-backed knowledge sources now expose upstream-style `_load_content` and `_process_file_paths` helper aliases used by PDF/Excel/Text/JSON/CSV source implementations.
   - `StringKnowledgeSource` and file-backed text sources now expose upstream-style `source_type`, `model_post_init`, and `_chunk_text` helpers where applicable.
 - Added tool compatibility behavior:
   - `BaseTool` / `StructuredTool` now expose upstream-style `tool_type`, `model_post_init`, `validate_max_usage_count`, and `from_langchain` helpers.

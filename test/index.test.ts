@@ -15526,6 +15526,8 @@ describe("knowledge", () => {
       expect(source.content[textPath]).toBe("File knowledge source content.");
       expect(source.load_content()).toEqual({ [textPath]: "File knowledge source content." });
       expect(source.loadContent()).toEqual({ [textPath]: "File knowledge source content." });
+      expect(source._load_content()).toEqual({ [textPath]: "File knowledge source content." });
+      expect(source._process_file_paths()).toEqual([textPath]);
       expect(source.validate_file_path(null, { field_name: "file_paths", data: {} })).toBeNull();
       expect(source.convert_to_path("relative.txt")).toBe(join("knowledge", "relative.txt"));
       expect(source.chunks()).toEqual(["File knowled", "ge source co", "ntent."]);
@@ -15568,8 +15570,12 @@ describe("knowledge", () => {
     expect(SourceHelper.is_supported_file(pdfPath)).toBe(true);
     expect(SourceHelper.get_source(pdfPath)).toBeInstanceOf(PDFKnowledgeSource);
     expect(pdfSource.chunks()[0]).toContain("fake pdf bytes");
+    expect(pdfSource._load_content()[pdfPath]).toContain("fake pdf bytes");
+    expect(pdfSource._process_file_paths()).toEqual([pdfPath]);
     expect(excelSource.chunks()[0]).toContain("Sheet: Sheet1");
     expect(excelSource.chunks()[0]).toContain("Decorators standard");
+    expect(excelSource._load_content()[xlsxPath]).toContain("Decorators standard");
+    expect(excelSource._process_file_paths()).toEqual([xlsxPath]);
     expect(() => new CrewDoclingSource(pdfPath)).toThrow("CrewDoclingSource requires");
     expect(() => SourceHelper.getSource("notes.md")).toThrow("Unsupported file type");
   });

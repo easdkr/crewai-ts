@@ -423,6 +423,10 @@ export abstract class BaseFileKnowledgeSource extends BaseTextKnowledgeSource {
     return this.loadContent();
   }
 
+  _load_content(): Record<string, string> {
+    return this.loadContent();
+  }
+
   convertToPath(filePath: string): string {
     return isAbsolute(filePath) ? filePath : join(KNOWLEDGE_DIRECTORY, filePath);
   }
@@ -440,6 +444,10 @@ export abstract class BaseFileKnowledgeSource extends BaseTextKnowledgeSource {
       throw new Error("file_path/file_paths must be a Path, str, or a list of these types");
     }
     return this.filePaths.map((filePath) => this.convertToPath(filePath));
+  }
+
+  _process_file_paths(): string[] {
+    return this.processFilePaths();
   }
 }
 
