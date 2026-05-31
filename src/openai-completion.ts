@@ -676,6 +676,77 @@ export class OpenAICompletion extends ConfiguredLLM {
     return this.extractBuiltinToolOutputs(response);
   }
 
+  accumulateResponsesStreamEvents(events: readonly unknown[]): {
+    text: string;
+    response_id: string | null;
+    function_calls: Record<string, unknown>[];
+    usage: Record<string, number> | null;
+    final_response: unknown;
+    reasoning_items: unknown[];
+  } {
+    let text = "";
+    let responseId: string | null = null;
+    let finalResponse: unknown = null;
+    let usage: Record<string, number> | null = null;
+    let reasoningItems: unknown[] = [];
+    const functionCalls: Record<string, unknown>[] = [];
+
+    for (const rawEvent of events) {
+      const event = readObject(rawEvent);
+      const type = typeof event.type === "string" ? event.type : "";
+      if (type === "response.created") {
+        const createdResponse = readObject(event.response);
+        responseId = stringOrNull(createdResponse.id);
+      } else if (type === "response.output_text.delta") {
+        text += typeof event.delta === "string" ? event.delta : "";
+      } else if (type === "response.output_item.done") {
+        const item = readObject(event.item);
+        if (item.type === "function_call") {
+          functionCalls.push({
+            id: item.call_id,
+            name: item.name,
+            arguments: item.arguments,
+          });
+        }
+      } else if (type === "response.completed") {
+        finalResponse = event.response ?? null;
+        const completedResponse = readObject(finalResponse);
+        responseId = stringOrNull(completedResponse.id) ?? responseId;
+        reasoningItems = this.extractReasoningItems(finalResponse);
+        if (this.autoChain && responseId) {
+          this.responseChainId = responseId;
+        }
+        if (this.autoChainReasoning && reasoningItems.length > 0) {
+          this.reasoningChainItems = reasoningItems;
+        }
+        if (Object.keys(readObject(completedResponse.usage)).length > 0) {
+          usage = this.extractResponsesTokenUsage(finalResponse);
+          this.trackTokenUsageInternal(usage);
+        }
+      }
+    }
+
+    return {
+      text,
+      response_id: responseId,
+      function_calls: functionCalls,
+      usage,
+      final_response: finalResponse,
+      reasoning_items: reasoningItems,
+    };
+  }
+
+  _accumulate_responses_stream_events(events: readonly unknown[]): {
+    text: string;
+    response_id: string | null;
+    function_calls: Record<string, unknown>[];
+    usage: Record<string, number> | null;
+    final_response: unknown;
+    reasoning_items: unknown[];
+  } {
+    return this.accumulateResponsesStreamEvents(events);
+  }
+
   override supportsFunctionCalling(): boolean {
     return !this.isO1Model;
   }

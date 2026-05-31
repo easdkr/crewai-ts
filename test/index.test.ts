@@ -8891,6 +8891,58 @@ describe("LLM providers", () => {
     expect(parsed.function_calls).toEqual([{ id: "call_1", name: "search_docs", arguments: "{\"query\":\"CrewAI\"}" }]);
   });
 
+  it("accumulates OpenAI Responses API streaming events", () => {
+    const openai = new OpenAICompletion({ model: "gpt-4.1", api: "responses", auto_chain: true, auto_chain_reasoning: true });
+    const reasoningItem = { type: "reasoning", id: "rs_1", encrypted_content: "encrypted" };
+    const completed = {
+      id: "resp_done",
+      usage: {
+        input_tokens: 3,
+        output_tokens: 2,
+        total_tokens: 5,
+        output_tokens_details: { reasoning_tokens: 1 },
+      },
+      output: [
+        reasoningItem,
+        { type: "function_call", call_id: "call_done", name: "lookup_docs", arguments: "{\"id\":\"intro\"}" },
+      ],
+    };
+
+    const accumulated = (openai as unknown as {
+      _accumulate_responses_stream_events(events: unknown[]): {
+        text: string;
+        response_id: string | null;
+        function_calls: Record<string, unknown>[];
+        usage: Record<string, number> | null;
+        final_response: unknown;
+        reasoning_items: unknown[];
+      };
+    })._accumulate_responses_stream_events([
+      { type: "response.created", response: { id: "resp_stream" } },
+      { type: "response.output_text.delta", delta: "Hel" },
+      { type: "response.output_text.delta", delta: "lo" },
+      { type: "response.function_call_arguments.delta", delta: "{\"id\":" },
+      { type: "response.output_item.done", item: { type: "function_call", call_id: "call_1", name: "search_docs", arguments: "{\"query\":\"CrewAI\"}" } },
+      { type: "response.completed", response: completed },
+    ]);
+
+    expect(accumulated).toEqual({
+      text: "Hello",
+      response_id: "resp_done",
+      function_calls: [{ id: "call_1", name: "search_docs", arguments: "{\"query\":\"CrewAI\"}" }],
+      usage: {
+        prompt_tokens: 3,
+        completion_tokens: 2,
+        total_tokens: 5,
+        reasoning_tokens: 1,
+      },
+      final_response: completed,
+      reasoning_items: [reasoningItem],
+    });
+    expect(openai.last_response_id).toBe("resp_done");
+    expect(openai.last_reasoning_items).toEqual([reasoningItem]);
+  });
+
   it("prepares Azure completion request parameters with model extras and endpoint rules", () => {
     const search = new StructuredTool({
       name: "search docs",
