@@ -81,6 +81,7 @@ When more goal budget is available, continue from the behavioral parity audits b
   - `LockedListProxy` / `LockedDictProxy` now expose upstream-style collection helpers such as `append`, `insert`, `remove`, `count`, `sort`, `reverse`, `copy`, `pop`, `setdefault`, and `items`
   - `RuntimeState.afrom_checkpoint` / `afromCheckpoint` and `StateProxy.model_dump` / `modelDump` aliases now mirror upstream async checkpoint restore and state dump helpers
 - Added adapter-level LLM provider parity helpers:
+  - `BaseLLM.acall` now provides the upstream async call surface by formatting string/list messages and delegating through the concrete `call` implementation.
   - `supportsFunctionCalling` / `supports_function_calling`
   - native OpenAI/Azure/Anthropic/Bedrock support overrides for function calling, stop words, and multimodal capability where deterministic
   - OpenAI/Azure response-chain compatibility getters and reset methods (`last_response_id`, `last_reasoning_items`, `reset_chain`, `reset_reasoning_chain`)

@@ -1121,6 +1121,10 @@ export abstract class BaseLLM implements LLMClient {
 
   abstract call(messages: readonly LLMMessage[], options?: LLMCallOptions): MaybePromise<LLMResponse>;
 
+  async acall(messages: LLMMessageInput, options?: LLMCallOptions): Promise<LLMResponse> {
+    return await this.call(this.formatMessages(messages), options);
+  }
+
   get stopSequences(): readonly string[] {
     const override = callStopOverrideStore.getStore()?.get(this);
     if (override) {

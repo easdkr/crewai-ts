@@ -8487,7 +8487,10 @@ describe("tools", () => {
 describe("LLM providers", () => {
   it("provides upstream BaseLLM defaults, stop handling, config, and token usage helpers", async () => {
     class DemoLLM extends BaseLLM {
-      call(messages: readonly LLMMessage[]): string {
+      seenOptions: LLMCallOptions | undefined;
+
+      call(messages: readonly LLMMessage[], options?: LLMCallOptions): string {
+        this.seenOptions = options;
         this._track_token_usage_internal({
           prompt_tokens: 10,
           completion_tokens: 4,
@@ -8522,14 +8525,17 @@ describe("LLM providers", () => {
     });
 
     await expect(callLLM(llm, [{ role: "user", content: "answer STOP trailing" }])).resolves.toBe("answer");
+    await expect(llm.acall("async answer STOP trailing", { available_functions: { lookup: () => "ok" } }))
+      .resolves.toBe("async answer");
+    expect(llm.seenOptions?.available_functions).toHaveProperty("lookup");
     expect(llm.get_token_usage_summary()).toEqual({
-      totalTokens: 14,
-      promptTokens: 10,
-      cachedPromptTokens: 3,
-      completionTokens: 4,
-      reasoningTokens: 2,
-      cacheCreationTokens: 1,
-      successfulRequests: 1,
+      totalTokens: 28,
+      promptTokens: 20,
+      cachedPromptTokens: 6,
+      completionTokens: 8,
+      reasoningTokens: 4,
+      cacheCreationTokens: 2,
+      successfulRequests: 2,
     });
     expect(getLLMUsageMetrics({
       call: () => "ok",
