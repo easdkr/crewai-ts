@@ -72,6 +72,15 @@ export type TaskExecutionLog = {
   wasReplayed?: boolean;
 };
 
+type PendingTaskExecution = {
+  task: Task;
+  taskIndex: number;
+  inputs: InputValues;
+  promise: Promise<TaskOutput>;
+};
+
+type PendingTaskTuple = readonly [Task, Promise<TaskOutput>, number];
+
 export type ReplayTaskRef = string | number | Task;
 
 export type ResetMemoriesCommandType =
@@ -806,6 +815,121 @@ export class Crew {
     });
   }
 
+  async runSequentialProcessCompat(inputs: InputValues = {}, inputFiles?: TaskInputFiles): Promise<CrewOutput> {
+    return await this.runSequentialProcess(inputs, inputFiles);
+  }
+
+  async _run_sequential_process(inputs: InputValues = {}, input_files?: TaskInputFiles): Promise<CrewOutput> {
+    return await this.runSequentialProcessCompat(inputs, input_files);
+  }
+
+  async arunSequentialProcess(inputs: InputValues = {}, inputFiles?: TaskInputFiles): Promise<CrewOutput> {
+    return await this.runSequentialProcessCompat(inputs, inputFiles);
+  }
+
+  async _arun_sequential_process(inputs: InputValues = {}, input_files?: TaskInputFiles): Promise<CrewOutput> {
+    return await this.arunSequentialProcess(inputs, input_files);
+  }
+
+  async runHierarchicalProcessCompat(inputs: InputValues = {}, inputFiles?: TaskInputFiles): Promise<CrewOutput> {
+    return await this.runHierarchicalProcess(inputs, inputFiles);
+  }
+
+  async _run_hierarchical_process(inputs: InputValues = {}, input_files?: TaskInputFiles): Promise<CrewOutput> {
+    return await this.runHierarchicalProcessCompat(inputs, input_files);
+  }
+
+  async arunHierarchicalProcess(inputs: InputValues = {}, inputFiles?: TaskInputFiles): Promise<CrewOutput> {
+    return await this.runHierarchicalProcessCompat(inputs, inputFiles);
+  }
+
+  async _arun_hierarchical_process(inputs: InputValues = {}, input_files?: TaskInputFiles): Promise<CrewOutput> {
+    return await this.arunHierarchicalProcess(inputs, input_files);
+  }
+
+  createManagerAgent(): Agent {
+    return this.getManagerAgent();
+  }
+
+  _create_manager_agent(): Agent {
+    return this.createManagerAgent();
+  }
+
+  getExecutionStartIndex(tasks: readonly Task[] = this.tasks): number | null {
+    if (this.checkpointKickoffEventId === null) {
+      return null;
+    }
+    const firstUnfinished = tasks.findIndex((task) => task.output === null);
+    return firstUnfinished === -1 ? tasks.length : firstUnfinished;
+  }
+
+  _get_execution_start_index(tasks: readonly Task[] = this.tasks): number | null {
+    return this.getExecutionStartIndex(tasks);
+  }
+
+  async processAsyncTaskResults(
+    pendingTasks: readonly (PendingTaskExecution | PendingTaskTuple)[],
+    wasReplayed = false,
+  ): Promise<TaskOutput[]> {
+    const normalized: PendingTaskExecution[] = pendingTasks.map((pendingTask): PendingTaskExecution => isPendingTaskTuple(pendingTask)
+      ? {
+          task: pendingTask[0],
+          promise: pendingTask[1],
+          taskIndex: pendingTask[2],
+          inputs: this.checkpointInputs ?? {},
+        }
+      : pendingTask);
+    const outputs: TaskOutput[] = [];
+    for (const pendingTask of normalized) {
+      const output = await pendingTask.promise;
+      await this.logTaskResult(pendingTask.task, output);
+      await this.storeExecutionLog(pendingTask.task, output, pendingTask.taskIndex, pendingTask.inputs, wasReplayed);
+      outputs.push(output);
+    }
+    return outputs;
+  }
+
+  async _process_async_tasks(
+    pending_tasks: readonly (PendingTaskExecution | PendingTaskTuple)[],
+    was_replayed = false,
+  ): Promise<TaskOutput[]> {
+    return await this.processAsyncTaskResults(pending_tasks, was_replayed);
+  }
+
+  async logTaskStartCompat(task: Task, role: string | Agent | null = "None"): Promise<void> {
+    const agentRole = typeof role === "string" ? role : role?.role ?? "None";
+    await this.fileHandler?.log({
+      taskName: task.name,
+      task: task.description,
+      agent: agentRole,
+      status: "started",
+    });
+  }
+
+  async _log_task_start(task: Task, role: string | Agent | null = "None"): Promise<void> {
+    await this.logTaskStartCompat(task, role);
+  }
+
+  async storeExecutionLogCompat(
+    task: Task,
+    output: TaskOutput,
+    taskIndex: number,
+    wasReplayed = false,
+    inputs: InputValues = this.checkpointInputs ?? {},
+  ): Promise<void> {
+    await this.storeExecutionLog(task, output, taskIndex, inputs, wasReplayed);
+  }
+
+  async _store_execution_log(
+    task: Task,
+    output: TaskOutput,
+    task_index: number,
+    was_replayed = false,
+    inputs: InputValues = this.checkpointInputs ?? {},
+  ): Promise<void> {
+    await this.storeExecutionLogCompat(task, output, task_index, was_replayed, inputs);
+  }
+
   private async runProcess(inputs: InputValues, inputFiles?: TaskInputFiles): Promise<CrewOutput> {
     switch (this.process) {
       case Process.sequential:
@@ -1447,6 +1571,34 @@ export class Crew {
     return this.getContext(task, task_outputs);
   }
 
+  async handleConditionalTaskCompat(
+    task: ConditionalTask,
+    taskOutputs: TaskOutput[],
+    pendingTasks: (PendingTaskExecution | PendingTaskTuple)[] = [],
+    taskIndex = this.tasks.indexOf(task),
+    wasReplayed = false,
+  ): Promise<TaskOutput | null> {
+    if (pendingTasks.length > 0) {
+      taskOutputs.push(...await this.processAsyncTaskResults(pendingTasks, wasReplayed));
+      pendingTasks.length = 0;
+    }
+    const skippedOutput = await this.handleConditionalTask(task, taskOutputs);
+    if (skippedOutput && !wasReplayed) {
+      await this.storeExecutionLog(task, skippedOutput, taskIndex, this.checkpointInputs ?? {}, false);
+    }
+    return skippedOutput;
+  }
+
+  async _handle_conditional_task(
+    task: ConditionalTask,
+    task_outputs: TaskOutput[],
+    pending_tasks: (PendingTaskExecution | PendingTaskTuple)[] = [],
+    task_index = this.tasks.indexOf(task),
+    was_replayed = false,
+  ): Promise<TaskOutput | null> {
+    return await this.handleConditionalTaskCompat(task, task_outputs, pending_tasks, task_index, was_replayed);
+  }
+
   async processTaskResult(task: Task, output: TaskOutput): Promise<void> {
     await this.logTaskResult(task, output);
   }
@@ -1642,6 +1794,10 @@ function mergeTools(baseTools: readonly Tool[], additionalTools: readonly Tool[]
     }
   }
   return [...byName.values()];
+}
+
+function isPendingTaskTuple(value: PendingTaskExecution | PendingTaskTuple): value is PendingTaskTuple {
+  return Array.isArray(value);
 }
 
 function sanitizeScopeName(value: string): string {

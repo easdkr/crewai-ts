@@ -7810,6 +7810,83 @@ describe("core crew runtime", () => {
       .resolves.toBeUndefined();
   });
 
+  it("exposes upstream Crew process and execution log helper methods", async () => {
+    const researcher = new Agent({
+      role: "Researcher",
+      goal: "Find facts",
+      backstory: "Careful analyst",
+      llm: () => "sequential done",
+    });
+    const taskInstance = new Task({
+      id: "process-task",
+      description: "Research CrewAI",
+      expectedOutput: "Brief",
+      agent: researcher,
+    });
+    const crewInstance = new Crew({
+      agents: [researcher],
+      tasks: [taskInstance],
+      checkpoint_kickoff_event_id: "checkpoint-event",
+    });
+
+    expect(crewInstance._get_execution_start_index([taskInstance])).toBe(0);
+    const sequentialOutput = await crewInstance._run_sequential_process({ topic: "CrewAI" });
+    expect(sequentialOutput.raw).toBe("sequential done");
+    expect(crewInstance._get_execution_start_index([taskInstance])).toBe(1);
+    expect(crewInstance.executionLogs[0]?.inputs).toEqual({ topic: "CrewAI" });
+
+    const asyncTask = new Task({
+      id: "async-process-task",
+      description: "Async",
+      expectedOutput: "Done",
+      agent: researcher,
+    });
+    const asyncOutput = new TaskOutput({
+      description: "Async",
+      expectedOutput: "Done",
+      raw: "async done",
+      agent: "Researcher",
+    });
+    const processed = await crewInstance._process_async_tasks([
+      [asyncTask, Promise.resolve(asyncOutput), 1],
+    ]);
+    expect(processed[0]?.raw).toBe("async done");
+    expect(crewInstance.executionLogs[1]?.wasReplayed).toBe(false);
+
+    const conditional = new ConditionalTask({
+      description: "Conditional",
+      expectedOutput: "Maybe",
+      condition: () => false,
+    });
+    const skipped = await crewInstance._handle_conditional_task(
+      conditional,
+      [sequentialOutput.tasks_output[0] as TaskOutput],
+      [],
+      2,
+    );
+    expect(skipped?.raw).toBe("");
+    expect(crewInstance.executionLogs[2]?.output.outputFormat).toBe(OutputFormat.RAW);
+
+    const manager = new Agent({
+      role: "Manager",
+      goal: "Coordinate",
+      backstory: "Runs hierarchy",
+      llm: () => "manager done",
+    });
+    const hierarchicalTask = new Task({
+      description: "Manage",
+      expectedOutput: "Managed",
+    });
+    const hierarchicalCrew = new Crew({
+      managerAgent: manager,
+      process: Process.hierarchical,
+      tasks: [hierarchicalTask],
+    });
+    expect(hierarchicalCrew._create_manager_agent()).toBe(manager);
+    await expect(hierarchicalCrew._run_hierarchical_process())
+      .resolves.toMatchObject({ raw: "manager done" });
+  });
+
   it("accepts upstream snake_case Crew runtime fields", () => {
     const context = captureExecutionContext({ source: "checkpoint" });
     context.currentTaskId = "task-1";
