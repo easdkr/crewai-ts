@@ -61,6 +61,7 @@ import {
   FlowInputRequestedEvent,
   FlowPausedEvent,
   FlowPlotEvent,
+  FlowStartedEvent,
   FlowStreamingOutput,
   FlowTrackable,
   GoalAchievedEarlyEvent,
@@ -6846,6 +6847,8 @@ describe("flow runtime", () => {
     expect(restored.methodOutputs).toEqual(["ready", "done"]);
     expect([...restored.completedMethods]).toEqual(["begin", "finish"]);
     expect(restored.methodExecutionCounts.get("finish")).toBe(1);
+    expect(crewaiEventBus.runtime_state?.checkpoint_id).toBe(provider.extract_id(checkpointLocation));
+    expect(crewaiEventBus.runtime_state?.root).toHaveLength(1);
 
     const forked = await CheckpointFlow.fork(new CheckpointConfig({
       restore_from: checkpointLocation,
@@ -6855,6 +6858,7 @@ describe("flow runtime", () => {
     expect(forked.state.id).not.toBe("flow-1");
     expect(forked.state.events).toEqual(["begin"]);
     expect(forked.methodOutputs).toEqual(["ready", "done"]);
+    expect(crewaiEventBus.runtime_state?.branch).toBe("fork/manual");
   });
 
   it("resumes kickoff from a checkpoint without replaying completed methods", async () => {
@@ -10747,6 +10751,22 @@ describe("runtime state", () => {
     const generated = state.fork();
 
     expect(generated).toMatch(/^fork\/20260409T120000_abc12345_[0-9a-f]{6}$/);
+  });
+
+  it("wires runtime state through the event bus and records emitted events", () => {
+    const state = new RuntimeState();
+    const seen: RuntimeState[] = [];
+    crewaiEventBus.set_runtime_state(state);
+    crewaiEventBus.on("flow_started", (_source, _event, runtimeState) => {
+      seen.push(runtimeState as RuntimeState);
+    });
+
+    const event = new FlowStartedEvent({ flowName: "CheckpointFlow", inputs: { topic: "CrewAI" } });
+    crewaiEventBus.emit("source", event);
+
+    expect(crewaiEventBus.runtime_state).toBe(state);
+    expect(seen).toEqual([state]);
+    expect(state.event_record.get(event.eventId)?.event).toBe(event);
   });
 });
 

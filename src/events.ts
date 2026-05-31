@@ -17,6 +17,7 @@ import {
 } from "./context.js";
 import type { LiteAgentOutput } from "./lite-agent-output.js";
 import type { CrewOutput, TaskOutput } from "./outputs.js";
+import { RuntimeState } from "./state.js";
 import type { InputValues } from "./types.js";
 
 export type EventType =
@@ -3415,6 +3416,7 @@ export type EventMap = {
 export type EventHandler<TEvent extends CrewAIEvent = CrewAIEvent> = (
   source: unknown,
   event: TEvent,
+  runtimeState?: RuntimeState | null,
 ) => void | Promise<void>;
 export const EventHandler = Object.freeze({ kind: "EventHandler" });
 
@@ -3806,6 +3808,8 @@ export abstract class BaseEventListener {
 
 export class EventBus {
   private readonly handlers = new Map<EventType, Set<EventHandler>>();
+  private currentRuntimeState: RuntimeState | null = null;
+  private registeredEntityIds = new WeakSet<object>();
 
   on<TEventType extends EventType>(eventType: TEventType): (registeredHandler: EventHandler<EventMap[TEventType]>) => EventHandler<EventMap[TEventType]>;
   on<TEventType extends EventType>(eventType: TEventType, handler: EventHandler<EventMap[TEventType]>, dependsOn?: Depends | readonly Depends[] | null): () => void;
@@ -3850,13 +3854,14 @@ export class EventBus {
 
   emit(source: unknown, event: CrewAIEvent): void {
     applyEventContext(event);
+    this.recordEvent(event);
     const handlers = this.handlers.get(event.type);
     if (!handlers) {
       return;
     }
     for (const handler of handlers) {
       try {
-        const result = handler(source, event);
+        const result = handler(source, event, this.currentRuntimeState);
         if (result && typeof result === "object" && "catch" in result && typeof result.catch === "function") {
           result.catch((error: unknown) => {
             queueMicrotask(() => {
@@ -3874,6 +3879,47 @@ export class EventBus {
 
   clear(): void {
     this.handlers.clear();
+    this.currentRuntimeState = null;
+    this.registeredEntityIds = new WeakSet<object>();
+  }
+
+  setRuntimeState(state: RuntimeState): void {
+    this.currentRuntimeState = state;
+    this.registeredEntityIds = new WeakSet<object>();
+    for (const entity of state.root) {
+      if (entity && typeof entity === "object") {
+        this.registeredEntityIds.add(entity);
+      }
+    }
+  }
+
+  set_runtime_state(state: RuntimeState): void {
+    this.setRuntimeState(state);
+  }
+
+  get runtimeState(): RuntimeState | null {
+    return this.currentRuntimeState;
+  }
+
+  get runtime_state(): RuntimeState | null {
+    return this.runtimeState;
+  }
+
+  registerEntity(entity: unknown): void {
+    if (!entity || typeof entity !== "object" || this.registeredEntityIds.has(entity)) {
+      return;
+    }
+    this.registeredEntityIds.add(entity);
+    this.currentRuntimeState ??= new RuntimeState({ root: [] });
+    this.currentRuntimeState.root.push(entity);
+  }
+
+  register_entity(entity: unknown): void {
+    this.registerEntity(entity);
+  }
+
+  private recordEvent(event: CrewAIEvent): void {
+    this.currentRuntimeState?.eventRecord.add(event);
   }
 
   validateDependencies(): void {

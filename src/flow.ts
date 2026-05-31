@@ -862,6 +862,7 @@ export class Flow<TState extends object = Record<string, unknown>> {
     config: CheckpointConfig,
   ): Promise<TFlow> {
     const runtime = await RuntimeState.fromCheckpoint(config, config.provider);
+    crewaiEventBus.setRuntimeState(runtime);
     for (const entity of runtime.root) {
       const checkpoint = normalizeFlowCheckpointEntity(entity);
       if (!checkpoint) {
@@ -893,7 +894,10 @@ export class Flow<TState extends object = Record<string, unknown>> {
     branch?: string | null,
   ): Promise<TFlow> {
     const flow = await Flow.fromCheckpoint.call(this, config) as TFlow;
-    const runtime = await RuntimeState.fromCheckpoint(config, config.provider);
+    const runtime = crewaiEventBus.runtimeState;
+    if (!runtime) {
+      throw new Error("Cannot fork: no runtime state on the event bus.");
+    }
     runtime.fork(branch ?? undefined);
     const newId = randomUUID();
     (flow.state as Record<string, unknown>).id = newId;
