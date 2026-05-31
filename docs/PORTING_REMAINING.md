@@ -139,6 +139,7 @@ When more goal budget is available, continue from the behavioral parity audits b
   - Streaming tool-call argument accumulation now preserves id/name/index and concatenates function argument deltas into upstream-style tool call payloads
   - Provider tool conversion helpers now reject non-dictionary tools and invalid `function` payloads with upstream-style errors while preserving OpenAI/direct schema extraction.
 - Added evaluation compatibility behavior:
+  - `EvaluationScore` and `AgentAggregatedEvaluationResult` now expose upstream-style `__str__` aliases for their formatted summaries.
   - LLM-backed `GoalAlignmentEvaluator` and `SemanticQualityEvaluator` with upstream-style prompts and JSON score parsing
   - LLM-backed `ToolSelectionEvaluator`, `ParameterExtractionEvaluator`, `ToolInvocationEvaluator`, and `ReasoningEfficiencyEvaluator` now replace placeholder compatibility scoring with upstream-style unevaluable-trace handling, prompt construction, JSON score parsing, and metric-specific feedback.
   - `EvaluationDisplayFormatter` aggregation helpers for per-agent metric averages, feedback summaries, and iteration display text
@@ -239,6 +240,7 @@ When more goal budget is available, continue from the behavioral parity audits b
   - A2A client `ExtensionRegistry` now keys conversation state by extension type and invokes alias hook pairs once, matching upstream registry dispatch semantics.
   - `A2AClientConfig` now validates client extension protocol methods at construction, matching upstream `ValidatedA2AExtension` behavior while preserving camelCase/snake_case aliases.
 - Added security compatibility behavior:
+  - `Fingerprint` now exposes the upstream-style `__str__` alias for UUID string conversion.
   - `SecurityConfig.validate_fingerprint` now exposes upstream-style fingerprint coercion for null, seed strings, dicts, and `Fingerprint` instances.
 - Added guardrail compatibility behavior:
   - `GuardrailResult.validate_result_error_exclusivity` now exposes the upstream validator helper for result/error mutual exclusivity.

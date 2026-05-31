@@ -4589,6 +4589,10 @@ describe("evaluator utilities", () => {
       score: 6,
       feedback: "Feedback 1: usable but terse\n\nFeedback 2: not applicable",
     });
+    expect(new EvaluationScore({ score: 8, feedback: "clear" }).__str__()).toBe("Score: 8.0/10 - clear");
+    expect(new EvaluationScore({ score: null, feedback: "missing" }).__str__()).toBe("Score: N/A - missing");
+    expect(aggregated.__str__()).toContain("Agent Evaluation: Researcher");
+    expect(aggregated.__str__()).toContain("- GOAL_ALIGNMENT: 9/10");
   });
 
   it("formats experiment result summaries and comparison summaries", () => {
@@ -16593,6 +16597,7 @@ describe("security fingerprints", () => {
     expect(seeded.uuid_str).toBe(seededAgain.uuidStr);
     expect(seeded.uuid_str).toBe(Fingerprint._generate_uuid("test-seed"));
     expect(String(seeded)).toBe(seeded.uuid_str);
+    expect(seeded.__str__()).toBe(seeded.uuid_str);
 
     const restored = Fingerprint.from_dict(seeded.to_dict());
     expect(restored.uuid_str).toBe(seeded.uuid_str);

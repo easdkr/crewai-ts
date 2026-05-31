@@ -57,6 +57,10 @@ export class EvaluationScore {
     }
     return `Score: ${this.score.toFixed(1)}/10 - ${this.feedback}`;
   }
+
+  __str__(): string {
+    return this.toString();
+  }
 }
 
 export abstract class BaseEvaluator {
@@ -197,6 +201,10 @@ export class AgentAggregatedEvaluationResult {
       }
     }
     return lines.join("\n");
+  }
+
+  __str__(): string {
+    return this.toString();
   }
 }
 

@@ -103,6 +103,10 @@ export class Fingerprint {
   toString(): string {
     return this.uuidStr;
   }
+
+  __str__(): string {
+    return this.toString();
+  }
 }
 
 export type SecurityConfigOptions = {
