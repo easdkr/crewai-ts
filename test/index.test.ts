@@ -2786,6 +2786,11 @@ describe("crew tool and memory lifecycle events", () => {
       sourceFingerprint: "crew-fp",
       error: "kickoff failed",
     });
+    started.sourceFingerprint = null;
+    started.fingerprint_metadata = null;
+    started._set_crew_fingerprint();
+    expect(started.sourceFingerprint).toBe("crew-fp");
+    expect(started.fingerprint_metadata).toEqual({ project: "research" });
 
     const serialized = started.to_json();
     expect(serialized).toMatchObject({
@@ -17182,12 +17187,19 @@ describe("events", () => {
       formatter.handle_mcp_connection_failed("server", "http://localhost", "sse", "boom", "Error");
       formatter.handle_llm_stream_chunk("partial", LLMCallType.LLM_CALL);
       formatter.handle_llm_stream_completed();
+      formatter._show_version_update_message_if_needed();
+      formatter._show_tracing_disabled_message_if_needed();
+      formatter.handle_lite_agent_execution("Researcher", "started", null, {
+        tools: [{ name: "search" }, { name: "read" }],
+      });
     } finally {
       console.log = originalLog;
     }
 
     expect(printed.length).toBeGreaterThan(0);
     expect(formatter.current_a2a_turn_count).toBe(0);
+    expect(formatter._simplify_tools_field({ tools: [{ name: "search" }, "raw"] })).toEqual({ tools: "search, raw" });
+    expect(formatter._simplify_tools_field({ tools: [] })).toEqual({ tools: "None" });
     expect(typeof formatter.handle_memory_save_completed).toBe("function");
     expect(typeof formatter.handle_goal_achieved_early).toBe("function");
     expect(typeof formatter.handle_a2a_polling_status).toBe("function");

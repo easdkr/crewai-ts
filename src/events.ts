@@ -314,8 +314,8 @@ export abstract class CrewBaseEvent extends BaseEvent {
   readonly crewName: string | null;
   readonly crew_name: string | null;
   readonly crew: unknown;
-  readonly fingerprintMetadata: Record<string, unknown> | null;
-  readonly fingerprint_metadata: Record<string, unknown> | null;
+  fingerprintMetadata: Record<string, unknown> | null;
+  fingerprint_metadata: Record<string, unknown> | null;
 
   constructor(options: CrewBaseEventOptions) {
     const crewFingerprint = getCrewSourceFingerprint(options.crew);
@@ -330,6 +330,21 @@ export abstract class CrewBaseEvent extends BaseEvent {
     this.crew = options.crew ?? null;
     this.fingerprintMetadata = options.fingerprintMetadata ?? options.fingerprint_metadata ?? crewMetadata;
     this.fingerprint_metadata = this.fingerprintMetadata;
+    this._set_crew_fingerprint();
+  }
+
+  _set_crew_fingerprint(): void {
+    const crewFingerprint = getCrewSourceFingerprint(this.crew);
+    if (!this.crew || !crewFingerprint) {
+      return;
+    }
+    this.sourceFingerprint = crewFingerprint;
+    this.sourceType = "crew";
+    const metadata = getCrewFingerprintMetadata(this.crew);
+    if (metadata) {
+      this.fingerprintMetadata = metadata;
+      this.fingerprint_metadata = metadata;
+    }
   }
 
   override toJSON(): Record<string, unknown> {
@@ -4543,6 +4558,49 @@ export class ConsoleFormatter {
     return this.create_panel(content, title, style);
   }
 
+  _show_version_update_message_if_needed(): void {
+    if (!this.verbose) {
+      return;
+    }
+    const isCi = ["true", "1"].includes((process.env.CI ?? "").toLowerCase());
+    const disabled = ["true", "1"].includes((process.env.CREWAI_DISABLE_VERSION_CHECK ?? "").toLowerCase());
+    if (isCi || disabled) {
+      return;
+    }
+    // The TypeScript port does not query package indexes at runtime; this hook preserves the upstream surface.
+  }
+
+  _show_tracing_disabled_message_if_needed(): void {
+    if (!this.verbose) {
+      return;
+    }
+    this.print_panel([
+      "Info: Tracing is disabled.",
+      "",
+      "To enable tracing, set tracing=true or CREWAI_TRACING_ENABLED=true.",
+    ].join("\n"), "Tracing Status", "blue");
+  }
+
+  _simplify_tools_field<TFields extends Record<string, unknown>>(fields: TFields): TFields {
+    if (!("tools" in fields)) {
+      return fields;
+    }
+    const record = fields as Record<string, unknown>;
+    const tools = record.tools;
+    if (!Array.isArray(tools) || tools.length === 0) {
+      record.tools = "None";
+      return fields;
+    }
+    record.tools = tools.map((tool) => {
+      if (tool && typeof tool === "object" && "name" in tool) {
+        const name = (tool as { name?: unknown }).name;
+        return typeof name === "string" ? name : String(tool);
+      }
+      return String(tool);
+    }).join(", ");
+    return fields;
+  }
+
   create_status_content(
     title: string,
     name: string,
@@ -4616,6 +4674,7 @@ export class ConsoleFormatter {
     }), title, status === "failed" ? "red" : "green");
     if (status === "completed" || status === "failed") {
       ConsoleFormatter.crewCompletionPrinted = true;
+      this._show_tracing_disabled_message_if_needed();
     }
   }
 
@@ -4625,6 +4684,7 @@ export class ConsoleFormatter {
 
   handle_crew_started(crew_name: string, source_id: string): void {
     ConsoleFormatter.crewCompletionPrinted = false;
+    this._show_version_update_message_if_needed();
     this.print_panel(this.create_status_content("Crew Execution Started", crew_name, "cyan", "", { ID: source_id }), "Crew Execution Started", "cyan");
   }
 
@@ -4766,11 +4826,15 @@ export class ConsoleFormatter {
   }
 
   handle_lite_agent_execution(lite_agent_role: string, status = "started", error: unknown = null, fields: Record<string, unknown> = {}): void {
+    const displayFields = this._simplify_tools_field({ ...fields });
     if (status === "started") {
       this.create_lite_agent_branch(lite_agent_role);
+      if (Object.keys(displayFields).length > 0) {
+        this.print_panel(this.create_status_content("LiteAgent Session Started", lite_agent_role, "cyan", "", displayFields), "LiteAgent Started", "cyan");
+      }
       return;
     }
-    this.update_lite_agent_status(lite_agent_role, status, error ? { ...fields, Error: error } : fields);
+    this.update_lite_agent_status(lite_agent_role, status, error ? { ...displayFields, Error: error } : displayFields);
   }
 
   handle_knowledge_retrieval_started(): void {
