@@ -9,6 +9,10 @@ import {
   A2AClientConfig,
   A2AError,
   A2AErrorCode,
+  A2UIClientExtension,
+  A2UI_MIME_TYPE,
+  A2UI_STANDARD_CATALOG_ID,
+  A2UI_V09_BASIC_CATALOG_ID,
   A2AServerConfig,
   A2ATransport,
   A2AHTTPException,
@@ -2736,6 +2740,75 @@ describe("llm events", () => {
 });
 
 describe("a2a utilities", () => {
+  it("tracks only matching A2UI catalog surfaces from conversation history", () => {
+    const extension = new A2UIClientExtension("catalog-allowed");
+    const history = [{
+      parts: [
+        {
+          root: {
+            kind: "data",
+            metadata: { mimeType: A2UI_MIME_TYPE },
+            data: {
+              beginRendering: {
+                surfaceId: "skip",
+                root: "root",
+                catalogId: "catalog-other",
+              },
+            },
+          },
+        },
+        {
+          root: {
+            kind: "data",
+            metadata: { mimeType: A2UI_MIME_TYPE },
+            data: {
+              beginRendering: {
+                surfaceId: "keep",
+                root: "root",
+                catalogId: "catalog-allowed",
+              },
+            },
+          },
+        },
+      ],
+    }];
+
+    const state = extension.extract_state_from_history(history);
+
+    expect(state?.active_surfaces).toEqual({
+      keep: {
+        surfaceId: "keep",
+        root: "root",
+        catalogId: "catalog-allowed",
+      },
+    });
+    expect(state?.initialized_surfaces.has("keep")).toBe(true);
+    expect(state?.initialized_surfaces.has("skip")).toBe(false);
+  });
+
+  it("advertises default and custom A2UI catalog capabilities like upstream", () => {
+    const v08 = new A2UIClientExtension("catalog-custom");
+    const v09 = new A2UIClientExtension("catalog-v09-custom", null, "v0.9");
+
+    expect(v08.prepare_message_metadata(null)).toEqual({
+      a2uiClientCapabilities: {
+        supportedCatalogIds: [A2UI_STANDARD_CATALOG_ID, "catalog-custom"],
+      },
+    });
+    expect(new A2UIClientExtension(A2UI_STANDARD_CATALOG_ID).prepare_message_metadata(null)).toEqual({
+      a2uiClientCapabilities: {
+        supportedCatalogIds: [A2UI_STANDARD_CATALOG_ID],
+      },
+    });
+    expect(v09.prepare_message_metadata(null)).toEqual({
+      a2uiClientCapabilities: {
+        "v0.9": {
+          supportedCatalogIds: [A2UI_V09_BASIC_CATALOG_ID, "catalog-v09-custom"],
+        },
+      },
+    });
+  });
+
   it("exposes A2A lifecycle events with upstream-compatible payload names", () => {
     const task = { id: "task-local", name: "Local task", description: "fallback" };
     const agent = { id: "agent-local", role: "Researcher" };

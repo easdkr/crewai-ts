@@ -391,6 +391,9 @@ export class A2UIClientExtension {
         if (root?.kind !== "data" || root.metadata?.mimeType !== A2UI_MIME_TYPE || !isRecord(root.data)) {
           continue;
         }
+        if (!this.shouldTrackCatalog(root.data)) {
+          continue;
+        }
         this.applyMessageToState(root.data, state);
       }
     }
@@ -435,9 +438,17 @@ export class A2UIClientExtension {
   prepareMessageMetadata(_conversationState: A2UIConversationState | null = null): A2UIRecord {
     void _conversationState;
     if (this.version === "v0.9") {
-      return { a2uiClientCapabilities: { "v0.9": { supportedCatalogIds: [this.catalogId ?? A2UI_V09_BASIC_CATALOG_ID] } } };
+      const catalogIds = [A2UI_V09_BASIC_CATALOG_ID];
+      if (this.catalogId && this.catalogId !== A2UI_V09_BASIC_CATALOG_ID) {
+        catalogIds.push(this.catalogId);
+      }
+      return { a2uiClientCapabilities: { "v0.9": { supportedCatalogIds: catalogIds } } };
     }
-    return { a2uiClientCapabilities: { supportedCatalogIds: [this.catalogId ?? A2UI_STANDARD_CATALOG_ID] } };
+    const catalogIds = [A2UI_STANDARD_CATALOG_ID];
+    if (this.catalogId && this.catalogId !== A2UI_STANDARD_CATALOG_ID) {
+      catalogIds.push(this.catalogId);
+    }
+    return { a2uiClientCapabilities: { supportedCatalogIds: catalogIds } };
   }
 
   prepare_message_metadata(conversationState: A2UIConversationState | null = null): A2UIRecord {
@@ -473,6 +484,23 @@ export class A2UIClientExtension {
         state.dataModels[surfaceId].push(value);
       }
     }
+  }
+
+  private shouldTrackCatalog(data: A2UIRecord): boolean {
+    if (!this.catalogId) {
+      return true;
+    }
+    const beginRendering = data.beginRendering;
+    if (isRecord(beginRendering)) {
+      const catalogId = beginRendering.catalogId;
+      return typeof catalogId !== "string" || catalogId === this.catalogId;
+    }
+    const createSurface = data.createSurface;
+    if (isRecord(createSurface)) {
+      const catalogId = createSurface.catalogId;
+      return typeof catalogId !== "string" || catalogId === this.catalogId;
+    }
+    return true;
   }
 }
 
