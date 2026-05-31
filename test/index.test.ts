@@ -13419,6 +13419,54 @@ describe("memory", () => {
       .toBe("updated primary memory");
   });
 
+  it("forgets Memory records with upstream older-than and metadata filters", () => {
+    const memory = new Memory();
+    const keep = memory.remember("keep recent import", { metadata: { source: "erp" } });
+    const oldMatching = memory.remember("old import", { metadata: { source: "erp" } });
+    const oldOther = memory.remember("old export", { metadata: { source: "crm" } });
+    memory.update(oldMatching?.id ?? "", { metadata: { source: "erp", imported: true } });
+    memory.update(oldOther?.id ?? "", { metadata: { source: "crm", imported: true } });
+    const oldDate = new Date("2026-05-01T00:00:00.000Z");
+    const currentDate = new Date("2026-05-30T00:00:00.000Z");
+    memory.update(new MemoryRecord({
+      id: oldMatching?.id ?? "old-matching",
+      content: "old import",
+      metadata: { source: "erp", imported: true },
+      createdAt: oldDate,
+    }));
+    memory.update(new MemoryRecord({
+      id: oldOther?.id ?? "old-other",
+      content: "old export",
+      metadata: { source: "crm", imported: true },
+      createdAt: oldDate,
+    }));
+    memory.update(new MemoryRecord({
+      id: keep?.id ?? "keep",
+      content: "keep recent import",
+      metadata: { source: "erp", imported: true },
+      createdAt: currentDate,
+    }));
+
+    expect(memory.forget({
+      olderThan: "2026-05-15T00:00:00.000Z",
+      metadataFilter: { source: "erp", imported: true },
+    })).toBe(1);
+    expect(memory.list_records().map((record) => record.content).sort()).toEqual([
+      "keep recent import",
+      "old export",
+    ]);
+  });
+
+  it("resets Memory with upstream scope_prefix alias", () => {
+    const memory = new Memory();
+    memory.remember("alpha memory", { scope: "/alpha" });
+    memory.remember("beta memory", { scope: "/beta" });
+
+    memory.reset({ scope_prefix: "/alpha" });
+
+    expect(memory.list_records().map((record) => record.content)).toEqual(["beta memory"]);
+  });
+
   it("automatically appends relevant crew memories to task prompts", async () => {
     const memory = new Memory();
     memory.remember("Nest should consume crewai-ts as a normal TypeScript library", {

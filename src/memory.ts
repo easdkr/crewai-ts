@@ -1884,10 +1884,21 @@ export class Memory {
     return flow.state.final_results;
   }
 
-  forget(options: { scope?: string | null; categories?: readonly string[] | null; recordIds?: readonly string[] | null } = {}): number {
+  forget(options: {
+    scope?: string | null;
+    categories?: readonly string[] | null;
+    recordIds?: readonly string[] | null;
+    record_ids?: readonly string[] | null;
+    olderThan?: Date | string | null;
+    older_than?: Date | string | null;
+    metadataFilter?: Record<string, unknown> | null;
+    metadata_filter?: Record<string, unknown> | null;
+  } = {}): number {
     const before = this.records.length;
     const scope = options.scope ? this.scopePath(options.scope) : null;
-    const ids = new Set(options.recordIds ?? []);
+    const ids = new Set(options.recordIds ?? options.record_ids ?? []);
+    const cutoff = coerceDate(options.olderThan ?? options.older_than);
+    const metadataFilter = options.metadataFilter ?? options.metadata_filter ?? null;
     for (let index = this.records.length - 1; index >= 0; index -= 1) {
       const record = this.records[index];
       if (!record) {
@@ -1896,7 +1907,9 @@ export class Memory {
       const matchesScope = !scope || record.scope.startsWith(scope);
       const matchesCategory = !options.categories || options.categories.some((category) => record.categories.includes(category));
       const matchesId = ids.size === 0 || ids.has(record.id);
-      if (matchesScope && matchesCategory && matchesId) {
+      const matchesAge = !cutoff || record.createdAt < cutoff;
+      const matchesMetadata = !metadataFilter || Object.entries(metadataFilter).every(([key, value]) => record.metadata[key] === value);
+      if (matchesScope && matchesCategory && matchesId && matchesAge && matchesMetadata) {
         this.records.splice(index, 1);
       }
     }
@@ -1966,7 +1979,11 @@ export class Memory {
     this.drainWrites();
   }
 
-  reset(scope?: string | null): void {
+  reset(scope?: string | null | { scope_prefix?: string | null; scopePrefix?: string | null }): void {
+    if (typeof scope === "object" && scope !== null) {
+      this.reset(scope.scope_prefix ?? scope.scopePrefix ?? null);
+      return;
+    }
     if (!scope) {
       if (this.rootScope) {
         const rootScope = normalize_scope_path(this.rootScope);
