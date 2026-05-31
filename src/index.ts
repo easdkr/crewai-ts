@@ -1922,6 +1922,7 @@ export {
   ONNXProviderConfig,
   ONNXProviderSpec,
   OpenAIProvider,
+  OpenAIEmbeddingFunction,
   OpenAIProviderConfig,
   OpenAIProviderSpec,
   OpenCLIPProvider,

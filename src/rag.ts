@@ -433,16 +433,151 @@ const defaultEmbeddingCallable: TypedEmbeddingFunction = (input: Embeddable) => 
   return values.map(() => [0]);
 };
 
+export class OpenAIEmbeddingFunction {
+  readonly api_key: string | null;
+  readonly model_name: string;
+  readonly api_base: string | null;
+  readonly api_type: string | null;
+  readonly api_version: string | null;
+  readonly default_headers: Record<string, unknown> | null;
+  readonly dimensions: number | null;
+  readonly deployment_id: string | null;
+  readonly organization_id: string | null;
+
+  constructor(options: OpenAIProviderConfig = {}) {
+    this.api_key = options.api_key ?? null;
+    this.model_name = options.model_name ?? "text-embedding-ada-002";
+    this.api_base = options.api_base ?? null;
+    this.api_type = options.api_type ?? null;
+    this.api_version = options.api_version ?? null;
+    this.default_headers = options.default_headers ?? null;
+    this.dimensions = options.dimensions ?? null;
+    this.deployment_id = options.deployment_id ?? null;
+    this.organization_id = options.organization_id ?? null;
+  }
+
+  async call(input: Embeddable): Promise<Embeddings> {
+    const values = Array.isArray(input) ? input.map((value) => String(value)) : [String(input)];
+    const response = await fetch(this.endpointUrl(), {
+      method: "POST",
+      headers: this.requestHeaders(),
+      body: JSON.stringify(this.requestBody(values)),
+    });
+    if (!response.ok) {
+      throw new Error(`OpenAI embeddings request failed with status ${String(response.status)}`);
+    }
+    return extractOpenAIEmbeddings(await response.json());
+  }
+
+  async __call__(input: Embeddable): Promise<Embeddings> {
+    return this.call(input);
+  }
+
+  asCallable(): TypedEmbeddingFunction {
+    const callable: TypedEmbeddingFunction = (input: Embeddable) => this.call(input);
+    callable.embedQuery = callable;
+    callable.embed_query = callable;
+    return callable;
+  }
+
+  private isAzure(): boolean {
+    return this.api_type === "azure" || Boolean(this.deployment_id);
+  }
+
+  private endpointUrl(): string {
+    if (this.isAzure()) {
+      const base = trimTrailingSlash(this.api_base ?? "");
+      const deployment = encodeURIComponent(this.deployment_id ?? this.model_name);
+      const version = encodeURIComponent(this.api_version ?? "2024-02-01");
+      return `${base}/openai/deployments/${deployment}/embeddings?api-version=${version}`;
+    }
+    return `${trimTrailingSlash(this.api_base ?? "https://api.openai.com/v1")}/embeddings`;
+  }
+
+  private requestHeaders(): Record<string, string> {
+    const headers = normalizeStringHeaders(this.default_headers);
+    headers["content-type"] = headers["content-type"] ?? "application/json";
+    if (this.isAzure()) {
+      if (this.api_key) {
+        headers["api-key"] = this.api_key;
+      }
+      return headers;
+    }
+    if (this.api_key) {
+      headers.authorization = `Bearer ${this.api_key}`;
+    }
+    if (this.organization_id) {
+      headers["openai-organization"] = this.organization_id;
+    }
+    return headers;
+  }
+
+  private requestBody(input: readonly string[]): Record<string, unknown> {
+    const body: Record<string, unknown> = {
+      input,
+      model: this.model_name,
+    };
+    if (typeof this.dimensions === "number") {
+      body.dimensions = this.dimensions;
+    }
+    return body;
+  }
+}
+
+function trimTrailingSlash(value: string): string {
+  return value.replace(/\/+$/, "");
+}
+
+function normalizeStringHeaders(headers: Record<string, unknown> | null): Record<string, string> {
+  const normalized: Record<string, string> = {};
+  if (!headers) {
+    return normalized;
+  }
+  for (const [key, value] of Object.entries(headers)) {
+    if (typeof value === "string") {
+      normalized[key.toLowerCase()] = value;
+    }
+  }
+  return normalized;
+}
+
+function extractOpenAIEmbeddings(payload: unknown): Embeddings {
+  if (!isRecord(payload) || !Array.isArray(payload.data)) {
+    throw new Error("OpenAI embeddings response did not include data.");
+  }
+  const data = payload.data
+    .filter(isRecord)
+    .map((item, position) => ({
+      index: typeof item.index === "number" ? item.index : position,
+      embedding: item.embedding,
+    }))
+    .sort((left, right) => left.index - right.index);
+  const embeddings: Embedding[] = [];
+  for (const item of data) {
+    if (!isNumberArray(item.embedding)) {
+      throw new Error("OpenAI embeddings response did not include embeddings.");
+    }
+    embeddings.push(item.embedding);
+  }
+  if (embeddings.length === 0) {
+    throw new Error("OpenAI embeddings response did not include embeddings.");
+  }
+  return embeddings;
+}
+
 export class AzureProvider extends BaseEmbeddingsProvider {
   readonly provider = "azure";
 
   constructor(options: AzureProviderConfig = { deployment_id: "" }) {
-    super({
-      embeddingCallable: defaultEmbeddingCallable,
+    const config = {
       api_type: "azure",
       api_version: "2024-02-01",
       model_name: "text-embedding-ada-002",
       ...options,
+    };
+    super({
+      embeddingCallable: new OpenAIEmbeddingFunction(config).asCallable(),
+      ...config,
     });
   }
 }
@@ -694,10 +829,13 @@ export class OpenAIProvider extends BaseEmbeddingsProvider {
   readonly provider = "openai";
 
   constructor(options: OpenAIProviderConfig = {}) {
-    super({
-      embeddingCallable: defaultEmbeddingCallable,
+    const config = {
       model_name: "text-embedding-ada-002",
       ...options,
+    };
+    super({
+      embeddingCallable: new OpenAIEmbeddingFunction(config).asCallable(),
+      ...config,
     });
   }
 }

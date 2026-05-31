@@ -456,6 +456,7 @@ import {
   ONNXProvider,
   OpenCLIPProvider,
   OPENAI_COMPATIBLE_PROVIDERS,
+  OpenAIEmbeddingFunction,
   OpenAIProvider,
   OpenAICompletion,
   OpenAICompatibleCompletion,
@@ -7296,6 +7297,64 @@ describe("RAG configuration and factories", () => {
       project_id: "project",
     }).validate_space_or_project()).toBeInstanceOf(WatsonXProvider);
     expect(() => watsonx.validateSpaceOrProject()).toThrow("One of 'space_id' or 'project_id' must be provided");
+  });
+
+  it("calls OpenAI and Azure embeddings APIs for OpenAI-compatible providers", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({
+          data: [
+            { index: 1, embedding: [3, 4] },
+            { index: 0, embedding: [1, 2] },
+          ],
+        }),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ data: [{ embedding: [5, 6] }] }),
+      } as Response);
+
+    const openaiEmbedder = new OpenAIEmbeddingFunction({
+      api_key: "sk-test",
+      api_base: "https://openai.example/v1/",
+      model_name: "text-embedding-3-small",
+      dimensions: 512,
+      organization_id: "org-test",
+      default_headers: { "x-trace-id": "trace-1" },
+    }).asCallable();
+    await expect(openaiEmbedder(["first", "second"])).resolves.toEqual([[1, 2], [3, 4]]);
+    const firstFetchCall = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(firstFetchCall[0]).toBe("https://openai.example/v1/embeddings");
+    expect(firstFetchCall[1].method).toBe("POST");
+    expect(firstFetchCall[1].headers).toMatchObject({
+      authorization: "Bearer sk-test",
+      "openai-organization": "org-test",
+      "x-trace-id": "trace-1",
+    });
+    expect(firstFetchCall[1].body).toBe(JSON.stringify({
+      input: ["first", "second"],
+      model: "text-embedding-3-small",
+      dimensions: 512,
+    }));
+
+    const azureEmbedder = new AzureProvider({
+      api_key: "az-test",
+      api_base: "https://azure.example",
+      deployment_id: "embed-deploy",
+      model_name: "text-embedding-3-large",
+      api_version: "2024-02-01",
+    }).build();
+    await expect(azureEmbedder(["azure"])).resolves.toEqual([[5, 6]]);
+    const secondFetchCall = fetchMock.mock.calls[1] as [string, RequestInit];
+    expect(secondFetchCall[0]).toBe("https://azure.example/openai/deployments/embed-deploy/embeddings?api-version=2024-02-01");
+    expect(secondFetchCall[1].method).toBe("POST");
+    expect(secondFetchCall[1].headers).toMatchObject({ "api-key": "az-test" });
+    expect(secondFetchCall[1].body).toBe(JSON.stringify({
+      input: ["azure"],
+      model: "text-embedding-3-large",
+    }));
+    fetchMock.mockRestore();
   });
 
   it("calls Ollama's embeddings API for local embedding providers", async () => {
