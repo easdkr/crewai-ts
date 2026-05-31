@@ -475,6 +475,21 @@ try {
   ].join("\n"));
 
   execFileSync("npm", ["install", "--silent"], { cwd: appDir, stdio: "inherit" });
+  writeFileSync(join(appDir, "all-exports.mjs"), [
+    "import { readFileSync } from 'node:fs';",
+    "const packageJson = JSON.parse(readFileSync(new URL('./node_modules/@crewai-ts/core/package.json', import.meta.url), 'utf8'));",
+    "for (const key of Object.keys(packageJson.exports)) {",
+    "  if (key === './package.json') continue;",
+    "  const specifier = key === '.' ? '@crewai-ts/core' : `@crewai-ts/core/${key.slice(2)}`;",
+    "  await import(specifier);",
+    "}",
+    "console.log('all exports import ok');",
+    "",
+  ].join("\n"));
+  const allExportsOutput = execFileSync("node", ["all-exports.mjs"], { cwd: appDir, encoding: "utf8" }).trim();
+  if (allExportsOutput !== "all exports import ok") {
+    throw new Error(`Unexpected all exports import output: ${allExportsOutput}`);
+  }
   const output = execFileSync("node", ["index.mjs"], { cwd: appDir, encoding: "utf8" }).trim();
   if (output !== "true true true true 1.14.6 sequential") {
     throw new Error(`Unexpected package import output: ${output}`);
