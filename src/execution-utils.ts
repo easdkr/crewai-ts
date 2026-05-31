@@ -139,13 +139,34 @@ export class TaskExecutionData {
 }
 
 export function setupAgents(crew: Record<string, unknown>, agents: Iterable<Record<string, unknown>>, embedder: unknown = null, functionCallingLlm: unknown = null, stepCallback: unknown = null): void {
+  const crewSkills = readArray(crew.skills);
   for (const agent of agents) {
     agent.crew = crew;
     agent.embedder ??= embedder;
+    if ((agent.knowledge === null || agent.knowledge === undefined) && (crew.knowledge !== null && crew.knowledge !== undefined)) {
+      const setKnowledge = agent.setKnowledge ?? agent.set_knowledge;
+      if (typeof setKnowledge === "function") {
+        callUnknown(setKnowledge, agent, crew.knowledge);
+      } else {
+        agent.knowledge = crew.knowledge;
+      }
+    }
+    const setSkills = agent.setSkills ?? agent.set_skills;
+    if (typeof setSkills === "function") {
+      callUnknown(setSkills, agent, crewSkills);
+    } else if (crewSkills.length > 0) {
+      const agentSkills = readArray(agent.skills);
+      agent.skills = dedupeByIdentity([...agentSkills, ...crewSkills]);
+    }
     agent.functionCallingLlm ??= functionCallingLlm;
     agent.function_calling_llm ??= functionCallingLlm;
     agent.stepCallback ??= stepCallback;
     agent.step_callback ??= stepCallback;
+    const executor = agent.agentExecutor ?? agent.agent_executor;
+    const isResuming = Boolean(isPlainRecord(executor) && executor._resuming);
+    if (!isResuming) {
+      callNamed(agent, ["createAgentExecutor", "create_agent_executor"], agent);
+    }
   }
 }
 
@@ -366,4 +387,14 @@ function kickoffAgents(crew: Record<string, unknown>): Record<string, unknown>[]
     agents.push(task.agent);
   }
   return agents;
+}
+
+function dedupeByIdentity(values: readonly unknown[]): unknown[] {
+  const deduped: unknown[] = [];
+  for (const value of values) {
+    if (!deduped.includes(value)) {
+      deduped.push(value);
+    }
+  }
+  return deduped;
 }

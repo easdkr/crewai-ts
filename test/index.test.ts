@@ -545,6 +545,8 @@ import {
   prepareKickoff,
   prepare_task_execution,
   prepare_kickoff,
+  setupAgents,
+  setup_agents,
   setCrewChatLoader,
   processGuardrail,
   processConfig,
@@ -5538,6 +5540,101 @@ describe("config and token counter utilities", () => {
 });
 
 describe("crew execution utilities", () => {
+  it("sets up agents with crew defaults, skills, knowledge, and executors", () => {
+    const crewSkill = { name: "crew-skill" };
+    const crewKnowledge = { source: "crew-knowledge" };
+    const created: string[] = [];
+    const knowledgeCalls: unknown[] = [];
+    const skillCalls: unknown[] = [];
+    const firstAgent: Record<string, unknown> & {
+      role: string;
+      skills: unknown[];
+      setKnowledge: (knowledge: unknown) => void;
+      setSkills: (skills: readonly unknown[]) => void;
+      createAgentExecutor: () => void;
+    } = {
+      role: "Researcher",
+      skills: [{ name: "agent-skill" }],
+      setKnowledge(knowledge: unknown) {
+        knowledgeCalls.push(knowledge);
+        this.knowledge = knowledge;
+      },
+      setSkills(skills: readonly unknown[]) {
+        skillCalls.push(skills);
+        this.skills = [...this.skills, ...skills];
+      },
+      createAgentExecutor() {
+        created.push("first");
+        this.agent_executor = { ready: true };
+      },
+    };
+    const resumingAgent = {
+      role: "Writer",
+      agent_executor: { _resuming: true },
+      create_agent_executor() {
+        created.push("resuming");
+      },
+    };
+    const ownDefaultsAgent = {
+      role: "Reviewer",
+      embedder: { provider: "agent" },
+      functionCallingLlm: "agent-llm",
+      function_calling_llm: "agent-llm",
+      stepCallback: "agent-step",
+      step_callback: "agent-step",
+      knowledge: { source: "agent-knowledge" },
+      createAgentExecutor() {
+        created.push("own");
+      },
+    };
+    const crew = {
+      skills: [crewSkill],
+      knowledge: crewKnowledge,
+    };
+
+    setupAgents(
+      crew,
+      [firstAgent, resumingAgent, ownDefaultsAgent],
+      { provider: "crew" },
+      "crew-llm",
+      "crew-step",
+    );
+
+    expect(firstAgent).toMatchObject({
+      crew,
+      embedder: { provider: "crew" },
+      knowledge: crewKnowledge,
+      function_calling_llm: "crew-llm",
+      step_callback: "crew-step",
+      agent_executor: { ready: true },
+    });
+    expect(resumingAgent).toMatchObject({
+      crew,
+      embedder: { provider: "crew" },
+      function_calling_llm: "crew-llm",
+      step_callback: "crew-step",
+    });
+    expect(ownDefaultsAgent).toMatchObject({
+      crew,
+      embedder: { provider: "agent" },
+      knowledge: { source: "agent-knowledge" },
+      function_calling_llm: "agent-llm",
+      step_callback: "agent-step",
+    });
+    expect(knowledgeCalls).toEqual([crewKnowledge]);
+    expect(skillCalls).toEqual([[crewSkill]]);
+    expect(created).toEqual(["first", "own"]);
+  });
+
+  it("deduplicates crew skills when setup uses direct skill assignment", () => {
+    const skill = { name: "shared" };
+    const agent = { skills: [skill], create_agent_executor: vi.fn() };
+    setup_agents({ skills: [skill, { name: "new" }] }, [agent]);
+
+    expect(agent.skills).toEqual([skill, { name: "new" }]);
+    expect(agent.create_agent_executor).toHaveBeenCalledOnce();
+  });
+
   it("prepares task execution with agent tool fallback, crew tool preparation, and start logging", () => {
     const agent = {
       role: "Researcher",
