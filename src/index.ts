@@ -2376,6 +2376,7 @@ export {
 export {
   CREWAI_TELEMETRY_BASE_URL,
   CREWAI_TELEMETRY_SERVICE_NAME,
+  RecordedSpan,
   SafeOTLPSpanExporter,
   Telemetry,
   addAgentFingerprintToSpan,

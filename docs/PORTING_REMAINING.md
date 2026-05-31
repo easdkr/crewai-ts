@@ -71,6 +71,7 @@ When more goal budget is available, continue from the behavioral parity audits b
   - `EvaluationDisplayFormatter` aggregation helpers for per-agent metric averages, feedback summaries, and iteration display text
   - `AgentEvaluator` aggregation now reuses display formatter logic and emits started/completed/failed evaluation lifecycle events
   - `EvaluationTraceCallback` now subscribes to event bus hooks for agent/lite-agent execution, tool success/error, validation errors, and LLM call traces
+  - `Telemetry` now exposes deterministic local span recording for upstream task/tool/test/crew/flow/environment/human-feedback/feature/template span methods without enabling network exporters
 
 1. Storage backends
    - `memory/storage/backend.py`
@@ -112,8 +113,8 @@ When more goal budget is available, continue from the behavioral parity audits b
    - Agent evaluator now has behavior-bearing display aggregation and lifecycle event helper methods.
    - Goal-alignment and semantic-quality evaluator placeholders have been replaced with LLM-backed evaluators.
    - Evaluation trace callback now records event-bus-driven agent/lite-agent traces, tool uses, tool errors, validation errors, LLM calls, and final output.
-   - Telemetry span methods are mostly compatibility placeholders and should be audited.
-   - Separate no-op compatibility shims from behavior-bearing event hooks in tests, so placeholders stay intentional.
+   - Telemetry span methods now record deterministic local `RecordedSpan` objects for task/tool/test/crew/flow/environment/human-feedback/feature/template telemetry without external OTLP side effects.
+   - Remaining: deeper OpenTelemetry exporter integration can stay outside the default gate unless the project decides to carry SDK-backed telemetry coverage.
 
 ## Suggested Next Order
 

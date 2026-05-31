@@ -132,6 +132,7 @@ import {
   MCPConfigFetchFailedEvent,
   MCPClient,
   MCPToolExecutionFailedEvent,
+  Telemetry,
   AgentLogsExecutionEvent,
   AgentLogsStartedEvent,
   analyzeForConsolidation,
@@ -3341,6 +3342,85 @@ describe("evaluator utilities", () => {
     expect(events[0]).toBeInstanceOf(CrewTestResultEvent);
     expect(events[0]?.quality).toBe(9.5);
     expect(evaluator.printCrewEvaluationResult()).toContain("Task 1");
+  });
+});
+
+describe("telemetry compatibility", () => {
+  it("records task, tool, flow, and feature spans without network exporters", () => {
+    const telemetry = new Telemetry();
+    telemetry.clearSpans();
+    const crew = {
+      id: "crew-1",
+      key: "crew-key",
+      process: "sequential",
+      memory: false,
+      share_crew: true,
+      agents: [{ id: "agent-1", key: "agent-key", role: "Researcher", goal: "Find facts", backstory: "Careful", tools: [] }],
+      tasks: [],
+    };
+    const taskRecord = {
+      id: "task-1",
+      key: "task-key",
+      description: "Summarize CrewAI",
+      expectedOutput: "A summary",
+      expected_output: "A summary",
+      agent: { id: "agent-1", role: "Researcher", fingerprint: { uuid_str: "agent-fp" } },
+      output: { raw: "final task output" },
+      fingerprint: { uuid_str: "task-fp", created_at: new Date("2026-01-01T00:00:00.000Z"), metadata: { kind: "demo" } },
+    };
+
+    const executionSpan = telemetry.task_started(crew, taskRecord);
+    telemetry.task_ended(executionSpan, taskRecord, crew);
+    telemetry.tool_usage({ model: "demo-model" }, "Search Tool", 2, taskRecord.agent);
+    telemetry.tool_usage_error({ model: "demo-model" }, taskRecord.agent, "Search Tool");
+    telemetry.flow_creation_span("ResearchFlow");
+    telemetry.flow_plotting_span("ResearchFlow", ["start", "finish"]);
+    telemetry.flow_execution_span("ResearchFlow", ["start"]);
+    telemetry.human_feedback_span("received", true, 2, true, "approved");
+    telemetry.feature_usage_span("planning:creation");
+    telemetry.template_installed_span("starter");
+
+    const spans = telemetry.getSpans();
+
+    expect(spans.map((span) => span.name)).toEqual([
+      "Task Created",
+      "Task Execution",
+      "Tool Usage",
+      "Tool Usage Error",
+      "Flow Creation",
+      "Flow Plotting",
+      "Flow Execution",
+      "Human Feedback",
+      "Feature Usage",
+      "Template Installed",
+    ]);
+    expect(spans[0]?.attributes).toMatchObject({
+      crew_id: "crew-1",
+      task_id: "task-1",
+      task_fingerprint: "task-fp",
+      agent_fingerprint: "agent-fp",
+      formatted_description: "Summarize CrewAI",
+    });
+    expect(spans[1]?.attributes).toMatchObject({
+      task_output: "final task output",
+    });
+    expect(spans[1]?.ended).toBe(true);
+    expect(spans[2]?.attributes).toMatchObject({
+      tool_name: "Search Tool",
+      attempts: 2,
+      llm: "demo-model",
+      agent_role: "Researcher",
+    });
+    expect(spans[5]?.attributes.node_names).toBe("[\"start\",\"finish\"]");
+    expect(spans[7]?.attributes).toMatchObject({
+      event_type: "received",
+      has_routing: true,
+      num_outcomes: 2,
+      feedback_provided: true,
+      outcome: "approved",
+    });
+    expect(spans[8]?.attributes.feature).toBe("planning:creation");
+    expect(spans[9]?.attributes.template_name).toBe("starter");
   });
 });
 
