@@ -2968,6 +2968,29 @@ describe("a2a utilities", () => {
     });
   });
 
+  it("emits A2A connection error events for failed agent-card fetch requests", async () => {
+    const events: A2AConnectionErrorEvent[] = [];
+    crewaiEventBus.on("a2a_connection_error", (_source, event) => {
+      events.push(event);
+    });
+    vi.spyOn(globalThis, "fetch").mockRejectedValue(new DOMException("operation timed out", "TimeoutError"));
+
+    await expect(fetch_agent_card("https://remote.example.com"))
+      .rejects.toThrow("operation timed out");
+
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      endpoint: "https://remote.example.com",
+      error: "operation timed out",
+      error_type: "timeout",
+      operation: "fetch_agent_card",
+      metadata: {
+        timeout_config: 30,
+        request_url: "https://remote.example.com/.well-known/agent-card.json",
+      },
+    });
+  });
+
   it("models A2A client and server transport configuration with aliases", () => {
     const transport = new ClientTransportConfig({
       supported: [A2ATransport.GRPC, A2ATransport.JSONRPC],

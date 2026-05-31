@@ -3621,11 +3621,16 @@ export async function fetch_agent_card(endpoint: string, auth: unknown = null, t
   const start = Date.now();
   const agentCardUrl = resolveAgentCardUrl(endpoint);
   const headers = await prepareA2AAuthHeaders(auth);
-  const response = await fetch(agentCardUrl, {
-    method: "GET",
-    headers,
-    signal: AbortSignal.timeout(timeout * 1000),
-  });
+  let response: Response;
+  try {
+    response = await fetch(agentCardUrl, {
+      method: "GET",
+      headers,
+      signal: AbortSignal.timeout(timeout * 1000),
+    });
+  } catch (error) {
+    handleAgentCardRequestError({ endpoint, agentCardUrl, timeout, error, start });
+  }
   if (!response.ok) {
     await handleAgentCardFetchError({ endpoint, agentCardUrl, auth, response, start });
   }
@@ -3689,6 +3694,38 @@ async function handleAgentCardFetchError(options: {
     },
   }));
   throw new Error(message);
+}
+
+function handleAgentCardRequestError(options: {
+  endpoint: string;
+  agentCardUrl: string;
+  timeout: number;
+  error: unknown;
+  start: number;
+}): never {
+  const errorType = classifyAgentCardRequestError(options.error);
+  crewaiEventBus.emit(null, new A2AConnectionErrorEvent({
+    endpoint: options.endpoint,
+    error: options.error,
+    error_type: errorType,
+    operation: "fetch_agent_card",
+    metadata: {
+      elapsed_ms: Date.now() - options.start,
+      ...(errorType === "timeout" ? { timeout_config: options.timeout } : {}),
+      request_url: options.agentCardUrl,
+    },
+  }));
+  throw options.error instanceof Error ? options.error : new Error(String(options.error));
+}
+
+function classifyAgentCardRequestError(error: unknown): string {
+  if (error instanceof DOMException && (error.name === "TimeoutError" || error.name === "AbortError")) {
+    return "timeout";
+  }
+  if (error instanceof TypeError) {
+    return "connection_error";
+  }
+  return "request_error";
 }
 
 async function safeResponseText(response: Response): Promise<string | null> {
