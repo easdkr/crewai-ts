@@ -615,6 +615,8 @@ export type GeminiCompletionOptions = BaseLLMOptions & {
   maxOutputTokens?: number | null;
   safety_settings?: readonly unknown[] | null;
   safetySettings?: readonly unknown[] | null;
+  thinking_config?: unknown;
+  thinkingConfig?: unknown;
   stream?: boolean;
   client_params?: Record<string, unknown> | null;
   clientParams?: Record<string, unknown> | null;
@@ -637,14 +639,22 @@ export class GeminiCompletion extends ConfiguredLLM {
   readonly max_output_tokens: number | null;
   readonly safetySettings: readonly unknown[] | null;
   readonly safety_settings: readonly unknown[] | null;
+  readonly thinkingConfig: unknown;
+  readonly thinking_config: unknown;
   readonly stream: boolean;
   readonly clientParams: Record<string, unknown> | null;
   readonly client_params: Record<string, unknown> | null;
   readonly interceptor: unknown;
+  readonly supportsTools: boolean;
+  readonly supports_tools: boolean;
+  readonly isGemini20: boolean;
+  readonly is_gemini_2_0: boolean;
+  tools: readonly Tool[] | null;
 
   constructor(options: GeminiCompletionOptions = { model: "gemini-2.5-flash" }) {
+    const model = options.model;
     super(stripUndefined({
-      model: options.model,
+      model,
       provider: options.provider ?? "gemini",
       temperature: options.temperature,
       apiKey: options.apiKey,
@@ -671,10 +681,17 @@ export class GeminiCompletion extends ConfiguredLLM {
     this.max_output_tokens = this.maxOutputTokens;
     this.safetySettings = options.safetySettings ?? options.safety_settings ?? null;
     this.safety_settings = this.safetySettings;
+    this.thinkingConfig = options.thinkingConfig ?? options.thinking_config ?? (geminiVersion(model) >= 2.5 ? { include_thoughts: true } : null);
+    this.thinking_config = this.thinkingConfig;
     this.stream = options.stream ?? false;
     this.clientParams = options.clientParams ?? options.client_params ?? null;
     this.client_params = this.clientParams;
     this.interceptor = options.interceptor ?? null;
+    this.supportsTools = geminiVersion(model) >= 1.5;
+    this.supports_tools = this.supportsTools;
+    this.isGemini20 = geminiVersion(model) >= 2.0;
+    this.is_gemini_2_0 = this.isGemini20;
+    this.tools = null;
   }
 
   override call(messages: readonly LLMMessage[], options?: LLMCallOptions): Promise<LLMResponse> {
@@ -703,6 +720,154 @@ export class GeminiCompletion extends ConfiguredLLM {
 
   override getFileUploader(): LocalFileUploader {
     return new LocalFileUploader("gemini", { llm: this, project: this.project, location: this.location });
+  }
+
+  prepareGenerationConfig(
+    systemInstruction: string | null = null,
+    tools: readonly Tool[] | null = null,
+    responseModel: unknown = null,
+  ): Record<string, unknown> {
+    this.tools = tools;
+    const config: Record<string, unknown> = {};
+
+    if (systemInstruction) {
+      config.system_instruction = { role: "user", parts: [{ text: systemInstruction }] };
+    }
+    if (this.temperature !== null) {
+      config.temperature = this.temperature;
+    }
+    if (this.topP !== null) {
+      config.top_p = this.topP;
+    }
+    if (this.topK !== null) {
+      config.top_k = this.topK;
+    }
+    if (this.maxOutputTokens !== null) {
+      config.max_output_tokens = this.maxOutputTokens;
+    }
+    if (this.stopSequences.length > 0) {
+      config.stop_sequences = [...this.stopSequences];
+    }
+
+    if (tools && tools.length > 0 && this.supportsTools) {
+      const geminiTools = this.convertToolsForInterference(tools);
+      const schema = geminiResponseSchema(responseModel);
+      if (schema) {
+        geminiTools.push({
+          functionDeclarations: [{
+            name: STRUCTURED_OUTPUT_TOOL_NAME,
+            description: "Use this tool to provide your final structured response. Call this tool when you have gathered all necessary information and are ready to provide the final answer in the required format.",
+            parametersJsonSchema: this.isGemini20 ? GeminiCompletion.addPropertyOrdering(structuredClone(schema)) : schema,
+          }],
+        });
+      }
+      config.tools = geminiTools;
+    } else {
+      const schema = geminiResponseSchema(responseModel);
+      if (schema) {
+        config.response_mime_type = "application/json";
+        if (this.isGemini20) {
+          config.response_json_schema = GeminiCompletion.addPropertyOrdering(structuredClone(schema));
+        } else {
+          config.response_schema = responseModel;
+        }
+      }
+    }
+
+    if (this.safetySettings) {
+      config.safety_settings = this.safetySettings;
+    }
+    if (this.thinkingConfig !== null && this.thinkingConfig !== undefined) {
+      config.thinking_config = this.thinkingConfig;
+    }
+
+    return config;
+  }
+
+  _prepare_generation_config(
+    systemInstruction: string | null = null,
+    tools: readonly Tool[] | null = null,
+    responseModel: unknown = null,
+  ): Record<string, unknown> {
+    return this.prepareGenerationConfig(systemInstruction, tools, responseModel);
+  }
+
+  convertToolsForInterference(tools: readonly Tool[]): Record<string, unknown>[] {
+    return convertToolsToOpenAISchema(tools)[0].map((tool) => ({
+      functionDeclarations: [{
+        name: tool.function.name,
+        description: tool.function.description,
+        parametersJsonSchema: tool.function.parameters,
+      }],
+    }));
+  }
+
+  _convert_tools_for_interference(tools: readonly Tool[]): Record<string, unknown>[] {
+    return this.convertToolsForInterference(tools);
+  }
+
+  formatMessagesForGemini(messages: string | readonly (Partial<LLMMessage> & Record<string, unknown>)[]): [Record<string, unknown>[], string | null] {
+    const baseFormatted = this._format_messages(messages);
+    const contents: Record<string, unknown>[] = [];
+    let systemInstruction: string | null = null;
+
+    for (const message of baseFormatted) {
+      const rawMessage = message as LLMMessage & Record<string, unknown>;
+      const role = rawMessage.role;
+      const content = rawMessage.content;
+      const parts = geminiTextParts(content);
+      const textContent = parts
+        .map((part) => readObject(part).text)
+        .filter((text): text is string => typeof text === "string")
+        .join(" ");
+
+      if (role === "system") {
+        systemInstruction = systemInstruction ? `${systemInstruction}\n\n${textContent}` : textContent;
+        continue;
+      }
+
+      if (role === "tool") {
+        const toolName = scalarToString(rawMessage.name) ?? "";
+        const response = parseGeminiToolResponse(textContent);
+        const functionResponsePart = { functionResponse: { name: toolName, response } };
+        const previous = contents.at(-1);
+        if (previous?.role === "user" && Array.isArray(previous.parts)) {
+          const previousParts = previous.parts;
+          const lastPart = readObject(previousParts.at(-1));
+          if ("functionResponse" in lastPart) {
+            previousParts.push(functionResponsePart);
+            continue;
+          }
+        }
+        contents.push({ role: "user", parts: [functionResponsePart] });
+        continue;
+      }
+
+      if (role === "assistant" && Array.isArray(rawMessage.tool_calls)) {
+        const toolParts: Record<string, unknown>[] = [...parts];
+        for (const toolCall of rawMessage.tool_calls) {
+          const toolCallRecord = typeof toolCall === "object" && toolCall ? toolCall as Record<string, unknown> : {};
+          const functionCall = toolCallRecord.function;
+          const functionRecord = typeof functionCall === "object" && functionCall ? functionCall as Record<string, unknown> : {};
+          toolParts.push({
+            functionCall: {
+              name: scalarToString(functionRecord.name) ?? "",
+              args: parseToolArguments(functionRecord.arguments),
+            },
+          });
+        }
+        contents.push({ role: "model", parts: toolParts });
+        continue;
+      }
+
+      contents.push({ role: role === "assistant" ? "model" : "user", parts });
+    }
+
+    return [contents, systemInstruction];
+  }
+
+  _format_messages_for_gemini(messages: string | readonly (Partial<LLMMessage> & Record<string, unknown>)[]): [Record<string, unknown>[], string | null] {
+    return this.formatMessagesForGemini(messages);
   }
 
   override toConfigDict(): Record<string, unknown> {
@@ -1056,6 +1221,71 @@ function scalarToString(value: unknown): string | null {
     return String(value);
   }
   return null;
+}
+
+function geminiVersion(model: string): number {
+  const match = /gemini-(\d+(?:\.\d+)?)/iu.exec(model.toLowerCase());
+  return match ? Number.parseFloat(match[1] ?? "0") : 0;
+}
+
+function geminiTextParts(content: unknown): Record<string, unknown>[] {
+  if (Array.isArray(content)) {
+    return content.map((item) => {
+      if (typeof item === "object" && item !== null) {
+        const record = item as Record<string, unknown>;
+        if (typeof record.text === "string") {
+          return { text: record.text };
+        }
+        if (typeof record.inlineData === "object" && record.inlineData !== null) {
+          return { inlineData: record.inlineData };
+        }
+      }
+      return { text: scalarToString(item) ?? "" };
+    });
+  }
+  return [{ text: scalarToString(content) ?? "" }];
+}
+
+function parseToolArguments(value: unknown): Record<string, unknown> {
+  if (typeof value === "string") {
+    try {
+      const parsed: unknown = value ? JSON.parse(value) : {};
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+        ? parsed as Record<string, unknown>
+        : {};
+    } catch {
+      return {};
+    }
+  }
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+}
+
+function parseGeminiToolResponse(text: string): Record<string, unknown> {
+  try {
+    const parsed: unknown = text ? JSON.parse(text) : {};
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : { result: parsed };
+  } catch {
+    return { result: text };
+  }
+}
+
+function geminiResponseSchema(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const schemaProvider = value as {
+    model_json_schema?: () => unknown;
+    modelJsonSchema?: () => unknown;
+    schema?: unknown;
+  };
+  const schema = schemaProvider.model_json_schema?.() ?? schemaProvider.modelJsonSchema?.() ?? schemaProvider.schema;
+  return schema && typeof schema === "object" && !Array.isArray(schema)
+    ? schema as Record<string, unknown>
+    : null;
 }
 
 function isAzureOpenAIEndpoint(endpoint: string | null): boolean {

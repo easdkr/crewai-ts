@@ -10,7 +10,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `npm run build`
   - `npm run lint`
   - `npm run smoke:pack`
-- Test suite: 329 passing tests.
+- Test suite: 330 passing tests.
 - Root export parity against upstream clone `/tmp/crewai-upstream.lPeuQi/crewAI` at commit `2148c7e`: `total_missing=0`.
 - Public method parity has been tightened for core runtime classes:
   - `ConsoleFormatter`: `missing=0`
@@ -81,7 +81,7 @@ When more goal budget is available, continue from the behavioral parity audits b
   - Azure completion shim now exposes upstream-style request parameter builders with Azure OpenAI endpoint model omission, Azure AI model inclusion, `model_extras`, prompt cache keys, drop-params handling, stop words, and custom tools
   - Anthropic completion shim now exposes upstream-style request parameter builders with system prompts, stop sequences, thinking config, custom tool conversion, single-tool forcing, and tool-search injection/deferred loading
   - Bedrock completion shim now exposes upstream-style Converse request body builders, including Bedrock message content blocks, system prompts, inference config, toolConfig conversion, guardrail config, and additional model request/response fields
-  - Gemini completion shim with deterministic config, context-window, multimodal/text-formatting, token-usage extraction, response text extraction, property ordering, and content conversion helpers
+  - Gemini completion shim with upstream-style message formatting, generation config builders, tool conversion, deterministic config, context-window, multimodal/text-formatting, token-usage extraction, response text extraction, property ordering, and content conversion helpers
   - Multimodal LLM message file handling now converts `files` into deterministic inline/upload content blocks, and native OpenAI/Azure/Anthropic/Bedrock/Gemini shims expose local provider file uploaders
   - Streaming tool-call argument accumulation now preserves id/name/index and concatenates function argument deltas into upstream-style tool call payloads
 - Added evaluation compatibility behavior:
@@ -101,7 +101,7 @@ When more goal budget is available, continue from the behavioral parity audits b
 
 2. LLM providers
    - OpenAI, Azure, Anthropic, Bedrock, Gemini provider classes.
-   - `to_config_dict`, context window, adapter-level function-calling support, deterministic multimodal support flags, response-chain/reset compatibility, file input content-block conversion, local uploader compatibility, streaming tool-call accumulation, OpenAI/Azure/Anthropic/Bedrock request builders, and Gemini adapter helpers are now covered for the native provider shims.
+   - `to_config_dict`, context window, adapter-level function-calling support, deterministic multimodal support flags, response-chain/reset compatibility, file input content-block conversion, local uploader compatibility, streaming tool-call accumulation, and OpenAI/Azure/Anthropic/Bedrock/Gemini request builders are now covered for the native provider shims.
    - Remaining: SDK-backed request/response translation details.
    - Keep provider tests adapter-level and mock network calls. Do not introduce live API keys or provider-specific SDK side effects into the default test gate.
 

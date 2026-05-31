@@ -9059,6 +9059,111 @@ describe("LLM providers", () => {
     ]);
   });
 
+  it("prepares Gemini messages and generation config with tools", () => {
+    const search = new StructuredTool({
+      name: "search docs",
+      description: "Search documentation",
+      argsSchema: {
+        query: { type: "string", description: "Search query" },
+      },
+      func: () => "result",
+    });
+    const responseModel = {
+      model_json_schema: () => ({
+        type: "object",
+        properties: {
+          answer: { type: "string" },
+          confidence: { type: "number" },
+        },
+        required: ["answer"],
+      }),
+    };
+    const gemini = new GeminiCompletion({
+      model: "gemini-2.5-pro",
+      temperature: 0.4,
+      top_p: 0.9,
+      top_k: 40,
+      max_output_tokens: 512,
+      stop: ["STOP"],
+      safety_settings: [{ category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_ONLY_HIGH" }],
+      thinking_config: { include_thoughts: true },
+    });
+
+    const [contents, systemInstruction] = (gemini as unknown as {
+      _format_messages_for_gemini(messages: Array<LLMMessage & Record<string, unknown>>): [Record<string, unknown>[], string | null];
+    })._format_messages_for_gemini([
+      { role: "system", content: "System prompt" },
+      { role: "user", content: "Find CrewAI" },
+      {
+        role: "assistant",
+        content: "Calling search",
+        tool_calls: [{
+          id: "call_1",
+          function: { name: "search_docs", arguments: "{\"query\":\"CrewAI\"}" },
+        }],
+      },
+      { role: "tool", content: "{\"result\":\"docs\"}", name: "search_docs", tool_call_id: "call_1" },
+    ]);
+
+    expect(systemInstruction).toBe("System prompt");
+    expect(contents).toEqual([
+      { role: "user", parts: [{ text: "Find CrewAI" }] },
+      {
+        role: "model",
+        parts: [
+          { text: "Calling search" },
+          { functionCall: { name: "search_docs", args: { query: "CrewAI" } } },
+        ],
+      },
+      { role: "user", parts: [{ functionResponse: { name: "search_docs", response: { result: "docs" } } }] },
+    ]);
+
+    const config = (gemini as unknown as {
+      _prepare_generation_config(
+        systemInstruction?: string | null,
+        tools?: StructuredTool[] | null,
+        responseModel?: unknown,
+      ): Record<string, unknown>;
+    })._prepare_generation_config(systemInstruction, [search], responseModel);
+
+    expect(config).toMatchObject({
+      system_instruction: { role: "user", parts: [{ text: "System prompt" }] },
+      temperature: 0.4,
+      top_p: 0.9,
+      top_k: 40,
+      max_output_tokens: 512,
+      stop_sequences: ["STOP"],
+      safety_settings: [{ category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_ONLY_HIGH" }],
+      thinking_config: { include_thoughts: true },
+      tools: [
+        {
+          functionDeclarations: [{
+            name: "search_docs",
+            description: "Search documentation",
+            parametersJsonSchema: {
+              type: "object",
+              additionalProperties: false,
+              properties: {
+                query: { type: "string", description: "Search query" },
+              },
+              required: ["query"],
+            },
+          }],
+        },
+        {
+          functionDeclarations: [{
+            name: "structured_output",
+            parametersJsonSchema: {
+              type: "object",
+              propertyOrdering: ["answer", "confidence"],
+            },
+          }],
+        },
+      ],
+    });
+    expect(config).not.toHaveProperty("response_json_schema");
+  });
+
   it("creates configured LLM clients from strings, objects, clients, and environment fallback", async () => {
     const existing = {
       call: () => "existing",
