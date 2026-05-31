@@ -1,6 +1,11 @@
+import { existsSync } from "node:fs";
+import { createRequire } from "node:module";
+import { join, resolve } from "node:path";
+
 import type { Crew } from "./crew.js";
 import { callLLM, createLLM, createLLMClient, type LLM, type LLMClient } from "./llm.js";
 import type { LLMMessage } from "./types.js";
+import { readToml } from "./utilities.js";
 
 export const MIN_REQUIRED_CONVERSATIONAL_CREW_VERSION = "0.98.0";
 export const MIN_REQUIRED_VERSION = MIN_REQUIRED_CONVERSATIONAL_CREW_VERSION;
@@ -229,12 +234,59 @@ export const set_crew_chat_loader = setCrewChatLoader;
 
 export function loadCrewAndName(): [Crew, string] {
   if (!crewChatLoader) {
-    throw new Error("load_crew_and_name requires a project-specific crew loader in TypeScript.");
+    return loadCrewAndNameFromProject();
   }
   return crewChatLoader();
 }
 
 export const load_crew_and_name = loadCrewAndName;
+
+function loadCrewAndNameFromProject(): [Crew, string] {
+  const cwd = process.cwd();
+  const pyprojectPath = join(cwd, "pyproject.toml");
+  if (!existsSync(pyprojectPath)) {
+    throw new Error("pyproject.toml not found in the current directory.");
+  }
+  const pyproject = readToml(pyprojectPath);
+  const projectName = nestedString(pyproject, ["project", "name"]);
+  if (!projectName) {
+    throw new Error("Unable to read 'project.name' in the pyproject.toml file.");
+  }
+  const crewClassName = toCrewClassName(projectName);
+  const folderNames = uniqueStrings([
+    projectName,
+    projectName.replaceAll("-", "_"),
+  ]);
+  const moduleCandidates = folderNames.flatMap((folderName) => [
+    join(cwd, "src", folderName, "crew.cjs"),
+    join(cwd, "src", folderName, "crew.js"),
+    join(cwd, "src", folderName, "crew", "index.cjs"),
+    join(cwd, "src", folderName, "crew", "index.js"),
+  ]);
+  const modulePath = moduleCandidates.find((candidate) => existsSync(candidate));
+  const importLabel = `${projectName}.crew`;
+  if (!modulePath) {
+    throw new Error(`Failed to import crew module ${importLabel}: module file not found.`);
+  }
+
+  let imported: unknown;
+  try {
+    const requireFromProject = createRequire(join(cwd, "package.json"));
+    imported = requireFromProject(resolve(modulePath)) as unknown;
+  } catch (error) {
+    throw new Error(`Failed to import crew module ${importLabel}: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
+  }
+
+  const crewClass = getExportedMember(imported, crewClassName);
+  if (typeof crewClass !== "function") {
+    throw new Error(`Crew class ${crewClassName} not found in module ${importLabel}`);
+  }
+  const project = new (crewClass as new () => { crew?: () => Crew })();
+  if (typeof project.crew !== "function") {
+    throw new Error(`Crew class ${crewClassName} does not provide a crew() method.`);
+  }
+  return [project.crew(), crewClassName];
+}
 
 export function runChat(): void {
   const [crew] = loadCrewAndName();
@@ -379,6 +431,45 @@ function stringifyLlmResponse(value: unknown): string {
     return value.toString();
   }
   return JSON.stringify(value);
+}
+
+function nestedString(value: unknown, path: readonly string[]): string | null {
+  let current = value;
+  for (const key of path) {
+    if (!current || typeof current !== "object" || !(key in current)) {
+      return null;
+    }
+    current = (current as Record<string, unknown>)[key];
+  }
+  return typeof current === "string" && current.trim() ? current : null;
+}
+
+function toCrewClassName(projectName: string): string {
+  return projectName
+    .split(/[_\-\s]+/u)
+    .filter(Boolean)
+    .map((part) => `${part.slice(0, 1).toUpperCase()}${part.slice(1)}`)
+    .join("");
+}
+
+function uniqueStrings(values: readonly string[]): string[] {
+  return [...new Set(values.filter((value) => value.length > 0))];
+}
+
+function getExportedMember(moduleValue: unknown, exportName: string): unknown {
+  const record = moduleValue && typeof moduleValue === "object" ? moduleValue as Record<string, unknown> : {};
+  const direct = record[exportName];
+  if (direct) {
+    return direct;
+  }
+  const defaultExport = record.default;
+  if (typeof defaultExport === "function" && defaultExport.name === exportName) {
+    return defaultExport;
+  }
+  if (defaultExport && typeof defaultExport === "object") {
+    return (defaultExport as Record<string, unknown>)[exportName];
+  }
+  return null;
 }
 
 function compareVersions(left: string, right: string): number {

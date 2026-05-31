@@ -5470,7 +5470,37 @@ describe("crew chat utilities", () => {
       setCrewChatLoader(null);
     }
 
-    expect(() => loadCrewAndName()).toThrow("load_crew_and_name requires a project-specific crew loader");
+    expect(() => loadCrewAndName()).toThrow("pyproject.toml not found");
+  });
+
+  it("loads crews from the current project pyproject and crew module", () => {
+    const previousCwd = process.cwd();
+    const directory = mkdtempSync(join(tmpdir(), "crewai-ts-chat-project-"));
+    mkdirSync(join(directory, "src", "demo_crew"), { recursive: true });
+    writeFileSync(join(directory, "pyproject.toml"), [
+      "[project]",
+      "name = \"demo_crew\"",
+      "version = \"0.1.0\"",
+      "",
+    ].join("\n"));
+    writeFileSync(join(directory, "src", "demo_crew", "crew.cjs"), [
+      "class DemoCrew {",
+      "  crew() { return { name: 'loaded crew' }; }",
+      "}",
+      "module.exports = { DemoCrew };",
+      "",
+    ].join("\n"));
+    try {
+      process.chdir(directory);
+
+      const [crewInstance, crewName] = load_crew_and_name();
+
+      expect(crewName).toBe("DemoCrew");
+      expect(crewInstance).toEqual({ name: "loaded crew" });
+    } finally {
+      process.chdir(previousCwd);
+      rmSync(directory, { recursive: true, force: true });
+    }
   });
 
   it("generates static crew chat inputs without blocking on an LLM", async () => {

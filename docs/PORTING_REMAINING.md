@@ -11,7 +11,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `npm run lint`
   - `npm run smoke:pack`
   - `python3 scripts/check-export-parity.py`
-- Test suite: 477 passing tests.
+- Test suite: 478 passing tests.
 - Root export parity against upstream clone `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `5cdc420`: `total_missing=0`.
 - Public method parity has been tightened for core runtime classes:
   - `ConsoleFormatter`: `missing=0`
@@ -162,7 +162,7 @@ When more goal budget is available, continue from the behavioral parity audits b
 - Added crew chat compatibility behavior:
   - `handleUserInput` now forwards the generated crew function schema and available function map to the chat LLM call so upstream-style conversational crew function calling can execute.
   - `check_conversational_crews_version` now accepts the upstream pyproject data argument and rejects invalid version strings instead of loosely parsing embedded digits.
-  - `load_crew_and_name` now supports a project-specific TypeScript crew loader hook instead of unconditionally failing at runtime.
+  - `load_crew_and_name` now supports a project-specific TypeScript crew loader hook and an upstream-style `pyproject.toml` / `src/<project>/crew` CommonJS module fallback instead of unconditionally failing at runtime.
 - Added converter compatibility behavior:
   - `asyncConvertToModel` / `asyncHandlePartialJson` now use the agent LLM fallback path for non-JSON or malformed partial JSON results, matching upstream async conversion dispatch.
   - `convertToModel` / `handlePartialJson` and `convert_with_instructions` now use an upstream-style synchronous agent LLM fallback for non-JSON or malformed partial JSON results when the configured LLM returns synchronously.
