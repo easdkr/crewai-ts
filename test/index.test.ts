@@ -132,6 +132,7 @@ import {
   PDFKnowledgeSource,
   PollingHandler,
   PushNotificationHandler,
+  StreamingHandler,
   MemoryQueryCompletedEvent,
   MemoryQueryFailedEvent,
   MemoryQueryStartedEvent,
@@ -3306,6 +3307,49 @@ describe("a2a utilities", () => {
       status: A2ATaskState.failed,
       error: "PushNotificationConfig is required for push notification handler",
     });
+  });
+
+  it("executes A2A streaming handlers with message chunks and final tasks", async () => {
+    const seenChunks: string[] = [];
+    crewaiEventBus.on("a2a_streaming_chunk", (_source, event) => {
+      seenChunks.push(event.chunk);
+    });
+    async function* stream() {
+      await Promise.resolve();
+      yield {
+        role: "agent",
+        message_id: "msg-stream-1",
+        task_id: "task-stream",
+        context_id: "ctx-stream",
+        parts: [{ text: "chunk one" }],
+      };
+      yield [{
+        id: "task-stream",
+        context_id: "ctx-stream",
+        status: { state: A2ATaskState.completed },
+        artifacts: [{ parts: [{ text: "final artifact" }] }],
+      }, { kind: "status-update", final: true }] as const;
+    }
+    const client = { send_message: vi.fn(() => stream()) };
+    const history: Parameters<typeof StreamingHandler.execute>[2] = [];
+
+    await expect(StreamingHandler.execute(client, { role: "user", parts: [{ text: "go" }] }, history, {
+      name: "remote",
+      url: "https://remote.example.com/a2a",
+    }, {
+      endpoint: "https://remote.example.com/a2a",
+      turn_number: 2,
+      is_multiturn: true,
+    })).resolves.toMatchObject({
+      status: A2ATaskState.completed,
+      result: "chunk one final artifact",
+      agent_card: {
+        name: "remote",
+      },
+    });
+    expect(client.send_message).toHaveBeenCalledTimes(1);
+    expect(history).toHaveLength(1);
+    expect(seenChunks).toEqual(["chunk one"]);
   });
 });
 

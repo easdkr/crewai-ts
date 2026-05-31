@@ -6,6 +6,8 @@ import {
   A2AConnectionErrorEvent,
   A2APollingStartedEvent,
   A2APollingStatusEvent,
+  A2AStreamingChunkEvent,
+  A2AStreamingStartedEvent,
   A2APushNotificationRegisteredEvent,
   A2APushNotificationTimeoutEvent,
   A2ATransportNegotiatedEvent,
@@ -704,6 +706,107 @@ export class StreamingHandler {
     });
   }
 
+  static async execute(
+    client: A2AUpdateClient,
+    message: A2AMessageLike,
+    newMessages: A2AMessageLike[],
+    agentCard: A2AAgentCard,
+    kwargs: StreamingHandlerKwargs = {},
+  ): Promise<A2ATaskStateResult> {
+    const params = extractCommonParams({ ...kwargs, endpoint: kwargs.endpoint ?? agentCard.url });
+    const agentBranch = kwargs.agent_branch ?? kwargs.agentBranch;
+    let taskId = kwargs.task_id ?? kwargs.taskId ?? null;
+    const resultParts: string[] = [];
+    let chunkIndex = 0;
+
+    crewaiEventBus.emit(agentBranch, new A2AStreamingStartedEvent({
+      task_id: taskId,
+      context_id: params.context_id,
+      endpoint: params.endpoint,
+      a2a_agent_name: params.a2a_agent_name,
+      turn_number: params.turn_number,
+      is_multiturn: params.is_multiturn,
+      agent_role: params.agent_role,
+      from_task: params.from_task,
+      from_agent: params.from_agent,
+    }));
+
+    try {
+      for await (const event of getClientEventStream(client, message)) {
+        if (!isSendTaskEvent(event)) {
+          newMessages.push(event);
+          const textParts = extractMessageTextParts(event);
+          for (const text of textParts) {
+            resultParts.push(text);
+            crewaiEventBus.emit(agentBranch, new A2AStreamingChunkEvent({
+              task_id: event.task_id ?? event.taskId ?? taskId,
+              context_id: event.context_id ?? event.contextId ?? params.context_id,
+              chunk: text,
+              chunk_index: chunkIndex,
+              endpoint: params.endpoint,
+              a2a_agent_name: params.a2a_agent_name,
+              turn_number: params.turn_number,
+              is_multiturn: params.is_multiturn,
+              from_task: params.from_task,
+              from_agent: params.from_agent,
+            }));
+            chunkIndex += 1;
+          }
+          continue;
+        }
+
+        const [a2aTask] = event;
+        taskId = a2aTask.id ?? taskId;
+        const state = normalizeTaskState(a2aTask.status?.state);
+        if (!(state && (TERMINAL_STATES.has(state) || ACTIONABLE_STATES.has(state)))) {
+          continue;
+        }
+        const finalParts = [...resultParts];
+        finalParts.push(...extractTaskResultParts(a2aTask));
+        const result = processTaskState({
+          a2aTask,
+          newMessages,
+          agentCard,
+          turnNumber: params.turn_number,
+          isMultiturn: params.is_multiturn,
+          agentRole: params.agent_role,
+          resultParts: finalParts,
+          endpoint: params.endpoint,
+          a2aAgentName: params.a2a_agent_name,
+          isFinal: isFinalStreamingUpdate(event[1]),
+        });
+        if (result) {
+          return result;
+        }
+      }
+    } catch (error) {
+      const errorMessage = `Connection error during streaming: ${formatA2AError(error)}`;
+      newMessages.push(createA2AErrorMessage(errorMessage, params.context_id, taskId));
+      crewaiEventBus.emit(agentBranch, new A2AConnectionErrorEvent({
+        endpoint: params.endpoint,
+        error,
+        error_type: error instanceof Error ? error.name.toLowerCase() : "unexpected_error",
+        operation: "streaming",
+        context_id: params.context_id,
+        task_id: taskId,
+        a2a_agent_name: params.a2a_agent_name,
+        from_task: params.from_task,
+        from_agent: params.from_agent,
+      }));
+      return {
+        status: A2ATaskState.failed,
+        error: errorMessage,
+        history: newMessages,
+      };
+    }
+
+    return {
+      status: A2ATaskState.failed,
+      error: "No final task state received from streaming response",
+      history: newMessages,
+    };
+  }
+
   static async _try_recover_from_interruption(): Promise<A2ATaskStateResult | null> {
     await Promise.resolve();
     return null;
@@ -1041,6 +1144,14 @@ function isA2ATaskLike(value: unknown): value is A2ATaskLike {
 
 function formatA2AError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function isFinalStreamingUpdate(update: unknown): boolean {
+  if (!update || typeof update !== "object") {
+    return false;
+  }
+  const record = update as Record<string, unknown>;
+  return record.final === true || record.final_event === true || record.finalEvent === true;
 }
 
 async function sleepSeconds(seconds: number): Promise<void> {
