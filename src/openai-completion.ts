@@ -498,6 +498,40 @@ export class OpenAICompletion extends ConfiguredLLM {
     return this.convertToolsForResponses(tools);
   }
 
+  extractOpenAITokenUsage(response: unknown): Record<string, number> {
+    const usage = readObject(readObject(response).usage);
+    if (Object.keys(usage).length === 0) {
+      return { total_tokens: 0 };
+    }
+
+    const result: Record<string, number> = {
+      prompt_tokens: numberField(usage, "prompt_tokens"),
+      completion_tokens: numberField(usage, "completion_tokens"),
+      total_tokens: numberField(usage, "total_tokens"),
+    };
+    const promptDetails = readObject(usage.prompt_tokens_details);
+    if (Object.keys(promptDetails).length > 0) {
+      result.cached_prompt_tokens = numberField(promptDetails, "cached_tokens");
+    }
+    const completionDetails = readObject(usage.completion_tokens_details);
+    if (Object.keys(completionDetails).length > 0) {
+      result.reasoning_tokens = numberField(completionDetails, "reasoning_tokens");
+    }
+    return result;
+  }
+
+  _extract_openai_token_usage(response: unknown): Record<string, number> {
+    return this.extractOpenAITokenUsage(response);
+  }
+
+  static extractOpenAITokenUsage(response: unknown): Record<string, number> {
+    return new OpenAICompletion({ model: "gpt-4o" }).extractOpenAITokenUsage(response);
+  }
+
+  static extract_openai_token_usage(response: unknown): Record<string, number> {
+    return OpenAICompletion.extractOpenAITokenUsage(response);
+  }
+
   override supportsFunctionCalling(): boolean {
     return !this.isO1Model;
   }
@@ -678,4 +712,14 @@ function normalizeOpenAICompatibleBaseUrl(baseUrl: string, provider: string): st
     return `${trimmed}/v1`;
   }
   return trimmed;
+}
+
+function readObject(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+}
+
+function numberField(record: Record<string, unknown>, key: string): number {
+  return typeof record[key] === "number" ? record[key] : 0;
 }

@@ -8740,6 +8740,32 @@ describe("LLM providers", () => {
     });
   });
 
+  it("extracts OpenAI token usage from SDK response shapes", () => {
+    const openai = new OpenAICompletion({ model: "gpt-4o" });
+
+    expect((openai as unknown as {
+      _extract_openai_token_usage(response: unknown): Record<string, number>;
+    })._extract_openai_token_usage({
+      usage: {
+        prompt_tokens: 12,
+        completion_tokens: 8,
+        total_tokens: 20,
+        prompt_tokens_details: { cached_tokens: 5 },
+        completion_tokens_details: { reasoning_tokens: 3 },
+      },
+    })).toEqual({
+      prompt_tokens: 12,
+      completion_tokens: 8,
+      total_tokens: 20,
+      cached_prompt_tokens: 5,
+      reasoning_tokens: 3,
+    });
+
+    expect((openai as unknown as {
+      _extract_openai_token_usage(response: unknown): Record<string, number>;
+    })._extract_openai_token_usage({})).toEqual({ total_tokens: 0 });
+  });
+
   it("prepares Azure completion request parameters with model extras and endpoint rules", () => {
     const search = new StructuredTool({
       name: "search docs",
