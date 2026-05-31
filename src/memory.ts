@@ -1177,6 +1177,15 @@ export class Memory {
 
   reset(scope?: string | null): void {
     if (!scope) {
+      if (this.rootScope) {
+        const rootScope = normalize_scope_path(this.rootScope);
+        for (let index = this.records.length - 1; index >= 0; index -= 1) {
+          if (this.records[index]?.scope.startsWith(rootScope)) {
+            this.records.splice(index, 1);
+          }
+        }
+        return;
+      }
       this.records.length = 0;
       return;
     }

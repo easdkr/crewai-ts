@@ -11779,6 +11779,22 @@ describe("memory", () => {
     expect(() => memory.update("missing-record", { content: "Nope" })).toThrow("Record not found: missing-record");
   });
 
+  it("resets only the root scope when memory has an upstream root_scope", () => {
+    const memory = new Memory({ rootScope: "/root" });
+    memory.remember("Root memory", { scope: "/alpha" });
+    memory.update(new MemoryRecord({
+      id: "external",
+      content: "External memory",
+      scope: "/external",
+    }));
+
+    memory.reset();
+
+    expect(memory.allRecords().map((record) => record.content)).toEqual(["External memory"]);
+    expect(memory.list_records()).toEqual([]);
+    expect(memory.list_records("/external")).toEqual([]);
+  });
+
   it("uses configured memory LLM for async extraction and falls back safely", async () => {
     const seen: string[] = [];
     const memory = new Memory({
