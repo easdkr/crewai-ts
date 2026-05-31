@@ -7361,6 +7361,33 @@ describe("RAG configuration and factories", () => {
     fetchMock.mockRestore();
   });
 
+  it("calls Amazon Bedrock runtime clients for Bedrock embeddings", async () => {
+    const invokeModel = vi.fn((input: Record<string, unknown>) => ({
+      body: JSON.stringify({ embedding: [String(input.body).length, 9] }),
+    }));
+    const session = {
+      client: vi.fn(() => ({ invokeModel })),
+    };
+
+    const bedrockEmbedder = new BedrockProvider({
+      model_name: "amazon.titan-embed-text-v2:0",
+      session,
+    }).build();
+
+    await expect(bedrockEmbedder(["first", "second"])).resolves.toEqual([[21, 9], [22, 9]]);
+    expect(session.client).toHaveBeenCalledWith("bedrock-runtime");
+    expect(invokeModel).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      modelId: "amazon.titan-embed-text-v2:0",
+      accept: "application/json",
+      contentType: "application/json",
+      body: JSON.stringify({ inputText: "first" }),
+    }));
+    expect(invokeModel).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      modelId: "amazon.titan-embed-text-v2:0",
+      body: JSON.stringify({ inputText: "second" }),
+    }));
+  });
+
   it("calls Cohere's embeddings API for Cohere providers", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
       ok: true,

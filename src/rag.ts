@@ -226,6 +226,17 @@ export const BedrockProviderSpec = providerSpecMarker("BedrockProviderSpec");
 export function create_aws_session(): unknown {
   return {};
 }
+type BedrockInvokeResult = {
+  body?: unknown;
+  Body?: unknown;
+};
+type BedrockRuntimeClient = {
+  invokeModel?: (input: Record<string, unknown>) => Promise<BedrockInvokeResult> | BedrockInvokeResult;
+  invoke_model?: (input: Record<string, unknown>) => Promise<BedrockInvokeResult> | BedrockInvokeResult;
+};
+type BedrockSessionLike = BedrockRuntimeClient & {
+  client?: (serviceName: string) => BedrockRuntimeClient;
+};
 export class BedrockProvider {
   readonly provider = "amazon-bedrock";
   readonly model_name: string;
@@ -237,8 +248,87 @@ export class BedrockProvider {
   }
 
   build(): TypedEmbeddingFunction {
-    return defaultEmbeddingCallable;
+    const callable: TypedEmbeddingFunction = (input: Embeddable) => this.embed(input);
+    callable.embedQuery = callable;
+    callable.embed_query = callable;
+    return callable;
   }
+
+  private async embed(input: Embeddable): Promise<Embeddings> {
+    const values = Array.isArray(input) ? input.map((value) => String(value)) : [String(input)];
+    const client = resolveBedrockRuntimeClient(this.session);
+    const embeddings: Embedding[] = [];
+    for (const value of values) {
+      const response = await invokeBedrockModel(client, {
+        body: JSON.stringify({ inputText: value }),
+        Body: JSON.stringify({ inputText: value }),
+        modelId: this.model_name,
+        accept: "application/json",
+        contentType: "application/json",
+      });
+      embeddings.push(extractBedrockEmbedding(await readBedrockBody(response.body ?? response.Body)));
+    }
+    return embeddings;
+  }
+}
+
+function resolveBedrockRuntimeClient(session: unknown): BedrockRuntimeClient {
+  if (isBedrockRuntimeClient(session)) {
+    return session;
+  }
+  if (isRecord(session) && typeof session.client === "function") {
+    const client = (session as BedrockSessionLike).client?.("bedrock-runtime");
+    if (isBedrockRuntimeClient(client)) {
+      return client;
+    }
+  }
+  throw new Error("Amazon Bedrock embeddings require a session with invokeModel or client('bedrock-runtime').");
+}
+
+function isBedrockRuntimeClient(value: unknown): value is BedrockRuntimeClient {
+  return isRecord(value) && (typeof value.invokeModel === "function" || typeof value.invoke_model === "function");
+}
+
+async function invokeBedrockModel(client: BedrockRuntimeClient, input: Record<string, unknown>): Promise<BedrockInvokeResult> {
+  if (client.invokeModel) {
+    return client.invokeModel(input);
+  }
+  if (client.invoke_model) {
+    return client.invoke_model(input);
+  }
+  throw new Error("Amazon Bedrock runtime client does not provide invokeModel.");
+}
+
+async function readBedrockBody(body: unknown): Promise<unknown> {
+  if (typeof body === "string") {
+    return JSON.parse(body);
+  }
+  if (body instanceof Uint8Array) {
+    return JSON.parse(new TextDecoder().decode(body));
+  }
+  if (isRecord(body) && typeof body.transformToString === "function") {
+    return JSON.parse(await (body.transformToString as () => Promise<string> | string)());
+  }
+  if (isRecord(body) && typeof body.text === "function") {
+    return JSON.parse(await (body.text as () => Promise<string> | string)());
+  }
+  if (isRecord(body)) {
+    return body;
+  }
+  throw new Error("Amazon Bedrock response did not include a readable body.");
+}
+
+function extractBedrockEmbedding(payload: unknown): Embedding {
+  if (isRecord(payload) && isNumberArray(payload.embedding)) {
+    return payload.embedding;
+  }
+  if (isRecord(payload) && isNumberArray(payload.vector)) {
+    return payload.vector;
+  }
+  if (isRecord(payload) && Array.isArray(payload.embeddings) && isNumberArray(payload.embeddings[0])) {
+    return payload.embeddings[0];
+  }
+  throw new Error("Amazon Bedrock embeddings response did not include an embedding.");
 }
 
 export type CohereProviderConfig = { api_key?: string; model_name?: string };
