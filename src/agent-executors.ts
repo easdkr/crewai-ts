@@ -6,6 +6,7 @@ import { AgentAction, AgentFinish, parseAgentOutput } from "./agent-parser.js";
 import { Converter } from "./converter.js";
 import { UsageMetrics } from "./llm.js";
 import { StepExecutionContext, StepResult } from "./step-execution-context.js";
+import { sanitizeToolName } from "./tools.js";
 import type { LLMMessage, MaybePromise, Tool } from "./types.js";
 
 export const ACTION_INPUT_REGEX = /Action\s*\d*\s*:\s*(.*?)\s*Action\s*\d*\s*Input\s*\d*\s*:\s*(.*)/s;
@@ -894,15 +895,93 @@ export class CrewAgentExecutor extends BaseAgentExecutor {
 export type StepExecutorOptions = {
   agent?: Agent | null;
   tools?: readonly Tool[];
+  availableFunctions?: Record<string, unknown>;
+  available_functions?: Record<string, unknown>;
 };
 
 export class StepExecutor {
   readonly agent: Agent | null;
   readonly tools: readonly Tool[];
+  readonly availableFunctions: Record<string, unknown>;
+  readonly available_functions: Record<string, unknown>;
 
   constructor(options: StepExecutorOptions = {}) {
     this.agent = options.agent ?? null;
     this.tools = options.tools ?? this.agent?.tools ?? [];
+    this.availableFunctions = options.availableFunctions ?? options.available_functions ?? {};
+    this.available_functions = this.availableFunctions;
+  }
+
+  _parse_tool_args(toolInput: unknown): Record<string, unknown> {
+    if (toolInput && typeof toolInput === "object" && !Array.isArray(toolInput)) {
+      return toolInput as Record<string, unknown>;
+    }
+    if (typeof toolInput === "string") {
+      const strippedInput = toolInput.trim();
+      if (!strippedInput) {
+        return {};
+      }
+      try {
+        const parsed = JSON.parse(strippedInput) as unknown;
+        return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+          ? parsed as Record<string, unknown>
+          : { input: parsed };
+      } catch {
+        return { input: strippedInput };
+      }
+    }
+    return { input: String(toolInput) };
+  }
+
+  static _parse_vision_sentinel(raw: string): [string, string] | null {
+    const prefix = "VISION_IMAGE:";
+    if (!raw.startsWith(prefix)) {
+      return null;
+    }
+    const rest = raw.slice(prefix.length);
+    const separator = rest.indexOf(":");
+    if (separator <= 0) {
+      return null;
+    }
+    return [rest.slice(0, separator), rest.slice(separator + 1)];
+  }
+
+  static _build_observation_message(toolResult: string): LLMMessage {
+    const parsed = StepExecutor._parse_vision_sentinel(toolResult);
+    if (parsed) {
+      const [mediaType, base64Data] = parsed;
+      return {
+        role: "user",
+        content: [
+          { type: "text", text: "Observation: Here is the image:" },
+          { type: "image_url", image_url: { url: `data:${mediaType};base64,${base64Data}` } },
+        ],
+      } as unknown as LLMMessage;
+    }
+    return { role: "user", content: `Observation: ${toolResult}` };
+  }
+
+  _build_observation_message(toolResult: string): LLMMessage {
+    return StepExecutor._build_observation_message(toolResult);
+  }
+
+  _validate_expected_tool_usage(todo: TodoItem, toolCallsMade: readonly string[]): void {
+    const expectedTool = todo.toolToUse ?? todo.tool_to_use;
+    if (!expectedTool) {
+      return;
+    }
+    const expectedToolName = sanitizeToolName(expectedTool);
+    const availableToolNames = new Set([
+      ...this.tools.map((tool) => sanitizeToolName(tool.name)),
+      ...Object.keys(this.availableFunctions).map((name) => sanitizeToolName(name)),
+    ]);
+    if (!availableToolNames.has(expectedToolName)) {
+      return;
+    }
+    const calledToolNames = new Set(toolCallsMade.map((name) => sanitizeToolName(name)));
+    if (!calledToolNames.has(expectedToolName)) {
+      throw new Error(`Expected tool '${expectedToolName}' was not used during step execution`);
+    }
   }
 
   async executeStep(step: string, context: StepExecutionContext = new StepExecutionContext({})): Promise<StepResult> {

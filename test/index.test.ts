@@ -8291,6 +8291,41 @@ describe("core crew runtime", () => {
     expect(prompts[0]).toContain("Collect pricing facts");
   });
 
+  it("exposes upstream StepExecutor parsing and observation helpers", () => {
+    const searchTool = new StructuredTool({
+      name: "Search Tool",
+      description: "Search",
+      func: () => "ok",
+    });
+    const executor = new StepExecutor({
+      tools: [searchTool],
+      available_functions: { lookup: () => "ok" },
+    });
+
+    expect(executor._parse_tool_args({ query: "CrewAI" })).toEqual({ query: "CrewAI" });
+    expect(executor._parse_tool_args("{\"query\":\"CrewAI\"}")).toEqual({ query: "CrewAI" });
+    expect(executor._parse_tool_args("plain text")).toEqual({ input: "plain text" });
+    expect(StepExecutor._parse_vision_sentinel("VISION_IMAGE:image/png:abc123")).toEqual(["image/png", "abc123"]);
+    expect(StepExecutor._parse_vision_sentinel("not an image")).toBeNull();
+    expect(StepExecutor._build_observation_message("done")).toEqual({ role: "user", content: "Observation: done" });
+    expect(StepExecutor._build_observation_message("VISION_IMAGE:image/png:abc123")).toEqual({
+      role: "user",
+      content: [
+        { type: "text", text: "Observation: Here is the image:" },
+        { type: "image_url", image_url: { url: "data:image/png;base64,abc123" } },
+      ],
+    });
+    expect(() => {
+      executor._validate_expected_tool_usage(new TodoItem({ description: "Search", tool_to_use: "Search Tool" }), []);
+    }).toThrow("Expected tool 'search_tool'");
+    expect(() => {
+      executor._validate_expected_tool_usage(new TodoItem({ description: "Search", tool_to_use: "Search Tool" }), ["search_tool"]);
+    }).not.toThrow();
+    expect(() => {
+      executor._validate_expected_tool_usage(new TodoItem({ description: "Lookup", tool_to_use: "lookup" }), ["lookup"]);
+    }).not.toThrow();
+  });
+
   it("exposes upstream Agent and BaseAgent compatibility methods", async () => {
     const knowledge = new Knowledge({
       sources: [new StringKnowledgeSource("CrewAI agents can use knowledge.")],
