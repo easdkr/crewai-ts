@@ -117,9 +117,20 @@ export class LockedDictProxy<TValue extends Record<string, unknown> = Record<str
     return Object.hasOwn(this.value, key) ? this.value[key] : defaultValue;
   }
 
+  __getitem__(key: string): unknown {
+    if (!Object.hasOwn(this.value, key)) {
+      throw new Error(`Key not found: ${key}`);
+    }
+    return this.value[key];
+  }
+
   set(key: string, value: unknown): this {
     this.value[key as keyof TValue] = value as TValue[keyof TValue];
     return this;
+  }
+
+  __setitem__(key: string, value: unknown): void {
+    this.set(key, value);
   }
 
   delete(key: string): boolean {
@@ -128,8 +139,18 @@ export class LockedDictProxy<TValue extends Record<string, unknown> = Record<str
     return existed;
   }
 
+  __delitem__(key: string): void {
+    if (!this.delete(key)) {
+      throw new Error(`Key not found: ${key}`);
+    }
+  }
+
   has(key: string): boolean {
     return Object.hasOwn(this.value, key);
+  }
+
+  __contains__(key: string): boolean {
+    return this.has(key);
   }
 
   update(values: Record<string, unknown>): this {
@@ -186,6 +207,10 @@ export class LockedDictProxy<TValue extends Record<string, unknown> = Record<str
     return this.entries();
   }
 
+  __iter__(): IterableIterator<string> {
+    return this.keys();
+  }
+
   toJSON(): TValue {
     return this.value;
   }
@@ -231,6 +256,18 @@ export class LockedListProxy<TValue = unknown> {
 
   at(index: number): TValue | undefined {
     return this.value.at(index);
+  }
+
+  __getitem__(index: number): TValue | undefined {
+    return this.value[index];
+  }
+
+  __setitem__(index: number, item: TValue): void {
+    this.value[index] = item;
+  }
+
+  __delitem__(index: number): void {
+    this.value.splice(index, 1);
   }
 
   push(...items: TValue[]): number {
@@ -317,6 +354,10 @@ export class LockedListProxy<TValue = unknown> {
     return this.value[Symbol.iterator]();
   }
 
+  __iter__(): IterableIterator<TValue> {
+    return this[Symbol.iterator]();
+  }
+
   toJSON(): TValue[] {
     return [...this.value];
   }
@@ -333,9 +374,17 @@ export class StateProxy<TState extends object = Record<string, unknown>> {
     return this.state[key];
   }
 
+  __getitem__(key: keyof TState): TState[keyof TState] {
+    return this.get(key);
+  }
+
   set<K extends keyof TState>(key: K, value: TState[K]): this {
     this.state[key] = value;
     return this;
+  }
+
+  __setitem__<K extends keyof TState>(key: K, value: TState[K]): void {
+    this.set(key, value);
   }
 
   delete(key: keyof TState): boolean {
@@ -344,8 +393,18 @@ export class StateProxy<TState extends object = Record<string, unknown>> {
     return existed;
   }
 
+  __delitem__(key: keyof TState): void {
+    if (!this.delete(key)) {
+      throw new Error(`Key not found: ${String(key)}`);
+    }
+  }
+
   has(key: keyof TState): boolean {
     return Object.hasOwn(this.state, key);
+  }
+
+  __contains__(key: keyof TState): boolean {
+    return this.has(key);
   }
 
   list<TItem = unknown>(key: keyof TState): LockedListProxy<TItem> {
@@ -374,6 +433,10 @@ export class StateProxy<TState extends object = Record<string, unknown>> {
 
   model_dump(): TState {
     return this.modelDump();
+  }
+
+  _unwrap(): TState {
+    return this.state;
   }
 }
 

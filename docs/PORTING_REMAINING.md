@@ -11,7 +11,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `npm run lint`
   - `npm run smoke:pack`
   - `python3 scripts/check-export-parity.py`
-- Test suite: 475 passing tests.
+- Test suite: 476 passing tests.
 - Root export parity against upstream clone `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `5cdc420`: `total_missing=0`.
 - Public method parity has been tightened for core runtime classes:
   - `ConsoleFormatter`: `missing=0`
@@ -102,6 +102,7 @@ When more goal budget is available, continue from the behavioral parity audits b
   - runtime checkpoint serialization of completed methods, method outputs/counts, and flow state
   - `LockedListProxy`, `LockedDictProxy`, and `StateProxy` mutation helpers backed by the original state values
   - `LockedListProxy` / `LockedDictProxy` now expose upstream-style collection helpers such as `append`, `insert`, `remove`, `count`, `sort`, `reverse`, `copy`, `pop`, `setdefault`, and `items`
+  - `LockedListProxy`, `LockedDictProxy`, and `StateProxy` now expose upstream-style dunder item, containment, iteration, and unwrap helpers for Python-port state code.
   - `RuntimeState.afrom_checkpoint` / `afromCheckpoint` and `StateProxy.model_dump` / `modelDump` aliases now mirror upstream async checkpoint restore and state dump helpers
   - `Flow.pending_feedback`, `Flow.method_outputs`, and `Flow.flow_id` now expose upstream snake_case property aliases.
   - `Flow.model_post_init` now exposes the upstream post-init hook, emits `flow_created` idempotently, and preserves explicit disabled-memory configuration.

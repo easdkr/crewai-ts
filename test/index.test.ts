@@ -9917,6 +9917,33 @@ describe("flow runtime", () => {
     expect(dictSource).toEqual({ a: 1, c: 3 });
   });
 
+  it("exposes upstream dunder item helpers on locked flow proxies", () => {
+    const listSource = ["a", "b"];
+    const list = new LockedListProxy(listSource);
+    expect(list.__getitem__(1)).toBe("b");
+    list.__setitem__(1, "B");
+    expect([...list.__iter__()]).toEqual(["a", "B"]);
+    list.__delitem__(0);
+    expect(listSource).toEqual(["B"]);
+
+    const dictSource = { a: 1, b: 2 };
+    const dict = new LockedDictProxy(dictSource);
+    expect(dict.__getitem__("a")).toBe(1);
+    dict.__setitem__("c", 3);
+    expect([...dict.__iter__()]).toEqual(["a", "b", "c"]);
+    dict.__delitem__("b");
+    expect(dictSource).toEqual({ a: 1, c: 3 });
+
+    const state = { items: [1], meta: { a: 1 }, done: false };
+    const proxy = new StateProxy(state);
+    expect(proxy.__getitem__("done")).toBe(false);
+    proxy.__setitem__("done", true);
+    expect(proxy.__contains__("done")).toBe(true);
+    proxy.__delitem__("meta");
+    expect(proxy._unwrap()).toBe(state);
+    expect(state).toEqual({ items: [1], done: true });
+  });
+
   it("emits flow and method execution lifecycle events", async () => {
     class EventFlow extends Flow<{ value?: string }> {
       begin() {
