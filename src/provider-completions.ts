@@ -240,7 +240,7 @@ export class AnthropicCompletion extends ConfiguredLLM {
 
   static extractAnthropicTokenUsage(response: unknown): Record<string, number> {
     const usage = readObject(readObject(response).usage);
-    if (Object.keys(usage).length === 0) {
+    if (!hasNumericField(usage, "input_tokens", "output_tokens")) {
       return { total_tokens: 0 };
     }
     const inputTokens = numberField(usage, "input_tokens");
@@ -360,7 +360,7 @@ export class AnthropicCompletion extends ConfiguredLLM {
       this._previous_thinking_blocks = this.previousThinkingBlocks;
     }
 
-    if (Object.keys(readObject(readObject(finalMessage).usage)).length > 0) {
+    if (hasNumericField(readObject(readObject(finalMessage).usage), "input_tokens", "output_tokens")) {
       usage = this.extractAnthropicTokenUsage(finalMessage);
       this.trackTokenUsageInternal(usage);
     }
@@ -1414,7 +1414,7 @@ export class GeminiCompletion extends ConfiguredLLM {
 
   static extractTokenUsage(response: unknown): Record<string, number> {
     const usage = readObject(readObject(response).usage_metadata);
-    if (Object.keys(usage).length === 0) {
+    if (!hasNumericField(usage, "prompt_token_count", "candidates_token_count", "total_token_count")) {
       return { total_tokens: 0 };
     }
     const candidatesTokens = numberField(usage, "candidates_token_count");
@@ -1619,7 +1619,8 @@ export class GeminiCompletion extends ConfiguredLLM {
     for (const rawChunk of chunks) {
       const chunk = readObject(rawChunk);
       responseId = scalarToString(chunk.response_id ?? chunk.responseId) ?? responseId;
-      if (Object.keys(readObject(chunk.usage_metadata ?? chunk.usageMetadata)).length > 0) {
+      const usageMetadata = readObject(chunk.usage_metadata ?? chunk.usageMetadata);
+      if (hasNumericField(usageMetadata, "prompt_token_count", "candidates_token_count", "total_token_count")) {
         usage = GeminiCompletion.extractTokenUsage(chunk);
       }
 
@@ -2119,6 +2120,10 @@ function readObject(value: unknown): Record<string, unknown> {
 function numberField(record: Record<string, unknown>, field: string): number {
   const value = record[field];
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function hasNumericField(record: Record<string, unknown>, ...fields: string[]): boolean {
+  return fields.some((field) => typeof record[field] === "number" && Number.isFinite(record[field]));
 }
 
 function addGeminiPropertyOrdering(schema: Record<string, unknown>): void {

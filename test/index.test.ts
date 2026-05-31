@@ -10445,6 +10445,23 @@ describe("LLM providers", () => {
   });
 
   it("extracts Anthropic token usage from SDK response shapes", () => {
+    class AnthropicUsage {
+      get input_tokens(): number {
+        return 14;
+      }
+
+      get output_tokens(): number {
+        return 6;
+      }
+
+      get cache_read_input_tokens(): number {
+        return 4;
+      }
+
+      get cache_creation_input_tokens(): number {
+        return 3;
+      }
+    }
     expect(AnthropicCompletion._extract_anthropic_token_usage({
       usage: {
         input_tokens: 14,
@@ -10452,6 +10469,15 @@ describe("LLM providers", () => {
         cache_read_input_tokens: 4,
         cache_creation_input_tokens: 3,
       },
+    })).toEqual({
+      input_tokens: 14,
+      output_tokens: 6,
+      total_tokens: 20,
+      cached_prompt_tokens: 4,
+      cache_creation_tokens: 3,
+    });
+    expect(AnthropicCompletion._extract_anthropic_token_usage({
+      usage: new AnthropicUsage(),
     })).toEqual({
       input_tokens: 14,
       output_tokens: 6,
@@ -10799,6 +10825,27 @@ describe("LLM providers", () => {
   });
 
   it("exposes Gemini completion provider parity helpers", () => {
+    class GeminiUsageMetadata {
+      get prompt_token_count(): number {
+        return 10;
+      }
+
+      get candidates_token_count(): number {
+        return 7;
+      }
+
+      get thoughts_token_count(): number {
+        return 3;
+      }
+
+      get total_token_count(): number {
+        return 20;
+      }
+
+      get cached_content_token_count(): number {
+        return 2;
+      }
+    }
     const gemini = new GeminiCompletion({
       model: "gemini-2.5-pro",
       api_key: "gemini-key",
@@ -10835,6 +10882,17 @@ describe("LLM providers", () => {
         total_token_count: 20,
         cached_content_token_count: 2,
       },
+    })).toEqual({
+      prompt_token_count: 10,
+      candidates_token_count: 7,
+      completion_tokens: 10,
+      total_token_count: 20,
+      total_tokens: 20,
+      cached_prompt_tokens: 2,
+      reasoning_tokens: 3,
+    });
+    expect(GeminiCompletion.extract_token_usage({
+      usage_metadata: new GeminiUsageMetadata(),
     })).toEqual({
       prompt_token_count: 10,
       candidates_token_count: 7,
