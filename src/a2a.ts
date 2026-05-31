@@ -2863,7 +2863,7 @@ export class A2AClientConfig {
     this.fail_fast = this.failFast;
     this.trustRemoteCompletionStatus = options.trustRemoteCompletionStatus ?? options.trust_remote_completion_status ?? false;
     this.trust_remote_completion_status = this.trustRemoteCompletionStatus;
-    this.updates = options.updates ?? null;
+    this.updates = options.updates ?? new StreamingConfig();
     this.acceptedOutputModes = [...(options.acceptedOutputModes ?? options.accepted_output_modes ?? ["application/json"])];
     this.accepted_output_modes = this.acceptedOutputModes;
     this.extensions = [...(options.extensions ?? [])];

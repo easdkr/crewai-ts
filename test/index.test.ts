@@ -2935,6 +2935,7 @@ describe("a2a utilities", () => {
     expect(client.failFast).toBe(false);
     expect(client.transport.preferred).toBe(A2ATransport.GRPC);
     expect(client.transport.supported).toEqual([A2ATransport.GRPC, A2ATransport.HTTP_JSON]);
+    expect(new A2AClientConfig({ endpoint: "https://remote.example.com/a2a" }).updates).toBeInstanceOf(StreamingConfig);
     expect(server.endpoint).toBe("http://localhost:9000");
     expect(server.transport.preferred).toBe(A2ATransport.GRPC);
     expect(server.transport.grpc?.reflection_enabled).toBe(true);
