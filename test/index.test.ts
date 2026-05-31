@@ -257,6 +257,7 @@ import {
   KickoffTaskOutputsSQLiteStorage,
   CacheHandler,
   CacheTools,
+  AddImageTool,
   CrewStructuredTool,
   EnvVar,
   SourceHelper,
@@ -7389,8 +7390,19 @@ describe("core crew runtime", () => {
     expect(agentInstance.get_delegation_tools()).toEqual([]);
     expect(agentInstance.get_platform_tools()).toEqual([]);
     expect(agentInstance.get_mcp_tools()).toEqual([]);
-    expect(agentInstance.get_multimodal_tools()).toEqual([]);
-    expect(agentInstance.get_code_execution_tools()).toEqual([]);
+    const multimodalTools = agentInstance.get_multimodal_tools();
+    expect(multimodalTools).toHaveLength(1);
+    expect(multimodalTools[0]).toBeInstanceOf(AddImageTool);
+    const warningSpy = vi.spyOn(process, "emitWarning").mockImplementation(() => undefined);
+    try {
+      expect(agentInstance.get_code_execution_tools()).toEqual([]);
+      expect(warningSpy).toHaveBeenCalledWith(
+        "CodeInterpreterTool is no longer available. Use dedicated sandbox services like E2B or Modal.",
+        "DeprecationWarning",
+      );
+    } finally {
+      warningSpy.mockRestore();
+    }
     expect(agentInstance.get_output_converter()).toBeNull();
 
     const output = await agentInstance.execute_task("Summarize CrewAI");

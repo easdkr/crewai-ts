@@ -14,6 +14,7 @@ import {
 } from "./agent-planning.js";
 import {
   buildToolContext,
+  AddImageTool,
   CacheHandler,
   normalizeToolCalling,
   renderToolsDescription,
@@ -646,7 +647,7 @@ export class Agent {
   }
 
   getMultimodalTools(): readonly Tool[] {
-    return [];
+    return [new AddImageTool()];
   }
 
   get_multimodal_tools(): readonly Tool[] {
@@ -654,6 +655,10 @@ export class Agent {
   }
 
   getCodeExecutionTools(): readonly Tool[] {
+    process.emitWarning(
+      "CodeInterpreterTool is no longer available. Use dedicated sandbox services like E2B or Modal.",
+      "DeprecationWarning",
+    );
     return [];
   }
 
