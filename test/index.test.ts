@@ -209,6 +209,9 @@ import {
   ToolsHandler,
   GoalAlignmentEvaluator,
   EvaluationDisplayFormatter,
+  ExperimentResult,
+  ExperimentResults,
+  ExperimentResultsDisplay,
   create_evaluation_callbacks,
   ToolSelectionEvaluator,
   __version__,
@@ -3186,6 +3189,39 @@ describe("evaluator utilities", () => {
       score: 6,
       feedback: "Feedback 1: usable but terse\n\nFeedback 2: not applicable",
     });
+  });
+
+  it("formats experiment result summaries and comparison summaries", () => {
+    const printed: string[] = [];
+    const display = new ExperimentResultsDisplay({
+      console: { print: (value: unknown) => printed.push(String(value)) },
+    });
+    const experimentResults = new ExperimentResults([
+      new ExperimentResult({ identifier: "case-1", score: 1, expected_score: 1 }),
+      new ExperimentResult({ identifier: "case-2", score: 0, expected_score: 1 }),
+    ]);
+
+    const summary = display.summary(experimentResults);
+    const comparison = display.comparison_summary({
+      improved: ["case-1", "case-2", "case-3", "case-4"],
+      regressed: ["case-5"],
+      unchanged: ["case-6", "case-7"],
+      new_tests: ["case-8"],
+      missing_tests: ["case-9"],
+    }, "2026-05-31T00:00:00.000Z");
+
+    expect(summary).toContain("Experiment Summary");
+    expect(summary).toContain("Total Test Cases: 2");
+    expect(summary).toContain("Passed: 1");
+    expect(summary).toContain("Failed: 1");
+    expect(summary).toContain("Success Rate: 50.0%");
+    expect(comparison).toContain("Comparison with baseline run from 2026-05-31T00:00:00.000Z");
+    expect(comparison).toContain("Improved: 4 - case-1, case-2, case-3 and 1 more");
+    expect(comparison).toContain("Regressed: 1 - case-5");
+    expect(comparison).toContain("Unchanged: 2");
+    expect(comparison).toContain("New Tests: 1 - case-8");
+    expect(comparison).toContain("Missing Tests: 1 - case-9");
+    expect(printed).toEqual([summary, comparison]);
   });
 
   it("emits agent evaluation lifecycle events for metric evaluators", () => {

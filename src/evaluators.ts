@@ -839,6 +839,72 @@ export class ExperimentResults {
   }
 }
 
+export type ExperimentResultsDisplayConsole = {
+  print?: (value: string) => void;
+  log?: (value: string) => void;
+};
+
+export class ExperimentResultsDisplay {
+  readonly console: ExperimentResultsDisplayConsole;
+
+  constructor(options: { console?: ExperimentResultsDisplayConsole } = {}) {
+    this.console = options.console ?? globalThis.console;
+  }
+
+  summary(experiment_results: ExperimentResults): string {
+    const total = experiment_results.results.length;
+    const passed = experiment_results.results.filter((result) => result.passed).length;
+    const failed = total - passed;
+    const successRate = total > 0 ? `${(passed / total * 100).toFixed(1)}%` : "N/A";
+    const output = [
+      "Experiment Summary",
+      `Total Test Cases: ${String(total)}`,
+      `Passed: ${String(passed)}`,
+      `Failed: ${String(failed)}`,
+      `Success Rate: ${successRate}`,
+    ].join("\n");
+    this.print(output);
+    return output;
+  }
+
+  comparison_summary(comparison: Record<string, unknown>, baseline_timestamp: string): string {
+    const lines = [
+      `Comparison with baseline run from ${baseline_timestamp}`,
+      "Results Comparison",
+      this.formatComparisonRow("Improved", comparison.improved),
+      this.formatComparisonRow("Regressed", comparison.regressed),
+      this.formatComparisonRow("Unchanged", comparison.unchanged),
+    ];
+    if (asStringArray(comparison.new_tests).length > 0) {
+      lines.push(this.formatComparisonRow("New Tests", comparison.new_tests));
+    }
+    if (asStringArray(comparison.missing_tests).length > 0) {
+      lines.push(this.formatComparisonRow("Missing Tests", comparison.missing_tests));
+    }
+    const output = lines.join("\n");
+    this.print(output);
+    return output;
+  }
+
+  comparisonSummary(comparison: Record<string, unknown>, baselineTimestamp: string): string {
+    return this.comparison_summary(comparison, baselineTimestamp);
+  }
+
+  private formatComparisonRow(label: string, values: unknown): string {
+    const items = asStringArray(values);
+    const details = summarizeExperimentIdentifiers(items);
+    return details ? `${label}: ${String(items.length)} - ${details}` : `${label}: ${String(items.length)}`;
+  }
+
+  private print(value: string): void {
+    if (typeof this.console.print === "function") {
+      this.console.print(value);
+      return;
+    }
+    this.console.log?.(value);
+  }
+}
+
 export function assert_experiment_no_regression(comparison_result: Record<string, readonly string[]>): void {
   const regressed = comparison_result.regressed ?? [];
   if (regressed.length > 0) {
@@ -861,6 +927,18 @@ export function run_experiment(dataset: readonly Record<string, unknown>[]): Exp
     score: typeof row.score === "number" ? row.score : 1,
     expected_score: typeof row.expected_score === "number" ? row.expected_score : 1,
   })));
+}
+
+function asStringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.map((item) => String(item)) : [];
+}
+
+function summarizeExperimentIdentifiers(items: readonly string[]): string {
+  if (items.length === 0) {
+    return "";
+  }
+  const details = items.slice(0, 3).join(", ");
+  return items.length > 3 ? `${details} and ${String(items.length - 3)} more` : details;
 }
 
 export type Entity = {

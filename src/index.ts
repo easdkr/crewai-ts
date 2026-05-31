@@ -762,6 +762,7 @@ export {
   ExecutionState,
   ExperimentResult,
   ExperimentResults,
+  ExperimentResultsDisplay,
   GoalAlignmentEvaluator,
   MetricCategory,
   ParameterExtractionEvaluator,
@@ -2532,10 +2533,6 @@ export function extract_json_from_llm_response(text: string): unknown {
 
 export class ExperimentRunner {
   readonly kind = "ExperimentRunner";
-}
-
-export class ExperimentResultsDisplay {
-  readonly kind = "ExperimentResultsDisplay";
 }
 
 
