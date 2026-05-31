@@ -3257,15 +3257,15 @@ describe("a2a utilities", () => {
     expect(SCHEMA_NAMES.has("server_to_client")).toBe(true);
     expect(V09_SCHEMA_NAMES.has("basic_catalog")).toBe(true);
     expect(load_schema("server_to_client")).toMatchObject({
-      title: "v0.8 server_to_client",
-      "x-crewai-ts-schema-name": "server_to_client",
-      "x-crewai-ts-schema-version": "v0.8",
+      title: "A2UI Message Schema",
+      additionalProperties: false,
     });
+    expect(load_schema("server_to_client").properties).toHaveProperty("beginRendering");
     expect(load_schema("basic_catalog", { version: "v0.9" })).toMatchObject({
-      title: "v0.9 basic_catalog",
-      "x-crewai-ts-schema-name": "basic_catalog",
-      "x-crewai-ts-schema-version": "v0.9",
+      "$id": A2UI_V09_BASIC_CATALOG_ID,
+      title: "A2UI Basic Catalog",
     });
+    expect(load_schema("basic_catalog", { version: "v0.9" }).components).toHaveProperty("Text");
     expect(() => load_schema("missing")).toThrow("Unknown schema");
     expect(() => load_schema("server_to_client", { version: "v1" })).toThrow("Unknown version");
   });

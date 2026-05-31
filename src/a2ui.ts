@@ -1,3 +1,5 @@
+import { A2UI_SCHEMAS } from "./a2ui-schemas.js";
+
 export type A2UIRecord = Record<string, unknown>;
 
 export const SCHEMA_NAMES: ReadonlySet<string> = new Set([
@@ -32,7 +34,8 @@ export function load_schema(name: string, options: { version?: string } = {}): A
   if (cached) {
     return cached;
   }
-  const schema = buildA2UISchema(name, version);
+  const versionSchemas = A2UI_SCHEMAS[version as keyof typeof A2UI_SCHEMAS] as Record<string, unknown>;
+  const schema = cloneA2UISchema(versionSchemas[name]);
   schemaCache.set(cacheKey, schema);
   return schema;
 }
@@ -828,15 +831,8 @@ function snakeToCamelA2UI(value: string): string {
   return value.replaceAll(/_([a-z])/g, (_match, letter: string) => letter.toUpperCase());
 }
 
-function buildA2UISchema(name: string, version: string): A2UIRecord {
-  return {
-    "$schema": "https://json-schema.org/draft/2020-12/schema",
-    title: `${version} ${name}`,
-    type: "object",
-    additionalProperties: true,
-    "x-crewai-ts-schema-name": name,
-    "x-crewai-ts-schema-version": version,
-  };
+function cloneA2UISchema(schema: unknown): A2UIRecord {
+  return JSON.parse(JSON.stringify(schema)) as A2UIRecord;
 }
 
 function extractJsonObjectsWithKeys(text: string, keys: readonly string[]): A2UIRecord[] {
