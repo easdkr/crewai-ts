@@ -4542,6 +4542,36 @@ export function _extract_response_schema(parts: readonly unknown[]): Record<stri
   return null;
 }
 
+export function _create_file_parts(input_files: Record<string, { read?: () => Uint8Array | Buffer | string; content_type?: string | null; contentType?: string | null; filename?: string | null } | Uint8Array | Buffer | string> | null | undefined): Array<Record<string, unknown>> {
+  if (!input_files) {
+    return [];
+  }
+  return Object.entries(input_files).map(([name, fileInput], index) => {
+    const fileRecord = recordOrNullA2A(fileInput);
+    const read = fileRecord?.read;
+    const rawContent = typeof read === "function" ? (read as () => Uint8Array | Buffer | string)() : fileInput;
+    const content = typeof rawContent === "string" ? Buffer.from(rawContent) : Buffer.from(rawContent as Uint8Array);
+    return {
+      root: {
+        kind: "file",
+        file: {
+          bytes: content.toString("base64"),
+          mimeType: stringOrNull(fileRecord?.content_type) ?? stringOrNull(fileRecord?.contentType) ?? "application/octet-stream",
+          name: stringOrNull(fileRecord?.filename) ?? (name || `file_${String(index)}`),
+        },
+      },
+    };
+  });
+}
+
+export function _create_result_artifact(result: unknown, task_id: string): Record<string, unknown> {
+  const name = `result_${task_id}`;
+  if (recordOrNullA2A(result)) {
+    return { name, parts: [{ root: { kind: "data", data: result } }] };
+  }
+  return { name, parts: [{ root: { kind: "text", text: String(result) } }] };
+}
+
 export function _build_task_description(user_message: string, structured_inputs: readonly Record<string, unknown>[]): string {
   if (structured_inputs.length === 0) {
     return user_message;

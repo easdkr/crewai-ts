@@ -45,6 +45,8 @@ import {
   A2ATaskState,
   APIKeyAuth,
   _build_task_description,
+  _create_file_parts,
+  _create_result_artifact,
   _extract_response_schema,
   _parse_redis_url,
   Agent,
@@ -4061,6 +4063,30 @@ describe("a2a utilities", () => {
       "Structured Data:",
       JSON.stringify([{ topic: "CrewAI" }], null, 2),
     ].join("\n"));
+    expect(_create_file_parts({
+      notes: {
+        read: () => Buffer.from("CrewAI notes"),
+        content_type: "text/plain",
+        filename: "notes.txt",
+      },
+    })).toEqual([{
+      root: {
+        kind: "file",
+        file: {
+          bytes: Buffer.from("CrewAI notes").toString("base64"),
+          mimeType: "text/plain",
+          name: "notes.txt",
+        },
+      },
+    }]);
+    expect(_create_result_artifact({ answer: "ok" }, "task-1")).toEqual({
+      name: "result_task-1",
+      parts: [{ root: { kind: "data", data: { answer: "ok" } } }],
+    });
+    expect(_create_result_artifact("done", "task-2")).toEqual({
+      name: "result_task-2",
+      parts: [{ root: { kind: "text", text: "done" } }],
+    });
     expect(get_timestamp({ id: "task-1", status: { state: A2ATaskState.completed, timestamp: "2026-01-02T03:04:05Z" } }).toISOString())
       .toBe("2026-01-02T03:04:05.000Z");
   });

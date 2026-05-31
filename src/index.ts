@@ -156,6 +156,8 @@ export {
   extract_error_message,
   extract_task_result_parts,
   _build_task_description,
+  _create_file_parts,
+  _create_result_artifact,
   _extract_response_schema,
   getPartContentType,
   getServerInterfaces,
