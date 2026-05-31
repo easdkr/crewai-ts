@@ -452,13 +452,16 @@ import {
   HuggingFaceEmbeddingFunction,
   HuggingFaceProvider,
   InternalInstructor,
+  InstructorEmbeddingFunction,
   InstructorProvider,
   JinaEmbeddingFunction,
   JinaProvider,
   OllamaEmbeddingFunction,
   OllamaProvider,
+  ONNXMiniLM_L6_V2,
   ONNXProvider,
   OpenCLIPProvider,
+  OpenCLIPEmbeddingFunction,
   OPENAI_COMPATIBLE_PROVIDERS,
   OpenAIEmbeddingFunction,
   OpenAIProvider,
@@ -466,7 +469,9 @@ import {
   OpenAICompatibleCompletion,
   ProviderConfig,
   RoboflowEmbeddingFunction,
+  SentenceTransformerEmbeddingFunction,
   SentenceTransformerProvider,
+  Text2VecEmbeddingFunction,
   Text2VecProvider,
   VertexAIProvider,
   VoyageAIEmbeddingFunction,
@@ -7241,6 +7246,7 @@ describe("RAG configuration and factories", () => {
       device: "cpu",
       instruction: null,
     });
+    expect(InstructorEmbeddingFunction.name()).toBe("instructor");
     expect(jina).toMatchObject({
       provider: "jina",
       api_key: "jina-test",
@@ -7257,10 +7263,12 @@ describe("RAG configuration and factories", () => {
       checkpoint: "laion2b_s34b_b79k",
       device: "cpu",
     });
+    expect(OpenCLIPEmbeddingFunction.name()).toBe("openclip");
     expect(text2vec).toMatchObject({
       provider: "text2vec",
       model_name: "shibing624/text2vec-base-chinese",
     });
+    expect(Text2VecEmbeddingFunction.name()).toBe("text2vec");
     expect(generative).toMatchObject({
       provider: "google-generativeai",
       api_key: "google-test",
@@ -7280,12 +7288,14 @@ describe("RAG configuration and factories", () => {
       provider: "onnx",
       preferred_providers: null,
     });
+    expect(ONNXMiniLM_L6_V2.name()).toBe("onnx");
     expect(roboflow).toMatchObject({
       provider: "roboflow",
       api_key: "",
       api_url: "https://infer.roboflow.com",
     });
     expect(RoboflowEmbeddingFunction.name()).toBe("roboflow");
+    expect(SentenceTransformerEmbeddingFunction.name()).toBe("sentence-transformer");
     expect(watsonx).toMatchObject({
       provider: "watsonx",
       api_key: "watson-test",
@@ -7417,6 +7427,39 @@ describe("RAG configuration and factories", () => {
       },
       project_id: "project",
     });
+  });
+
+  it("calls injected local embedding runtimes for local Chroma-compatible providers", async () => {
+    const instructorRuntime = { encode: vi.fn(() => [[0.1, 0.2], [0.3, 0.4]]) };
+    const sentenceRuntime = { encode: vi.fn(() => [[1, 2]]) };
+    const text2vecRuntime = { encode: vi.fn(() => [[3, 4]]) };
+    const onnxRuntime = { embedDocuments: vi.fn(() => [[5, 6]]) };
+    const openClipRuntime = { embed: vi.fn(() => [[7, 8]]) };
+
+    await expect(new InstructorEmbeddingFunction({
+      instruction: "Represent the document:",
+      runtime: instructorRuntime,
+    }).__call__(["first", "second"])).resolves.toEqual([[0.1, 0.2], [0.3, 0.4]]);
+    expect(instructorRuntime.encode).toHaveBeenCalledWith([
+      ["Represent the document:", "first"],
+      ["Represent the document:", "second"],
+    ]);
+
+    await expect(new SentenceTransformerProvider({ model: sentenceRuntime }).build()(["sentence"]))
+      .resolves.toEqual([[1, 2]]);
+    expect(sentenceRuntime.encode).toHaveBeenCalledWith(["sentence"]);
+
+    await expect(new Text2VecProvider({ runtime: text2vecRuntime }).build()(["text"]))
+      .resolves.toEqual([[3, 4]]);
+    expect(text2vecRuntime.encode).toHaveBeenCalledWith(["text"]);
+
+    await expect(new ONNXProvider({ client: onnxRuntime }).build()(["onnx"]))
+      .resolves.toEqual([[5, 6]]);
+    expect(onnxRuntime.embedDocuments).toHaveBeenCalledWith(["onnx"]);
+
+    await expect(new OpenCLIPProvider({ runtime: openClipRuntime }).build()(["clip"]))
+      .resolves.toEqual([[7, 8]]);
+    expect(openClipRuntime.embed).toHaveBeenCalledWith(["clip"]);
   });
 
   it("calls Cohere's embeddings API for Cohere providers", async () => {

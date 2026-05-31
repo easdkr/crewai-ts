@@ -395,7 +395,17 @@ export const WatsonXProviderConfig = Object.freeze({ kind: "WatsonXProviderConfi
 export type WatsonXProviderSpec = BaseProviderSpec<"watsonx", WatsonXProviderConfig>;
 export const WatsonXProviderSpec = providerSpecMarker("WatsonXProviderSpec");
 
-export type InstructorProviderConfig = { model_name?: string; device?: string; instruction?: string };
+export type LocalEmbeddingRuntime = TypedEmbeddingFunction | Record<string, unknown>;
+export type InstructorProviderConfig = {
+  model_name?: string;
+  model?: string | LocalEmbeddingRuntime;
+  device?: string;
+  instruction?: string | null;
+  embeddingCallable?: TypedEmbeddingFunction;
+  embedding_callable?: TypedEmbeddingFunction;
+  runtime?: LocalEmbeddingRuntime;
+  client?: LocalEmbeddingRuntime;
+};
 export const InstructorProviderConfig = Object.freeze({ kind: "InstructorProviderConfig" });
 export type InstructorProviderSpec = BaseProviderSpec<"instructor", InstructorProviderConfig>;
 export const InstructorProviderSpec = providerSpecMarker("InstructorProviderSpec");
@@ -410,7 +420,14 @@ export const OllamaProviderConfig = Object.freeze({ kind: "OllamaProviderConfig"
 export type OllamaProviderSpec = BaseProviderSpec<"ollama", OllamaProviderConfig>;
 export const OllamaProviderSpec = providerSpecMarker("OllamaProviderSpec");
 
-export type ONNXProviderConfig = { preferred_providers?: readonly string[] };
+export type ONNXProviderConfig = {
+  preferred_providers?: readonly string[] | null;
+  embeddingCallable?: TypedEmbeddingFunction;
+  embedding_callable?: TypedEmbeddingFunction;
+  runtime?: LocalEmbeddingRuntime;
+  model?: LocalEmbeddingRuntime;
+  client?: LocalEmbeddingRuntime;
+};
 export const ONNXProviderConfig = Object.freeze({ kind: "ONNXProviderConfig" });
 export type ONNXProviderSpec = BaseProviderSpec<"onnx", ONNXProviderConfig>;
 export const ONNXProviderSpec = providerSpecMarker("ONNXProviderSpec");
@@ -430,7 +447,16 @@ export const OpenAIProviderConfig = Object.freeze({ kind: "OpenAIProviderConfig"
 export type OpenAIProviderSpec = BaseProviderSpec<"openai", OpenAIProviderConfig>;
 export const OpenAIProviderSpec = providerSpecMarker("OpenAIProviderSpec");
 
-export type OpenCLIPProviderConfig = { model_name?: string; checkpoint?: string; device?: string };
+export type OpenCLIPProviderConfig = {
+  model_name?: string;
+  model?: string | LocalEmbeddingRuntime;
+  checkpoint?: string;
+  device?: string;
+  embeddingCallable?: TypedEmbeddingFunction;
+  embedding_callable?: TypedEmbeddingFunction;
+  runtime?: LocalEmbeddingRuntime;
+  client?: LocalEmbeddingRuntime;
+};
 export const OpenCLIPProviderConfig = Object.freeze({ kind: "OpenCLIPProviderConfig" });
 export type OpenCLIPProviderSpec = BaseProviderSpec<"openclip", OpenCLIPProviderConfig>;
 export const OpenCLIPProviderSpec = providerSpecMarker("OpenCLIPProviderSpec");
@@ -442,14 +468,26 @@ export const RoboflowProviderSpec = providerSpecMarker("RoboflowProviderSpec");
 
 export type SentenceTransformerProviderConfig = {
   model_name?: string;
+  model?: string | LocalEmbeddingRuntime;
   device?: string;
   normalize_embeddings?: boolean;
+  embeddingCallable?: TypedEmbeddingFunction;
+  embedding_callable?: TypedEmbeddingFunction;
+  runtime?: LocalEmbeddingRuntime;
+  client?: LocalEmbeddingRuntime;
 };
 export const SentenceTransformerProviderConfig = Object.freeze({ kind: "SentenceTransformerProviderConfig" });
 export type SentenceTransformerProviderSpec = BaseProviderSpec<"sentence-transformer", SentenceTransformerProviderConfig>;
 export const SentenceTransformerProviderSpec = providerSpecMarker("SentenceTransformerProviderSpec");
 
-export type Text2VecProviderConfig = { model_name?: string };
+export type Text2VecProviderConfig = {
+  model_name?: string;
+  model?: string | LocalEmbeddingRuntime;
+  embeddingCallable?: TypedEmbeddingFunction;
+  embedding_callable?: TypedEmbeddingFunction;
+  runtime?: LocalEmbeddingRuntime;
+  client?: LocalEmbeddingRuntime;
+};
 export const Text2VecProviderConfig = Object.freeze({ kind: "Text2VecProviderConfig" });
 export type Text2VecProviderSpec = BaseProviderSpec<"text2vec", Text2VecProviderConfig>;
 export const Text2VecProviderSpec = providerSpecMarker("Text2VecProviderSpec");
@@ -1225,16 +1263,153 @@ export class WatsonXProvider extends BaseEmbeddingsProvider {
   }
 }
 
+type LocalEmbeddingInputMapper = (values: readonly string[]) => unknown;
+
+class RuntimeEmbeddingFunction {
+  readonly providerName: string;
+  readonly runtime: LocalEmbeddingRuntime | null;
+  readonly mapInput: LocalEmbeddingInputMapper;
+
+  constructor(options: {
+    providerName: string;
+    runtime?: LocalEmbeddingRuntime | null;
+    mapInput?: LocalEmbeddingInputMapper;
+  }) {
+    this.providerName = options.providerName;
+    this.runtime = options.runtime ?? null;
+    this.mapInput = options.mapInput ?? ((values) => values);
+  }
+
+  async call(input: Embeddable): Promise<Embeddings> {
+    const values = Array.isArray(input) ? input.map((value) => String(value)) : [String(input)];
+    if (!this.runtime) {
+      throw new Error(`${this.providerName} embedding runtime was not provided.`);
+    }
+    const result = await invokeLocalEmbeddingRuntime(this.runtime, this.mapInput(values), this.providerName);
+    return extractLocalRuntimeEmbeddings(result, this.providerName);
+  }
+
+  async __call__(input: Embeddable): Promise<Embeddings> {
+    return this.call(input);
+  }
+
+  asCallable(): TypedEmbeddingFunction {
+    const callable: TypedEmbeddingFunction = (input: Embeddable) => this.call(input);
+    callable.embedQuery = callable;
+    callable.embed_query = callable;
+    return callable;
+  }
+}
+
+function localEmbeddingRuntimeFrom(options: {
+  embeddingCallable?: TypedEmbeddingFunction;
+  embedding_callable?: TypedEmbeddingFunction;
+  runtime?: LocalEmbeddingRuntime;
+  model?: string | LocalEmbeddingRuntime;
+  client?: LocalEmbeddingRuntime;
+}): LocalEmbeddingRuntime | null {
+  if (options.embeddingCallable) {
+    return options.embeddingCallable;
+  }
+  if (options.embedding_callable) {
+    return options.embedding_callable;
+  }
+  if (options.runtime) {
+    return options.runtime;
+  }
+  if (isLocalEmbeddingRuntime(options.model)) {
+    return options.model;
+  }
+  if (options.client) {
+    return options.client;
+  }
+  return null;
+}
+
+function isLocalEmbeddingRuntime(value: unknown): value is LocalEmbeddingRuntime {
+  return typeof value === "function" || isRecord(value);
+}
+
+async function invokeLocalEmbeddingRuntime(
+  runtime: LocalEmbeddingRuntime,
+  input: unknown,
+  providerName: string,
+): Promise<unknown> {
+  if (typeof runtime === "function") {
+    return await (runtime as (value: unknown) => unknown)(input);
+  }
+  for (const method of ["embedDocuments", "embed_documents", "encode", "embed", "__call__", "call"]) {
+    const candidate = runtime[method];
+    if (typeof candidate === "function") {
+      return await candidate.call(runtime, input);
+    }
+  }
+  throw new Error(`${providerName} embedding runtime does not expose an embedding method.`);
+}
+
+function extractLocalRuntimeEmbeddings(payload: unknown, providerName: string): Embeddings {
+  if (isNumberArray(payload)) {
+    return [payload];
+  }
+  if (Array.isArray(payload) && payload.every(isNumberArray)) {
+    return payload;
+  }
+  if (isRecord(payload) && isNumberArray(payload.embedding)) {
+    return [payload.embedding];
+  }
+  if (isRecord(payload) && Array.isArray(payload.embeddings) && payload.embeddings.every(isNumberArray)) {
+    return payload.embeddings;
+  }
+  if (isRecord(payload) && isNumberArray(payload.vector)) {
+    return [payload.vector];
+  }
+  if (isRecord(payload) && Array.isArray(payload.data)) {
+    const embeddings = payload.data
+      .filter(isRecord)
+      .map((item) => item.embedding)
+      .filter(isNumberArray);
+    if (embeddings.length > 0) {
+      return embeddings;
+    }
+  }
+  throw new Error(`${providerName} embedding runtime did not return embeddings.`);
+}
+
+export class InstructorEmbeddingFunction extends RuntimeEmbeddingFunction {
+  readonly model_name: string;
+  readonly device: string;
+  readonly instruction: string | null;
+
+  constructor(options: InstructorProviderConfig = {}) {
+    const instruction = options.instruction ?? null;
+    super({
+      providerName: "Instructor",
+      runtime: localEmbeddingRuntimeFrom(options),
+      mapInput: (values) => instruction ? values.map((value) => [instruction, value]) : values,
+    });
+    this.model_name = typeof options.model === "string" ? options.model : options.model_name ?? "hkunlp/instructor-base";
+    this.device = options.device ?? "cpu";
+    this.instruction = instruction;
+  }
+
+  static name(): string {
+    return "instructor";
+  }
+}
+
 export class InstructorProvider extends BaseEmbeddingsProvider {
   readonly provider = "instructor";
 
   constructor(options: InstructorProviderConfig = {}) {
-    super({
-      embeddingCallable: defaultEmbeddingCallable,
-      model_name: "hkunlp/instructor-base",
+    const config = {
+      model_name: typeof options.model === "string" ? options.model : "hkunlp/instructor-base",
       device: "cpu",
       instruction: null,
       ...options,
+    };
+    super({
+      embeddingCallable: new InstructorEmbeddingFunction(config).asCallable(),
+      ...config,
     });
   }
 }
@@ -1374,14 +1549,33 @@ export class OllamaProvider extends BaseEmbeddingsProvider {
   }
 }
 
+export class ONNXMiniLM_L6_V2 extends RuntimeEmbeddingFunction {
+  readonly preferred_providers: readonly string[] | null;
+
+  constructor(options: ONNXProviderConfig = {}) {
+    super({
+      providerName: "ONNX MiniLM",
+      runtime: localEmbeddingRuntimeFrom(options),
+    });
+    this.preferred_providers = options.preferred_providers ?? null;
+  }
+
+  static name(): string {
+    return "onnx";
+  }
+}
+
 export class ONNXProvider extends BaseEmbeddingsProvider {
   readonly provider = "onnx";
 
   constructor(options: ONNXProviderConfig = {}) {
-    super({
-      embeddingCallable: defaultEmbeddingCallable,
+    const config = {
       preferred_providers: null,
       ...options,
+    };
+    super({
+      embeddingCallable: new ONNXMiniLM_L6_V2(config).asCallable(),
+      ...config,
     });
   }
 }
@@ -1401,16 +1595,39 @@ export class OpenAIProvider extends BaseEmbeddingsProvider {
   }
 }
 
+export class OpenCLIPEmbeddingFunction extends RuntimeEmbeddingFunction {
+  readonly model_name: string;
+  readonly checkpoint: string;
+  readonly device: string | null;
+
+  constructor(options: OpenCLIPProviderConfig = {}) {
+    super({
+      providerName: "OpenCLIP",
+      runtime: localEmbeddingRuntimeFrom(options),
+    });
+    this.model_name = typeof options.model === "string" ? options.model : options.model_name ?? "ViT-B-32";
+    this.checkpoint = options.checkpoint ?? "laion2b_s34b_b79k";
+    this.device = options.device ?? "cpu";
+  }
+
+  static name(): string {
+    return "openclip";
+  }
+}
+
 export class OpenCLIPProvider extends BaseEmbeddingsProvider {
   readonly provider = "openclip";
 
   constructor(options: OpenCLIPProviderConfig = {}) {
-    super({
-      embeddingCallable: defaultEmbeddingCallable,
-      model_name: "ViT-B-32",
+    const config = {
+      model_name: typeof options.model === "string" ? options.model : "ViT-B-32",
       checkpoint: "laion2b_s34b_b79k",
       device: "cpu",
       ...options,
+    };
+    super({
+      embeddingCallable: new OpenCLIPEmbeddingFunction(config).asCallable(),
+      ...config,
     });
   }
 }
@@ -1503,17 +1720,56 @@ export class RoboflowProvider extends BaseEmbeddingsProvider {
   }
 }
 
+export class SentenceTransformerEmbeddingFunction extends RuntimeEmbeddingFunction {
+  readonly model_name: string;
+  readonly device: string;
+  readonly normalize_embeddings: boolean;
+
+  constructor(options: SentenceTransformerProviderConfig = {}) {
+    super({
+      providerName: "SentenceTransformer",
+      runtime: localEmbeddingRuntimeFrom(options),
+    });
+    this.model_name = typeof options.model === "string" ? options.model : options.model_name ?? "all-MiniLM-L6-v2";
+    this.device = options.device ?? "cpu";
+    this.normalize_embeddings = options.normalize_embeddings ?? false;
+  }
+
+  static name(): string {
+    return "sentence-transformer";
+  }
+}
+
 export class SentenceTransformerProvider extends BaseEmbeddingsProvider {
   readonly provider = "sentence-transformer";
 
   constructor(options: SentenceTransformerProviderConfig = {}) {
-    super({
-      embeddingCallable: defaultEmbeddingCallable,
-      model_name: "all-MiniLM-L6-v2",
+    const config = {
+      model_name: typeof options.model === "string" ? options.model : "all-MiniLM-L6-v2",
       device: "cpu",
       normalize_embeddings: false,
       ...options,
+    };
+    super({
+      embeddingCallable: new SentenceTransformerEmbeddingFunction(config).asCallable(),
+      ...config,
     });
+  }
+}
+
+export class Text2VecEmbeddingFunction extends RuntimeEmbeddingFunction {
+  readonly model_name: string;
+
+  constructor(options: Text2VecProviderConfig = {}) {
+    super({
+      providerName: "Text2Vec",
+      runtime: localEmbeddingRuntimeFrom(options),
+    });
+    this.model_name = typeof options.model === "string" ? options.model : options.model_name ?? "shibing624/text2vec-base-chinese";
+  }
+
+  static name(): string {
+    return "text2vec";
   }
 }
 
@@ -1521,10 +1777,13 @@ export class Text2VecProvider extends BaseEmbeddingsProvider {
   readonly provider = "text2vec";
 
   constructor(options: Text2VecProviderConfig = {}) {
-    super({
-      embeddingCallable: defaultEmbeddingCallable,
-      model_name: "shibing624/text2vec-base-chinese",
+    const config = {
+      model_name: typeof options.model === "string" ? options.model : "shibing624/text2vec-base-chinese",
       ...options,
+    };
+    super({
+      embeddingCallable: new Text2VecEmbeddingFunction(config).asCallable(),
+      ...config,
     });
   }
 }
