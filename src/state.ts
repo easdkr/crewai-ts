@@ -181,6 +181,10 @@ export class EventRecord {
     return Object.keys(this.nodes).length;
   }
 
+  __len__(): number {
+    return this.size;
+  }
+
   toJSON(): Record<string, unknown> {
     return { nodes: this.nodes };
   }

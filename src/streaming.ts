@@ -140,6 +140,16 @@ export abstract class StreamingOutputBase<TResult> implements AsyncIterable<Stre
     return this.getFullText();
   }
 
+  setResult(result: TResult): void {
+    this.resultValue = result;
+    this.hasResult = true;
+    this.completed = true;
+  }
+
+  _set_result(result: TResult): void {
+    this.setResult(result);
+  }
+
   close(): void {
     this.cancelled = true;
     this.completed = true;
@@ -202,6 +212,8 @@ export abstract class StreamingOutputBase<TResult> implements AsyncIterable<Stre
 }
 
 export class CrewStreamingOutput extends StreamingOutputBase<CrewOutput> {
+  private resultValues: CrewOutput[] | null = null;
+
   get results(): readonly CrewOutput[] {
     if (!this.completed) {
       throw new Error("Streaming has not completed yet. Iterate over all chunks before accessing results.");
@@ -209,10 +221,26 @@ export class CrewStreamingOutput extends StreamingOutputBase<CrewOutput> {
     if (this.error) {
       throw this.error instanceof Error ? this.error : new Error(formatThrownValue(this.error));
     }
+    if (this.resultValues) {
+      return [...this.resultValues];
+    }
     if (this.hasResult) {
       return [this.resultValue as CrewOutput];
     }
     throw new Error("No results available.");
+  }
+
+  setResults(results: readonly CrewOutput[]): void {
+    this.resultValues = [...results];
+    if (results.length > 0) {
+      this.resultValue = results[0] ?? null;
+      this.hasResult = true;
+    }
+    this.completed = true;
+  }
+
+  _set_results(results: readonly CrewOutput[]): void {
+    this.setResults(results);
   }
 
   protected chunksFromResult(result: CrewOutput): readonly StreamChunk[] {

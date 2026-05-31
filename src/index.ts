@@ -2675,6 +2675,22 @@ export class AgentCardSigningConfig {
     }
   }
 
+  validateKeySource(): this {
+    const hasPath = this.privateKeyPath !== null;
+    const hasPem = this.privateKeyPem !== null;
+    if (!hasPath && !hasPem) {
+      throw new Error("Either private_key_path or private_key_pem must be provided");
+    }
+    if (hasPath && hasPem) {
+      throw new Error("Only one of private_key_path or private_key_pem should be provided");
+    }
+    return this;
+  }
+
+  _validate_key_source(): this {
+    return this.validateKeySource();
+  }
+
   getPrivateKey(): string {
     if (this.privateKeyPem !== null) {
       return this.privateKeyPem;

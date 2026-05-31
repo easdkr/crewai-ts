@@ -3049,6 +3049,14 @@ export class A2AServerConfig {
       : transport;
     this.auth = options.auth ?? null;
   }
+
+  migrateDeprecatedFields(): this {
+    return this;
+  }
+
+  _migrate_deprecated_fields(): this {
+    return this.migrateDeprecatedFields();
+  }
 }
 
 export class AgentResponseModel {

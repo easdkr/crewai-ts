@@ -4031,6 +4031,7 @@ describe("a2a utilities", () => {
     expect(defaultServer.capabilities).toMatchObject({ streaming: true, push_notifications: false });
     expect(defaultServer.supports_authenticated_extended_card).toBe(false);
     expect(defaultServer.transport.preferred).toBe(A2ATransport.HTTP_JSON);
+    expect(defaultServer._migrate_deprecated_fields()).toBe(defaultServer);
   });
 
   it("negotiates A2A transport by client preference, server preference, and fallback", () => {
@@ -4351,6 +4352,7 @@ describe("a2a utilities", () => {
     expect(inline.get_private_key()).toBe(pem);
     expect(inline.key_id).toBe("kid-1");
     expect(inline.algorithm).toBe("ES256");
+    expect(inline._validate_key_source()).toBe(inline);
 
     const keyDir = mkdtempSync(join(tmpdir(), "crewai-ts-agent-card-key-"));
     const keyPath = join(keyDir, "agent-card.pem");
@@ -19788,6 +19790,7 @@ describe("event record", () => {
     expect(record.roots().map((node) => node.event.eventId)).toEqual([root.eventId, unrelated.eventId]);
     expect(record.descendants(root.eventId).map((node) => node.event.eventId)).toEqual([childA.eventId, childB.eventId]);
     expect(record.all_nodes()).toHaveLength(4);
+    expect(record.__len__()).toBe(4);
     expect(record.has(childA.eventId)).toBe(true);
     expect(record.__contains__(childA.eventId)).toBe(true);
     expect(record.__contains__("missing")).toBe(false);
@@ -20652,6 +20655,20 @@ describe("streaming output", () => {
     expect(streaming.is_cancelled).toBe(true);
     expect(streaming.is_completed).toBe(true);
     expect(runCount).toBe(0);
+  });
+
+  it("exposes upstream-style streaming result setters", () => {
+    const flowStreaming = new FlowStreamingOutput(() => Promise.resolve("unused"));
+    flowStreaming._set_result({ status: "done" });
+    expect(flowStreaming.is_completed).toBe(true);
+    expect(flowStreaming.result).toEqual({ status: "done" });
+
+    const first = new CrewOutput({ raw: "first" });
+    const second = new CrewOutput({ raw: "second" });
+    const crewStreaming = new CrewStreamingOutput(() => Promise.resolve(first));
+    crewStreaming._set_results([first, second]);
+    expect(crewStreaming.results.map((result) => result.raw)).toEqual(["first", "second"]);
+    expect(crewStreaming.result.raw).toBe("first");
   });
 });
 
