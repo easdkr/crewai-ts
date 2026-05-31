@@ -1647,27 +1647,52 @@ export class OAuth2ClientCredentials extends ClientAuthScheme {
   }
 
   async applyAuth(headers: A2AHeaders = {}): Promise<A2AHeaders> {
-    if (!this.accessToken || !this.tokenExpiresAt || Date.now() >= this.tokenExpiresAt) {
-      this.tokenPromise ??= this.fetchToken().finally(() => {
-        this.tokenPromise = null;
-      });
-      await this.tokenPromise;
-    }
+    await this.ensureAccessToken(null);
     if (!this.accessToken) {
       throw new Error("OAuth2 token endpoint did not return an access_token.");
     }
     return { ...headers, Authorization: `Bearer ${this.accessToken}` };
   }
 
-  private async fetchToken(): Promise<void> {
-    const form = new URLSearchParams({
+  override async apply_auth(client: unknown, headers: A2AHeaders = {}): Promise<A2AHeaders> {
+    await this.ensureAccessToken(client);
+    if (!this.accessToken) {
+      throw new Error("OAuth2 token endpoint did not return an access_token.");
+    }
+    return { ...headers, Authorization: `Bearer ${this.accessToken}` };
+  }
+
+  private async ensureAccessToken(client: unknown): Promise<void> {
+    if (!this.accessToken || !this.tokenExpiresAt || Date.now() >= this.tokenExpiresAt) {
+      this.tokenPromise ??= this.fetchToken(client).finally(() => {
+        this.tokenPromise = null;
+      });
+      await this.tokenPromise;
+    }
+  }
+
+  protected async fetchToken(client: unknown = null): Promise<void> {
+    const tokenData = await this.requestToken({
       grant_type: "client_credentials",
       client_id: this.clientId,
       client_secret: this.clientSecret,
-    });
-    if (this.scopes.length > 0) {
-      form.set("scope", this.scopes.join(" "));
+      ...(this.scopes.length > 0 ? { scope: this.scopes.join(" ") } : {}),
+    }, client);
+    if (typeof tokenData.access_token !== "string" || tokenData.access_token.length === 0) {
+      throw new Error("OAuth2 token endpoint did not return an access_token.");
     }
+    const expiresIn = typeof tokenData.expires_in === "number" ? tokenData.expires_in : 3600;
+    this.setAccessToken(tokenData.access_token, expiresIn);
+  }
+
+  protected async requestToken(params: Record<string, string>, client: unknown = null): Promise<Record<string, unknown>> {
+    const clientPost = readFunction(client, "post");
+    if (clientPost) {
+      const response = await clientPost.call(client, this.tokenUrl, { data: params });
+      await raiseForStatusIfPresent(response);
+      return readJsonResponse(response);
+    }
+    const form = new URLSearchParams(params);
     const response = await this.fetchImpl(this.tokenUrl, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -1676,12 +1701,7 @@ export class OAuth2ClientCredentials extends ClientAuthScheme {
     if (!response.ok) {
       throw new Error(`OAuth2 token request failed: ${String(response.status)}`);
     }
-    const tokenData = await response.json() as { access_token?: unknown; expires_in?: unknown };
-    if (typeof tokenData.access_token !== "string" || tokenData.access_token.length === 0) {
-      throw new Error("OAuth2 token endpoint did not return an access_token.");
-    }
-    const expiresIn = typeof tokenData.expires_in === "number" ? tokenData.expires_in : 3600;
-    this.setAccessToken(tokenData.access_token, expiresIn);
+    return await response.json() as Record<string, unknown>;
   }
 }
 
@@ -1716,16 +1736,26 @@ export class OAuth2AuthorizationCode extends OAuth2ClientCredentials {
   }
 
   override async applyAuth(headers: A2AHeaders = {}): Promise<A2AHeaders> {
+    await this.applyAuthWithClient(null);
+    return { ...headers, Authorization: `Bearer ${this.accessToken ?? ""}` };
+  }
+
+  override async apply_auth(client: unknown, headers: A2AHeaders = {}): Promise<A2AHeaders> {
+    await this.applyAuthWithClient(client);
+    return { ...headers, Authorization: `Bearer ${this.accessToken ?? ""}` };
+  }
+
+  private async applyAuthWithClient(client: unknown): Promise<void> {
     if (!this.accessToken) {
       if (!this.authorizationCallback) {
         throw new Error("Authorization callback not set. Use set_authorization_callback()");
       }
-      this.authorizationPromise ??= this.fetchInitialToken().finally(() => {
+      this.authorizationPromise ??= this.fetchInitialToken(client).finally(() => {
         this.authorizationPromise = null;
       });
       await this.authorizationPromise;
     } else if (this.tokenExpiresAt !== null && Date.now() >= this.tokenExpiresAt) {
-      this.authorizationPromise ??= this.refreshAccessToken().finally(() => {
+      this.authorizationPromise ??= this.refreshAccessToken(client).finally(() => {
         this.authorizationPromise = null;
       });
       await this.authorizationPromise;
@@ -1733,10 +1763,9 @@ export class OAuth2AuthorizationCode extends OAuth2ClientCredentials {
     if (!this.accessToken) {
       throw new Error("OAuth2 token endpoint did not return an access_token.");
     }
-    return { ...headers, Authorization: `Bearer ${this.accessToken}` };
   }
 
-  private async fetchInitialToken(): Promise<void> {
+  private async fetchInitialToken(client: unknown = null): Promise<void> {
     if (!this.authorizationCallback) {
       throw new Error("Authorization callback not set");
     }
@@ -1753,13 +1782,13 @@ export class OAuth2AuthorizationCode extends OAuth2ClientCredentials {
       client_id: this.clientId,
       client_secret: this.clientSecret,
       redirect_uri: this.redirectUri,
-    });
+    }, client);
     this.applyTokenData(tokenData);
   }
 
-  private async refreshAccessToken(): Promise<void> {
+  private async refreshAccessToken(client: unknown = null): Promise<void> {
     if (!this.refreshToken) {
-      await this.fetchInitialToken();
+      await this.fetchInitialToken(client);
       return;
     }
     const tokenData = await this.requestToken({
@@ -1767,20 +1796,8 @@ export class OAuth2AuthorizationCode extends OAuth2ClientCredentials {
       refresh_token: this.refreshToken,
       client_id: this.clientId,
       client_secret: this.clientSecret,
-    });
+    }, client);
     this.applyTokenData(tokenData);
-  }
-
-  private async requestToken(params: Record<string, string>): Promise<Record<string, unknown>> {
-    const response = await this.fetchImpl(this.tokenUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams(params).toString(),
-    });
-    if (!response.ok) {
-      throw new Error(`OAuth2 token request failed: ${String(response.status)}`);
-    }
-    return await response.json() as Record<string, unknown>;
   }
 
   private applyTokenData(tokenData: Record<string, unknown>): void {
@@ -4171,6 +4188,36 @@ function hasA2AExtensionMethod(value: object, camelName: string, snakeName: stri
 
 function isObjectClient(value: unknown): value is object {
   return Boolean(value && typeof value === "object");
+}
+
+function readFunction(value: unknown, key: string): ((...args: unknown[]) => unknown) | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const candidate = (value as Record<string, unknown>)[key];
+  return typeof candidate === "function" ? candidate as (...args: unknown[]) => unknown : null;
+}
+
+async function raiseForStatusIfPresent(response: unknown): Promise<void> {
+  const raiseForStatus = readFunction(response, "raise_for_status") ?? readFunction(response, "raiseForStatus");
+  if (raiseForStatus) {
+    await raiseForStatus.call(response);
+    return;
+  }
+  const ok = response && typeof response === "object" ? (response as { ok?: unknown }).ok : undefined;
+  if (ok === false) {
+    const status = response && typeof response === "object" ? (response as { status?: unknown }).status : undefined;
+    throw new Error(`OAuth2 token request failed: ${String(status)}`);
+  }
+}
+
+async function readJsonResponse(response: unknown): Promise<Record<string, unknown>> {
+  const json = readFunction(response, "json");
+  if (!json) {
+    throw new Error("OAuth2 token endpoint did not return a JSON response.");
+  }
+  const value = await json.call(response);
+  return value && typeof value === "object" ? value as Record<string, unknown> : {};
 }
 
 function jsonReplacer(_key: string, value: unknown): unknown {

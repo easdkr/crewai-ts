@@ -3936,6 +3936,43 @@ describe("a2a utilities", () => {
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
+  it("uses the provided OAuth2 client in upstream apply_auth calls", async () => {
+    const fetchImpl = vi.fn(() => {
+      throw new Error("fetch should not be used when an A2A client is provided.");
+    });
+    const client = {
+      post: vi.fn((_url: string, options?: { data?: Record<string, string> }) => ({
+        raise_for_status: vi.fn(),
+        json: () => ({
+          access_token: "client-token",
+          expires_in: 3600,
+          request_body: options?.data,
+        }),
+      })),
+    };
+    const auth = new OAuth2ClientCredentials({
+      token_url: "https://auth.example.com/token",
+      client_id: "client",
+      client_secret: "secret",
+      scopes: ["read:tools"],
+      fetch: fetchImpl,
+    });
+
+    await expect(auth.apply_auth(client, { Accept: "application/json" })).resolves.toEqual({
+      Accept: "application/json",
+      Authorization: "Bearer client-token",
+    });
+    expect(client.post).toHaveBeenCalledWith("https://auth.example.com/token", {
+      data: {
+        grant_type: "client_credentials",
+        client_id: "client",
+        client_secret: "secret",
+        scope: "read:tools",
+      },
+    });
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
   it("uses OAuth2 authorization-code callbacks and refresh tokens for A2A auth", async () => {
     const seenBodies: string[] = [];
     const fetchImpl = vi.fn((url: string | URL | Request, init?: RequestInit) => {
