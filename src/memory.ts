@@ -2420,11 +2420,17 @@ export class MemoryScope {
     return this.memory.forget({ ...options, scope: joinScopePaths(this.rootPath, options.scope ?? "/") });
   }
 
-  reset(): void {
-    this.memory.reset(this.rootPath);
+  reset(scope?: string | null): void {
+    this.memory.reset(joinScopePaths(this.rootPath, scope ?? "/"));
   }
 
-  listScopes(full = false): readonly string[] | readonly ScopeInfo[] {
+  listScopes(full?: boolean): readonly string[] | readonly ScopeInfo[];
+  listScopes(path: string | null): readonly string[];
+  listScopes(pathOrFull: string | null | boolean = false): readonly string[] | readonly ScopeInfo[] {
+    if (typeof pathOrFull === "string" || pathOrFull === null) {
+      return this.memory.list_scopes(joinScopePaths(this.rootPath, pathOrFull ?? "/"));
+    }
+    const full = pathOrFull;
     const prefix = this.rootPath;
     const infos = this.memory.allRecords()
       .filter((record) => record.scope.startsWith(prefix))
@@ -2451,11 +2457,19 @@ export class MemoryScope {
     return full ? scopeInfos : scopeInfos.map((info) => info.path);
   }
 
-  list_scopes(full = false): readonly string[] | readonly ScopeInfo[] {
-    return this.listScopes(full);
+  list_scopes(full?: boolean): readonly string[] | readonly ScopeInfo[];
+  list_scopes(path: string | null): readonly string[];
+  list_scopes(pathOrFull: string | null | boolean = false): readonly string[] | readonly ScopeInfo[] {
+    return this.listScopes(pathOrFull as boolean);
   }
 
-  info(full = false): MemoryInfo {
+  info(full?: boolean): MemoryInfo;
+  info(path: string | null): ScopeInfo;
+  info(pathOrFull: string | null | boolean = false): MemoryInfo | ScopeInfo {
+    if (typeof pathOrFull === "string" || pathOrFull === null) {
+      return this.memory.info(joinScopePaths(this.rootPath, pathOrFull ?? "/"));
+    }
+    const full = pathOrFull;
     const records = this.memory.allRecords().filter((record) => record.scope.startsWith(this.rootPath));
     return {
       totalRecords: records.length,
@@ -2467,12 +2481,20 @@ export class MemoryScope {
     };
   }
 
-  listCategories(full = false): Record<string, number> | Record<string, { count: number; scopes: readonly string[] }> {
+  listCategories(full?: boolean): Record<string, number> | Record<string, { count: number; scopes: readonly string[] }>;
+  listCategories(path: string | null): Record<string, number>;
+  listCategories(pathOrFull: string | null | boolean = false): Record<string, number> | Record<string, { count: number; scopes: readonly string[] }> {
+    if (typeof pathOrFull === "string" || pathOrFull === null) {
+      return this.memory.list_categories(joinScopePaths(this.rootPath, pathOrFull ?? "/"));
+    }
+    const full = pathOrFull;
     return categoriesForRecords(this.memory.allRecords().filter((record) => record.scope.startsWith(this.rootPath)), full);
   }
 
-  list_categories(full = false): Record<string, number> | Record<string, { count: number; scopes: readonly string[] }> {
-    return this.listCategories(full);
+  list_categories(full?: boolean): Record<string, number> | Record<string, { count: number; scopes: readonly string[] }>;
+  list_categories(path: string | null): Record<string, number>;
+  list_categories(pathOrFull: string | null | boolean = false): Record<string, number> | Record<string, { count: number; scopes: readonly string[] }> {
+    return this.listCategories(pathOrFull as boolean);
   }
 
   tree(full?: boolean, maxDepth?: number): MemoryTreeNode;

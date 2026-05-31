@@ -13477,6 +13477,28 @@ describe("memory", () => {
     expect(memory.get_record(record?.id ?? "")?.lastAccessed?.getTime()).toBeGreaterThan(originalAccessed);
   });
 
+  it("resolves MemoryScope metadata helpers relative to the scope root", () => {
+    const memory = new Memory();
+    const scope = memory.scope("/team");
+    scope.remember("project alpha", { scope: "/project/alpha", categories: ["alpha"] });
+    scope.remember("project beta", { scope: "/project/beta", categories: ["beta"] });
+
+    expect(scope.list_scopes("/project")).toEqual(["/team/project/alpha", "/team/project/beta"]);
+    expect(scope.info("/project")).toMatchObject({ path: "/team/project", recordCount: 2 });
+    expect(scope.list_categories("/project")).toEqual({ alpha: 1, beta: 1 });
+  });
+
+  it("resets MemoryScope relative subscopes", () => {
+    const memory = new Memory();
+    const scope = memory.scope("/team");
+    scope.remember("alpha memory", { scope: "/alpha" });
+    scope.remember("beta memory", { scope: "/beta" });
+
+    scope.reset("/alpha");
+
+    expect(memory.list_records().map((record) => record.content)).toEqual(["beta memory"]);
+  });
+
   it("automatically appends relevant crew memories to task prompts", async () => {
     const memory = new Memory();
     memory.remember("Nest should consume crewai-ts as a normal TypeScript library", {
