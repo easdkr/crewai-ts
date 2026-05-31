@@ -508,6 +508,11 @@ import {
   convertOneOfToAnyOf,
   checkConversationalCrewsVersion,
   chatLoop,
+  _dotted_path_to_instance,
+  _instance_to_dotted_path,
+  _is_non_roundtrippable,
+  _resolve_dotted_path,
+  _trusted_deserialize,
   callableToString,
   clearEmbeddingProviderBuilders,
   clearCallableRegistry,
@@ -1093,6 +1098,39 @@ describe("serialization and project utilities", () => {
     await expect(stringToCallable("node:process.exit")).rejects.toThrow("CREWAI_DESERIALIZE_CALLBACKS=1");
     await expect(stringToCallable(123)).rejects.toThrow("Expected a callable");
     expect(callableToString(() => "anonymous")).toBeNull();
+  });
+
+  it("supports upstream callback dotted-path trust gates and provider instance paths", async () => {
+    const previousTrust = process.env.CREWAI_DESERIALIZE_CALLBACKS;
+    const globals = globalThis as unknown as Record<string, unknown>;
+    class Provider {
+      readonly ready = true;
+    }
+    Object.defineProperty(Provider, "__module_path__", { value: "CrewAITest.Provider" });
+    globals.CrewAITest = { Provider };
+    try {
+      expect(_trusted_deserialize({ CREWAI_DESERIALIZE_CALLBACKS: "yes" })).toBe(true);
+      expect(_trusted_deserialize({ CREWAI_DESERIALIZE_CALLBACKS: "0" })).toBe(false);
+      expect(_is_non_roundtrippable(() => "inline")).toBe(true);
+      expect(callableToString(Math.max as (...args: readonly unknown[]) => unknown)).toBe("Math.max");
+
+      delete process.env.CREWAI_DESERIALIZE_CALLBACKS;
+      await expect(stringToCallable("Math.max")).rejects.toThrow("CREWAI_DESERIALIZE_CALLBACKS=1");
+      process.env.CREWAI_DESERIALIZE_CALLBACKS = "1";
+
+      await expect(_resolve_dotted_path("Math.max")).resolves.toBe(Math.max);
+      await expect(stringToCallable("Math.max")).resolves.toBe(Math.max);
+      expect(_instance_to_dotted_path(new Provider())).toBe("CrewAITest.Provider");
+      await expect(_dotted_path_to_instance("CrewAITest.Provider")).resolves.toBeInstanceOf(Provider);
+      await expect(_dotted_path_to_instance("missing")).rejects.toThrow("Invalid provider path");
+    } finally {
+      if (previousTrust === undefined) {
+        delete process.env.CREWAI_DESERIALIZE_CALLBACKS;
+      } else {
+        process.env.CREWAI_DESERIALIZE_CALLBACKS = previousTrust;
+      }
+      delete globals.CrewAITest;
+    }
   });
 
   it("recognizes BaseTool subclasses as valid project tool exports", () => {

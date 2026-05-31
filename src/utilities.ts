@@ -555,6 +555,24 @@ export type SerializableCallable = (...args: readonly unknown[]) => unknown;
 export const SerializableCallable = Function;
 
 const callableRegistry = new Map<string, SerializableCallable>();
+const trustedDeserializeValues = new Set(["1", "true", "yes"]);
+
+export function _trusted_deserialize(env: NodeJS.ProcessEnv = process.env): boolean {
+  return trustedDeserializeValues.has((env.CREWAI_DESERIALIZE_CALLBACKS ?? "").trim().toLowerCase());
+}
+
+export function _is_non_roundtrippable(value: unknown): boolean {
+  if (typeof value !== "function") {
+    return true;
+  }
+  for (const registered of callableRegistry.values()) {
+    if (registered === value) {
+      return false;
+    }
+  }
+  const name = value.name;
+  return !name || name === "anonymous" || name.includes("bound ") || name.includes("=>");
+}
 
 export function registerCallable(path: string, callable: SerializableCallable): void {
   if (!path.includes(".")) {
@@ -583,17 +601,23 @@ export function callableToString(callable: SerializableCallable): string | null 
       return path;
     }
   }
-  const name = callable.name;
-  if (!name || name === "anonymous") {
+  const path = getCallableDottedPath(callable);
+  if (!path || _is_non_roundtrippable(callable)) {
     return null;
   }
-  return null;
+  return path;
 }
 
 export const callable_to_string = callableToString;
 
 export async function stringToCallable(value: unknown): Promise<SerializableCallable> {
   if (typeof value === "function") {
+    if (_is_non_roundtrippable(value)) {
+      process.emitWarning(
+        `${value.constructor.name} callbacks cannot be serialized and will prevent checkpointing. Use a module-level named function instead.`,
+        { type: "UserWarning" },
+      );
+    }
     return value as SerializableCallable;
   }
   if (typeof value !== "string") {
@@ -606,12 +630,12 @@ export async function stringToCallable(value: unknown): Promise<SerializableCall
   if (registered) {
     return registered;
   }
-  if (!trustedCallbackDeserialization()) {
+  if (!_trusted_deserialize()) {
     throw new Error(
       `Refusing to resolve callback path '${value}': set CREWAI_DESERIALIZE_CALLBACKS=1 to allow. Only enable this for trusted checkpoint data.`,
     );
   }
-  const resolved = await resolveDottedPath(value);
+  const resolved = await _resolve_dotted_path(value);
   if (typeof resolved !== "function") {
     throw new Error(`Cannot resolve callback '${value}' to a callable.`);
   }
@@ -619,6 +643,56 @@ export async function stringToCallable(value: unknown): Promise<SerializableCall
 }
 
 export const string_to_callable = stringToCallable;
+
+export function _instance_to_dotted_path(value: unknown): string {
+  if (typeof value === "function") {
+    const path = getCallableDottedPath(value as (...args: readonly unknown[]) => unknown);
+    throw new Error(`Expected an instance, got class ${path ?? value.name}.`);
+  }
+  if (!value || typeof value !== "object") {
+    throw new Error(`Cannot serialize ${formatUnknownForMessage(value)}: builtin values are not checkpointable instances.`);
+  }
+  const ctor = value.constructor;
+  const path = typeof ctor === "function" ? getCallableDottedPath(ctor as (...args: readonly unknown[]) => unknown) : null;
+  if (!path || path.startsWith("globalThis.")) {
+    throw new Error(`Cannot serialize ${value.constructor.name}: class missing module path. Use a module-level class for checkpointable instances.`);
+  }
+  return path;
+}
+
+export async function _dotted_path_to_instance(value: unknown): Promise<unknown> {
+  if (value === null || value === undefined) {
+    return value;
+  }
+  if (typeof value !== "string") {
+    if (typeof value === "function") {
+      const path = getCallableDottedPath(value as (...args: readonly unknown[]) => unknown);
+      throw new Error(`Expected an instance or dotted path string, got class ${path ?? value.name}.`);
+    }
+    if (typeof value !== "object") {
+      throw new Error(`Expected an instance of a user-defined class or dotted path string, got builtin value ${formatUnknownForMessage(value)}.`);
+    }
+    return value;
+  }
+  if (!value.includes(".")) {
+    throw new Error(`Invalid provider path '${value}': expected 'module.name' format.`);
+  }
+  if (!_trusted_deserialize()) {
+    throw new Error(
+      `Refusing to resolve provider path '${value}': set CREWAI_DESERIALIZE_CALLBACKS=1 to allow. Only enable this for trusted checkpoint data.`,
+    );
+  }
+  const cls = await _resolve_dotted_path(value);
+  if (typeof cls !== "function") {
+    throw new Error(`Invalid provider path '${value}': expected a class, got ${typeof cls}.`);
+  }
+  try {
+    return new (cls as new () => unknown)();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`Cannot reinstantiate '${value}' with no arguments: ${message}. Only no-arg constructors are checkpointable; rebuild the instance manually and assign it after restore.`, { cause: error });
+  }
+}
 
 export function readToml(filePath = "pyproject.toml"): Record<string, unknown> {
   return parseToml(readFileSync(filePath, "utf8"));
@@ -760,8 +834,12 @@ export class AttributeError extends Error {
   }
 }
 
-async function resolveDottedPath(path: string): Promise<unknown> {
+export async function _resolve_dotted_path(path: string): Promise<unknown> {
   const parts = path.split(".");
+  const globalResolved = resolveGlobalDottedPath(parts);
+  if (globalResolved !== undefined) {
+    return globalResolved;
+  }
   for (let index = parts.length - 1; index > 0; index -= 1) {
     const modulePath = parts.slice(0, index).join(".");
     try {
@@ -783,8 +861,48 @@ async function resolveDottedPath(path: string): Promise<unknown> {
   throw new Error(`Cannot resolve callback '${path}'.`);
 }
 
-function trustedCallbackDeserialization(): boolean {
-  return new Set(["1", "true", "yes"]).has((process.env.CREWAI_DESERIALIZE_CALLBACKS ?? "").trim().toLowerCase());
+function resolveGlobalDottedPath(parts: readonly string[]): unknown {
+  let value: unknown = globalThis;
+  for (const part of parts) {
+    if (!value || typeof value !== "object" && typeof value !== "function") {
+      return undefined;
+    }
+    value = (value as Record<string, unknown>)[part];
+  }
+  return value;
+}
+
+function getCallableDottedPath(value: (...args: readonly unknown[]) => unknown): string | null {
+  for (const [path, registered] of callableRegistry.entries()) {
+    if (registered === value) {
+      return path;
+    }
+  }
+  const path = (value as { __module_path__?: unknown }).__module_path__;
+  if (typeof path === "string" && path.includes(".")) {
+    return path;
+  }
+  if (value === Math.max) {
+    return "Math.max";
+  }
+  if (value === Math.min) {
+    return "Math.min";
+  }
+  return null;
+}
+
+function formatUnknownForMessage(value: unknown): string {
+  if (typeof value === "string") {
+    return value;
+  }
+  if (value === null || value === undefined || typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") {
+    return String(value);
+  }
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return Object.prototype.toString.call(value);
+  }
 }
 
 function normalizeExclude(exclude: ToSerializableOptions["exclude"]): Set<string> {
