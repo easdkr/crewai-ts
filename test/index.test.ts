@@ -8949,6 +8949,33 @@ describe("LLM providers", () => {
     await expect(openai.acall([{ role: "user", content: "hello" }])).rejects.toThrow("No LLM provider registered");
   });
 
+  it("exposes upstream AzureCompletion aliases directly on the provider class", async () => {
+    const azure = new AzureCompletion({
+      model: "gpt-4o",
+      endpoint: "https://example.openai.azure.com/openai/deployments/gpt-4o",
+      previous_response_id: "az-resp-1",
+    });
+    for (const methodName of [
+      "acall",
+      "aclose",
+      "call",
+      "get_context_window_size",
+      "reset_chain",
+      "reset_reasoning_chain",
+      "supports_function_calling",
+      "supports_multimodal",
+      "supports_stop_words",
+      "to_config_dict",
+    ]) {
+      expect(Object.hasOwn(AzureCompletion.prototype, methodName)).toBe(true);
+    }
+    expect(azure.last_response_id).toBe("az-resp-1");
+    expect(azure.last_reasoning_items).toEqual([]);
+    expect(azure.to_config_dict()).toMatchObject({ model: "gpt-4o", provider: "azure" });
+    await expect(azure.aclose()).resolves.toBeUndefined();
+    await expect(azure.acall([{ role: "user", content: "hello" }])).rejects.toThrow("No LLM provider registered");
+  });
+
   it("prepares OpenAI chat and responses request parameters without SDK side effects", () => {
     const search = new StructuredTool({
       name: "search docs",

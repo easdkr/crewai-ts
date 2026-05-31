@@ -1,4 +1,4 @@
-import { ConfiguredLLM, CONTEXT_WINDOW_USAGE_RATIO, LocalFileUploader, type BaseLLMOptions, type LLMAvailableFunction, type LLMCallOptions, type LLMResponse } from "./llm.js";
+import { ConfiguredLLM, CONTEXT_WINDOW_USAGE_RATIO, LocalFileUploader, type BaseLLMOptions, type LLMAvailableFunction, type LLMCallOptions, type LLMMessageInput, type LLMResponse } from "./llm.js";
 import { convertToolsToOpenAISchema } from "./agent-utils.js";
 import type { LLMMessage, Tool } from "./types.js";
 
@@ -1692,8 +1692,24 @@ export class AzureCompletion extends ConfiguredLLM {
     this.reasoningChainItems = [];
   }
 
+  override call(messages: readonly LLMMessage[], options?: LLMCallOptions): Promise<LLMResponse> {
+    return super.call(messages, options);
+  }
+
+  override async acall(messages: LLMMessageInput, options?: LLMCallOptions): Promise<LLMResponse> {
+    return await super.acall(messages, options);
+  }
+
+  async aclose(): Promise<void> {
+    await Promise.resolve();
+  }
+
   override supportsFunctionCalling(): boolean {
     return this.isOpenAIModel;
+  }
+
+  override supports_function_calling(): boolean {
+    return this.supportsFunctionCalling();
   }
 
   override supportsStopWords(): boolean {
@@ -1705,20 +1721,64 @@ export class AzureCompletion extends ConfiguredLLM {
       .some((unsupported) => model.includes(unsupported));
   }
 
+  override supports_stop_words(): boolean {
+    return this.supportsStopWords();
+  }
+
+  override supportsMultimodal(): boolean {
+    return super.supportsMultimodal();
+  }
+
+  override supports_multimodal(): boolean {
+    return this.supportsMultimodal();
+  }
+
+  override getContextWindowSize(): number {
+    return super.getContextWindowSize();
+  }
+
+  override get_context_window_size(): number {
+    return this.getContextWindowSize();
+  }
+
   override get lastResponseId(): string | null {
     return this.responseChainId;
+  }
+
+  override get last_response_id(): string | null {
+    return this.lastResponseId;
   }
 
   override get lastReasoningItems(): readonly unknown[] {
     return [...this.reasoningChainItems];
   }
 
+  override get last_reasoning_items(): readonly unknown[] {
+    return this.lastReasoningItems;
+  }
+
   override resetChain(): void {
     this.responseChainId = null;
   }
 
+  override reset_chain(): void {
+    this.resetChain();
+  }
+
   override resetReasoningChain(): void {
     this.reasoningChainItems = [];
+  }
+
+  override reset_reasoning_chain(): void {
+    this.resetReasoningChain();
+  }
+
+  override toConfigDict(): Record<string, unknown> {
+    return super.toConfigDict();
+  }
+
+  override to_config_dict(): Record<string, unknown> {
+    return this.toConfigDict();
   }
 
   prepareCompletionParams(messages: readonly LLMMessage[], tools: readonly Tool[] | null = null): AzureCompletionParams {
