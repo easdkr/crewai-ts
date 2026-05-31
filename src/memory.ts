@@ -901,26 +901,84 @@ export class Memory {
   }
 
   async aremember(content: string, options: Parameters<Memory["remember"]>[1] = {}): Promise<MemoryRecord | null> {
-    if (!this.llm || (options.scope !== undefined && options.categories !== undefined && options.importance !== undefined)) {
+    if (!this.llm) {
       await Promise.resolve();
       return this.remember(content, options);
     }
-    const analysis = await analyzeForSave(
-      content,
-      this.listScopes(false) as readonly string[],
-      Object.keys(this.listCategories(false)),
-      this.llm,
-    );
-    return this.remember(content, {
-      ...options,
-      scope: options.scope ?? analysis.suggestedScope,
-      categories: options.categories ?? analysis.categories,
-      importance: options.importance ?? analysis.importance,
-      metadata: {
-        ...(options.metadata ?? {}),
-        ...extractedMetadataToRecord(analysis.extractedMetadata),
-      },
-    });
+    let resolvedOptions = options;
+    if (options.scope === undefined || options.categories === undefined || options.importance === undefined) {
+      const analysis = await analyzeForSave(
+        content,
+        this.listScopes(false) as readonly string[],
+        Object.keys(this.listCategories(false)),
+        this.llm,
+      );
+      resolvedOptions = {
+        ...options,
+        scope: options.scope ?? analysis.suggestedScope,
+        categories: options.categories ?? analysis.categories,
+        importance: options.importance ?? analysis.importance,
+        metadata: {
+          ...(options.metadata ?? {}),
+          ...extractedMetadataToRecord(analysis.extractedMetadata),
+        },
+      };
+    }
+    const similarRecords = this.findSimilarRecords(content, resolvedOptions.scope);
+    if (similarRecords.length > 0) {
+      const plan = await analyzeForConsolidation(content, similarRecords, this.llm);
+      const consolidated = this.applyConsolidationPlan(plan, similarRecords);
+      if (!plan.insertNew) {
+        return consolidated;
+      }
+    }
+    return this.remember(content, resolvedOptions);
+  }
+
+  private findSimilarRecords(content: string, scope: string | null | undefined): MemoryRecord[] {
+    const terms = tokenize(content);
+    const effectiveScope = scope ? this.scopePath(scope) : this.rootScope;
+    const config = new MemoryConfig();
+    return this.records
+      .filter((record) => !effectiveScope || record.scope.startsWith(effectiveScope))
+      .map((record) => ({ record, score: scoreRecord(record, terms) }))
+      .filter(({ score }) => score >= config.consolidationThreshold)
+      .sort((left, right) => right.score - left.score)
+      .slice(0, config.consolidationLimit)
+      .map(({ record }) => record);
+  }
+
+  private applyConsolidationPlan(plan: ConsolidationPlan, similarRecords: readonly MemoryRecord[]): MemoryRecord | null {
+    let result: MemoryRecord | null = null;
+    for (const action of plan.actions) {
+      if (action.action === "delete") {
+        this.forget({ recordIds: [action.recordId] });
+        continue;
+      }
+      if (action.action !== "update" || !action.newContent) {
+        continue;
+      }
+      const existing = this.get_record(action.recordId);
+      if (!existing) {
+        continue;
+      }
+      const updated = new MemoryRecord({
+        id: existing.id,
+        content: action.newContent,
+        scope: existing.scope,
+        categories: existing.categories,
+        metadata: existing.metadata,
+        importance: existing.importance,
+        source: existing.source,
+        private: existing.private,
+        createdAt: existing.createdAt,
+        lastAccessed: new Date(),
+        ...(existing.embedding === undefined ? {} : { embedding: existing.embedding }),
+      });
+      this.update(updated);
+      result = updated;
+    }
+    return result ?? similarRecords[0] ?? null;
   }
 
   async aremember_many(contents: readonly string[], options: Parameters<Memory["remember"]>[1] = {}): Promise<MemoryRecord[]> {
@@ -1012,6 +1070,14 @@ export class Memory {
       }
     }
     return before - this.records.length;
+  }
+
+  get_record(recordId: string): MemoryRecord | null {
+    return this.records.find((record) => record.id === recordId) ?? null;
+  }
+
+  getRecord(recordId: string): MemoryRecord | null {
+    return this.get_record(recordId);
   }
 
   update(record: MemoryRecord | MemoryRecordOptions): MemoryRecord | null {

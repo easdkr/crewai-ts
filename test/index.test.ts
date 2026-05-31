@@ -10708,6 +10708,60 @@ describe("memory", () => {
     });
     expect(seen).toHaveLength(1);
   });
+
+  it("uses configured memory LLM consolidation plans to update similar records", async () => {
+    const seen: string[] = [];
+    const memory = new Memory({
+      rootScope: "/crew",
+      llm: (messages, options) => {
+        seen.push(options?.responseModel === ConsolidationPlan ? "consolidation" : "analysis");
+        if (options?.responseModel === ConsolidationPlan) {
+          expect(messages.at(-1)?.content).toContain("Existing records:");
+          return JSON.stringify({
+            actions: [{
+              action: "update",
+              record_id: "existing-memory",
+              new_content: "CrewAI memory keeps standard decorators and avoids reflect metadata",
+              reason: "merge newer detail",
+            }],
+            insert_new: false,
+            insert_reason: "merged with existing",
+          });
+        }
+        return JSON.stringify({
+          suggested_scope: "/research",
+          categories: ["architecture"],
+          importance: 0.9,
+          extracted_metadata: { entities: [], dates: [], topics: [] },
+        });
+      },
+    });
+    memory.update(new MemoryRecord({
+      id: "existing-memory",
+      content: "CrewAI memory keeps standard decorators",
+      scope: "/crew/research",
+      categories: ["architecture"],
+      importance: 0.7,
+      createdAt: "2026-05-30T00:00:00.000Z",
+    }));
+
+    const record = await memory.aremember("CrewAI memory keeps standard decorators", {
+      scope: "/research",
+      categories: ["architecture"],
+      importance: 0.8,
+    });
+
+    expect(record).toMatchObject({
+      id: "existing-memory",
+      content: "CrewAI memory keeps standard decorators and avoids reflect metadata",
+      scope: "/crew/research",
+      categories: ["architecture"],
+      importance: 0.7,
+    });
+    expect(memory.allRecords()).toHaveLength(1);
+    expect(memory.get_record("existing-memory")?.content).toBe("CrewAI memory keeps standard decorators and avoids reflect metadata");
+    expect(seen).toEqual(["consolidation"]);
+  });
 });
 
 describe("knowledge", () => {
