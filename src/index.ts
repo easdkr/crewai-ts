@@ -756,13 +756,16 @@ export {
   BaseEvaluator,
   EvaluationScore,
   EvaluationTraceCallback,
+  EvaluationDisplayFormatter,
   ExecutionState,
   ExperimentResult,
   ExperimentResults,
+  GoalAlignmentEvaluator,
   MetricCategory,
   ParameterExtractionEvaluator,
   ReasoningEfficiencyEvaluator,
   ReasoningPatternType,
+  SemanticQualityEvaluator,
   TaskEvaluation,
   TaskEvaluationModel,
   TaskEvaluationPydanticOutput,
@@ -2515,14 +2518,6 @@ export class KnowledgeConfig {
   }
 }
 
-export class SemanticQualityEvaluator {
-  readonly kind = "SemanticQualityEvaluator";
-}
-
-export class GoalAlignmentEvaluator {
-  readonly kind = "GoalAlignmentEvaluator";
-}
-
 export function extract_json_from_llm_response(text: string): unknown {
   const start = text.indexOf("{");
   const end = text.lastIndexOf("}");
@@ -2540,9 +2535,6 @@ export class ExperimentResultsDisplay {
   readonly kind = "ExperimentResultsDisplay";
 }
 
-export class EvaluationDisplayFormatter {
-  readonly kind = "EvaluationDisplayFormatter";
-}
 
 export class AgentMeta {
   readonly kind = "AgentMeta";

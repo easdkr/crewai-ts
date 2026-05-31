@@ -66,6 +66,10 @@ When more goal budget is available, continue from the behavioral parity audits b
   - native OpenAI/Azure/Anthropic/Bedrock support overrides for function calling, stop words, and multimodal capability where deterministic
   - OpenAI/Azure response-chain compatibility getters and reset methods (`last_response_id`, `last_reasoning_items`, `reset_chain`, `reset_reasoning_chain`)
   - Gemini completion shim with deterministic config, context-window, multimodal/text-formatting, token-usage extraction, response text extraction, property ordering, and content conversion helpers
+- Added evaluation compatibility behavior:
+  - LLM-backed `GoalAlignmentEvaluator` and `SemanticQualityEvaluator` with upstream-style prompts and JSON score parsing
+  - `EvaluationDisplayFormatter` aggregation helpers for per-agent metric averages, feedback summaries, and iteration display text
+  - `AgentEvaluator` aggregation now reuses display formatter logic and emits started/completed/failed evaluation lifecycle events
 
 1. Storage backends
    - `memory/storage/backend.py`
@@ -104,7 +108,8 @@ When more goal budget is available, continue from the behavioral parity audits b
    - Remaining: optional real-client integration can be added outside the default gate if the project decides to carry provider SDK peer dependency coverage.
 
 6. Evaluation and tracing listeners
-   - Agent evaluator display/event helper methods.
+   - Agent evaluator now has behavior-bearing display aggregation and lifecycle event helper methods.
+   - Goal-alignment and semantic-quality evaluator placeholders have been replaced with LLM-backed evaluators.
    - Evaluation trace callback listener hooks.
    - Telemetry span methods are mostly compatibility placeholders and should be audited.
    - Separate no-op compatibility shims from behavior-bearing event hooks in tests, so placeholders stay intentional.

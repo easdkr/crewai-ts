@@ -182,6 +182,7 @@ import {
   StreamChunk,
   StreamChunkType,
   StructuredTool,
+  SemanticQualityEvaluator,
   Task,
   TaskEvaluator,
   TaskEvaluationEvent,
@@ -198,6 +199,9 @@ import {
   TodoItem,
   ToolSelectionErrorEvent,
   ToolsHandler,
+  GoalAlignmentEvaluator,
+  EvaluationDisplayFormatter,
+  ToolSelectionEvaluator,
   __version__,
   afterLlmCall,
   afterToolCall,
@@ -296,11 +300,14 @@ import {
   DEFAULT_FILE_STORE_TTL,
   DEFAULT_INPUT_DESCRIPTION,
   DefaultEnvEvent,
+  AgentEvaluationResult,
+  AgentEvaluator,
   CrewEvaluator,
   CrewTrainingHandler,
   CrewTestResultEvent,
   Converter,
   ConverterError,
+  EvaluationScore,
   Logger,
   HallucinationGuardrail,
   LLMGuardrail,
@@ -3009,6 +3016,134 @@ describe("agent utility helpers", () => {
 });
 
 describe("evaluator utilities", () => {
+  it("scores goal alignment and semantic quality evaluator responses", async () => {
+    const messages: LLMMessage[][] = [];
+    const llm = (input: readonly LLMMessage[]) => {
+      messages.push([...input]);
+      return JSON.stringify({ score: 8.25, feedback: "Directly satisfies the requested summary." });
+    };
+    const agentInstance = new Agent({
+      role: "Researcher",
+      goal: "Find facts",
+      backstory: "Careful analyst",
+      llm,
+    });
+    const taskInstance = new Task({
+      description: "Summarize CrewAI",
+      expectedOutput: "A concise summary",
+      agent: agentInstance,
+    });
+
+    const goalResult = await new GoalAlignmentEvaluator(llm).evaluate(agentInstance, {}, "CrewAI summary", taskInstance);
+    const semanticResult = await new SemanticQualityEvaluator(llm).evaluate(agentInstance, {}, "CrewAI summary", taskInstance);
+
+    expect(goalResult).toMatchObject({
+      score: 8.25,
+      feedback: "Directly satisfies the requested summary.",
+      rawResponse: "{\"score\":8.25,\"feedback\":\"Directly satisfies the requested summary.\"}",
+      raw_response: "{\"score\":8.25,\"feedback\":\"Directly satisfies the requested summary.\"}",
+    });
+    expect(semanticResult).toMatchObject({
+      score: 8.25,
+      feedback: "Directly satisfies the requested summary.",
+    });
+    expect(messages[0]?.[0]?.content).toContain("goal alignment");
+    expect(messages[0]?.[1]?.content).toContain("Expected output: A concise summary");
+    expect(messages[1]?.[0]?.content).toContain("semantic quality");
+  });
+
+  it("aggregates agent evaluation results with display formatter parity", () => {
+    const formatter = new EvaluationDisplayFormatter();
+    const aggregated = formatter.aggregateAgentResults({
+      agentId: "agent-1",
+      agentRole: "Researcher",
+      results: [
+        new AgentEvaluationResult({
+          agentId: "agent-1",
+          taskId: "task-1",
+          metrics: {
+            goal_alignment: new EvaluationScore({ score: 8, feedback: "clear goal match" }),
+            semantic_quality: new EvaluationScore({ score: 6, feedback: "usable but terse" }),
+          },
+        }),
+        new AgentEvaluationResult({
+          agentId: "agent-1",
+          taskId: "task-2",
+          metrics: {
+            goal_alignment: new EvaluationScore({ score: 10, feedback: "fully covered" }),
+            semantic_quality: new EvaluationScore({ score: null, feedback: "not applicable" }),
+          },
+        }),
+      ],
+    });
+
+    expect(aggregated).toMatchObject({
+      agentId: "agent-1",
+      agentRole: "Researcher",
+      taskCount: 2,
+      taskResults: ["task-1", "task-2"],
+      overallScore: 7.5,
+    });
+    expect(aggregated.metrics.get("goal_alignment")).toMatchObject({
+      score: 9,
+      feedback: "Feedback 1: clear goal match\n\nFeedback 2: fully covered",
+    });
+    expect(aggregated.metrics.get("semantic_quality")).toMatchObject({
+      score: 6,
+      feedback: "Feedback 1: usable but terse\n\nFeedback 2: not applicable",
+    });
+  });
+
+  it("emits agent evaluation lifecycle events for metric evaluators", () => {
+    const events: Array<AgentEvaluationStartedEvent | AgentEvaluationCompletedEvent | AgentEvaluationFailedEvent> = [];
+    const offStarted = crewaiEventBus.on("agent_evaluation_started", (_source, event) => {
+      events.push(event);
+    });
+    const offCompleted = crewaiEventBus.on("agent_evaluation_completed", (_source, event) => {
+      events.push(event);
+    });
+    const offFailed = crewaiEventBus.on("agent_evaluation_failed", (_source, event) => {
+      events.push(event);
+    });
+    const agentInstance = new Agent({
+      role: "Researcher",
+      goal: "Find facts",
+      backstory: "Careful analyst",
+      llm: () => "done",
+    });
+    const taskInstance = new Task({
+      description: "Summarize CrewAI",
+      expectedOutput: "A concise summary",
+      agent: agentInstance,
+    });
+
+    try {
+      const result = new AgentEvaluator([agentInstance], [new ToolSelectionEvaluator()]).evaluate({
+        agent: agentInstance,
+        task: taskInstance,
+        executionTrace: { tool_uses: [{ tool: "search" }] },
+        finalOutput: "CrewAI summary",
+      });
+
+      expect(result.metrics.get("tool_selection")).toMatchObject({ score: 5 });
+      expect(events.map((event) => event.type)).toEqual([
+        "agent_evaluation_started",
+        "agent_evaluation_completed",
+      ]);
+      expect(events[0]).toMatchObject({
+        agent_role: "Researcher",
+        agent_id: "",
+        task_id: taskInstance.id,
+        iteration: 1,
+      });
+      expect((events[1] as AgentEvaluationCompletedEvent).metric_category).toBe("tool_selection");
+    } finally {
+      offStarted();
+      offCompleted();
+      offFailed();
+    }
+  });
+
   it("evaluates task output into structured quality suggestions and emits events", async () => {
     const events: TaskEvaluationEvent[] = [];
     crewaiEventBus.on("task_evaluation", (_source, event) => {

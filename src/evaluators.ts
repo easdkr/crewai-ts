@@ -1,6 +1,9 @@
 import { Agent } from "./agent.js";
 import { Converter, type StructuredModel } from "./converter.js";
 import {
+  AgentEvaluationCompletedEvent,
+  AgentEvaluationFailedEvent,
+  AgentEvaluationStartedEvent,
   CrewTestResultEvent,
   TaskEvaluationEvent,
   crewaiEventBus,
@@ -10,7 +13,7 @@ import { createLLMClient, resolveLLMProvider, type LLMClient } from "./llm.js";
 import { TaskOutput } from "./outputs.js";
 import { generateModelDescription } from "./schema-utils.js";
 import { Task } from "./task.js";
-import type { LLM, TaskCallback } from "./types.js";
+import type { LLM, LLMMessage, TaskCallback } from "./types.js";
 
 export const MetricCategory = {
   GOAL_ALIGNMENT: "goal_alignment",
@@ -249,10 +252,17 @@ export class AgentEvaluator {
     const finalOutput = options.finalOutput ?? options.final_output ?? "";
     const evaluators = this.evaluators ?? create_default_evaluator();
     const metrics = new Map<MetricCategory, EvaluationScore>();
+    const agentRole = stringifyEvaluationValue((options.agent as { role?: unknown }).role ?? "");
     for (const evaluator of evaluators) {
-      const result = evaluator.evaluate(agentId, trace, finalOutput, options.task ?? null);
-      if (result instanceof EvaluationScore) {
-        metrics.set(evaluator.metricCategory, result);
+      try {
+        this.emit_evaluation_started_event(agentRole, agentId, taskId);
+        const result = evaluator.evaluate(options.agent, trace, finalOutput, options.task ?? null);
+        if (result instanceof EvaluationScore) {
+          metrics.set(evaluator.metricCategory, result);
+          this.emit_evaluation_completed_event(agentRole, agentId, taskId, evaluator.metricCategory, result);
+        }
+      } catch (error) {
+        this.emit_evaluation_failed_event(agentRole, agentId, error, taskId);
       }
     }
     return new AgentEvaluationResult({ agentId, taskId, metrics });
@@ -260,15 +270,60 @@ export class AgentEvaluator {
 
   get_agent_evaluation(strategy: AggregationStrategy = AggregationStrategy.SIMPLE_AVERAGE): Record<string, AgentAggregatedEvaluationResult> {
     const results = this.get_evaluation_results();
+    const formatter = new EvaluationDisplayFormatter();
     return Object.fromEntries(Object.entries(results).map(([role, entries]) => [
       role,
-      new AgentAggregatedEvaluationResult({
+      formatter.aggregateAgentResults({
+        agentId: entries[0]?.agentId ?? "",
         agentRole: role,
-        taskCount: entries.length,
-        aggregationStrategy: strategy,
-        overallScore: average(entries.flatMap((entry) => [...entry.metrics.values()].map((score) => score.score).filter((score): score is number => score !== null))),
+        results: entries,
+        strategy,
       }),
     ]));
+  }
+
+  display_results_with_iterations(): string {
+    return new EvaluationDisplayFormatter().display_summary_results(this.executionState.iterationsResults);
+  }
+
+  display_evaluation_with_feedback(): string {
+    return new EvaluationDisplayFormatter().display_evaluation_with_feedback(this.executionState.iterationsResults);
+  }
+
+  emit_evaluation_started_event(agent_role: string, agent_id: string, task_id: string | null = null): void {
+    crewaiEventBus.emit(this, new AgentEvaluationStartedEvent({
+      agent_role,
+      agent_id,
+      task_id,
+      iteration: this.executionState.iteration,
+    }));
+  }
+
+  emit_evaluation_completed_event(
+    agent_role: string,
+    agent_id: string,
+    task_id: string | null = null,
+    metric_category: MetricCategory | null = null,
+    score: EvaluationScore | null = null,
+  ): void {
+    crewaiEventBus.emit(this, new AgentEvaluationCompletedEvent({
+      agent_role,
+      agent_id,
+      task_id,
+      iteration: this.executionState.iteration,
+      metric_category,
+      score,
+    }));
+  }
+
+  emit_evaluation_failed_event(agent_role: string, agent_id: string, error: unknown, task_id: string | null = null): void {
+    crewaiEventBus.emit(this, new AgentEvaluationFailedEvent({
+      agent_role,
+      agent_id,
+      task_id,
+      iteration: this.executionState.iteration,
+      error,
+    }));
   }
 }
 
@@ -305,13 +360,236 @@ export class ReasoningEfficiencyEvaluator extends ConstantScoreEvaluator {
   }
 }
 
+export class GoalAlignmentEvaluator extends BaseEvaluator {
+  get metricCategory(): MetricCategory {
+    return MetricCategory.GOAL_ALIGNMENT;
+  }
+
+  evaluate(
+    agent: unknown,
+    _executionTrace: Record<string, unknown>,
+    finalOutput: unknown,
+    task: Task | null = null,
+  ): EvaluationScore | Promise<EvaluationScore> {
+    const agentRecord = asRecord(agent);
+    const taskContext = task
+      ? `Task description: ${task.description}\nExpected output: ${task.expectedOutput}\n`
+      : "";
+    const prompt: LLMMessage[] = [
+      {
+        role: "system",
+        content: `You are an expert evaluator assessing how well an AI agent's output aligns with its assigned task goal.
+
+Score the agent's goal alignment on a scale from 0-10 where:
+- 0: Complete misalignment, agent did not understand or attempt the task goal
+- 5: Partial alignment, agent attempted the task but missed key requirements
+- 10: Perfect alignment, agent fully satisfied all task requirements
+
+Consider:
+1. Did the agent correctly interpret the task goal?
+2. Did the final output directly address the requirements?
+3. Did the agent focus on relevant aspects of the task?
+4. Did the agent provide all requested information or deliverables?
+
+Return your evaluation as JSON with fields 'score' (number) and 'feedback' (string).`,
+      },
+      {
+        role: "user",
+        content: `
+Agent role: ${stringifyEvaluationValue(agentRecord.role ?? "")}
+Agent goal: ${stringifyEvaluationValue(agentRecord.goal ?? "")}
+${taskContext}
+
+Agent's final output:
+${stringifyEvaluationValue(finalOutput)}
+
+Evaluate how well the agent's output aligns with the assigned task goal.`,
+      },
+    ];
+    const response = callEvaluatorLLM(this.llm, prompt);
+    if (isPromiseLike(response)) {
+      return Promise.resolve(response).then((value) => parseEvaluatorScore(value));
+    }
+    return parseEvaluatorScore(response);
+  }
+}
+
+export class SemanticQualityEvaluator extends BaseEvaluator {
+  get metricCategory(): MetricCategory {
+    return MetricCategory.SEMANTIC_QUALITY;
+  }
+
+  evaluate(
+    agent: unknown,
+    _executionTrace: Record<string, unknown>,
+    finalOutput: unknown,
+    task: Task | null = null,
+  ): EvaluationScore | Promise<EvaluationScore> {
+    const agentRecord = asRecord(agent);
+    const taskContext = task ? `Task description: ${task.description}` : "";
+    const prompt: LLMMessage[] = [
+      {
+        role: "system",
+        content: `You are an expert evaluator assessing the semantic quality of an AI agent's output.
+
+Score the semantic quality on a scale from 0-10 where:
+- 0: Completely incoherent, confusing, or logically flawed output
+- 5: Moderately clear and logical output with some issues
+- 10: Exceptionally clear, coherent, and logically sound output
+
+Consider:
+1. Is the output well-structured and organized?
+2. Is the reasoning logical and well-supported?
+3. Is the language clear, precise, and appropriate for the task?
+4. Are claims supported by evidence when appropriate?
+5. Is the output free from contradictions and logical fallacies?
+
+Return your evaluation as JSON with fields 'score' (number) and 'feedback' (string).`,
+      },
+      {
+        role: "user",
+        content: `
+Agent role: ${stringifyEvaluationValue(agentRecord.role ?? "")}
+${taskContext}
+
+Agent's final output:
+${stringifyEvaluationValue(finalOutput)}
+
+Evaluate the semantic quality and reasoning of this output.`,
+      },
+    ];
+    const response = callEvaluatorLLM(this.llm, prompt);
+    if (isPromiseLike(response)) {
+      return Promise.resolve(response).then((value) => parseEvaluatorScore(value));
+    }
+    return parseEvaluatorScore(response);
+  }
+}
+
 export function create_default_evaluator(llm: LLM | string | null = null): BaseEvaluator[] {
   return [
+    new GoalAlignmentEvaluator(llm),
+    new SemanticQualityEvaluator(llm),
     new ToolSelectionEvaluator(llm),
     new ParameterExtractionEvaluator(llm),
     new ToolInvocationEvaluator(llm),
     new ReasoningEfficiencyEvaluator(llm),
   ];
+}
+
+export class EvaluationDisplayFormatter {
+  aggregateAgentResults(options: {
+    agentId?: string;
+    agent_id?: string;
+    agentRole?: string;
+    agent_role?: string;
+    results: readonly AgentEvaluationResult[];
+    strategy?: AggregationStrategy;
+  }): AgentAggregatedEvaluationResult {
+    return this._aggregate_agent_results(
+      options.agentId ?? options.agent_id ?? "",
+      options.agentRole ?? options.agent_role ?? "",
+      options.results,
+      options.strategy ?? AggregationStrategy.SIMPLE_AVERAGE,
+    );
+  }
+
+  _aggregate_agent_results(
+    agentId: string,
+    agentRole: string,
+    results: readonly AgentEvaluationResult[],
+    strategy: AggregationStrategy = AggregationStrategy.SIMPLE_AVERAGE,
+  ): AgentAggregatedEvaluationResult {
+    const metricsByCategory = new Map<MetricCategory, EvaluationScore[]>();
+    for (const result of results) {
+      for (const [category, score] of result.metrics) {
+        const scores = metricsByCategory.get(category) ?? [];
+        scores.push(score);
+        metricsByCategory.set(category, scores);
+      }
+    }
+
+    const aggregatedMetrics = new Map<MetricCategory, EvaluationScore>();
+    for (const [category, scores] of metricsByCategory) {
+      const validScores = scores.map((score) => score.score).filter((score): score is number => score !== null);
+      const feedbacks = scores.map((score) => score.feedback).filter((feedback) => feedback.length > 0);
+      aggregatedMetrics.set(category, new EvaluationScore({
+        score: averageOrNull(validScores),
+        feedback: this.summarizeFeedbacks(feedbacks),
+      }));
+    }
+
+    return new AgentAggregatedEvaluationResult({
+      agentId,
+      agentRole,
+      taskCount: results.length,
+      aggregationStrategy: strategy,
+      metrics: aggregatedMetrics,
+      taskResults: results.map((result) => result.taskId),
+      overallScore: averageOrNull([...aggregatedMetrics.values()]
+        .map((score) => score.score)
+        .filter((score): score is number => score !== null)),
+    });
+  }
+
+  display_evaluation_with_feedback(iterationsResults: Record<number, Record<string, AgentEvaluationResult[]>>): string {
+    if (Object.keys(iterationsResults).length === 0) {
+      return "No evaluation results to display";
+    }
+    return this.formatIterations(iterationsResults, true);
+  }
+
+  display_summary_results(iterationsResults: Record<number, Record<string, AgentEvaluationResult[]>>): string {
+    if (Object.keys(iterationsResults).length === 0) {
+      return "No evaluation results to display";
+    }
+    return this.formatIterations(iterationsResults, false);
+  }
+
+  private summarizeFeedbacks(feedbacks: readonly string[]): string {
+    if (feedbacks.length === 0) {
+      return "";
+    }
+    if (feedbacks.length === 1) {
+      return feedbacks[0] ?? "";
+    }
+    if (feedbacks.length <= 2 && feedbacks.every((feedback) => feedback.length < 200)) {
+      return feedbacks.map((feedback, index) => `Feedback ${String(index + 1)}: ${feedback}`).join("\n\n");
+    }
+    return `Synthesized from multiple tasks: ${feedbacks.map((feedback) => `\n\n- ${feedback.slice(0, 500)}${feedback.length > 500 ? "..." : ""}`).join("")}`;
+  }
+
+  private formatIterations(iterationsResults: Record<number, Record<string, AgentEvaluationResult[]>>, includeFeedback: boolean): string {
+    const lines: string[] = [];
+    const roles = new Set<string>();
+    for (const result of Object.values(iterationsResults)) {
+      for (const role of Object.keys(result)) {
+        roles.add(role);
+      }
+    }
+    for (const role of [...roles].sort()) {
+      lines.push(`Agent: ${role}`);
+      for (const [iteration, result] of Object.entries(iterationsResults).sort(([left], [right]) => Number(left) - Number(right))) {
+        const entries = result[role] ?? [];
+        if (entries.length === 0) {
+          continue;
+        }
+        const aggregated = this.aggregateAgentResults({
+          agentId: entries[0]?.agentId ?? "",
+          agentRole: role,
+          results: entries,
+        });
+        lines.push(`Iteration ${iteration}`, `Overall Score: ${aggregated.overallScore === null ? "N/A" : aggregated.overallScore.toFixed(1)}`);
+        for (const [metric, score] of aggregated.metrics) {
+          lines.push(`${metricCategoryTitle(metric)}: ${score.score === null ? "N/A" : score.score.toFixed(1)}`);
+          if (includeFeedback && score.feedback) {
+            lines.push(score.feedback);
+          }
+        }
+      }
+    }
+    return lines.join("\n");
+  }
 }
 
 export class EvaluationTraceCallback {
@@ -870,6 +1148,50 @@ function parseTaskEvaluationPydanticOutput(value: unknown): TaskEvaluationPydant
   return { quality: toNumber(record.quality) };
 }
 
+function parseEvaluatorScore(response: unknown): EvaluationScore {
+  const rawResponse = stringifyEvaluationValue(response);
+  try {
+    const record = asRecord(extractJsonFromLLMResponse(rawResponse));
+    return new EvaluationScore({
+      score: record.score === null || record.score === undefined ? null : toNumber(record.score),
+      feedback: stringifyEvaluationValue(record.feedback ?? rawResponse),
+      rawResponse,
+    });
+  } catch {
+    return new EvaluationScore({
+      score: null,
+      feedback: `Failed to parse evaluation. Raw response: ${rawResponse}`,
+      rawResponse,
+    });
+  }
+}
+
+function callEvaluatorLLM(llm: LLM | string | null, messages: readonly LLMMessage[]): unknown {
+  if (!llm) {
+    throw new Error("Evaluator requires an LLM.");
+  }
+  if (typeof llm === "function") {
+    return llm(messages);
+  }
+  if (typeof llm !== "string") {
+    return llm.call(messages);
+  }
+  const provider = resolveLLMProvider(llm);
+  if (!provider) {
+    throw new Error(`No LLM provider registered for model '${llm}'.`);
+  }
+  return provider.call(messages);
+}
+
+function extractJsonFromLLMResponse(text: string): unknown {
+  const start = text.indexOf("{");
+  const end = text.lastIndexOf("}");
+  if (start < 0 || end < start) {
+    throw new Error("Failed to extract evaluation data from LLM response.");
+  }
+  return JSON.parse(text.slice(start, end + 1));
+}
+
 function parseEntity(value: unknown): Entity {
   const record = asRecord(value);
   return {
@@ -926,6 +1248,14 @@ function stringifyEvaluationValue(value: unknown): string {
 
 function average(values: readonly number[]): number {
   return values.length === 0 ? 0 : values.reduce((total, value) => total + value, 0) / values.length;
+}
+
+function averageOrNull(values: readonly number[]): number | null {
+  return values.length === 0 ? null : average(values);
+}
+
+function isPromiseLike<T>(value: T | PromiseLike<T>): value is PromiseLike<T> {
+  return typeof value === "object" && value !== null && "then" in value && typeof (value as { then?: unknown }).then === "function";
 }
 
 function compareExperimentScore(score: number | Record<string, number>, expected: number | Record<string, number>): boolean {
