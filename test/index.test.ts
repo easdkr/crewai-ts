@@ -686,6 +686,7 @@ import {
   processTaskState,
   renderA2ATemplate,
   sendMessageAndGetTaskId,
+  wrap_agent_with_a2a_instance,
   AVAILABLE_AGENTS_TEMPLATE,
   extractErrorMessage,
   extractTaskResultParts,
@@ -3919,6 +3920,49 @@ describe("a2a utilities", () => {
       provider: { organization: "Example" },
       cached: false,
     });
+  });
+
+  it("wraps agent task and kickoff execution with A2A prompt augmentation", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({
+        name: "remote",
+        description: "Remote research agent",
+        url: "https://remote.example.com/a2a",
+        protocol_version: "0.3.0",
+      }),
+    } as Response);
+    fetchMock.mockClear();
+    const taskPrompts: string[] = [];
+    const kickoffPrompts: string[] = [];
+    const agent = {
+      a2a: new A2AClientConfig({ endpoint: "https://remote.example.com/a2a" }),
+      execute_task: vi.fn((task: { description?: string }) => {
+        taskPrompts.push(task.description ?? "");
+        return Promise.resolve(JSON.stringify({ a2a_ids: [], message: "local task result", is_a2a: false }));
+      }),
+      kickoff: vi.fn((message: string) => {
+        kickoffPrompts.push(message);
+        return Promise.resolve(JSON.stringify({
+          a2a_ids: ["https://remote.example.com/a2a"],
+          message: "delegate this",
+          is_a2a: true,
+        }));
+      }),
+    };
+
+    wrap_agent_with_a2a_instance(agent);
+
+    await expect(agent.execute_task({ description: "Research CrewAI" })).resolves.toBe("local task result");
+    await expect(agent.kickoff("Summarize CrewAI")).resolves.toBe("https://remote.example.com/a2a");
+
+    expect(taskPrompts[0]).toContain("Research CrewAI");
+    expect(taskPrompts[0]).toContain("<AVAILABLE_A2A_AGENTS>");
+    expect(taskPrompts[0]).toContain("Remote research agent");
+    expect(kickoffPrompts[0]).toContain("Summarize CrewAI");
+    expect(kickoffPrompts[0]).toContain("<AVAILABLE_A2A_AGENTS>");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    fetchMock.mockRestore();
   });
 
   it("emits A2A authentication failure events for unauthorized agent-card fetches", async () => {

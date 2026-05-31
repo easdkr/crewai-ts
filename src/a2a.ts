@@ -4041,9 +4041,318 @@ function constructorNameOrFallback(value: unknown, fallback: string): string {
     : fallback;
 }
 
+export async function _fetch_card_from_config(
+  config: A2AClientConfigTypes,
+): Promise<[A2AClientConfigTypes, Record<string, unknown> | Error]> {
+  try {
+    return [config, await fetch_agent_card(config.endpoint, config.auth, config.timeout)];
+  } catch (error) {
+    return [config, error instanceof Error ? error : new Error(formatA2AUnknownError(error))];
+  }
+}
+
+export async function _fetch_agent_cards_concurrently(
+  a2a_agents: readonly A2AClientConfigTypes[],
+): Promise<[Record<string, Record<string, unknown>>, Record<string, string>]> {
+  const agentCards: Record<string, Record<string, unknown>> = {};
+  const failedAgents: Record<string, string> = {};
+  await Promise.all(a2a_agents.map(async (config) => {
+    const [resolvedConfig, result] = await _fetch_card_from_config(config);
+    if (result instanceof Error) {
+      if (resolvedConfig.failFast) {
+        throw new Error(
+          `Failed to fetch agent card from ${resolvedConfig.endpoint}. Ensure the A2A agent is running and accessible. Error: ${result.message}`,
+        );
+      }
+      failedAgents[resolvedConfig.endpoint] = result.message;
+      return;
+    }
+    agentCards[resolvedConfig.endpoint] = result;
+  }));
+  return [agentCards, failedAgents];
+}
+
+export function _parse_agent_response(raw_result: unknown, agent_response_model: typeof AgentResponseModel | null = null): unknown {
+  if (raw_result instanceof AgentResponseModel) {
+    return raw_result;
+  }
+  const parsed = typeof raw_result === "string" ? parseA2AJsonObject(raw_result) : raw_result;
+  if (!isA2AAgentResponseProtocol(parsed)) {
+    return raw_result;
+  }
+  if (agent_response_model) {
+    return new agent_response_model(parsed);
+  }
+  return new AgentResponseModel(parsed);
+}
+
+export function _augment_prompt_with_a2a(options: {
+  a2a_agents: readonly A2AClientConfigTypes[];
+  task_description: string;
+  agent_cards: Record<string, Record<string, unknown>>;
+  failed_agents?: Record<string, string>;
+  extension_registry?: ExtensionRegistry | null;
+}): [string, string, Map<unknown, ConversationState>] {
+  const availableAgents = Object.entries(options.agent_cards)
+    .map(([endpoint, card]) => {
+      const name = typeof card.name === "string" ? card.name : endpoint;
+      const description = typeof card.description === "string" ? ` - ${card.description}` : "";
+      return `  - ${endpoint}: ${name}${description}`;
+    })
+    .join("\n");
+  const failedAgents = Object.entries(options.failed_agents ?? {})
+    .map(([endpoint, error]) => `  - ${endpoint}: ${error}`)
+    .join("\n");
+  let prompt = options.task_description;
+  if (availableAgents.length > 0) {
+    prompt += renderA2ATemplate(AVAILABLE_AGENTS_TEMPLATE, { available_a2a_agents: availableAgents });
+  }
+  if (failedAgents.length > 0) {
+    prompt += renderA2ATemplate(UNAVAILABLE_AGENTS_NOTICE_TEMPLATE, { unavailable_agents: failedAgents });
+  }
+  const extensionStates = options.extension_registry?.extract_all_states([]) ?? new Map<unknown, ConversationState>();
+  prompt = options.extension_registry?.augment_prompt_with_all(prompt, extensionStates) ?? prompt;
+  return [prompt, availableAgents, extensionStates];
+}
+
+export async function _execute_task_with_a2a(options: {
+  self: unknown;
+  a2a_agents: readonly A2AClientConfigTypes[];
+  original_fn: (...args: unknown[]) => unknown;
+  task: unknown;
+  agent_response_model?: typeof AgentResponseModel | null;
+  context?: string | null;
+  tools?: readonly unknown[] | null;
+  extension_registry?: ExtensionRegistry | null;
+}): Promise<string> {
+  void options.self;
+  const originalDescription = getTaskDescription(options.task);
+  const [agentCards, failedAgents] = await _fetch_agent_cards_concurrently(options.a2a_agents);
+  if (Object.keys(agentCards).length === 0 && options.a2a_agents.length > 0 && Object.keys(failedAgents).length > 0) {
+    const unavailable = Object.entries(failedAgents).map(([endpoint, error]) => `  - ${endpoint}: ${error}`).join("\n");
+    const notice = renderA2ATemplate(UNAVAILABLE_AGENTS_NOTICE_TEMPLATE, { unavailable_agents: unavailable });
+    return String(await callOriginalA2ATask(options.original_fn, withTaskDescription(options.task, `${originalDescription}${notice}`), options.context, options.tools));
+  }
+
+  const [augmentedDescription, , extensionStates] = _augment_prompt_with_a2a({
+    a2a_agents: options.a2a_agents,
+    task_description: originalDescription,
+    agent_cards: agentCards,
+    failed_agents: failedAgents,
+    extension_registry: options.extension_registry ?? null,
+  });
+  const rawResult = await callOriginalA2ATask(options.original_fn, withTaskDescription(options.task, augmentedDescription), options.context, options.tools);
+  let agentResponse = _parse_agent_response(rawResult, options.agent_response_model ?? null);
+  agentResponse = options.extension_registry?.process_response_with_all(agentResponse, extensionStates) ?? agentResponse;
+  if (agentResponse instanceof AgentResponseModel) {
+    if (agentResponse.is_a2a) {
+      return await delegateA2AResponse(agentResponse, options.a2a_agents, agentCards);
+    }
+    return agentResponse.message;
+  }
+  return String(rawResult);
+}
+
 export function wrap_agent_with_a2a_instance(agent: unknown, extension_registry: ExtensionRegistry | null = null): void {
-  extension_registry?.inject_all_tools(agent);
+  const registry = extension_registry ?? new ExtensionRegistry();
+  registry.inject_all_tools(agent);
+  const agentRecord = recordOrNullA2A(agent);
+  if (!agentRecord) {
+    return;
+  }
+
+  const originalExecuteTask: ((...args: unknown[]) => unknown) | null = typeof agentRecord.execute_task === "function"
+    ? (agentRecord.execute_task as (...args: unknown[]) => unknown).bind(agent)
+    : null;
+  if (originalExecuteTask) {
+    agentRecord.execute_task = async function executeTaskWithA2A(this: Record<string, unknown>, task: unknown, context?: string | null, tools?: readonly unknown[]) {
+      if (!this.a2a) {
+        return await originalExecuteTask(task, context, tools);
+      }
+      const [a2aAgents, agentResponseModel] = get_a2a_agents_and_response_model(this.a2a as A2AConfigTypes | readonly A2AConfigTypes[]);
+      if (a2aAgents.length === 0) {
+        return await originalExecuteTask(task, context, tools);
+      }
+      return await _execute_task_with_a2a({
+        self: this,
+        a2a_agents: a2aAgents,
+        original_fn: originalExecuteTask,
+        task,
+        agent_response_model: agentResponseModel,
+        ...(context === undefined ? {} : { context }),
+        ...(tools === undefined ? {} : { tools }),
+        extension_registry: registry,
+      });
+    };
+    agentRecord.aexecute_task = agentRecord.execute_task;
+  }
+
+  const originalKickoff: ((...args: unknown[]) => unknown) | null = typeof agentRecord.kickoff === "function"
+    ? (agentRecord.kickoff as (...args: unknown[]) => unknown).bind(agent)
+    : null;
+  if (originalKickoff) {
+    agentRecord.kickoff = async function kickoffWithA2A(this: Record<string, unknown>, messages: unknown, options: Record<string, unknown> = {}) {
+      if (!this.a2a) {
+        return await originalKickoff(messages, options);
+      }
+      const [a2aAgents, agentResponseModel] = get_a2a_agents_and_response_model(this.a2a as A2AConfigTypes | readonly A2AConfigTypes[]);
+      if (a2aAgents.length === 0) {
+        return await originalKickoff(messages, options);
+      }
+      const description = kickoffDescription(messages);
+      if (!description) {
+        return await originalKickoff(messages, options);
+      }
+      return await _execute_task_with_a2a({
+        self: this,
+        a2a_agents: a2aAgents,
+        original_fn: async (task: unknown) => await originalKickoff(withKickoffDescription(messages, getTaskDescription(task)), {
+          ...options,
+          responseModel: agentResponseModel ?? options.responseModel,
+          response_model: agentResponseModel ?? options.response_model,
+        }),
+        task: { description },
+        agent_response_model: agentResponseModel,
+        context: null,
+        tools: null,
+        extension_registry: registry,
+      });
+    };
+    agentRecord.kickoff_async = agentRecord.kickoff;
+    agentRecord.kickoffAsync = agentRecord.kickoff;
+    agentRecord.akickoff = agentRecord.kickoff;
+  }
   inject_a2a_server_methods(agent);
+}
+
+function parseA2AJsonObject(value: string): unknown {
+  try {
+    return JSON.parse(value);
+  } catch {
+    return value;
+  }
+}
+
+function isA2AAgentResponseProtocol(value: unknown): value is A2AAgentResponseProtocol {
+  const record = recordOrNullA2A(value);
+  return !!record
+    && Array.isArray(record.a2a_ids)
+    && typeof record.message === "string"
+    && typeof record.is_a2a === "boolean";
+}
+
+function getTaskDescription(task: unknown): string {
+  if (typeof task === "string") {
+    return task;
+  }
+  const record = recordOrNullA2A(task);
+  if (!record) {
+    return "";
+  }
+  if (typeof record.description === "string") {
+    return record.description;
+  }
+  if (typeof record.prompt === "function") {
+    const prompt = (record.prompt as () => unknown)();
+    return typeof prompt === "string" ? prompt : "";
+  }
+  if (record.task !== undefined) {
+    return getTaskDescription(record.task);
+  }
+  return "";
+}
+
+function withTaskDescription(task: unknown, description: string): unknown {
+  if (typeof task === "string") {
+    return description;
+  }
+  const record = recordOrNullA2A(task);
+  if (!record) {
+    return { description };
+  }
+  if ("task" in record) {
+    return { ...record, task: withTaskDescription(record.task, description) };
+  }
+  return { ...record, description, prompt: () => description };
+}
+
+async function callOriginalA2ATask(
+  originalFn: (...args: unknown[]) => unknown,
+  task: unknown,
+  context?: string | null,
+  tools?: readonly unknown[] | null,
+): Promise<unknown> {
+  return await originalFn(task, context, tools ?? undefined);
+}
+
+async function delegateA2AResponse(
+  agentResponse: AgentResponseModel,
+  a2aAgents: readonly A2AClientConfigTypes[],
+  agentCards: Record<string, Record<string, unknown>>,
+): Promise<string> {
+  const selectedEndpoint = agentResponse.a2a_ids.find((endpoint) => endpoint in agentCards)
+    ?? agentResponse.a2a_ids[0]
+    ?? a2aAgents[0]?.endpoint
+    ?? "";
+  const selectedConfig = a2aAgents.find((config) => config.endpoint === selectedEndpoint) ?? a2aAgents[0];
+  const result = await aexecute_a2a_delegation({
+    endpoint: selectedEndpoint,
+    agent_config: selectedConfig,
+    current_request: agentResponse.message,
+    agent_card: agentCards[selectedEndpoint] ?? null,
+  });
+  return result.result ?? result.error ?? "";
+}
+
+function kickoffDescription(messages: unknown): string {
+  if (typeof messages === "string") {
+    return messages;
+  }
+  if (isReadonlyUnknownArray(messages)) {
+    for (const message of [...messages].reverse()) {
+      const record = recordOrNullA2A(message);
+      if (record?.role === "user" && typeof record.content === "string") {
+        return record.content;
+      }
+    }
+  }
+  return "";
+}
+
+function withKickoffDescription(messages: unknown, description: string): unknown {
+  if (typeof messages === "string") {
+    return description;
+  }
+  if (!isReadonlyUnknownArray(messages)) {
+    return messages;
+  }
+  const updated = [...messages];
+  for (let index = updated.length - 1; index >= 0; index -= 1) {
+    const record = recordOrNullA2A(updated[index]);
+    if (record?.role === "user" && typeof record.content === "string") {
+      updated[index] = { ...record, content: description };
+      return updated;
+    }
+  }
+  return messages;
+}
+
+function isReadonlyUnknownArray(value: unknown): value is readonly unknown[] {
+  return Array.isArray(value);
+}
+
+function formatA2AUnknownError(error: unknown): string {
+  if (typeof error === "string") {
+    return error;
+  }
+  if (error && typeof error === "object") {
+    try {
+      return JSON.stringify(error);
+    } catch {
+      return Object.prototype.toString.call(error);
+    }
+  }
+  return String(error);
 }
 
 export function list_tasks(
