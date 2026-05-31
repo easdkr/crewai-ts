@@ -477,6 +477,10 @@ export class CustomProvider extends BaseEmbeddingsProvider {
 }
 
 export class GoogleGenAIVertexEmbeddingFunction {
+  static name(): string {
+    return "google-vertex";
+  }
+
   call(input: Embeddable): unknown {
     return defaultEmbeddingCallable(input);
   }

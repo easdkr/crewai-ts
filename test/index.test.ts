@@ -411,6 +411,7 @@ import {
   CohereProvider,
   GeminiCompletion,
   GenerativeAiProvider,
+  GoogleGenAIVertexEmbeddingFunction,
   HuggingFaceProvider,
   InternalInstructor,
   InstructorProvider,
@@ -6033,6 +6034,7 @@ describe("RAG configuration and factories", () => {
       location: "us-central1",
       task_type: "RETRIEVAL_DOCUMENT",
     });
+    expect(GoogleGenAIVertexEmbeddingFunction.name()).toBe("google-vertex");
     expect(huggingface).toMatchObject({
       provider: "huggingface",
       api_key: "hf-test",
