@@ -9277,6 +9277,36 @@ describe("LLM providers", () => {
     ]);
   });
 
+  it("extracts Gemini structured output pseudo-tool responses", () => {
+    const response = {
+      candidates: [{
+        content: {
+          parts: [
+            { functionCall: { name: "search_docs", args: { query: "CrewAI" } } },
+            { functionCall: { name: "structured_output", args: { answer: "done", confidence: 0.91 } } },
+          ],
+        },
+      }],
+    };
+
+    expect(GeminiCompletion.extract_structured_output_from_response(response)).toEqual({
+      answer: "done",
+      confidence: 0.91,
+    });
+    expect(GeminiCompletion.extract_function_calls_from_response(response)).toEqual([
+      {
+        id: "call_0",
+        type: "function",
+        function: {
+          name: "search_docs",
+          arguments: "{\"query\":\"CrewAI\"}",
+        },
+        args: { query: "CrewAI" },
+        index: 0,
+      },
+    ]);
+  });
+
   it("creates configured LLM clients from strings, objects, clients, and environment fallback", async () => {
     const existing = {
       call: () => "existing",

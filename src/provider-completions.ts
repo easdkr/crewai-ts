@@ -1002,6 +1002,9 @@ export class GeminiCompletion extends ConfiguredLLM {
       if (Object.keys(functionCall).length === 0) {
         continue;
       }
+      if ((scalarToString(functionCall.name) ?? "") === STRUCTURED_OUTPUT_TOOL_NAME) {
+        continue;
+      }
       const index = calls.length;
       const args = readObject(functionCall.args);
       calls.push({
@@ -1020,6 +1023,29 @@ export class GeminiCompletion extends ConfiguredLLM {
 
   static extract_function_calls_from_response(response: unknown): Record<string, unknown>[] {
     return GeminiCompletion.extractFunctionCallsFromResponse(response);
+  }
+
+  static extractStructuredOutputFromResponse(response: unknown): Record<string, unknown> | null {
+    const candidates = readObject(response).candidates;
+    if (!Array.isArray(candidates)) {
+      return null;
+    }
+    const first = readObject(candidates[0]);
+    const rawParts = Array.isArray(readObject(first.content).parts)
+      ? readObject(first.content).parts as unknown[]
+      : [];
+    for (const part of rawParts) {
+      const partRecord = readObject(part);
+      const functionCall = readObject(partRecord.functionCall ?? partRecord.function_call);
+      if ((scalarToString(functionCall.name) ?? "") === STRUCTURED_OUTPUT_TOOL_NAME) {
+        return readObject(functionCall.args);
+      }
+    }
+    return null;
+  }
+
+  static extract_structured_output_from_response(response: unknown): Record<string, unknown> | null {
+    return GeminiCompletion.extractStructuredOutputFromResponse(response);
   }
 
   static addPropertyOrdering<T extends Record<string, unknown>>(schema: T): T {
