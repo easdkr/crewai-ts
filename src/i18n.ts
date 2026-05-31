@@ -89,12 +89,21 @@ const defaultPrompts = {
 export class I18N {
   readonly promptFile: string | null;
   readonly prompt_file: string | null;
-  private readonly prompts: PromptCatalog;
+  private prompts: PromptCatalog;
 
   constructor(options: { promptFile?: string | null; prompt_file?: string | null; prompts?: PromptCatalog } = {}) {
     this.promptFile = options.promptFile ?? options.prompt_file ?? null;
     this.prompt_file = this.promptFile;
     this.prompts = options.prompts ?? (this.promptFile ? loadPromptCatalog(this.promptFile) : defaultPrompts);
+  }
+
+  loadPrompts(): this {
+    this.prompts = this.promptFile ? loadPromptCatalog(this.promptFile) : defaultPrompts;
+    return this;
+  }
+
+  load_prompts(): this {
+    return this.loadPrompts();
   }
 
   slice(slice: string): string {

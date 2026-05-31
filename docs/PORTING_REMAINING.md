@@ -129,6 +129,8 @@ When more goal budget is available, continue from the behavioral parity audits b
   - `HTTPDigestAuth.configure_client` and `APIKeyAuth.configure_client` now idempotently configure digest auth and query-param request hooks.
 - Added security compatibility behavior:
   - `SecurityConfig.validate_fingerprint` now exposes upstream-style fingerprint coercion for null, seed strings, dicts, and `Fingerprint` instances.
+- Added i18n compatibility behavior:
+  - `I18N.load_prompts` now exposes upstream-style prompt catalog reload semantics for custom prompt files and default prompts.
 - Added LiteAgent compatibility behavior:
   - `LiteAgent` now exposes upstream-style setup/helper methods for LLM setup, tool parsing, A2A setup, guardrail validation, and memory resolution.
   - `LiteAgent` now exposes before/after LLM hook getters, an upstream-style `key` property getter, and resolves `memory: true` to a default `Memory` instance.

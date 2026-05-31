@@ -1478,6 +1478,16 @@ describe("i18n and prompt utilities", () => {
       expect(first).toBe(second);
       expect(first.slice("role_playing")).toBe("Role {role}");
       expect(first.prompt_file).toBe(promptFile);
+
+      writeFileSync(promptFile, JSON.stringify({
+        slices: { role_playing: "Reloaded {role}", no_tools: "", task_no_tools: "Task {input}" },
+        errors: { wrong: "Wrong" },
+        tools: { search: "Search" },
+        memory: { query: "Query" },
+      }));
+      expect(Object.hasOwn(I18N.prototype, "load_prompts")).toBe(true);
+      expect(first.load_prompts()).toBe(first);
+      expect(first.slice("role_playing")).toBe("Reloaded {role}");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
