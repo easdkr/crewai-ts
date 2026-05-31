@@ -370,7 +370,13 @@ export class MemoryConfig {
 }
 
 export class ItemState {
-  constructor(public readonly content = "") {}
+  embedding: number[];
+  dropped: boolean;
+
+  constructor(public readonly content = "", options: { embedding?: readonly number[]; dropped?: boolean } = {}) {
+    this.embedding = [...(options.embedding ?? [])];
+    this.dropped = options.dropped ?? false;
+  }
 }
 
 export class EncodingState {
@@ -390,7 +396,49 @@ export class EncodingFlow {
   readonly state: EncodingState;
 
   constructor(public readonly storage: unknown = null, public readonly llm: unknown = null, public readonly embedder: unknown = null, public readonly config = new MemoryConfig()) {
+    void this.storage;
+    void this.llm;
     this.state = new EncodingState();
+  }
+
+  batch_embed(): void {
+    const texts = this.state.items.map((item) => item.content);
+    const embeddings = embed_texts(this.embedder, texts);
+    this.state.items.forEach((item, index) => {
+      item.embedding = embeddings[index] ?? [];
+    });
+  }
+
+  batchEmbed(): void {
+    this.batch_embed();
+  }
+
+  intra_batch_dedup(): void {
+    const items = this.state.items;
+    if (items.length <= 1) {
+      return;
+    }
+    for (let current = 1; current < items.length; current += 1) {
+      const item = items[current];
+      if (!item || item.dropped || item.embedding.length === 0) {
+        continue;
+      }
+      for (let previous = 0; previous < current; previous += 1) {
+        const candidate = items[previous];
+        if (!candidate || candidate.dropped || candidate.embedding.length === 0) {
+          continue;
+        }
+        if (cosineSimilarity(candidate.embedding, item.embedding) >= this.config.batchDedupThreshold) {
+          item.dropped = true;
+          this.state.items_dropped_dedup += 1;
+          break;
+        }
+      }
+    }
+  }
+
+  intraBatchDedup(): void {
+    this.intra_batch_dedup();
   }
 }
 

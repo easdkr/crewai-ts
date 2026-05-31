@@ -161,8 +161,11 @@ import {
   LiteAgentOutput,
   Memory,
   MemoryAnalysis,
+  MemoryConfig,
   MemoryRecord,
   MemorySlice,
+  EncodingFlow,
+  ItemState,
   RememberTool,
   QueryAnalysis,
   MCPServerHTTP,
@@ -12934,6 +12937,34 @@ describe("memory", () => {
     await expect(extractMemoriesFromContent("fallback content", () => {
       throw new Error("llm unavailable");
     })).resolves.toEqual(["fallback content"]);
+  });
+
+  it("runs EncodingFlow batch embedding and intra-batch dedup steps", () => {
+    const embedder = vi.fn((texts: readonly string[]) =>
+      texts.map((text) => text.includes("other") ? [0, 1, 0] : [1, 0, 0]));
+    const flow = new EncodingFlow(null, null, embedder, new MemoryConfig({ batch_dedup_threshold: 0.99 }));
+    flow.state.items.push(
+      new ItemState("CrewAI batch duplicate memory"),
+      new ItemState("CrewAI batch duplicate memory"),
+      new ItemState("CrewAI other memory"),
+    );
+
+    flow.batch_embed();
+    expect(embedder).toHaveBeenCalledWith([
+      "CrewAI batch duplicate memory",
+      "CrewAI batch duplicate memory",
+      "CrewAI other memory",
+    ]);
+    expect(flow.state.items.map((item) => item.embedding)).toEqual([
+      [1, 0, 0],
+      [1, 0, 0],
+      [0, 1, 0],
+    ]);
+
+    flow.intra_batch_dedup();
+
+    expect(flow.state.items.map((item) => item.dropped)).toEqual([false, true, false]);
+    expect(flow.state.items_dropped_dedup).toBe(1);
   });
 
   it("automatically appends relevant crew memories to task prompts", async () => {
