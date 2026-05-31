@@ -30,7 +30,7 @@ import {
 } from "./input-provider.js";
 import type { CrewOutput } from "./outputs.js";
 import { FlowStreamingOutput } from "./streaming.js";
-import { coerceCheckpointConfig, type CheckpointConfig, type CheckpointOption } from "./state.js";
+import { CheckpointConfig, coerceCheckpointConfig, RuntimeState, type CheckpointOption } from "./state.js";
 import type { InputValues, MaybePromise } from "./types.js";
 import { renderInteractive } from "./flow-visualization.js";
 import { Memory, MemoryScope, MemorySlice, sanitize_scope_name, type MemoryMatch, type MemoryRecord } from "./memory.js";
@@ -111,8 +111,50 @@ export class LockedDictProxy<TValue extends Record<string, unknown> = Record<str
     this.value = value;
   }
 
-  get(key: string): unknown {
-    return this.value[key];
+  get(key: string, defaultValue?: unknown): unknown {
+    return Object.hasOwn(this.value, key) ? this.value[key] : defaultValue;
+  }
+
+  set(key: string, value: unknown): this {
+    this.value[key as keyof TValue] = value as TValue[keyof TValue];
+    return this;
+  }
+
+  delete(key: string): boolean {
+    const existed = Object.hasOwn(this.value, key);
+    Reflect.deleteProperty(this.value, key);
+    return existed;
+  }
+
+  has(key: string): boolean {
+    return Object.hasOwn(this.value, key);
+  }
+
+  update(values: Record<string, unknown>): this {
+    Object.assign(this.value, values);
+    return this;
+  }
+
+  clear(): void {
+    for (const key of Object.keys(this.value)) {
+      Reflect.deleteProperty(this.value, key);
+    }
+  }
+
+  keys(): IterableIterator<string> {
+    return Object.keys(this.value)[Symbol.iterator]();
+  }
+
+  values(): IterableIterator<unknown> {
+    return Object.values(this.value)[Symbol.iterator]();
+  }
+
+  entries(): IterableIterator<[string, unknown]> {
+    return Object.entries(this.value)[Symbol.iterator]();
+  }
+
+  [Symbol.iterator](): IterableIterator<[string, unknown]> {
+    return this.entries();
   }
 
   toJSON(): TValue {
@@ -121,14 +163,79 @@ export class LockedDictProxy<TValue extends Record<string, unknown> = Record<str
 }
 
 export class LockedListProxy<TValue = unknown> {
+  [index: number]: TValue;
+
   readonly value: TValue[];
 
   constructor(value: readonly TValue[] = []) {
-    this.value = [...value];
+    this.value = value as TValue[];
+    return new Proxy(this, {
+      get(target, property, receiver) {
+        if (typeof property === "string" && isArrayIndex(property)) {
+          return target.value[Number(property)];
+        }
+        return Reflect.get(target, property, receiver);
+      },
+      set(target, property, nextValue, receiver) {
+        if (typeof property === "string" && isArrayIndex(property)) {
+          target.value[Number(property)] = nextValue as TValue;
+          return true;
+        }
+        return Reflect.set(target, property, nextValue, receiver);
+      },
+      deleteProperty(target, property) {
+        if (typeof property === "string" && isArrayIndex(property)) {
+          target.value.splice(Number(property), 1);
+          return true;
+        }
+        return Reflect.deleteProperty(target, property);
+      },
+      has(target, property) {
+        return property in target.value || property in target;
+      },
+    });
+  }
+
+  get length(): number {
+    return this.value.length;
   }
 
   at(index: number): TValue | undefined {
     return this.value.at(index);
+  }
+
+  push(...items: TValue[]): number {
+    return this.value.push(...items);
+  }
+
+  pop(): TValue | undefined {
+    return this.value.pop();
+  }
+
+  extend(items: Iterable<TValue>): void {
+    this.value.push(...items);
+  }
+
+  splice(start: number, deleteCount?: number, ...items: TValue[]): TValue[] {
+    return deleteCount === undefined
+      ? this.value.splice(start)
+      : this.value.splice(start, deleteCount, ...items);
+  }
+
+  includes(item: TValue): boolean {
+    return this.value.includes(item);
+  }
+
+  indexOf(item: TValue): number {
+    return this.value.indexOf(item);
+  }
+
+  clear(): void {
+    this.value.length = 0;
+  }
+
+  [Symbol.iterator](): IterableIterator<TValue> {
+    return this.value[Symbol.iterator]();
   }
 
   toJSON(): TValue[] {
@@ -145,6 +252,37 @@ export class StateProxy<TState extends object = Record<string, unknown>> {
 
   get(key: keyof TState): TState[keyof TState] {
     return this.state[key];
+  }
+
+  set<K extends keyof TState>(key: K, value: TState[K]): this {
+    this.state[key] = value;
+    return this;
+  }
+
+  delete(key: keyof TState): boolean {
+    const existed = Object.hasOwn(this.state, key);
+    Reflect.deleteProperty(this.state, key);
+    return existed;
+  }
+
+  has(key: keyof TState): boolean {
+    return Object.hasOwn(this.state, key);
+  }
+
+  list<TItem = unknown>(key: keyof TState): LockedListProxy<TItem> {
+    const value = this.state[key];
+    if (!Array.isArray(value)) {
+      throw new TypeError(`State field '${String(key)}' is not a list.`);
+    }
+    return new LockedListProxy<TItem>(value as TItem[]);
+  }
+
+  dict<TRecord extends Record<string, unknown> = Record<string, unknown>>(key: keyof TState): LockedDictProxy<TRecord> {
+    const value = this.state[key];
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      throw new TypeError(`State field '${String(key)}' is not a dict.`);
+    }
+    return new LockedDictProxy<TRecord>(value as TRecord);
   }
 
   toJSON(): TState {
@@ -681,6 +819,49 @@ export class Flow<TState extends object = Record<string, unknown>> {
     return await Flow.fromState.call(this, flowId, persistence) as TFlow;
   }
 
+  static async fromCheckpoint<TFlow extends Flow<object>>(
+    this: new () => TFlow,
+    config: CheckpointConfig,
+  ): Promise<TFlow> {
+    const runtime = await RuntimeState.fromCheckpoint(config, config.provider);
+    for (const entity of runtime.root) {
+      const checkpoint = normalizeFlowCheckpointEntity(entity);
+      if (!checkpoint) {
+        continue;
+      }
+      const flow = entity instanceof this ? entity : new this();
+      flow.restoreFromCheckpointEntity(checkpoint);
+      flow.checkpoint = new CheckpointConfig({
+        location: config.location,
+        onEvents: config.onEvents,
+        provider: config.provider,
+        maxCheckpoints: config.maxCheckpoints,
+      });
+      return flow;
+    }
+    throw new Error(`No Flow found in checkpoint: ${config.restoreFrom ?? config.restore_from ?? ""}`);
+  }
+
+  static async from_checkpoint<TFlow extends Flow<object>>(
+    this: new () => TFlow,
+    config: CheckpointConfig,
+  ): Promise<TFlow> {
+    return await Flow.fromCheckpoint.call(this, config) as TFlow;
+  }
+
+  static async fork<TFlow extends Flow<object>>(
+    this: new () => TFlow,
+    config: CheckpointConfig,
+    branch?: string | null,
+  ): Promise<TFlow> {
+    const flow = await Flow.fromCheckpoint.call(this, config) as TFlow;
+    const runtime = await RuntimeState.fromCheckpoint(config, config.provider);
+    runtime.fork(branch ?? undefined);
+    const newId = randomUUID();
+    (flow.state as Record<string, unknown>).id = newId;
+    return flow;
+  }
+
   get inputFiles(): InputFiles {
     return { ...this.currentInputFiles };
   }
@@ -752,6 +933,18 @@ export class Flow<TState extends object = Record<string, unknown>> {
         (this.runtimeMethodExecutionCounts.get(method.flowMethod.name) ?? 0) + 1,
       );
     }
+  }
+
+  toJSON(): Record<string, unknown> {
+    return {
+      type: "Flow",
+      class_name: this.constructor.name,
+      name: this.name,
+      checkpoint_completed_methods: [...this.runtimeCompletedMethods],
+      checkpoint_method_outputs: [...this.runtimeMethodOutputs],
+      checkpoint_method_counts: Object.fromEntries(this.runtimeMethodExecutionCounts),
+      checkpoint_state: this.stateSnapshot(),
+    };
   }
 
   async kickoffCrew(crew: Crew, options: KickoffOptions = {}): Promise<CrewOutput> {
@@ -903,6 +1096,18 @@ export class Flow<TState extends object = Record<string, unknown>> {
     this.runtimeMethodExecutionCounts.clear();
     this.runtimeExecutionTrace.length = 0;
     this.runtimeInputHistory.length = 0;
+  }
+
+  private restoreFromCheckpointEntity(checkpoint: FlowCheckpointEntity): void {
+    this.resetRuntimeState();
+    Object.assign(this.state, checkpoint.checkpoint_state);
+    for (const methodName of checkpoint.checkpoint_completed_methods) {
+      this.runtimeCompletedMethods.add(methodName);
+    }
+    this.runtimeMethodOutputs.push(...checkpoint.checkpoint_method_outputs);
+    for (const [methodName, count] of Object.entries(checkpoint.checkpoint_method_counts)) {
+      this.runtimeMethodExecutionCounts.set(methodName, count);
+    }
   }
 
   private async continueFromHumanFeedback(context: PendingFeedbackContext, feedback: string): Promise<unknown> {
@@ -1108,7 +1313,7 @@ export class Flow<TState extends object = Record<string, unknown>> {
     });
   }
 
-  private stateSnapshot(): Record<string, unknown> {
+  stateSnapshot(): Record<string, unknown> {
     return { ...this.state } as Record<string, unknown>;
   }
 
@@ -2398,6 +2603,62 @@ function stringifyRouterOutput(output: unknown): string {
   throw new Error("Flow router methods must return a string, number, boolean, or bigint path.");
 }
 
+type FlowCheckpointEntity = {
+  checkpoint_completed_methods: string[];
+  checkpoint_method_outputs: unknown[];
+  checkpoint_method_counts: Record<string, number>;
+  checkpoint_state: Record<string, unknown>;
+};
+
+function normalizeFlowCheckpointEntity(entity: unknown): FlowCheckpointEntity | null {
+  if (entity instanceof Flow) {
+    return {
+      checkpoint_completed_methods: [...entity.completedMethods],
+      checkpoint_method_outputs: [...entity.methodOutputs],
+      checkpoint_method_counts: Object.fromEntries(entity.methodExecutionCounts),
+      checkpoint_state: entity.stateSnapshot(),
+    };
+  }
+  if (!entity || typeof entity !== "object") {
+    return null;
+  }
+  const record = entity as Record<string, unknown>;
+  if (record.type !== "Flow") {
+    return null;
+  }
+  return {
+    checkpoint_completed_methods: Array.isArray(record.checkpoint_completed_methods)
+      ? record.checkpoint_completed_methods.map(String)
+      : [],
+    checkpoint_method_outputs: Array.isArray(record.checkpoint_method_outputs)
+      ? Array.from(record.checkpoint_method_outputs as unknown[])
+      : [],
+    checkpoint_method_counts: normalizeMethodCounts(record.checkpoint_method_counts),
+    checkpoint_state: isRecord(record.checkpoint_state)
+      ? { ...record.checkpoint_state }
+      : {},
+  };
+}
+
+function normalizeMethodCounts(value: unknown): Record<string, number> {
+  if (!isRecord(value)) {
+    return {};
+  }
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([, count]) => typeof count === "number" && Number.isFinite(count))
+      .map(([name, count]) => [name, count]),
+  ) as Record<string, number>;
+}
+
+function isArrayIndex(property: string): boolean {
+  if (property === "") {
+    return false;
+  }
+  const index = Number(property);
+  return Number.isInteger(index) && index >= 0 && String(index) === property;
+}
+
 function nestedConditionSatisfied(
   condition: FlowConditionInput,
   completed: ReadonlySet<string>,
@@ -2416,5 +2677,5 @@ function nestedConditionSatisfied(
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object";
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }

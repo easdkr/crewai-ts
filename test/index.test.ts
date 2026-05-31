@@ -85,6 +85,8 @@ import {
   I18N_DEFAULT,
   JsonFlowPersistence,
   JsonProvider,
+  LockedDictProxy,
+  LockedListProxy,
   JSONKnowledgeSource,
   ExcelKnowledgeSource,
   KnowledgeStorage,
@@ -169,6 +171,7 @@ import {
   TLSConfig,
   Settings,
   SqliteProvider,
+  StateProxy,
   KickoffTaskOutputsSQLiteStorage,
   CacheHandler,
   CrewStructuredTool,
@@ -6797,6 +6800,94 @@ describe("flow runtime", () => {
     expect([...restored.completedMethods]).toEqual(["begin", "finish"]);
     expect(restored.methodExecutionCounts.get("begin")).toBe(1);
     expect(restored.executionTrace.map((entry) => entry.methodName)).toEqual(["begin", "finish"]);
+  });
+
+  it("restores and forks flows from runtime checkpoints", async () => {
+    class CheckpointFlow extends Flow<{ id: string; events: string[]; done?: boolean }> {
+      constructor() {
+        super({ initialState: { id: "flow-1", events: [] } });
+      }
+
+      begin() {
+        this.state.events.push("begin");
+        return "ready";
+      }
+
+      finish() {
+        this.state.done = true;
+        return "done";
+      }
+    }
+
+    const initializers = [
+      decorateMethod(CheckpointFlow, "begin", start() as unknown as Decorator),
+      decorateMethod(CheckpointFlow, "finish", listen("begin") as unknown as Decorator),
+    ];
+    const flow = new CheckpointFlow();
+    initializers.forEach((initializer) => {
+      initializer.call(flow);
+    });
+    await flow.kickoff();
+    const directory = mkdtempSync(join(tmpdir(), "crewai-ts-flow-checkpoint-"));
+    const provider = new JsonProvider();
+    const checkpointLocation = new RuntimeState({
+      root: [flow],
+      provider,
+      branch: "main",
+    }).checkpoint(directory);
+
+    const restored = await CheckpointFlow.from_checkpoint(new CheckpointConfig({
+      restore_from: checkpointLocation,
+      provider,
+    }));
+
+    expect(restored).toBeInstanceOf(CheckpointFlow);
+    expect(restored.state).toEqual({ id: "flow-1", events: ["begin"], done: true });
+    expect(restored.methodOutputs).toEqual(["ready", "done"]);
+    expect([...restored.completedMethods]).toEqual(["begin", "finish"]);
+    expect(restored.methodExecutionCounts.get("finish")).toBe(1);
+
+    const forked = await CheckpointFlow.fork(new CheckpointConfig({
+      restore_from: checkpointLocation,
+      provider,
+    }), "fork/manual");
+
+    expect(forked.state.id).not.toBe("flow-1");
+    expect(forked.state.events).toEqual(["begin"]);
+    expect(forked.methodOutputs).toEqual(["ready", "done"]);
+  });
+
+  it("mutates underlying state through locked flow proxies", () => {
+    const listSource = ["a", "b"];
+    const list = new LockedListProxy(listSource);
+
+    expect([...list]).toEqual(["a", "b"]);
+    expect(list.length).toBe(2);
+    expect(list.includes("a")).toBe(true);
+    list.push("c");
+    list[1] = "B";
+    expect(list.pop()).toBe("c");
+    expect(listSource).toEqual(["a", "B"]);
+    expect(list.toJSON()).toEqual(["a", "B"]);
+
+    const dictSource = { count: 1, label: "old" };
+    const dict = new LockedDictProxy(dictSource);
+    dict.set("label", "new");
+    dict.update({ extra: true });
+    expect(dict.get("missing", "fallback")).toBe("fallback");
+    expect(dict.has("extra")).toBe(true);
+    expect([...dict.keys()]).toEqual(["count", "label", "extra"]);
+    expect(dict.delete("count")).toBe(true);
+    expect(dictSource).toEqual({ label: "new", extra: true });
+    expect(dict.toJSON()).toEqual({ label: "new", extra: true });
+
+    const state = { items: [1], meta: { a: 1 }, done: false };
+    const proxy = new StateProxy(state);
+    proxy.set("done", true);
+    proxy.list("items").push(2);
+    proxy.dict("meta").set("b", 2);
+
+    expect(state).toEqual({ items: [1, 2], meta: { a: 1, b: 2 }, done: true });
   });
 
   it("emits flow and method execution lifecycle events", async () => {
