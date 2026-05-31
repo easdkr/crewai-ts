@@ -10,8 +10,10 @@ import {
   A2AError,
   A2AErrorCode,
   A2UIClientExtension,
+  A2UI_EXTENSION_URI,
   A2UI_MIME_TYPE,
   A2UI_STANDARD_CATALOG_ID,
+  A2UIServerExtension,
   A2UI_V09_BASIC_CATALOG_ID,
   A2AServerConfig,
   A2ATransport,
@@ -2806,6 +2808,32 @@ describe("a2a utilities", () => {
           supportedCatalogIds: [A2UI_V09_BASIC_CATALOG_ID, "catalog-v09-custom"],
         },
       },
+    });
+  });
+
+  it("activates A2UI server hooks only for declared client extensions", async () => {
+    const extension = new A2UIServerExtension(["catalog-supported"]);
+    const inactiveContext = {
+      client_extensions: new Set<string>(),
+      state: {} as Record<string, unknown>,
+      get_extension_metadata: () => "catalog-requested",
+    };
+
+    expect(extension.is_active(inactiveContext)).toBe(false);
+    await extension.on_request(inactiveContext);
+    expect(inactiveContext.state).toEqual({});
+
+    const activeContext = {
+      client_extensions: new Set([A2UI_EXTENSION_URI]),
+      state: {} as Record<string, unknown>,
+      get_extension_metadata: () => "catalog-requested",
+    };
+
+    expect(extension.is_active(activeContext)).toBe(true);
+    await extension.on_request(activeContext);
+    expect(activeContext.state).toMatchObject({
+      a2ui_active: true,
+      a2ui_catalog_id: "catalog-requested",
     });
   });
 

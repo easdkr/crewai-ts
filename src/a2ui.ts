@@ -526,16 +526,28 @@ export class A2UIServerExtension {
     };
   }
 
-  isActive(context: { activeExtensions?: readonly string[]; active_extensions?: readonly string[] } = {}): boolean {
-    const active = context.activeExtensions ?? context.active_extensions ?? [];
-    return active.length === 0 || active.includes(this.uri);
+  isActive(context: {
+    activeExtensions?: readonly string[];
+    active_extensions?: readonly string[];
+    clientExtensions?: readonly string[] | Set<string>;
+    client_extensions?: readonly string[] | Set<string>;
+  } = {}): boolean {
+    const active = context.clientExtensions
+      ?? context.client_extensions
+      ?? context.activeExtensions
+      ?? context.active_extensions
+      ?? [];
+    return active instanceof Set ? active.has(this.uri) : active.includes(this.uri);
   }
 
-  is_active(context: { activeExtensions?: readonly string[]; active_extensions?: readonly string[] } = {}): boolean {
+  is_active(context: Parameters<typeof this.isActive>[0] = {}): boolean {
     return this.isActive(context);
   }
 
-  onRequest(context: { state?: A2UIRecord; getExtensionMetadata?: (uri: string, key: string) => unknown; get_extension_metadata?: (uri: string, key: string) => unknown }): Promise<void> {
+  onRequest(context: Parameters<typeof this.isActive>[0] & { state?: A2UIRecord; getExtensionMetadata?: (uri: string, key: string) => unknown; get_extension_metadata?: (uri: string, key: string) => unknown }): Promise<void> {
+    if (!this.isActive(context)) {
+      return Promise.resolve();
+    }
     context.state ??= {};
     const metadata = context.getExtensionMetadata?.(this.uri, "catalogId") ?? context.get_extension_metadata?.(this.uri, "catalogId");
     context.state.a2ui_catalog_id = typeof metadata === "string" ? metadata : this.catalogIds[0] ?? null;
