@@ -427,6 +427,7 @@ import {
   createToolFunction,
   createDynamicToolFilter,
   createErrorResponse,
+  create_agent_response_model,
   createFunctionTool,
   createStaticToolFilter,
   executeToolAndCheckFinality,
@@ -2867,6 +2868,32 @@ describe("a2a utilities", () => {
       negotiated_input_modes: ["image/png"],
       negotiation_success: true,
     });
+  });
+
+  it("creates A2A response models with upstream default and max-length rules", () => {
+    const AgentResponse = create_agent_response_model(["agent-a", "agent-b"]);
+    expect(AgentResponse).not.toBeNull();
+    expect(create_agent_response_model([])).toBeNull();
+    if (!AgentResponse) {
+      throw new Error("Expected dynamic A2A response model");
+    }
+
+    const finalResponse = new AgentResponse({
+      message: "final answer",
+      is_a2a: false,
+    });
+    expect(finalResponse.a2a_ids).toEqual([]);
+
+    expect(() => new AgentResponse({
+      a2a_ids: ["agent-a", "agent-b", "agent-a"],
+      message: "delegate",
+      is_a2a: true,
+    })).toThrow("at most 2 A2A agent ids");
+    expect(() => new AgentResponse({
+      a2a_ids: ["agent-c"],
+      message: "delegate",
+      is_a2a: true,
+    })).toThrow("Invalid A2A agent ids: agent-c");
   });
 
   it("models A2A client and server transport configuration with aliases", () => {

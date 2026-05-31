@@ -67,7 +67,7 @@ export type A2APartsDict = {
   metadata?: A2APartsMetadataDict;
 };
 export type A2AAgentResponseProtocol = {
-  a2a_ids: readonly string[];
+  a2a_ids?: readonly string[];
   message: string;
   is_a2a: boolean;
 };
@@ -2900,13 +2900,17 @@ export class AgentResponseModel {
 
   constructor(options: A2AAgentResponseProtocol & { allowedAgentIds?: readonly string[]; allowed_agent_ids?: readonly string[] }) {
     const allowed = options.allowedAgentIds ?? options.allowed_agent_ids ?? [];
+    const a2aIds = options.a2a_ids ?? [];
+    if (allowed.length > 0 && a2aIds.length > allowed.length) {
+      throw new Error(`Expected at most ${String(allowed.length)} A2A agent ids`);
+    }
     if (allowed.length > 0) {
-      const invalid = options.a2a_ids.filter((id) => !allowed.includes(id));
+      const invalid = a2aIds.filter((id) => !allowed.includes(id));
       if (invalid.length > 0) {
         throw new Error(`Invalid A2A agent ids: ${invalid.join(", ")}`);
       }
     }
-    this.a2a_ids = [...options.a2a_ids];
+    this.a2a_ids = [...a2aIds];
     this.message = options.message;
     this.is_a2a = options.is_a2a;
     this.allowedAgentIds = [...allowed];
