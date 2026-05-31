@@ -1,5 +1,5 @@
 import { extname, isAbsolute, join } from "node:path";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import {
   getRagClient,
   type BaseRecord,
@@ -79,6 +79,21 @@ export type ExcelTextExtractor = (filePath: string, bytes: Buffer) => ExcelWorkb
 
 export type ExcelKnowledgeSourceOptions = FileKnowledgeSourceOptions & {
   extractor?: ExcelTextExtractor;
+};
+
+export type DoclingConversionResult = unknown;
+export type DoclingDocumentConverter = {
+  convert_all?: (paths: readonly string[]) => Iterable<DoclingConversionResult>;
+  convertAll?: (paths: readonly string[]) => Iterable<DoclingConversionResult>;
+} | ((paths: readonly string[]) => Iterable<DoclingConversionResult>);
+export type DoclingChunk = { text?: string | number | boolean | bigint | null | undefined } | string;
+export type DoclingChunker = {
+  chunk?: (document: unknown) => Iterable<DoclingChunk>;
+} | ((document: unknown) => Iterable<DoclingChunk>);
+export type CrewDoclingSourceOptions = FileKnowledgeSourceOptions & {
+  documentConverter?: DoclingDocumentConverter | null;
+  document_converter?: DoclingDocumentConverter | null;
+  chunker?: DoclingChunker | null;
 };
 
 type KnowledgeEntry = {
@@ -423,7 +438,7 @@ export abstract class BaseFileKnowledgeSource extends BaseTextKnowledgeSource {
     return this.loadContent();
   }
 
-  _load_content(): Record<string, string> {
+  _load_content(): unknown {
     return this.loadContent();
   }
 
@@ -553,14 +568,136 @@ export class ExcelKnowledgeSource extends BaseFileKnowledgeSource {
 export class CrewDoclingSource extends BaseFileKnowledgeSource {
   readonly sourceType = "docling";
   readonly source_type = "docling";
+  private readonly documentConverter: DoclingDocumentConverter;
+  private readonly chunker: DoclingChunker | null;
+  private doclingDocuments: unknown[] = [];
 
-  constructor(options: FileKnowledgeSourceOptions | string | readonly string[]) {
+  constructor(options: CrewDoclingSourceOptions | string | readonly string[]) {
     super(options);
-    throw new Error("CrewDoclingSource requires the Python docling package upstream; use TextFileKnowledgeSource, JSONKnowledgeSource, CSVKnowledgeSource, PDFKnowledgeSource with an extractor, or ExcelKnowledgeSource with an extractor in TypeScript.");
+    const converter = isFileKnowledgeOptionsObject(options) ? options.documentConverter ?? options.document_converter : null;
+    if (!converter) {
+      throw new Error("CrewDoclingSource requires a docling document converter. Pass { documentConverter } / { document_converter } or use TextFileKnowledgeSource, JSONKnowledgeSource, CSVKnowledgeSource, PDFKnowledgeSource with an extractor, or ExcelKnowledgeSource with an extractor in TypeScript.");
+    }
+    this.documentConverter = converter;
+    this.chunker = isFileKnowledgeOptionsObject(options) ? options.chunker ?? null : null;
+    Object.defineProperty(this, "chunks", {
+      value: [],
+      writable: true,
+      enumerable: true,
+      configurable: true,
+    });
+    this.model_post_init();
   }
 
-  loadContent(): Record<string, string> {
-    return {};
+  override model_post_init(_context: unknown = null): void {
+    void _context;
+    this.safeFilePaths = this.validateContent();
+    this.safe_file_paths = this.safeFilePaths;
+    this.doclingDocuments = this._load_content();
+  }
+
+  override validateContent(): string[] {
+    const processedPaths: string[] = [];
+    for (const filePath of this.filePaths) {
+      if (isHttpUrl(filePath)) {
+        if (!isValidHttpUrl(filePath)) {
+          throw new Error(`Invalid URL format: ${filePath}`);
+        }
+        processedPaths.push(filePath);
+        continue;
+      }
+      const localPath = this.convertToPath(filePath);
+      if (!existsSync(localPath)) {
+        throw new Error(`File not found: ${localPath}`);
+      }
+      if (!statSync(localPath).isFile()) {
+        throw new Error(`Path is not a file: ${localPath}`);
+      }
+      processedPaths.push(localPath);
+    }
+    return processedPaths;
+  }
+
+  override validate_content(): string[] {
+    return this.validateContent();
+  }
+
+  override loadContent(): Record<string, string> {
+    return Object.fromEntries(this.doclingDocuments.map((document, index) => [
+      this.safeFilePaths[index] ?? String(index),
+      this.chunkDoc(document).join("\n"),
+    ]));
+  }
+
+  override load_content(): Record<string, string> {
+    return this.loadContent();
+  }
+
+  override _load_content(): unknown[] {
+    return this.convertSourceToDoclingDocuments();
+  }
+
+  add(): void {
+    if (this.doclingDocuments.length === 0) {
+      return;
+    }
+    const newChunks = this.doclingDocuments.flatMap((document) => this.chunkDoc(document));
+    (this as unknown as { chunks: string[] }).chunks.push(...newChunks);
+    this.saveDoclingDocuments();
+  }
+
+  async aadd(): Promise<void> {
+    if (this.doclingDocuments.length === 0) {
+      return;
+    }
+    const newChunks = this.doclingDocuments.flatMap((document) => this.chunkDoc(document));
+    (this as unknown as { chunks: string[] }).chunks.push(...newChunks);
+    await this.asaveDoclingDocuments();
+  }
+
+  private convertSourceToDoclingDocuments(): unknown[] {
+    const converter = this.documentConverter;
+    const results = typeof converter === "function"
+      ? converter(this.safeFilePaths)
+      : (converter.convert_all ?? converter.convertAll)?.(this.safeFilePaths);
+    if (!results) {
+      throw new Error("CrewDoclingSource document converter must expose convert_all or convertAll.");
+    }
+    return [...results].map((result) => {
+      if (result && typeof result === "object" && "document" in result) {
+        return (result as { document?: unknown }).document;
+      }
+      return result;
+    });
+  }
+
+  private chunkDoc(document: unknown): string[] {
+    if (!this.chunker) {
+      return [stringifyKnowledgeDocument(document)];
+    }
+    const chunks = typeof this.chunker === "function"
+      ? this.chunker(document)
+      : this.chunker.chunk?.(document);
+    if (!chunks) {
+      throw new Error("CrewDoclingSource chunker must expose chunk.");
+    }
+    return [...chunks]
+      .map((chunk) => typeof chunk === "string" ? chunk : stringifyDoclingValue(chunk.text))
+      .filter((chunk) => chunk.length > 0);
+  }
+
+  private saveDoclingDocuments(): void {
+    if (!this.storage) {
+      throw new Error("No storage found to save documents.");
+    }
+    this.storage.save((this as unknown as { chunks: string[] }).chunks);
+  }
+
+  private async asaveDoclingDocuments(): Promise<void> {
+    if (!this.storage) {
+      throw new Error("No storage found to save documents.");
+    }
+    await this.storage.asave((this as unknown as { chunks: string[] }).chunks);
   }
 }
 
@@ -1066,4 +1203,34 @@ function formatExcelCell(cell: unknown): string {
     return cell.toISOString();
   }
   return JSON.stringify(cell);
+}
+
+function isHttpUrl(value: string): boolean {
+  return value.startsWith("http://") || value.startsWith("https://");
+}
+
+function isValidHttpUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return (url.protocol === "http:" || url.protocol === "https:") && url.hostname.split(".").length >= 2;
+  } catch {
+    return false;
+  }
+}
+
+function stringifyKnowledgeDocument(document: unknown): string {
+  if (typeof document === "string") {
+    return document;
+  }
+  if (document && typeof document === "object" && "text" in document) {
+    return stringifyDoclingValue((document as { text?: string | number | boolean | bigint | null | undefined }).text);
+  }
+  return JSON.stringify(document);
+}
+
+function stringifyDoclingValue(value: string | number | boolean | bigint | null | undefined): string {
+  if (value === null || value === undefined) {
+    return "";
+  }
+  return String(value);
 }

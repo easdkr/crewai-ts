@@ -15722,14 +15722,69 @@ describe("knowledge", () => {
     expect(SourceHelper.is_supported_file(pdfPath)).toBe(true);
     expect(SourceHelper.get_source(pdfPath)).toBeInstanceOf(PDFKnowledgeSource);
     expect(pdfSource.chunks()[0]).toContain("fake pdf bytes");
-    expect(pdfSource._load_content()[pdfPath]).toContain("fake pdf bytes");
+    expect((pdfSource._load_content() as Record<string, string>)[pdfPath]).toContain("fake pdf bytes");
     expect(pdfSource._process_file_paths()).toEqual([pdfPath]);
     expect(excelSource.chunks()[0]).toContain("Sheet: Sheet1");
     expect(excelSource.chunks()[0]).toContain("Decorators standard");
-    expect(excelSource._load_content()[xlsxPath]).toContain("Decorators standard");
+    expect((excelSource._load_content() as Record<string, string>)[xlsxPath]).toContain("Decorators standard");
     expect(excelSource._process_file_paths()).toEqual([xlsxPath]);
     expect(() => new CrewDoclingSource(pdfPath)).toThrow("CrewDoclingSource requires");
     expect(() => SourceHelper.getSource("notes.md")).toThrow("Unsupported file type");
+  });
+
+  it("supports CrewDoclingSource with injected converter and chunker", async () => {
+    const baseDirectory = mkdtempSync(join(tmpdir(), "crewai-ts-docling-source-"));
+    const docPath = join(baseDirectory, "report.md");
+    writeFileSync(docPath, "# CrewAI\n\nDocling content", "utf8");
+    const saved: string[][] = [];
+    const storage = {
+      save(documents: readonly string[]) {
+        saved.push([...documents]);
+      },
+      asave(documents: readonly string[]) {
+        saved.push([...documents]);
+        return Promise.resolve();
+      },
+    } as BaseKnowledgeStorage;
+
+    try {
+      const source = new CrewDoclingSource({
+        file_paths: [docPath, "https://docs.example.com/report.html"],
+        storage,
+        document_converter: {
+          convert_all(paths: readonly string[]) {
+            return paths.map((path) => ({ document: { path, text: `converted ${path}` } }));
+          },
+        },
+        chunker: {
+          chunk(document: unknown) {
+            const doc = document as { path: string; text: string };
+            return [
+              { text: `${doc.text} chunk A` },
+              { text: `${doc.text} chunk B` },
+            ];
+          },
+        },
+      });
+
+      expect(source.source_type).toBe("docling");
+      expect(source.safe_file_paths).toEqual([docPath, "https://docs.example.com/report.html"]);
+      expect(source.validate_content()).toEqual([docPath, "https://docs.example.com/report.html"]);
+      expect(source._load_content()).toHaveLength(2);
+      source.add();
+      await source.aadd();
+
+      expect(saved).toHaveLength(2);
+      expect(saved[0]).toEqual([
+        `converted ${docPath} chunk A`,
+        `converted ${docPath} chunk B`,
+        "converted https://docs.example.com/report.html chunk A",
+        "converted https://docs.example.com/report.html chunk B",
+      ]);
+      expect((source as unknown as { chunks: string[] }).chunks).toEqual([...(saved[0] ?? []), ...(saved[0] ?? [])]);
+    } finally {
+      rmSync(baseDirectory, { recursive: true, force: true });
+    }
   });
 
   it("resets crew and agent knowledge through resetMemories", () => {
