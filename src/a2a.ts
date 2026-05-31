@@ -1101,10 +1101,10 @@ export class OAuth2ClientCredentials extends ClientAuthScheme {
   readonly clientSecret: string;
   readonly client_secret: string;
   readonly scopes: readonly string[];
-  private accessToken: string | null = null;
-  private tokenExpiresAt: number | null = null;
+  protected accessToken: string | null = null;
+  protected tokenExpiresAt: number | null = null;
   private tokenPromise: Promise<void> | null = null;
-  private readonly fetchImpl: typeof fetch;
+  protected readonly fetchImpl: typeof fetch;
 
   constructor(options: {
     tokenUrl?: string;
@@ -1130,7 +1130,9 @@ export class OAuth2ClientCredentials extends ClientAuthScheme {
 
   setAccessToken(token: string | null, expiresInSeconds: number | null = null): void {
     this.accessToken = token;
-    this.tokenExpiresAt = token && expiresInSeconds ? Date.now() + Math.max(0, expiresInSeconds - 60) * 1000 : null;
+    this.tokenExpiresAt = token && expiresInSeconds !== null
+      ? Date.now() + Math.max(0, expiresInSeconds - 60) * 1000
+      : null;
   }
 
   set_access_token(token: string | null, expiresInSeconds: number | null = null): void {
@@ -1181,6 +1183,9 @@ export class OAuth2AuthorizationCode extends OAuth2ClientCredentials {
   readonly authorization_url: string;
   readonly redirectUri: string;
   readonly redirect_uri: string;
+  private refreshToken: string | null = null;
+  private authorizationCallback: ((authorizationUrl: string) => Promise<string>) | null = null;
+  private authorizationPromise: Promise<void> | null = null;
 
   constructor(options: ConstructorParameters<typeof OAuth2ClientCredentials>[0] & {
     authorizationUrl?: string;
@@ -1193,6 +1198,93 @@ export class OAuth2AuthorizationCode extends OAuth2ClientCredentials {
     this.authorization_url = this.authorizationUrl;
     this.redirectUri = options.redirectUri ?? options.redirect_uri ?? "";
     this.redirect_uri = this.redirectUri;
+  }
+
+  setAuthorizationCallback(callback: ((authorizationUrl: string) => Promise<string>) | null): void {
+    this.authorizationCallback = callback;
+  }
+
+  set_authorization_callback(callback: ((authorizationUrl: string) => Promise<string>) | null): void {
+    this.setAuthorizationCallback(callback);
+  }
+
+  override async applyAuth(headers: A2AHeaders = {}): Promise<A2AHeaders> {
+    if (!this.accessToken) {
+      if (!this.authorizationCallback) {
+        throw new Error("Authorization callback not set. Use set_authorization_callback()");
+      }
+      this.authorizationPromise ??= this.fetchInitialToken().finally(() => {
+        this.authorizationPromise = null;
+      });
+      await this.authorizationPromise;
+    } else if (this.tokenExpiresAt !== null && Date.now() >= this.tokenExpiresAt) {
+      this.authorizationPromise ??= this.refreshAccessToken().finally(() => {
+        this.authorizationPromise = null;
+      });
+      await this.authorizationPromise;
+    }
+    if (!this.accessToken) {
+      throw new Error("OAuth2 token endpoint did not return an access_token.");
+    }
+    return { ...headers, Authorization: `Bearer ${this.accessToken}` };
+  }
+
+  private async fetchInitialToken(): Promise<void> {
+    if (!this.authorizationCallback) {
+      throw new Error("Authorization callback not set");
+    }
+    const authorizationParams = new URLSearchParams({
+      response_type: "code",
+      client_id: this.clientId,
+      redirect_uri: this.redirectUri,
+      scope: this.scopes.join(" "),
+    });
+    const authorizationCode = await this.authorizationCallback(`${this.authorizationUrl}?${authorizationParams.toString()}`);
+    const tokenData = await this.requestToken({
+      grant_type: "authorization_code",
+      code: authorizationCode,
+      client_id: this.clientId,
+      client_secret: this.clientSecret,
+      redirect_uri: this.redirectUri,
+    });
+    this.applyTokenData(tokenData);
+  }
+
+  private async refreshAccessToken(): Promise<void> {
+    if (!this.refreshToken) {
+      await this.fetchInitialToken();
+      return;
+    }
+    const tokenData = await this.requestToken({
+      grant_type: "refresh_token",
+      refresh_token: this.refreshToken,
+      client_id: this.clientId,
+      client_secret: this.clientSecret,
+    });
+    this.applyTokenData(tokenData);
+  }
+
+  private async requestToken(params: Record<string, string>): Promise<Record<string, unknown>> {
+    const response = await this.fetchImpl(this.tokenUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams(params).toString(),
+    });
+    if (!response.ok) {
+      throw new Error(`OAuth2 token request failed: ${String(response.status)}`);
+    }
+    return await response.json() as Record<string, unknown>;
+  }
+
+  private applyTokenData(tokenData: Record<string, unknown>): void {
+    if (typeof tokenData.access_token !== "string" || tokenData.access_token.length === 0) {
+      throw new Error("OAuth2 token endpoint did not return an access_token.");
+    }
+    if (typeof tokenData.refresh_token === "string" && tokenData.refresh_token.length > 0) {
+      this.refreshToken = tokenData.refresh_token;
+    }
+    const expiresIn = typeof tokenData.expires_in === "number" ? tokenData.expires_in : 3600;
+    this.setAccessToken(tokenData.access_token, expiresIn);
   }
 }
 

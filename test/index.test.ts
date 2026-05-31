@@ -118,6 +118,7 @@ import {
   LLMGuardrailStartedEvent,
   LLMStreamChunkEvent,
   LLMThinkingChunkEvent,
+  OAuth2AuthorizationCode,
   OAuth2ClientCredentials,
   OIDCAuth,
   OutputFormat,
@@ -2873,6 +2874,58 @@ describe("a2a utilities", () => {
     });
     await expect(auth.apply_auth(null, {})).resolves.toEqual({ Authorization: "Bearer oauth-token" });
     expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses OAuth2 authorization-code callbacks and refresh tokens for A2A auth", async () => {
+    const seenBodies: string[] = [];
+    const fetchImpl = vi.fn((url: string | URL | Request, init?: RequestInit) => {
+      const requestUrl = url instanceof Request ? url.url : url.toString();
+      const body = typeof init?.body === "string" ? init.body : "";
+      seenBodies.push(body);
+      expect(requestUrl).toBe("https://auth.example.com/token");
+      expect(init?.method).toBe("POST");
+      if (seenBodies.length === 1) {
+        expect(body).toContain("grant_type=authorization_code");
+        expect(body).toContain("code=returned-code");
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ access_token: "initial-token", refresh_token: "refresh-token", expires_in: 0 }),
+        } as Response);
+      }
+      expect(body).toContain("grant_type=refresh_token");
+      expect(body).toContain("refresh_token=refresh-token");
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ access_token: "refreshed-token", expires_in: 3600 }),
+      } as Response);
+    });
+    const auth = new OAuth2AuthorizationCode({
+      authorization_url: "https://auth.example.com/authorize",
+      token_url: "https://auth.example.com/token",
+      client_id: "client",
+      client_secret: "secret",
+      redirect_uri: "https://app.example.com/callback",
+      scopes: ["read:tools", "write:tools"],
+      fetch: fetchImpl,
+    });
+    const callback = vi.fn((authorizationUrl: string) => {
+      const parsed = new URL(authorizationUrl);
+      expect(parsed.origin + parsed.pathname).toBe("https://auth.example.com/authorize");
+      expect(parsed.searchParams.get("response_type")).toBe("code");
+      expect(parsed.searchParams.get("client_id")).toBe("client");
+      expect(parsed.searchParams.get("redirect_uri")).toBe("https://app.example.com/callback");
+      expect(parsed.searchParams.get("scope")).toBe("read:tools write:tools");
+      return Promise.resolve("returned-code");
+    });
+    auth.set_authorization_callback(callback);
+
+    await expect(auth.applyAuth({ Accept: "application/json" })).resolves.toEqual({
+      Accept: "application/json",
+      Authorization: "Bearer initial-token",
+    });
+    await expect(auth.apply_auth(null, {})).resolves.toEqual({ Authorization: "Bearer refreshed-token" });
+    expect(callback).toHaveBeenCalledTimes(1);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
   });
 
   it("authenticates A2A simple server tokens", async () => {
