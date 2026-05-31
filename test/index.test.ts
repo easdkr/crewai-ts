@@ -7325,6 +7325,32 @@ describe("flow runtime", () => {
     });
   });
 
+  it("plots flow structure to an HTML file and emits the upstream flow_plot event", () => {
+    class PlotFlow extends Flow<{ id: string }> {
+      constructor() {
+        super({ initialState: { id: "plot-flow" } });
+      }
+
+      begin() {
+        return "ready";
+      }
+    }
+
+    const initializer = decorateMethod(PlotFlow, "begin", start() as unknown as Decorator);
+    const flow = new PlotFlow();
+    initializer.call(flow);
+    const seen: string[] = [];
+    crewaiEventBus.on("flow_plot", (_source, event) => {
+      seen.push(event.flow_name);
+    });
+
+    const outputPath = flow.plot("custom_flow.html", false);
+
+    expect(outputPath.endsWith("custom_flow.html")).toBe(true);
+    expect(readFileSync(outputPath, "utf8")).toContain("begin");
+    expect(seen).toEqual(["PlotFlow"]);
+  });
+
   it("propagates current flow context and captures it in FlowTrackable objects", async () => {
     class TrackedThing extends FlowTrackable {}
 

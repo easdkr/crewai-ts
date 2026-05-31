@@ -12,6 +12,7 @@ import {
   FlowInputReceivedEvent,
   FlowInputRequestedEvent,
   FlowPausedEvent,
+  FlowPlotEvent,
   FlowStartedEvent,
   HumanFeedbackReceivedEvent,
   HumanFeedbackRequestedEvent,
@@ -863,6 +864,11 @@ export class Flow<TState extends object = Record<string, unknown>> {
 
   extract_memories(content: string): readonly string[] {
     return this.extractMemories(content);
+  }
+
+  plot(filename = "crewai_flow.html", show = true): string {
+    crewaiEventBus.emit(this, new FlowPlotEvent({ flowName: this.flowName() }));
+    return renderInteractive(buildFlowStructure(this), filename, show);
   }
 
   async akickoff(options: FlowKickoffOptions = {}): Promise<unknown> {
