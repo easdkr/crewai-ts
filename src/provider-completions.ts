@@ -1431,17 +1431,29 @@ export class GeminiCompletion extends ConfiguredLLM {
       }
 
       if (role === "assistant" && Array.isArray(rawMessage.tool_calls)) {
-        const toolParts: Record<string, unknown>[] = [...parts];
-        for (const toolCall of rawMessage.tool_calls) {
-          const toolCallRecord = typeof toolCall === "object" && toolCall ? toolCall as Record<string, unknown> : {};
-          const functionCall = toolCallRecord.function;
-          const functionRecord = typeof functionCall === "object" && functionCall ? functionCall as Record<string, unknown> : {};
-          toolParts.push({
-            functionCall: {
-              name: scalarToString(functionRecord.name) ?? "",
-              args: parseToolArguments(functionRecord.arguments),
-            },
-          });
+        const rawToolCallParts = rawMessage.raw_tool_call_parts;
+        const toolParts: Record<string, unknown>[] = [];
+        const hasRawToolCallParts = Array.isArray(rawToolCallParts)
+          && rawToolCallParts.length > 0
+          && rawToolCallParts.every((part) => typeof part === "object" && part !== null && !Array.isArray(part));
+        if (hasRawToolCallParts) {
+          toolParts.push(...rawToolCallParts as Record<string, unknown>[]);
+          if (textContent) {
+            toolParts.unshift({ text: textContent });
+          }
+        } else {
+          toolParts.push(...parts);
+          for (const toolCall of rawMessage.tool_calls) {
+            const toolCallRecord = typeof toolCall === "object" && toolCall ? toolCall as Record<string, unknown> : {};
+            const functionCall = toolCallRecord.function;
+            const functionRecord = typeof functionCall === "object" && functionCall ? functionCall as Record<string, unknown> : {};
+            toolParts.push({
+              functionCall: {
+                name: scalarToString(functionRecord.name) ?? "",
+                args: parseToolArguments(functionRecord.arguments),
+              },
+            });
+          }
         }
         contents.push({ role: "model", parts: toolParts });
         continue;

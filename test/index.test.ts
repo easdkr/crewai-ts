@@ -12705,6 +12705,33 @@ describe("LLM providers", () => {
     expect(config).not.toHaveProperty("response_json_schema");
   });
 
+  it("preserves Gemini raw tool call parts when formatting assistant tool messages", () => {
+    const gemini = new GeminiCompletion({ model: "gemini-2.5-pro" });
+    const rawToolPart = { functionCall: { name: "raw_search", args: { query: "CrewAI" } } };
+
+    const [contents] = (gemini as unknown as {
+      _format_messages_for_gemini(messages: Array<LLMMessage & Record<string, unknown>>): [Record<string, unknown>[], string | null];
+    })._format_messages_for_gemini([
+      {
+        role: "assistant",
+        content: "Using raw call",
+        tool_calls: [{
+          id: "call_1",
+          function: { name: "search_docs", arguments: "{\"query\":\"ignored\"}" },
+        }],
+        raw_tool_call_parts: [rawToolPart],
+      },
+    ]);
+
+    expect(contents).toEqual([{
+      role: "model",
+      parts: [
+        { text: "Using raw call" },
+        rawToolPart,
+      ],
+    }]);
+  });
+
   it("extracts Gemini function calls from response candidates", () => {
     const response = {
       candidates: [{
