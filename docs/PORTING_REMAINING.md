@@ -107,6 +107,7 @@ When more goal budget is available, continue from the behavioral parity audits b
   - `EvaluationDisplayFormatter` aggregation helpers for per-agent metric averages, feedback summaries, and iteration display text
   - `ExperimentResultsDisplay` now exposes upstream-style `summary` and `comparison_summary` result formatting hooks.
   - `ExperimentResults.to_json` and `compare_with_baseline` now support upstream-style result file persistence, baseline comparison, regression/new/missing classification, and current-run appends.
+  - `ExperimentRunner` now replaces the root placeholder with upstream-style dataset execution scaffolding, score extraction, and numeric/dict expected-score comparison rules.
   - `AgentEvaluator` aggregation now reuses display formatter logic and emits started/completed/failed evaluation lifecycle events
   - `EvaluationTraceCallback` now subscribes to event bus hooks for agent/lite-agent execution, tool success/error, validation errors, and LLM call traces
   - `BaseEvent.to_json` now exposes upstream-style event serialization with exclusion support and snake_case compatibility keys.

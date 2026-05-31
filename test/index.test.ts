@@ -212,8 +212,10 @@ import {
   ExperimentResult,
   ExperimentResults,
   ExperimentResultsDisplay,
+  ExperimentRunner,
   create_evaluation_callbacks,
   ToolSelectionEvaluator,
+  run_experiment,
   __version__,
   afterLlmCall,
   afterToolCall,
@@ -322,6 +324,7 @@ import {
   ConverterError,
   OutputConverter,
   asyncConvertToModel,
+  AgentAggregatedEvaluationResult,
   EvaluationScore,
   Logger,
   HallucinationGuardrail,
@@ -3271,6 +3274,40 @@ describe("evaluator utilities", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  it("extracts and asserts experiment runner scores with upstream comparison rules", () => {
+    const runner = new ExperimentRunner([]);
+
+    const extracted = runner._extract_scores({
+      researcher: new AgentAggregatedEvaluationResult({
+        metrics: {
+          goal_alignment: new EvaluationScore({ score: 8 }),
+          semantic_quality: new EvaluationScore({ score: 6 }),
+          tool_selection: new EvaluationScore({ score: null }),
+        },
+      }),
+      writer: new AgentAggregatedEvaluationResult({
+        metrics: {
+          goal_alignment: new EvaluationScore({ score: 10 }),
+        },
+      }),
+    });
+
+    expect(extracted).toEqual({ goal_alignment: 9, semantic_quality: 6 });
+    expect(runner._extract_scores({
+      researcher: new AgentAggregatedEvaluationResult({
+        metrics: { goal_alignment: new EvaluationScore({ score: 8 }) },
+      }),
+    })).toBe(8);
+    expect(runner._assert_scores(7, 8)).toBe(true);
+    expect(runner._assert_scores(9, 8)).toBe(false);
+    expect(runner._assert_scores({ goal_alignment: 8, semantic_quality: 6 }, 8)).toBe(true);
+    expect(runner._assert_scores(7, { goal_alignment: 8, semantic_quality: 6 })).toBe(true);
+    expect(runner._assert_scores({ goal_alignment: 8 }, { goal_alignment: 8, semantic_quality: 6 })).toBe(true);
+    expect(runner._assert_scores({ missing: 8 }, { goal_alignment: 8 })).toBe(false);
+    expect(() => runner.run()).toThrow("Agents must be provided either directly or via a crew");
+    expect(() => run_experiment([])).toThrow("Agents must be provided either directly or via a crew");
   });
 
   it("emits agent evaluation lifecycle events for metric evaluators", () => {

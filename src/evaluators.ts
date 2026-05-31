@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
 
 import { Agent } from "./agent.js";
@@ -934,6 +935,145 @@ export class ExperimentResults {
   }
 }
 
+export type ExperimentScore = number | Record<string, number>;
+
+export class ExperimentRunner {
+  readonly dataset: Record<string, unknown>[];
+  evaluator: AgentEvaluator | null = null;
+  readonly display: ExperimentResultsDisplay;
+
+  constructor(dataset: readonly Record<string, unknown>[] = []) {
+    this.dataset = dataset.map((row) => ({ ...row }));
+    this.display = new ExperimentResultsDisplay();
+  }
+
+  run(
+    crewOrOptions: {
+      crew?: { agents?: readonly unknown[]; kickoff?: (options: { inputs: Record<string, unknown> }) => unknown } | null;
+      agents?: readonly unknown[] | null;
+      print_summary?: boolean;
+      printSummary?: boolean;
+    } | { agents?: readonly unknown[]; kickoff?: (options: { inputs: Record<string, unknown> }) => unknown } | null = {},
+    agentsArg: readonly unknown[] | null = null,
+    print_summary = false,
+  ): ExperimentResults {
+    const options = isExperimentRunOptions(crewOrOptions)
+      ? crewOrOptions
+      : { crew: crewOrOptions, agents: agentsArg, print_summary };
+    const crew = options.crew ?? null;
+    const agents = options.agents ?? (crew?.agents ? [...crew.agents] : null);
+    if (!agents) {
+      throw new Error("Agents must be provided either directly or via a crew");
+    }
+
+    this.evaluator = new AgentEvaluator(agents, create_default_evaluator());
+    const results = this.dataset.map((testCase) => {
+      this.evaluator?.reset_iterations_results();
+      return this._run_test_case(testCase, agents, crew);
+    });
+    const experimentResults = new ExperimentResults(results);
+    if (options.printSummary ?? options.print_summary ?? false) {
+      this.display.summary(experimentResults);
+    }
+    return experimentResults;
+  }
+
+  _run_test_case(
+    test_case: Record<string, unknown>,
+    agents: readonly unknown[],
+    crew: { kickoff?: (options: { inputs: Record<string, unknown> }) => unknown } | null = null,
+  ): ExperimentResult {
+    const inputs = isRecord(test_case.inputs) ? test_case.inputs : {};
+    const expectedScore = normalizeExperimentExpectedScore(test_case.expected_score);
+    const identifier = stringFromJsonScalar(test_case.identifier) || hashExperimentIdentifier(test_case);
+
+    try {
+      this.display.console.print?.(`Running crew with input: ${JSON.stringify(inputs).slice(0, 50)}...`);
+      if (crew?.kickoff) {
+        void crew.kickoff({ inputs });
+      } else {
+        for (const agent of agents) {
+          if (agent instanceof Agent) {
+            void agent.kickoff(JSON.stringify(inputs));
+          } else {
+            throw new TypeError(`Agent ${stringifyEvaluationValue(agent)} is not an instance of Agent and cannot be kicked off directly`);
+          }
+        }
+      }
+
+      if (!this.evaluator) {
+        throw new Error("Evaluator must be initialized");
+      }
+      const agentEvaluations = this.evaluator.get_agent_evaluation();
+      const actualScore = this._extract_scores(agentEvaluations);
+      return new ExperimentResult({
+        identifier,
+        inputs,
+        score: actualScore,
+        expected_score: expectedScore,
+        passed: this._assert_scores(expectedScore, actualScore),
+        agent_evaluations: agentEvaluations,
+      });
+    } catch (error) {
+      this.display.console.print?.(`Error running test case: ${error instanceof Error ? error.message : stringifyEvaluationValue(error)}`);
+      return new ExperimentResult({
+        identifier,
+        inputs,
+        score: 0,
+        expected_score: expectedScore,
+        passed: false,
+      });
+    }
+  }
+
+  _extract_scores(agent_evaluations: Record<string, AgentAggregatedEvaluationResult>): ExperimentScore {
+    const scoresByMetric = new Map<string, number[]>();
+    for (const evaluation of Object.values(agent_evaluations)) {
+      for (const [metricName, score] of evaluation.metrics) {
+        if (score.score !== null) {
+          const bucket = scoresByMetric.get(metricName) ?? [];
+          bucket.push(score.score);
+          scoresByMetric.set(metricName, bucket);
+        }
+      }
+    }
+    const averageScores = Object.fromEntries([...scoresByMetric.entries()].map(([metricName, scores]) => [
+      metricName,
+      scores.reduce((sum, score) => sum + score, 0) / scores.length,
+    ]));
+    const entries = Object.entries(averageScores);
+    return entries.length === 1 ? entries[0]?.[1] ?? 0 : averageScores;
+  }
+
+  _assert_scores(expected: ExperimentScore, actual: ExperimentScore): boolean {
+    if (typeof expected === "number" && typeof actual === "number") {
+      return actual >= expected;
+    }
+    if (isNumericRecord(expected) && typeof actual === "number") {
+      return Object.values(expected).every((expectedScore) => actual >= expectedScore);
+    }
+    if (typeof expected === "number" && isNumericRecord(actual)) {
+      const actualScores = Object.values(actual);
+      if (actualScores.length === 0) {
+        return false;
+      }
+      return actualScores.reduce((sum, score) => sum + score, 0) / actualScores.length >= expected;
+    }
+    if (isNumericRecord(expected) && isNumericRecord(actual)) {
+      const matchingKeys = Object.keys(expected).filter((key) => key in actual);
+      if (matchingKeys.length === 0) {
+        return false;
+      }
+      return matchingKeys.every((key) => {
+        const actualScore = actual[key];
+        const expectedScore = expected[key];
+        return actualScore !== undefined && expectedScore !== undefined && actualScore >= expectedScore;
+      });
+    }
+    return false;
+  }
+}
+
 export type ExperimentResultsDisplayConsole = {
   print?: (value: string) => void;
   log?: (value: string) => void;
@@ -1018,13 +1158,13 @@ export function assert_experiment_successfully(
   assert_experiment_no_regression(experiment_results.compare_with_baseline(baseline_filepath));
 }
 
-export function run_experiment(dataset: readonly Record<string, unknown>[]): ExperimentResults {
-  return new ExperimentResults(dataset.map((row, index) => new ExperimentResult({
-    identifier: stringifyEvaluationValue(row.identifier ?? index),
-    inputs: row,
-    score: typeof row.score === "number" ? row.score : 1,
-    expected_score: typeof row.expected_score === "number" ? row.expected_score : 1,
-  })));
+export function run_experiment(
+  dataset: readonly Record<string, unknown>[],
+  crew: { agents?: readonly unknown[]; kickoff?: (options: { inputs: Record<string, unknown> }) => unknown } | null = null,
+  agents: readonly unknown[] | null = null,
+  verbose = false,
+): ExperimentResults {
+  return new ExperimentRunner(dataset).run({ agents, crew, print_summary: verbose });
 }
 
 function asStringArray(value: unknown): string[] {
@@ -1053,6 +1193,30 @@ function serializeExperimentResult(result: ExperimentResult): Record<string, unk
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isNumericRecord(value: unknown): value is Record<string, number> {
+  return isRecord(value) && Object.values(value).every((item) => typeof item === "number");
+}
+
+function normalizeExperimentExpectedScore(value: unknown): ExperimentScore {
+  if (typeof value === "number" || isNumericRecord(value)) {
+    return value;
+  }
+  return 1;
+}
+
+function isExperimentRunOptions(value: unknown): value is {
+  crew?: { agents?: readonly unknown[]; kickoff?: (options: { inputs: Record<string, unknown> }) => unknown } | null;
+  agents?: readonly unknown[] | null;
+  print_summary?: boolean;
+  printSummary?: boolean;
+} {
+  return isRecord(value) && ("crew" in value || "print_summary" in value || "printSummary" in value);
+}
+
+function hashExperimentIdentifier(testCase: Record<string, unknown>): string {
+  return createHash("md5").update(JSON.stringify(testCase)).digest("hex");
 }
 
 function summarizeExperimentIdentifiers(items: readonly string[]): string {

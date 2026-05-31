@@ -763,6 +763,7 @@ export {
   ExperimentResult,
   ExperimentResults,
   ExperimentResultsDisplay,
+  ExperimentRunner,
   GoalAlignmentEvaluator,
   MetricCategory,
   ParameterExtractionEvaluator,
@@ -2530,11 +2531,6 @@ export function extract_json_from_llm_response(text: string): unknown {
   }
   return JSON.parse(text.slice(start, end + 1));
 }
-
-export class ExperimentRunner {
-  readonly kind = "ExperimentRunner";
-}
-
 
 export class AgentMeta {
   readonly kind = "AgentMeta";
