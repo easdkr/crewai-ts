@@ -11,7 +11,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `npm run lint`
   - `npm run smoke:pack`
   - `python3 scripts/check-export-parity.py`
-- Test suite: 453 passing tests.
+- Test suite: 454 passing tests.
 - Root export parity against upstream clone `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `5cdc420`: `total_missing=0`.
 - Public method parity has been tightened for core runtime classes:
   - `ConsoleFormatter`: `missing=0`
@@ -105,6 +105,7 @@ When more goal budget is available, continue from the behavioral parity audits b
   - `Flow.kickoff` / `kickoffAsync` / `kickoff_async` / `akickoff` now accept upstream-style direct `inputs` arguments in addition to the TS options object.
   - `Flow.kickoff` / `kickoffAsync` now support upstream-style `restore_from_state_id` / `restoreFromStateId` fork hydration from persisted state without reusing the source flow ID and reject conflicting checkpoint restores.
   - `Flow.plot` now emits `flow_plot` and writes an interactive HTML visualization through the existing flow structure renderer.
+  - Flow visualization `CSSExtension` and `JSExtension` now expose upstream-style `parse` helpers for CSS/JS template tags.
 - Added adapter-level LLM provider parity helpers:
   - `BaseLLM.acall` now provides the upstream async call surface by formatting string/list messages and delegating through the concrete `call` implementation.
   - `supportsFunctionCalling` / `supports_function_calling`

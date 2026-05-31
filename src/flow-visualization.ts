@@ -15,6 +15,17 @@ export const TEXT_SECONDARY = "#7d8590";
 export class CSSExtension {
   readonly tags = new Set(["css"]);
 
+  parse(parser: ExtensionParserLike): ExtensionParseResult {
+    const lineno = readParserLineno(parser);
+    const href = String(parser.parse_expression());
+    return {
+      lineno,
+      method: "_render_css",
+      args: [href],
+      html: this._render_css(href),
+    };
+  }
+
   renderCss(href: string): string {
     return `<link rel="stylesheet" href="${escapeHtml(href)}">`;
   }
@@ -27,6 +38,17 @@ export class CSSExtension {
 export class JSExtension {
   readonly tags = new Set(["js"]);
 
+  parse(parser: ExtensionParserLike): ExtensionParseResult {
+    const lineno = readParserLineno(parser);
+    const src = String(parser.parse_expression());
+    return {
+      lineno,
+      method: "_render_js",
+      args: [src],
+      html: this._render_js(src),
+    };
+  }
+
   renderJs(src: string): string {
     return `<script src="${escapeHtml(src)}"></script>`;
   }
@@ -35,6 +57,18 @@ export class JSExtension {
     return this.renderJs(src);
   }
 }
+
+export type ExtensionParserLike = {
+  stream: Iterator<{ lineno?: number }> | Iterable<{ lineno?: number }> | readonly { lineno?: number }[];
+  parse_expression: () => unknown;
+};
+
+export type ExtensionParseResult = {
+  lineno: number;
+  method: "_render_css" | "_render_js";
+  args: readonly string[];
+  html: string;
+};
 
 export type FlowVisualizationNodeMetadata = {
   type?: string;
@@ -210,6 +244,26 @@ function renderNode(name: string, metadata: FlowVisualizationNodeMetadata, posit
   const y = Math.round(position?.y ?? 0);
   const type = metadata.type ?? "listen";
   return `<div class="node" style="left:${String(x)}px;top:${String(y)}px"><strong>${escapeHtml(name)}</strong><small>${escapeHtml(type)}</small></div>`;
+}
+
+function readParserLineno(parser: ExtensionParserLike): number {
+  const stream = parser.stream;
+  if (isParserTokenArray(stream)) {
+    return stream[0]?.lineno ?? 0;
+  }
+  const iterator = isParserTokenIterable(stream)
+    ? stream[Symbol.iterator]()
+    : stream;
+  const next = iterator.next();
+  return next.done === true ? 0 : next.value.lineno ?? 0;
+}
+
+function isParserTokenArray(value: ExtensionParserLike["stream"]): value is readonly { lineno?: number }[] {
+  return Array.isArray(value);
+}
+
+function isParserTokenIterable(value: ExtensionParserLike["stream"]): value is Iterable<{ lineno?: number }> {
+  return !isParserTokenArray(value) && Symbol.iterator in Object(value);
 }
 
 function escapeHtml(value: string): string {

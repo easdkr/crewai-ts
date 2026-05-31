@@ -49,6 +49,7 @@ import {
   ConfiguredLLM,
   BearerTokenAuth,
   CSVKnowledgeSource,
+  CSSExtension,
   CrewDoclingSource,
   ClientTransportConfig,
   CheckpointConfig,
@@ -112,6 +113,7 @@ import {
   LockedDictProxy,
   LockedListProxy,
   JSONKnowledgeSource,
+  JSExtension,
   ExcelKnowledgeSource,
   BaseFileKnowledgeSource,
   BaseKnowledgeSource,
@@ -7695,6 +7697,30 @@ describe("flow runtime", () => {
       { source: "route", target: "publish", condition_type: null, is_router_path: true, router_path_label: "rejected" },
     ]);
     expect(calculateExecutionPaths(structure)).toBe(2);
+  });
+
+  it("parses flow visualization CSS and JS extension tags like upstream", () => {
+    const cssParser = {
+      stream: [{ lineno: 7 }],
+      parse_expression: () => "styles/app.css",
+    };
+    const jsParser = {
+      stream: [{ lineno: 11 }],
+      parse_expression: () => "scripts/app.js",
+    };
+
+    expect(new CSSExtension().parse(cssParser)).toEqual({
+      lineno: 7,
+      method: "_render_css",
+      args: ["styles/app.css"],
+      html: '<link rel="stylesheet" href="styles/app.css">',
+    });
+    expect(new JSExtension().parse(jsParser)).toEqual({
+      lineno: 11,
+      method: "_render_js",
+      args: ["scripts/app.js"],
+      html: '<script src="scripts/app.js"></script>',
+    });
   });
 
   it("infers router paths from possible string return constants", () => {
