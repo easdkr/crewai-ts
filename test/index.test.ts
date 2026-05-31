@@ -11364,6 +11364,26 @@ describe("LLM providers", () => {
     });
   });
 
+  it("stores upstream-style BaseLLM callbacks and parses LiteLLM env callbacks", () => {
+    function first(): void {}
+    function replacement(): void {}
+    const second = { handle: "callback" };
+
+    BaseLLM.set_env_callbacks({
+      LITELLM_SUCCESS_CALLBACKS: "langfuse, langsmith,,",
+      LITELLM_FAILURE_CALLBACKS: "sentry",
+    });
+    expect(BaseLLM.success_callbacks).toEqual(["langfuse", "langsmith"]);
+    expect(BaseLLM.failure_callbacks).toEqual(["sentry"]);
+
+    BaseLLM.set_callbacks([first, second]);
+    expect(BaseLLM.callbacks).toEqual([first, second]);
+
+    BaseLLM.set_callbacks([replacement]);
+    expect(BaseLLM.callbacks).toEqual([replacement]);
+    expect(BaseLLM.success_callbacks).toEqual(["langfuse", "langsmith"]);
+  });
+
   it("scopes LLM call ids and stop overrides without mutating the base LLM", async () => {
     const callIds: string[] = [];
     class StopAwareLLM extends BaseLLM {

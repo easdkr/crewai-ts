@@ -869,6 +869,9 @@ export type LLMCallContextCallback<T> = (callId: string) => MaybePromise<T>;
 
 const currentCallIdStore = new AsyncLocalStorage<string>();
 const callStopOverrideStore = new AsyncLocalStorage<Map<BaseLLM, readonly string[]>>();
+let configuredCallbacks: readonly unknown[] = [];
+let configuredSuccessCallbacks: readonly unknown[] = [];
+let configuredFailureCallbacks: readonly unknown[] = [];
 const registeredProviders = new Map<string, LLMClient>();
 const openAIModelSet = new Set<string>(OPENAI_MODELS);
 const anthropicModelSet = new Set<string>(ANTHROPIC_MODELS);
@@ -1593,6 +1596,53 @@ export abstract class BaseLLM implements LLMClient {
   static resolve_llm_model_spec(model: string, explicitProvider?: string): LLMModelSpec {
     return resolveLLMModelSpec(model, explicitProvider);
   }
+
+  static setCallbacks(callbacks: readonly unknown[]): void {
+    const callbackTypes = new Set(
+      callbacks
+        .filter((callback) => typeof callback === "object" || typeof callback === "function")
+        .map((callback) => callback?.constructor),
+    );
+    configuredSuccessCallbacks = configuredSuccessCallbacks.filter((callback) => !callbackTypes.has(callback?.constructor));
+    configuredCallbacks = [...callbacks];
+  }
+
+  static set_callbacks(callbacks: readonly unknown[]): void {
+    this.setCallbacks(callbacks);
+  }
+
+  static setEnvCallbacks(env: CreateLLMEnvironment = process.env): void {
+    const successCallbacks = parseCallbackNames(env.LITELLM_SUCCESS_CALLBACKS);
+    const failureCallbacks = parseCallbackNames(env.LITELLM_FAILURE_CALLBACKS);
+    if (successCallbacks.length > 0 || failureCallbacks.length > 0) {
+      configuredSuccessCallbacks = successCallbacks;
+      configuredFailureCallbacks = failureCallbacks;
+    }
+  }
+
+  static set_env_callbacks(env: CreateLLMEnvironment = process.env): void {
+    this.setEnvCallbacks(env);
+  }
+
+  static get callbacks(): readonly unknown[] {
+    return configuredCallbacks;
+  }
+
+  static get successCallbacks(): readonly unknown[] {
+    return configuredSuccessCallbacks;
+  }
+
+  static get success_callbacks(): readonly unknown[] {
+    return configuredSuccessCallbacks;
+  }
+
+  static get failureCallbacks(): readonly unknown[] {
+    return configuredFailureCallbacks;
+  }
+
+  static get failure_callbacks(): readonly unknown[] {
+    return configuredFailureCallbacks;
+  }
 }
 
 export class ConfiguredLLM extends BaseLLM {
@@ -2153,6 +2203,13 @@ function isLLMClient(value: unknown): value is LLMClient {
     return false;
   }
   return typeof value.call === "function";
+}
+
+function parseCallbackNames(value: string | undefined): string[] {
+  if (!value) {
+    return [];
+  }
+  return value.split(",").map((callback) => callback.trim()).filter((callback) => callback.length > 0);
 }
 
 function stringProperty(value: Record<string, unknown>, key: string): string | undefined {
