@@ -337,6 +337,255 @@ export class BedrockCompletion extends ConfiguredLLM {
     return super.call(messages, options);
   }
 
+  formatMessagesForConverse(messages: string | readonly (Partial<LLMMessage> & Record<string, unknown>)[]): {
+    messages: Record<string, unknown>[];
+    systemMessage: string | null;
+    system_message: string | null;
+  } {
+    const formattedMessages = this._format_messages(messages);
+    const converseMessages: Record<string, unknown>[] = [];
+    let systemMessage: string | null = null;
+    let pendingToolResults: Record<string, unknown>[] = [];
+
+    for (const message of formattedMessages) {
+      const rawMessage = message as LLMMessage & Record<string, unknown>;
+      const role = rawMessage.role;
+      const content = rawMessage.content;
+      const toolCalls = rawMessage.tool_calls;
+      const toolCallId = rawMessage.tool_call_id;
+
+      if (role === "system") {
+        systemMessage = systemMessage ? `${systemMessage}\n\n${content}` : content;
+        continue;
+      }
+
+      if (role === "tool") {
+        const toolUseId = scalarToString(toolCallId);
+        if (!toolUseId) {
+          throw new Error("Tool message missing required tool_call_id");
+        }
+        pendingToolResults.push({
+          toolResult: {
+            toolUseId,
+            content: [{ text: content || "" }],
+          },
+        });
+        continue;
+      }
+
+      if (pendingToolResults.length > 0) {
+        converseMessages.push({ role: "user", content: pendingToolResults });
+        pendingToolResults = [];
+      }
+
+      if (role === "assistant" && Array.isArray(toolCalls)) {
+        const bedrockContent = toolCalls.map((toolCall) => {
+          const toolCallRecord = typeof toolCall === "object" && toolCall ? toolCall as Record<string, unknown> : {};
+          const functionCall = toolCallRecord.function;
+          const functionRecord = typeof functionCall === "object" && functionCall ? functionCall as Record<string, unknown> : {};
+          const rawArguments = functionRecord.arguments;
+          const input = typeof rawArguments === "string" ? JSON.parse(rawArguments || "{}") as Record<string, unknown> : rawArguments ?? {};
+          const fallbackToolUseId = `call_${converseMessages.length.toString()}`;
+          return {
+            toolUse: {
+              toolUseId: scalarToString(toolCallRecord.id) ?? fallbackToolUseId,
+              name: scalarToString(functionRecord.name) ?? "",
+              input,
+            },
+          };
+        });
+        converseMessages.push({ role: "assistant", content: bedrockContent });
+        continue;
+      }
+
+      converseMessages.push({
+        role,
+        content: Array.isArray(content) ? content : [{ text: content || "" }],
+      });
+    }
+
+    if (pendingToolResults.length > 0) {
+      converseMessages.push({ role: "user", content: pendingToolResults });
+    }
+
+    const lastMessage = converseMessages.at(-1);
+    if (lastMessage?.role === "assistant" && (
+      this.model.toLowerCase().includes("cohere")
+        || this.model.toLowerCase().includes("command")
+        || this.model.toLowerCase().includes("coral")
+        || this.isClaudeModel()
+    )) {
+      converseMessages.push({
+        role: "user",
+        content: [{ text: this.isClaudeModel() || this.model.toLowerCase().includes("cohere") ? "Please continue and provide your final answer." : "Continue your response." }],
+      });
+    }
+
+    if (converseMessages.length === 0) {
+      converseMessages.push({ role: "user", content: [{ text: "Hello, please help me with my request." }] });
+    } else if (converseMessages[0]?.role !== "user") {
+      converseMessages.unshift({ role: "user", content: [{ text: "Hello, please help me with my request." }] });
+    }
+
+    return { messages: converseMessages, systemMessage, system_message: systemMessage };
+  }
+
+  _format_messages_for_converse(messages: string | readonly (Partial<LLMMessage> & Record<string, unknown>)[]): [Record<string, unknown>[], string | null] {
+    const prepared = this.formatMessagesForConverse(messages);
+    return [prepared.messages, prepared.systemMessage];
+  }
+
+  getInferenceConfig(): Record<string, unknown> {
+    const config: Record<string, unknown> = {};
+    if (this.maxTokens !== null) {
+      config.maxTokens = this.maxTokens;
+    }
+    if (this.temperature !== null) {
+      config.temperature = this.temperature;
+    }
+    if (this.topP !== null) {
+      config.topP = this.topP;
+    }
+    if (this.stopSequences.length > 0) {
+      config.stopSequences = [...this.stopSequences];
+    }
+    if (this.isClaudeModel() && this.topK !== null) {
+      config.topK = this.topK;
+    }
+    return config;
+  }
+
+  _get_inference_config(): Record<string, unknown> {
+    return this.getInferenceConfig();
+  }
+
+  formatToolsForConverse(tools: readonly Tool[]): Record<string, unknown>[] {
+    return convertToolsToOpenAISchema(tools)[0].map((tool) => ({
+      toolSpec: {
+        name: tool.function.name,
+        description: tool.function.description,
+        inputSchema: { json: tool.function.parameters },
+      },
+    }));
+  }
+
+  _format_tools_for_converse(tools: readonly Tool[]): Record<string, unknown>[] {
+    return this.formatToolsForConverse(tools);
+  }
+
+  messagesContainToolContent(messages: readonly Record<string, unknown>[]): boolean {
+    return messages.some((message) => Array.isArray(message.content) && message.content.some((block) => (
+      typeof block === "object" && block !== null && ("toolUse" in block || "toolResult" in block)
+    )));
+  }
+
+  _messages_contain_tool_content(messages: readonly Record<string, unknown>[]): boolean {
+    return this.messagesContainToolContent(messages);
+  }
+
+  extractToolsFromMessageHistory(messages: readonly Record<string, unknown>[]): Record<string, unknown>[] {
+    const tools: Record<string, unknown>[] = [];
+    const seenNames = new Set<string>();
+    for (const message of messages) {
+      if (!Array.isArray(message.content)) {
+        continue;
+      }
+      for (const block of message.content) {
+        if (typeof block !== "object" || block === null || !("toolUse" in block)) {
+          continue;
+        }
+        const toolUse = (block as Record<string, unknown>).toolUse;
+        if (typeof toolUse !== "object" || toolUse === null) {
+          continue;
+        }
+        const name = scalarToString((toolUse as Record<string, unknown>).name) ?? "";
+        if (!name || seenNames.has(name)) {
+          continue;
+        }
+        seenNames.add(name);
+        tools.push({
+          toolSpec: {
+            name,
+            description: `Tool: ${name}`,
+            inputSchema: { json: { type: "object", properties: {} } },
+          },
+        });
+      }
+    }
+    return tools;
+  }
+
+  _extract_tools_from_message_history(messages: readonly Record<string, unknown>[]): Record<string, unknown>[] {
+    return this.extractToolsFromMessageHistory(messages);
+  }
+
+  prepareConverseRequestBody(messages: string | readonly (Partial<LLMMessage> & Record<string, unknown>)[], tools: readonly Tool[] | null = null): {
+    messages: Record<string, unknown>[];
+    body: Record<string, unknown>;
+    systemMessage: string | null;
+    system_message: string | null;
+  } {
+    const { messages: formattedMessages, systemMessage } = this.formatMessagesForConverse(messages);
+    const body: Record<string, unknown> = { inferenceConfig: this.getInferenceConfig() };
+
+    if (systemMessage) {
+      body.system = [{ text: systemMessage }];
+    }
+
+    if (tools && tools.length > 0) {
+      body.toolConfig = { tools: this.formatToolsForConverse(tools) };
+    } else if (this.messagesContainToolContent(formattedMessages)) {
+      const historyTools = this.extractToolsFromMessageHistory(formattedMessages);
+      if (historyTools.length > 0) {
+        body.toolConfig = { tools: historyTools };
+      }
+    }
+
+    if (this.guardrailConfig) {
+      body.guardrailConfig = this.guardrailConfig;
+    }
+    if (this.additionalModelRequestFields) {
+      body.additionalModelRequestFields = this.additionalModelRequestFields;
+    }
+    if (this.additionalModelResponseFieldPaths) {
+      body.additionalModelResponseFieldPaths = this.additionalModelResponseFieldPaths;
+    }
+
+    return { messages: formattedMessages, body, systemMessage, system_message: systemMessage };
+  }
+
+  _prepare_converse_request_body(messages: string | readonly (Partial<LLMMessage> & Record<string, unknown>)[], tools: readonly Tool[] | null = null): {
+    messages: Record<string, unknown>[];
+    body: Record<string, unknown>;
+    systemMessage: string | null;
+    system_message: string | null;
+  } {
+    return this.prepareConverseRequestBody(messages, tools);
+  }
+
+  prepareConverseStreamRequestBody(messages: string | readonly (Partial<LLMMessage> & Record<string, unknown>)[], tools: readonly Tool[] | null = null): {
+    messages: Record<string, unknown>[];
+    body: Record<string, unknown>;
+    systemMessage: string | null;
+    system_message: string | null;
+  } {
+    return this.prepareConverseRequestBody(messages, tools);
+  }
+
+  _prepare_converse_stream_request_body(messages: string | readonly (Partial<LLMMessage> & Record<string, unknown>)[], tools: readonly Tool[] | null = null): {
+    messages: Record<string, unknown>[];
+    body: Record<string, unknown>;
+    systemMessage: string | null;
+    system_message: string | null;
+  } {
+    return this.prepareConverseStreamRequestBody(messages, tools);
+  }
+
+  private isClaudeModel(): boolean {
+    const model = this.model.toLowerCase();
+    return model.includes("anthropic") || model.includes("claude");
+  }
+
   override supportsFunctionCalling(): boolean {
     return true;
   }
@@ -797,6 +1046,16 @@ function normalizeToolSearch(value: AnthropicCompletionOptions["tool_search"]): 
 
 function stripUndefined<T extends Record<string, unknown>>(value: T): Partial<T> {
   return Object.fromEntries(Object.entries(value).filter(([, entry]) => entry !== undefined)) as Partial<T>;
+}
+
+function scalarToString(value: unknown): string | null {
+  if (typeof value === "string") {
+    return value;
+  }
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  return null;
 }
 
 function isAzureOpenAIEndpoint(endpoint: string | null): boolean {

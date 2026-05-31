@@ -8904,6 +8904,74 @@ describe("LLM providers", () => {
     });
   });
 
+  it("prepares Bedrock Converse request bodies with tools and provider fields", () => {
+    const search = new StructuredTool({
+      name: "search docs",
+      description: "Search documentation",
+      argsSchema: {
+        query: { type: "string", description: "Search query" },
+      },
+      func: () => "result",
+    });
+    const bedrock = new BedrockCompletion({
+      model: "anthropic.claude-3-5-sonnet-20241022-v2:0",
+      temperature: 0.2,
+      top_p: 0.8,
+      top_k: 40,
+      max_tokens: 300,
+      stop: ["STOP"],
+      stream: true,
+      guardrail_config: { guardrailIdentifier: "guard", guardrailVersion: "1" },
+      additional_model_request_fields: { thinking: { type: "enabled", budget_tokens: 1024 } },
+      additional_model_response_field_paths: ["/stop_sequence"],
+    });
+
+    const prepared = (bedrock as unknown as {
+      _prepare_converse_request_body(messages: LLMMessage[], tools?: StructuredTool[] | null): {
+        messages: LLMMessage[];
+        body: Record<string, unknown>;
+        system_message?: string | null;
+      };
+    })._prepare_converse_request_body([
+      { role: "system", content: "System prompt" },
+      { role: "user", content: "Find CrewAI" },
+    ], [search]);
+
+    expect(prepared.messages).toEqual([{ role: "user", content: [{ text: "Find CrewAI" }] }]);
+    expect(prepared.system_message).toBe("System prompt");
+    expect(prepared.body).toMatchObject({
+      inferenceConfig: {
+        maxTokens: 300,
+        temperature: 0.2,
+        topP: 0.8,
+        stopSequences: ["STOP"],
+        topK: 40,
+      },
+      system: [{ text: "System prompt" }],
+      toolConfig: {
+        tools: [{
+          toolSpec: {
+            name: "search_docs",
+            description: "Search documentation",
+            inputSchema: {
+              json: {
+                type: "object",
+                additionalProperties: false,
+                properties: {
+                  query: { type: "string", description: "Search query" },
+                },
+                required: ["query"],
+              },
+            },
+          },
+        }],
+      },
+      guardrailConfig: { guardrailIdentifier: "guard", guardrailVersion: "1" },
+      additionalModelRequestFields: { thinking: { type: "enabled", budget_tokens: 1024 } },
+      additionalModelResponseFieldPaths: ["/stop_sequence"],
+    });
+  });
+
   it("exposes Gemini completion provider parity helpers", () => {
     const gemini = new GeminiCompletion({
       model: "gemini-2.5-pro",
