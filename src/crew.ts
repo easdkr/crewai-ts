@@ -1,7 +1,7 @@
 import { existsSync, statSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 import { Agent } from "./agent.js";
 import type { ExecutionContext } from "./context.js";
@@ -86,6 +86,7 @@ export type ResetMemoriesCommandType =
   | "external";
 
 export type CrewOptions = {
+  id?: string;
   name?: string | null;
   config?: Record<string, unknown> | null;
   agents?: readonly Agent[];
@@ -154,6 +155,7 @@ export type CrewOptions = {
 export class Crew {
   readonly entityType = "crew";
   readonly entity_type = "crew";
+  readonly id: string;
   name: string | null;
   config: Record<string, unknown> | null;
   agents: Agent[];
@@ -212,6 +214,7 @@ export class Crew {
   readonly task_output_storage_handler: TaskOutputStorageHandler | null;
 
   constructor(options: CrewOptions = {}) {
+    this.id = options.id ?? randomUUID();
     this.name = options.name ?? "crew";
     this.config = options.config ?? null;
     this.agents = [...(options.agents ?? [])];
@@ -1482,6 +1485,14 @@ export class Crew {
 
   calculate_usage_metrics(): UsageMetrics {
     return this.calculateUsageMetrics();
+  }
+
+  toString(): string {
+    return `Crew(id=${this.id}, process=${this.process}, number_of_agents=${String(this.agents.length)}, number_of_tasks=${String(this.tasks.length)})`;
+  }
+
+  __repr__(): string {
+    return this.toString();
   }
 }
 

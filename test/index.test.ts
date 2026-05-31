@@ -7386,6 +7386,8 @@ describe("core crew runtime", () => {
     agentInstance.interpolate_inputs({ topic: "CrewAI" });
     expect(agentInstance.role).toBe("Researcher CrewAI");
     expect(agentInstance.goal).toBe("Find facts about CrewAI");
+    expect(agentInstance.__repr__()).toBe("Agent(role=Researcher CrewAI, goal=Find facts about CrewAI, backstory=Careful analyst)");
+    expect(agentInstance.toString()).toBe(agentInstance.__repr__());
     expect(agentInstance.resolve_memory()).toBeNull();
     expect(agentInstance.get_delegation_tools()).toEqual([]);
     expect(agentInstance.get_platform_tools()).toEqual([]);
@@ -7479,6 +7481,40 @@ describe("core crew runtime", () => {
     await expect(baseAgent.aexecute_task("Base task")).resolves.toBe("base output");
   });
 
+  it("generates knowledge search queries through the upstream-compatible agent helper", async () => {
+    const events: CrewAIEvent[] = [];
+    crewaiEventBus.on("knowledge_query_started", (_source, event) => {
+      events.push(event);
+    });
+    crewaiEventBus.on("knowledge_query_completed", (_source, event) => {
+      events.push(event);
+    });
+    const agentInstance = new Agent({
+      role: "Researcher",
+      goal: "Find facts",
+      backstory: "Careful analyst",
+      llm: (messages) => {
+        expect(messages[0]?.role).toBe("system");
+        expect(messages[1]?.content).toContain("Explain CrewAI memory");
+        return "CrewAI memory search";
+      },
+    });
+    const taskInstance = new Task({
+      description: "Explain CrewAI memory",
+      expectedOutput: "A brief",
+      agent: agentInstance,
+    });
+
+    await expect(agentInstance._get_knowledge_search_query("Explain CrewAI memory", taskInstance))
+      .resolves.toBe("CrewAI memory search");
+
+    expect(events.map((event) => event.type)).toEqual([
+      "knowledge_query_started",
+      "knowledge_query_completed",
+    ]);
+    expect(agentInstance.last_messages.at(-1)?.content).toContain("Explain CrewAI memory");
+  });
+
   it("executes OpenAI and LangGraph agent adapters through upstream public methods", async () => {
     const events: string[] = [];
     crewaiEventBus.on("agent_execution_started", (_source, event) => {
@@ -7555,6 +7591,8 @@ describe("core crew runtime", () => {
     const trainingFile = join(mkdtempSync(join(tmpdir(), "crewai-ts-train-")), "trained.json");
 
     expect(crewInstance.key).toHaveLength(32);
+    expect(crewInstance.__repr__()).toBe(`Crew(id=${crewInstance.id}, process=sequential, number_of_agents=1, number_of_tasks=1)`);
+    expect(crewInstance.toString()).toBe(crewInstance.__repr__());
     expect(crewInstance.check_config()).toBe(crewInstance);
     expect(crewInstance.validate_tasks()).toBe(crewInstance);
     expect(crewInstance.query_knowledge(["collaborative"])?.[0]?.content).toContain("collaborative agents");

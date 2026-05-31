@@ -433,6 +433,57 @@ export class Agent {
     return this.lastMessages;
   }
 
+  toString(): string {
+    return `Agent(role=${this.role}, goal=${this.goal}, backstory=${this.backstory})`;
+  }
+
+  __repr__(): string {
+    return this.toString();
+  }
+
+  async getKnowledgeSearchQuery(taskPrompt: string, task: unknown): Promise<string | null> {
+    crewaiEventBus.emit(this, new KnowledgeQueryStartedEvent({
+      task_prompt: taskPrompt,
+      from_task: task,
+      from_agent: this,
+    }));
+    const query = `Generate a concise knowledge search query for the following task:\n${taskPrompt}`;
+    const messages: LLMMessage[] = [
+      {
+        role: "system",
+        content: "Rewrite task prompts into concise search queries for a knowledge base.",
+      },
+      {
+        role: "user",
+        content: query,
+      },
+    ];
+    try {
+      const llmClient = this.resolveLLMClient();
+      if (!llmClient) {
+        throw new Error("LLM is not compatible with knowledge search queries");
+      }
+      const rewrittenQuery = await this.callAndTrackLLM(llmClient, messages, [], { task }, 0);
+      crewaiEventBus.emit(this, new KnowledgeQueryCompletedEvent({
+        query,
+        from_task: task,
+        from_agent: this,
+      }));
+      return typeof rewrittenQuery === "string" ? rewrittenQuery : JSON.stringify(rewrittenQuery);
+    } catch (error) {
+      crewaiEventBus.emit(this, new KnowledgeQueryFailedEvent({
+        error,
+        from_task: task,
+        from_agent: this,
+      }));
+      return null;
+    }
+  }
+
+  async _get_knowledge_search_query(task_prompt: string, task: unknown): Promise<string | null> {
+    return await this.getKnowledgeSearchQuery(task_prompt, task);
+  }
+
   static async fromCheckpoint(config: CheckpointConfig): Promise<Agent> {
     const state = await RuntimeState.fromCheckpoint(config);
     const agent = state.root.find((entity): entity is Agent => entity instanceof Agent);
