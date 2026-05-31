@@ -13029,6 +13029,73 @@ describe("memory", () => {
     expect(item.plan).toEqual(new ConsolidationPlan({ actions: [], insert_new: true }));
   });
 
+  it("executes EncodingFlow consolidation updates and inserts", () => {
+    const existing = new MemoryRecord({
+      id: "existing",
+      content: "old memory",
+      scope: "/crew/project",
+      categories: ["memory"],
+      metadata: { preserved: true },
+      importance: 0.7,
+      embedding: [0, 1, 0],
+      createdAt: "2026-05-30T00:00:00.000Z",
+    });
+    const save = vi.fn();
+    const update = vi.fn();
+    const storage = { save, update, delete: vi.fn() };
+    const embedder = vi.fn((texts: readonly string[]) => texts.map(() => [0.5, 0.5, 0]));
+    const flow = new EncodingFlow(storage, null, embedder);
+    const updateItem = new ItemState("new update candidate", {
+      similar_records: [existing],
+      plan: new ConsolidationPlan({
+        actions: [{ action: "update", record_id: "existing", new_content: "updated memory" }],
+        insert_new: false,
+      }),
+    });
+    const insertItem = new ItemState("brand new memory", {
+      embedding: [1, 0, 0],
+      resolved_scope: "/crew/new",
+      resolved_categories: ["fresh"],
+      resolved_metadata: { created: true },
+      resolved_importance: 0.9,
+      resolved_source: "unit",
+      resolved_private: true,
+      plan: new ConsolidationPlan({ actions: [], insert_new: true }),
+    });
+    flow.state.items.push(updateItem, insertItem);
+
+    flow.execute_plans();
+
+    expect(embedder).toHaveBeenCalledWith(["updated memory"]);
+    expect(update).toHaveBeenCalledTimes(1);
+    expect(update.mock.calls[0]?.[0]).toMatchObject({
+      id: "existing",
+      content: "updated memory",
+      scope: "/crew/project",
+      categories: ["memory"],
+      metadata: { preserved: true },
+      importance: 0.7,
+      embedding: [0.5, 0.5, 0],
+    });
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(save.mock.calls[0]?.[0]).toEqual([
+      expect.objectContaining({
+        content: "brand new memory",
+        scope: "/crew/new",
+        categories: ["fresh"],
+        metadata: { created: true },
+        importance: 0.9,
+        embedding: [1, 0, 0],
+        source: "unit",
+        private: true,
+      }),
+    ]);
+    expect(flow.state.records_updated).toBe(1);
+    expect(flow.state.records_inserted).toBe(1);
+    expect(updateItem.result_record).toMatchObject({ id: "existing", content: "updated memory" });
+    expect(insertItem.result_record).toMatchObject({ content: "brand new memory", scope: "/crew/new" });
+  });
+
   it("automatically appends relevant crew memories to task prompts", async () => {
     const memory = new Memory();
     memory.remember("Nest should consume crewai-ts as a normal TypeScript library", {

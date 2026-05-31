@@ -663,6 +663,114 @@ export class EncodingFlow {
       return [];
     }
   }
+
+  execute_plans(): void {
+    const storage = this.storage as {
+      delete?: (scopePrefix?: string | null, categories?: readonly string[] | null, recordIds?: readonly string[] | null) => number | undefined;
+      update?: (record: MemoryRecord) => unknown;
+      save?: (records: readonly MemoryRecord[]) => unknown;
+    } | null;
+    const allSimilar = new Map<string, MemoryRecord>();
+    const deletes = new Set<string>();
+    const updates = new Map<string, { item: ItemState; content: string }>();
+
+    for (const item of this.state.items) {
+      if (item.dropped || item.plan === null) {
+        continue;
+      }
+      for (const record of item.similar_records) {
+        if (!allSimilar.has(record.id)) {
+          allSimilar.set(record.id, record);
+        }
+      }
+      for (const action of item.plan.actions) {
+        if (action.action === "delete" && !deletes.has(action.record_id) && !updates.has(action.record_id)) {
+          deletes.add(action.record_id);
+        } else if (action.action === "update" && action.new_content && !deletes.has(action.record_id) && !updates.has(action.record_id)) {
+          updates.set(action.record_id, { item, content: action.new_content });
+        }
+      }
+    }
+
+    const updateEntries = [...updates.entries()];
+    const updateEmbeddings = updateEntries.length > 0
+      ? embed_texts(this.embedder, updateEntries.map(([, update]) => update.content))
+      : [];
+    const updatedRecords = new Map<string, MemoryRecord>();
+
+    if (deletes.size > 0) {
+      storage?.delete?.(null, null, [...deletes]);
+      this.state.records_deleted += deletes.size;
+    }
+
+    updateEntries.forEach(([recordId, update], index) => {
+      const existing = allSimilar.get(recordId);
+      if (!existing) {
+        return;
+      }
+      const updated = new MemoryRecord({
+        id: existing.id,
+        content: update.content,
+        scope: existing.scope,
+        categories: existing.categories,
+        metadata: existing.metadata,
+        importance: existing.importance,
+        source: existing.source,
+        private: existing.private,
+        createdAt: existing.createdAt,
+        lastAccessed: new Date(),
+        embedding: updateEmbeddings[index] ?? existing.embedding ?? null,
+      });
+      storage?.update?.(updated);
+      this.state.records_updated += 1;
+      updatedRecords.set(recordId, updated);
+      update.item.resultRecord = updated;
+      update.item.result_record = updated;
+    });
+
+    const inserts: Array<readonly [ItemState, MemoryRecord]> = [];
+    for (const item of this.state.items) {
+      if (item.dropped || item.plan === null || !item.plan.insert_new) {
+        continue;
+      }
+      inserts.push([item, new MemoryRecord({
+        content: item.content,
+        scope: item.resolved_scope,
+        categories: item.resolved_categories,
+        metadata: item.resolved_metadata,
+        importance: item.resolved_importance,
+        source: item.resolved_source,
+        private: item.resolved_private,
+        embedding: item.embedding.length > 0 ? item.embedding : null,
+      })] as const);
+    }
+    if (inserts.length > 0) {
+      const records = inserts.map(([, record]) => record);
+      storage?.save?.(records);
+      this.state.records_inserted += records.length;
+      for (const [item, record] of inserts) {
+        item.resultRecord = record;
+        item.result_record = record;
+      }
+    }
+
+    for (const item of this.state.items) {
+      if (item.dropped || item.plan === null || item.plan.insert_new || item.result_record !== null) {
+        continue;
+      }
+      const firstUpdated = item.plan.actions
+        .filter((action) => action.action === "update")
+        .map((action) => updatedRecords.get(action.record_id))
+        .find((record): record is MemoryRecord => record !== undefined);
+      const result = firstUpdated ?? item.similar_records[0] ?? null;
+      item.resultRecord = result;
+      item.result_record = result;
+    }
+  }
+
+  executePlans(): void {
+    this.execute_plans();
+  }
 }
 
 export class RecallState {
