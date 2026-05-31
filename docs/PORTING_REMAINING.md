@@ -28,13 +28,24 @@ The export surface is broad, but several areas still need deeper behavioral pari
 
 When more goal budget is available, continue from the behavioral parity audits below. The next pass should stay test-driven: compare the Python upstream method contract, add focused tests for the missing or placeholder behavior, then implement the smallest TS-compatible behavior that keeps decorators standard-only.
 
+## Completed In Current Storage/RAG Pass
+
+- Added deterministic storage backend lifecycle parity for the TypeScript in-memory `QdrantEdgeStorage` and `LanceDBStorage` shims:
+  - batch `save`/`asave`
+  - positional and object-style `search`/`asearch`
+  - metadata filters, category filters, scope filters, min score, and limits
+  - `delete`/`adelete`, `update`, `get_record`, `list_records`, `get_scope_info`, `list_scopes`, `list_categories`, `count`, and scoped/global `reset`
+- Replaced root placeholder exports for `ChromaDBClient`, `KnowledgeStorage`, and `BaseKnowledgeStorage` with behavior-bearing implementations.
+- Added fake-client-backed RAG tests for ChromaDB and Qdrant collection create/delete/reset, upsert overwrite behavior, search, metadata filters, and async aliases.
+- Added `KnowledgeStorage` tests for collection naming, save/search, async aliases, and reset through the RAG client wrapper.
+
 1. Storage backends
    - `memory/storage/backend.py`
    - `memory/storage/lancedb_storage.py`
    - `memory/storage/qdrant_edge_storage.py`
    - `knowledge/storage/*`
-   - Verify sync/async save/search/delete/update/reset semantics and metadata filtering.
-   - Add tests for vector store lifecycle, id overwrite/update behavior, reset semantics, and metadata filter matching before filling implementation gaps.
+   - The deterministic in-memory TypeScript shims now cover sync/async save/search/delete/update/reset semantics and metadata filtering.
+   - Remaining: audit persistence-specific LanceDB/Qdrant Edge details that do not map to the no-SDK TypeScript shim yet, including compaction, central/local shard flushing, and provider-specific index behavior.
 
 2. LLM providers
    - OpenAI, Azure, Anthropic, Bedrock, Gemini provider classes.
@@ -56,7 +67,8 @@ When more goal budget is available, continue from the behavioral parity audits b
 5. RAG clients
    - ChromaDB/Qdrant client method parity.
    - Async aliases and collection lifecycle behavior.
-   - Cover collection creation, deletion, upsert/search, and metadata filters with fake clients before adding optional real-client integration.
+   - Fake-client tests now cover collection creation, deletion, reset, upsert/search, overwrite behavior, metadata filters, and async aliases.
+   - Remaining: optional real-client integration can be added outside the default gate if the project decides to carry provider SDK peer dependency coverage.
 
 6. Evaluation and tracing listeners
    - Agent evaluator display/event helper methods.

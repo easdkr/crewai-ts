@@ -1,5 +1,11 @@
 import { extname } from "node:path";
 import { readFileSync } from "node:fs";
+import {
+  getRagClient,
+  type BaseRecord,
+  type RagClient,
+  type SearchResult,
+} from "./rag.js";
 
 export type KnowledgeSearchResult = {
   content: string;
@@ -58,6 +64,12 @@ type KnowledgeEntry = {
 export type KnowledgeOptions = {
   sources?: readonly KnowledgeSource[];
   collectionName?: string | null;
+};
+
+export type KnowledgeStorageOptions = {
+  collectionName?: string | null;
+  collection_name?: string | null;
+  client?: RagClient | null;
 };
 
 export class StringKnowledgeSource implements KnowledgeSource {
@@ -327,6 +339,164 @@ export class Knowledge {
 
   reset(): void {
     this.entries = [];
+  }
+}
+
+export abstract class BaseKnowledgeStorage {
+  abstract search(
+    query: readonly string[],
+    limit?: number,
+    metadataFilter?: Record<string, unknown> | null,
+    scoreThreshold?: number,
+  ): SearchResult[];
+
+  abstract asearch(
+    query: readonly string[],
+    limit?: number,
+    metadataFilter?: Record<string, unknown> | null,
+    scoreThreshold?: number,
+  ): Promise<SearchResult[]>;
+
+  abstract save(documents: readonly string[]): void;
+
+  abstract asave(documents: readonly string[]): Promise<void>;
+
+  abstract reset(): void;
+
+  abstract areset(): Promise<void>;
+}
+
+export class KnowledgeStorage extends BaseKnowledgeStorage {
+  readonly collectionName: string | null;
+  readonly collection_name: string | null;
+  private readonly client: RagClient | null;
+
+  constructor(options: KnowledgeStorageOptions = {}) {
+    super();
+    this.collectionName = options.collectionName ?? options.collection_name ?? null;
+    this.collection_name = this.collectionName;
+    this.client = options.client ?? null;
+  }
+
+  search(
+    query: readonly string[],
+    limit = 5,
+    metadataFilter: Record<string, unknown> | null = null,
+    scoreThreshold = 0.6,
+  ): SearchResult[] {
+    if (query.length === 0) {
+      return [];
+    }
+    try {
+      const client = this.getClient() as RagClient & {
+        search?: (params: Record<string, unknown>) => unknown;
+      };
+      const result = client.search?.({
+        collection_name: this.ragCollectionName(),
+        query: query.length > 1 ? query.join(" ") : query[0] ?? "",
+        limit,
+        metadata_filter: metadataFilter,
+        score_threshold: scoreThreshold,
+      });
+      return Array.isArray(result) ? result as SearchResult[] : [];
+    } catch {
+      return [];
+    }
+  }
+
+  async asearch(
+    query: readonly string[],
+    limit = 5,
+    metadataFilter: Record<string, unknown> | null = null,
+    scoreThreshold = 0.6,
+  ): Promise<SearchResult[]> {
+    if (query.length === 0) {
+      return [];
+    }
+    const client = this.getClient() as RagClient & {
+      asearch?: (params: Record<string, unknown>) => Promise<SearchResult[]>;
+    };
+    try {
+      const params = {
+        collection_name: this.ragCollectionName(),
+        query: query.length > 1 ? query.join(" ") : query[0] ?? "",
+        limit,
+        metadata_filter: metadataFilter,
+        score_threshold: scoreThreshold,
+      };
+      const syncClient = client as unknown as RagClient & {
+        search?: (searchParams: Record<string, unknown>) => unknown;
+      };
+      const result = client.asearch ? await client.asearch(params) : await Promise.resolve(syncClient.search?.(params));
+      return Array.isArray(result) ? result as SearchResult[] : [];
+    } catch {
+      return [];
+    }
+  }
+
+  save(documents: readonly string[]): void {
+    if (documents.length === 0) {
+      return;
+    }
+    const client = this.getClient() as RagClient & {
+      get_or_create_collection?: (params: Record<string, unknown>) => unknown;
+      add_documents?: (params: { collection_name: string; documents: BaseRecord[] }) => unknown;
+    };
+    client.get_or_create_collection?.({ collection_name: this.ragCollectionName() });
+    const ragDocuments = documents.map((content) => ({ content }));
+    if (client.add_documents) {
+      client.add_documents({ collection_name: this.ragCollectionName(), documents: ragDocuments });
+      return;
+    }
+    client.add?.(this.ragCollectionName(), ragDocuments);
+  }
+
+  async asave(documents: readonly string[]): Promise<void> {
+    if (documents.length === 0) {
+      return;
+    }
+    const client = this.getClient() as RagClient & {
+      aget_or_create_collection?: (params: Record<string, unknown>) => Promise<unknown>;
+      aadd_documents?: (params: { collection_name: string; documents: BaseRecord[] }) => Promise<unknown>;
+    };
+    await client.aget_or_create_collection?.({ collection_name: this.ragCollectionName() });
+    const ragDocuments = documents.map((content) => ({ content }));
+    if (client.aadd_documents) {
+      await client.aadd_documents({ collection_name: this.ragCollectionName(), documents: ragDocuments });
+      return;
+    }
+    this.save(documents);
+  }
+
+  reset(): void {
+    const client = this.getClient() as RagClient & {
+      delete_collection?: (params: Record<string, unknown>) => unknown;
+    };
+    if (client.delete_collection) {
+      client.delete_collection({ collection_name: this.ragCollectionName() });
+      return;
+    }
+    const deleteCollection = client.deleteCollection as ((collectionName: string) => unknown) | undefined;
+    deleteCollection?.(this.ragCollectionName());
+  }
+
+  async areset(): Promise<void> {
+    const client = this.getClient() as RagClient & {
+      adelete_collection?: (params: Record<string, unknown>) => Promise<unknown>;
+    };
+    if (client.adelete_collection) {
+      await client.adelete_collection({ collection_name: this.ragCollectionName() });
+      return;
+    }
+    this.reset();
+  }
+
+  private getClient(): RagClient {
+    return this.client ?? getRagClient();
+  }
+
+  private ragCollectionName(): string {
+    return this.collectionName ? `knowledge_${this.collectionName}` : "knowledge";
   }
 }
 

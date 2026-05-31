@@ -1466,6 +1466,8 @@ export {
   ExcelKnowledgeSource,
   JSONKnowledgeSource,
   Knowledge,
+  KnowledgeStorage,
+  BaseKnowledgeStorage,
   PDFKnowledgeSource,
   SourceHelper,
   StringKnowledgeSource,
@@ -1480,6 +1482,7 @@ export {
   type KnowledgeQueryOptions,
   type KnowledgeSearchResult,
   type KnowledgeSource,
+  type KnowledgeStorageOptions,
   type PDFKnowledgeSourceOptions,
   type PDFTextExtractor,
   type StringKnowledgeSourceOptions,
@@ -1790,6 +1793,7 @@ export {
   AzureProviderSpec,
   BedrockProviderSpec,
   BedrockProvider,
+  ChromaDBClient,
   ChromaDBConfig,
   ChromaDBClientType,
   ChromaDBCollectionCreateParams,
@@ -2480,10 +2484,6 @@ export const RagContext = Object.freeze({ kind: "RagContext" });
 export const SupportedProviderConfig = Object.freeze({ kind: "SupportedProviderConfig" });
 export const SupportedProvider = Object.freeze({ kind: "SupportedProvider" });
 
-export class ChromaDBClient {
-  readonly kind = "ChromaDBClient";
-}
-
 export class StorageBackend {
   readonly kind = "StorageBackend";
 }
@@ -2494,14 +2494,6 @@ export class GeminiCompletion {
 
 export function extract_knowledge_context(items: readonly unknown[] = []): string {
   return items.map((item) => String(item)).join("\n");
-}
-
-export class KnowledgeStorage {
-  readonly kind = "KnowledgeStorage";
-}
-
-export class BaseKnowledgeStorage {
-  readonly kind = "BaseKnowledgeStorage";
 }
 
 export class BaseKnowledgeSource {

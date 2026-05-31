@@ -467,6 +467,8 @@ export type MemoryVectorSearchOptions = {
   scope_prefix?: string | null;
   scopePrefix?: string | null;
   categories?: readonly string[] | null;
+  metadata_filter?: Record<string, unknown> | null;
+  metadataFilter?: Record<string, unknown> | null;
   limit?: number;
   min_score?: number;
   minScore?: number;
@@ -489,39 +491,223 @@ export class QdrantEdgeStorage implements MemoryVectorStorageLike {
     this.vector_dim = this.vectorDim;
   }
 
-  save(record: MemoryRecord | MemoryRecordOptions): void {
-    const memoryRecord = record instanceof MemoryRecord ? record : new MemoryRecord(record);
-    this.records.set(memoryRecord.id, memoryRecord);
+  save(records: MemoryRecord | MemoryRecordOptions | readonly (MemoryRecord | MemoryRecordOptions)[]): void {
+    const memoryRecords: readonly (MemoryRecord | MemoryRecordOptions)[] = Array.isArray(records)
+      ? records as readonly (MemoryRecord | MemoryRecordOptions)[]
+      : [records as MemoryRecord | MemoryRecordOptions];
+    for (const record of memoryRecords) {
+      const memoryRecord = record instanceof MemoryRecord ? record : new MemoryRecord(record);
+      this.records.set(memoryRecord.id, memoryRecord);
+    }
   }
 
-  search(embedding: readonly number[], options: MemoryVectorSearchOptions = {}): Array<readonly [MemoryRecord, number]> {
-    const scopePrefix = options.scopePrefix ?? options.scope_prefix ?? "/";
+  search(
+    embedding: readonly number[],
+    optionsOrScopePrefix: MemoryVectorSearchOptions | string | null = {},
+    categoriesArg: readonly string[] | null = null,
+    metadataFilterArg: Record<string, unknown> | null = null,
+    limitArg?: number,
+    minScoreArg?: number,
+  ): Array<readonly [MemoryRecord, number]> {
+    let options: MemoryVectorSearchOptions;
+    if (typeof optionsOrScopePrefix === "object" && optionsOrScopePrefix !== null && !Array.isArray(optionsOrScopePrefix)) {
+      options = optionsOrScopePrefix;
+    } else {
+      options = {
+        scopePrefix: typeof optionsOrScopePrefix === "string" ? optionsOrScopePrefix : null,
+        categories: categoriesArg,
+        metadataFilter: metadataFilterArg,
+      };
+      if (limitArg !== undefined) {
+        options.limit = limitArg;
+      }
+      if (minScoreArg !== undefined) {
+        options.minScore = minScoreArg;
+      }
+    }
+    const scopePrefix = options.scopePrefix ?? options.scope_prefix ?? null;
     const categories = options.categories ?? null;
+    const metadataFilter = options.metadataFilter ?? options.metadata_filter ?? null;
     const limit = options.limit ?? 10;
     const minScore = options.minScore ?? options.min_score ?? Number.NEGATIVE_INFINITY;
     return [...this.records.values()]
-      .filter((record) => record.scope.startsWith(scopePrefix))
+      .filter((record) => !scopePrefix || !scopePrefix.trim().replaceAll("/", "") || record.scope.startsWith(normalize_scope_path(scopePrefix)))
       .filter((record) => !categories || categories.some((category) => record.categories.includes(category)))
+      .filter((record) => !metadataFilter || Object.entries(metadataFilter).every(([key, value]) => record.metadata[key] === value))
       .map((record) => [record, cosineSimilarity(embedding, record.embedding ?? [])] as const)
       .filter(([, score]) => score >= minScore)
       .sort((left, right) => right[1] - left[1])
       .slice(0, limit);
   }
 
-  list_records(scope_prefix: string | null = null, limit = 1_000): MemoryRecord[] {
-    return [...this.records.values()]
-      .filter((record) => !scope_prefix || record.scope.startsWith(scope_prefix))
-      .slice(0, limit);
+  get_record(record_id: string): MemoryRecord | null {
+    return this.records.get(record_id) ?? null;
   }
 
-  delete(record_id: string): boolean {
-    return this.records.delete(record_id);
+  getRecord(recordId: string): MemoryRecord | null {
+    return this.get_record(recordId);
+  }
+
+  update(record: MemoryRecord | MemoryRecordOptions): void {
+    const memoryRecord = record instanceof MemoryRecord ? record : new MemoryRecord(record);
+    this.records.set(memoryRecord.id, memoryRecord);
+  }
+
+  list_records(scope_prefix: string | null = null, limit = 200, offset = 0): MemoryRecord[] {
+    return [...this.records.values()]
+      .filter((record) => !scope_prefix || record.scope.startsWith(normalize_scope_path(scope_prefix)))
+      .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime())
+      .slice(offset, offset + limit);
+  }
+
+  listRecords(scopePrefix: string | null = null, limit = 200, offset = 0): MemoryRecord[] {
+    return this.list_records(scopePrefix, limit, offset);
+  }
+
+  delete(
+    scope_prefix: string | null = null,
+    categories: readonly string[] | null = null,
+    record_ids: readonly string[] | null = null,
+    older_than: Date | string | null = null,
+    metadata_filter: Record<string, unknown> | null = null,
+  ): number {
+    const before = this.records.size;
+    const normalizedScope = scope_prefix ? normalize_scope_path(scope_prefix) : null;
+    const ids = new Set(record_ids ?? []);
+    const cutoff = coerceDate(older_than);
+    for (const record of [...this.records.values()]) {
+      if (normalizedScope && !record.scope.startsWith(normalizedScope)) {
+        continue;
+      }
+      if (categories && !categories.some((category) => record.categories.includes(category))) {
+        continue;
+      }
+      if (ids.size > 0 && !ids.has(record.id)) {
+        continue;
+      }
+      if (cutoff && record.createdAt >= cutoff) {
+        continue;
+      }
+      if (metadata_filter && !Object.entries(metadata_filter).every(([key, value]) => record.metadata[key] === value)) {
+        continue;
+      }
+      this.records.delete(record.id);
+    }
+    return before - this.records.size;
   }
 
   reset(scope_prefix: string | null = null): void {
     for (const record of this.list_records(scope_prefix, Number.POSITIVE_INFINITY)) {
       this.records.delete(record.id);
     }
+  }
+
+  get_scope_info(scope: string): ScopeInfo {
+    const normalizedScope = normalize_scope_path(scope);
+    const records = this.list_records(normalizedScope, Number.POSITIVE_INFINITY);
+    const categories = new Set<string>();
+    const childScopes = new Set<string>();
+    let oldestRecord: Date | null = null;
+    let newestRecord: Date | null = null;
+    const childPrefix = normalizedScope === "/" ? "/" : `${normalizedScope}/`;
+    for (const record of records) {
+      for (const category of record.categories) {
+        categories.add(category);
+      }
+      if (!oldestRecord || record.createdAt < oldestRecord) {
+        oldestRecord = record.createdAt;
+      }
+      if (!newestRecord || record.createdAt > newestRecord) {
+        newestRecord = record.createdAt;
+      }
+      if (record.scope.startsWith(childPrefix) && record.scope !== normalizedScope) {
+        const rest = record.scope.slice(childPrefix.length);
+        const firstComponent = rest.split("/", 1)[0];
+        if (firstComponent) {
+          childScopes.add(`${childPrefix}${firstComponent}`);
+        }
+      }
+    }
+    return new ScopeInfo({
+      path: normalizedScope,
+      recordCount: records.length,
+      categories: [...categories].sort(),
+      oldestRecord,
+      newestRecord,
+      lastUpdated: newestRecord,
+      childScopes: [...childScopes].sort(),
+    });
+  }
+
+  getScopeInfo(scope: string): ScopeInfo {
+    return this.get_scope_info(scope);
+  }
+
+  list_scopes(parent = "/"): string[] {
+    const normalizedParent = normalize_scope_path(parent);
+    const prefix = normalizedParent === "/" ? "/" : `${normalizedParent}/`;
+    const children = new Set<string>();
+    for (const record of this.records.values()) {
+      if (!record.scope.startsWith(prefix) || record.scope === normalizedParent) {
+        continue;
+      }
+      const rest = record.scope.slice(prefix.length);
+      const firstComponent = rest.split("/", 1)[0];
+      if (firstComponent) {
+        children.add(`${prefix}${firstComponent}`);
+      }
+    }
+    return [...children].sort();
+  }
+
+  listScopes(parent = "/"): string[] {
+    return this.list_scopes(parent);
+  }
+
+  list_categories(scope_prefix: string | null = null): Record<string, number> {
+    const counts: Record<string, number> = {};
+    for (const record of this.list_records(scope_prefix, Number.POSITIVE_INFINITY)) {
+      for (const category of record.categories) {
+        counts[category] = (counts[category] ?? 0) + 1;
+      }
+    }
+    return Object.fromEntries(Object.entries(counts).sort(([left], [right]) => left.localeCompare(right)));
+  }
+
+  listCategories(scopePrefix: string | null = null): Record<string, number> {
+    return this.list_categories(scopePrefix);
+  }
+
+  count(scope_prefix: string | null = null): number {
+    return this.list_records(scope_prefix, Number.POSITIVE_INFINITY).length;
+  }
+
+  async asave(records: MemoryRecord | MemoryRecordOptions | readonly (MemoryRecord | MemoryRecordOptions)[]): Promise<void> {
+    await Promise.resolve();
+    this.save(records);
+  }
+
+  async asearch(
+    embedding: readonly number[],
+    scope_prefix: string | null = null,
+    categories: readonly string[] | null = null,
+    metadata_filter: Record<string, unknown> | null = null,
+    limit = 10,
+    min_score = 0,
+  ): Promise<Array<readonly [MemoryRecord, number]>> {
+    await Promise.resolve();
+    return this.search(embedding, scope_prefix, categories, metadata_filter, limit, min_score);
+  }
+
+  async adelete(
+    scope_prefix: string | null = null,
+    categories: readonly string[] | null = null,
+    record_ids: readonly string[] | null = null,
+    older_than: Date | string | null = null,
+    metadata_filter: Record<string, unknown> | null = null,
+  ): Promise<number> {
+    await Promise.resolve();
+    return this.delete(scope_prefix, categories, record_ids, older_than, metadata_filter);
   }
 
   close(): void {

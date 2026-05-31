@@ -87,6 +87,7 @@ import {
   JsonProvider,
   JSONKnowledgeSource,
   ExcelKnowledgeSource,
+  KnowledgeStorage,
   KnowledgeQueryCompletedEvent,
   KnowledgeQueryFailedEvent,
   KnowledgeQueryStartedEvent,
@@ -139,6 +140,7 @@ import {
   LiteAgentOutput,
   Memory,
   MemoryAnalysis,
+  MemoryRecord,
   MemorySlice,
   QueryAnalysis,
   MCPServerHTTP,
@@ -311,6 +313,7 @@ import {
   buildSystemMessage,
   BaseEmbeddingsProvider,
   BaseRAGStorage,
+  ChromaDBClient,
   ChromaDBConfig,
   EntraIdProvider,
   KeycloakProvider,
@@ -370,7 +373,9 @@ import {
   normalizeEmbeddings,
   normalizeRagConfig,
   platformContext,
+  QdrantClient,
   QdrantConfig,
+  QdrantEdgeStorage,
   RWLock,
   registerEmbeddingProviderBuilder,
   registerCallable,
@@ -422,6 +427,7 @@ import {
   validateImportPath,
   validateModel,
   validateEmbeddings,
+  LanceDBStorage,
   validateJwtToken,
   ensureAllPropertiesRequired,
   ensureTypeInSchemas,
@@ -3491,6 +3497,130 @@ describe("execution and event context", () => {
   });
 });
 
+type FakeDocument = {
+  id: string;
+  content: string;
+  metadata: Record<string, unknown>;
+};
+
+class FakeChromaCollection {
+  readonly documents = new Map<string, FakeDocument>();
+
+  upsert(options: { ids: readonly string[]; documents: readonly string[]; metadatas?: readonly Record<string, unknown>[] }): void {
+    options.ids.forEach((id, index) => {
+      this.documents.set(id, {
+        id,
+        content: options.documents[index] ?? "",
+        metadata: options.metadatas?.[index] ?? {},
+      });
+    });
+  }
+
+  query(options: { query_texts: readonly string[]; n_results: number; where?: Record<string, unknown> | null }): {
+    ids: string[][];
+    documents: string[][];
+    metadatas: Record<string, unknown>[][];
+    distances: number[][];
+  } {
+    const query = options.query_texts[0] ?? "";
+    const matches = [...this.documents.values()]
+      .filter((document) => metadataMatches(document.metadata, options.where ?? null))
+      .map((document) => ({ ...document, distance: document.content.toLowerCase().includes(query.toLowerCase()) ? 0 : 10 }))
+      .sort((left, right) => left.distance - right.distance)
+      .slice(0, options.n_results);
+    return {
+      ids: [matches.map((document) => document.id)],
+      documents: [matches.map((document) => document.content)],
+      metadatas: [matches.map((document) => document.metadata)],
+      distances: [matches.map((document) => document.distance)],
+    };
+  }
+}
+
+class FakeChromaClient {
+  readonly collections = new Map<string, FakeChromaCollection>();
+
+  create_collection(options: { name: string }): FakeChromaCollection {
+    if (this.collections.has(options.name)) {
+      throw new Error(`Collection ${options.name} already exists`);
+    }
+    const collection = new FakeChromaCollection();
+    this.collections.set(options.name, collection);
+    return collection;
+  }
+
+  get_or_create_collection(options: { name: string }): FakeChromaCollection {
+    const existing = this.collections.get(options.name);
+    if (existing) {
+      return existing;
+    }
+    const collection = new FakeChromaCollection();
+    this.collections.set(options.name, collection);
+    return collection;
+  }
+
+  delete_collection(options: { name: string }): void {
+    this.collections.delete(options.name);
+  }
+
+  reset(): void {
+    this.collections.clear();
+  }
+}
+
+class FakeQdrantClient {
+  readonly collections = new Map<string, Map<string, FakeDocument>>();
+
+  collection_exists(collectionName: string): boolean {
+    return this.collections.has(collectionName);
+  }
+
+  create_collection(options: { collection_name: string }): void {
+    if (this.collections.has(options.collection_name)) {
+      throw new Error(`Collection ${options.collection_name} already exists`);
+    }
+    this.collections.set(options.collection_name, new Map<string, FakeDocument>());
+  }
+
+  get_collection(collectionName: string): { name: string } {
+    return { name: collectionName };
+  }
+
+  upsert(options: { collection_name: string; points: readonly { id: string; payload: FakeDocument }[] }): void {
+    const collection = this.collections.get(options.collection_name);
+    if (!collection) {
+      throw new Error(`Collection ${options.collection_name} does not exist`);
+    }
+    for (const point of options.points) {
+      collection.set(point.id, point.payload);
+    }
+  }
+
+  query_points(options: { collection_name: string; query: string; limit: number; filter?: Record<string, unknown> | null }): {
+    points: Array<{ id: string; payload: FakeDocument; score: number }>;
+  } {
+    const collection = this.collections.get(options.collection_name) ?? new Map<string, FakeDocument>();
+    const points = [...collection.values()]
+      .filter((document) => metadataMatches(document.metadata, options.filter ?? null))
+      .map((document) => ({ id: document.id, payload: document, score: document.content.toLowerCase().includes(options.query.toLowerCase()) ? 1 : 0.25 }))
+      .sort((left, right) => right.score - left.score)
+      .slice(0, options.limit);
+    return { points };
+  }
+
+  delete_collection(options: { collection_name: string }): void {
+    this.collections.delete(options.collection_name);
+  }
+
+  get_collections(): { collections: Array<{ name: string }> } {
+    return { collections: [...this.collections.keys()].map((name) => ({ name })) };
+  }
+}
+
+function metadataMatches(metadata: Record<string, unknown>, filter: Record<string, unknown> | null): boolean {
+  return !filter || Object.entries(filter).every(([key, value]) => metadata[key] === value);
+}
+
 describe("RAG configuration and factories", () => {
   it("normalizes ChromaDB and Qdrant config defaults with snake_case aliases", () => {
     const chroma = new ChromaDBConfig({
@@ -3524,14 +3654,15 @@ describe("RAG configuration and factories", () => {
     registerRagClientFactory("chromadb", (config) => {
       seen.push(config);
       return {
-        search: (_collectionName, query) => [{ id: "doc-1", content: query, metadata: {}, score: 1 }],
+        search: (_collectionName: string, query: string) => [{ id: "doc-1", content: query, metadata: {}, score: 1 }],
       };
     });
 
     const client = createRagClient({ provider: "chromadb", database: "docs" });
 
     expect(seen[0]).toBeInstanceOf(ChromaDBConfig);
-    expect(client.search?.("knowledge", "CrewAI")).toEqual([
+    const search = client.search as ((collectionName: string, query: string) => unknown) | undefined;
+    expect(search?.("knowledge", "CrewAI")).toEqual([
       { id: "doc-1", content: "CrewAI", metadata: {}, score: 1 },
     ]);
     expect(() => createRagClient({ provider: "qdrant" })).toThrow("No RAG client factory registered");
@@ -3575,6 +3706,112 @@ describe("RAG configuration and factories", () => {
 
     expect(storage.allowReset).toBe(false);
     expect(storage.agents).toBe("lead_researcher_fact_checker");
+  });
+
+  it("wraps ChromaDB clients with collection lifecycle, upsert/search filters, and async aliases", async () => {
+    const fake = new FakeChromaClient();
+    const client = new ChromaDBClient(fake, (texts: readonly string[]) => texts.map((text) => [text.length]), 2, 0.5, 1);
+
+    client.create_collection({ collection_name: "docs" });
+    client.add_documents({
+      collection_name: "docs",
+      documents: [
+        { doc_id: "a", content: "CrewAI storage parity", metadata: { topic: "storage" } },
+        { doc_id: "b", content: "CrewAI provider parity", metadata: { topic: "provider" } },
+      ],
+    });
+    client.add_documents({
+      collection_name: "docs",
+      documents: [{ doc_id: "a", content: "CrewAI storage parity updated", metadata: { topic: "storage" } }],
+    });
+
+    expect(client.search({
+      collection_name: "docs",
+      query: "storage",
+      metadata_filter: { topic: "storage" },
+    })).toEqual([
+      { id: "a", content: "CrewAI storage parity updated", metadata: { topic: "storage" }, score: 1 },
+    ]);
+
+    await client.adelete_collection({ collection_name: "docs" });
+    await client.aget_or_create_collection({ collection_name: "docs" });
+    await client.aadd_documents({
+      collection_name: "docs",
+      documents: [{ content: "Async Chroma document", metadata: { mode: "async" } }],
+    });
+
+    expect(await client.asearch({
+      collection_name: "docs",
+      query: "Chroma",
+      metadata_filter: { mode: "async" },
+    })).toHaveLength(1);
+
+    await client.areset();
+    expect(fake.collections.size).toBe(0);
+  });
+
+  it("wraps Qdrant clients with collection lifecycle, upsert/search filters, and async aliases", async () => {
+    const fake = new FakeQdrantClient();
+    const client = new QdrantClient(fake, (text: string) => [text.length], 2, 0.5, 1);
+
+    client.create_collection({ collection_name: "docs" });
+    client.add_documents({
+      collection_name: "docs",
+      documents: [
+        { doc_id: "a", content: "CrewAI storage parity", metadata: { topic: "storage" } },
+        { doc_id: "b", content: "CrewAI provider parity", metadata: { topic: "provider" } },
+      ],
+    });
+    client.add_documents({
+      collection_name: "docs",
+      documents: [{ doc_id: "a", content: "CrewAI storage parity updated", metadata: { topic: "storage" } }],
+    });
+
+    expect(client.search({
+      collection_name: "docs",
+      query: "storage",
+      metadata_filter: { topic: "storage" },
+    })).toEqual([
+      { id: "a", content: "CrewAI storage parity updated", metadata: { topic: "storage" }, score: 1 },
+    ]);
+
+    await client.adelete_collection({ collection_name: "docs" });
+    await client.acreate_collection({ collection_name: "docs" });
+    await client.aadd_documents({
+      collection_name: "docs",
+      documents: [{ content: "Async Qdrant document", metadata: { mode: "async" } }],
+    });
+
+    expect(await client.asearch({
+      collection_name: "docs",
+      query: "Qdrant",
+      metadata_filter: { mode: "async" },
+    })).toHaveLength(1);
+
+    await client.areset();
+    expect(fake.collections.size).toBe(0);
+  });
+
+  it("saves and searches knowledge through the configured RAG client", async () => {
+    const fake = new FakeChromaClient();
+    const client = new ChromaDBClient(fake, (texts: readonly string[]) => texts.map((text) => [text.length]));
+    const storage = new KnowledgeStorage({ client, collectionName: "docs" });
+
+    storage.save(["CrewAI knowledge storage document"]);
+    expect(storage.search(["knowledge"], 5, {}, 0.1)).toEqual([
+      {
+        id: createContentId("CrewAI knowledge storage document"),
+        content: "CrewAI knowledge storage document",
+        metadata: {},
+        score: 1,
+      },
+    ]);
+
+    await storage.asave(["Async knowledge document"]);
+    expect(await storage.asearch(["Async"], 5, {}, 0.1)).toHaveLength(1);
+
+    await storage.areset();
+    expect(fake.collections.has("knowledge_docs")).toBe(false);
   });
 
   it("normalizes and validates embedding vectors", () => {
@@ -9204,6 +9441,79 @@ describe("events", () => {
 });
 
 describe("memory", () => {
+  it.each([
+    ["QdrantEdgeStorage", () => new QdrantEdgeStorage({ vectorDim: 3 })],
+    ["LanceDBStorage", () => new LanceDBStorage({ vectorDim: 3 })],
+  ])("%s implements storage lifecycle, filters, scope helpers, and async aliases", async (_name, createStorage) => {
+    const storage = createStorage();
+    const oldRecord = new MemoryRecord({
+      id: "old",
+      content: "Old storage note",
+      scope: "/crew/research",
+      categories: ["storage"],
+      metadata: { source: "docs", status: "old" },
+      createdAt: "2026-05-01T00:00:00.000Z",
+      embedding: [1, 0, 0],
+    });
+    const currentRecord = new MemoryRecord({
+      id: "current",
+      content: "Current storage note",
+      scope: "/crew/research/agent",
+      categories: ["storage", "rag"],
+      metadata: { source: "docs", status: "current" },
+      createdAt: "2026-05-02T00:00:00.000Z",
+      embedding: [0.9, 0.1, 0],
+    });
+    const otherRecord = new MemoryRecord({
+      id: "other",
+      content: "Other provider note",
+      scope: "/crew/provider",
+      categories: ["provider"],
+      metadata: { source: "api", status: "current" },
+      createdAt: "2026-05-03T00:00:00.000Z",
+      embedding: [0, 1, 0],
+    });
+
+    storage.save([oldRecord, currentRecord, otherRecord]);
+
+    expect(storage.search([1, 0, 0], "/crew/research", ["rag"], { status: "current" }, 5, 0)[0]?.[0].id)
+      .toBe("current");
+    expect(storage.get_record("current")?.content).toBe("Current storage note");
+    expect(storage.list_records("/crew", 2, 0).map((record) => record.id)).toEqual(["other", "current"]);
+    expect(storage.list_scopes("/crew")).toEqual(["/crew/provider", "/crew/research"]);
+    expect(storage.list_categories("/crew/research")).toEqual({ rag: 1, storage: 2 });
+    expect(storage.count("/crew/research")).toBe(2);
+    expect(storage.get_scope_info("/crew/research")).toMatchObject({
+      path: "/crew/research",
+      recordCount: 2,
+      categories: ["rag", "storage"],
+      childScopes: ["/crew/research/agent"],
+    });
+
+    storage.update(new MemoryRecord({
+      id: "current",
+      content: "Updated current storage note",
+      scope: "/crew/research/agent",
+      categories: ["storage"],
+      metadata: { source: "docs", status: "updated" },
+      createdAt: "2026-05-04T00:00:00.000Z",
+      embedding: [1, 0, 0],
+    }));
+
+    expect(storage.get_record("current")?.metadata).toEqual({ source: "docs", status: "updated" });
+    expect(storage.delete(undefined, undefined, undefined, new Date("2026-05-02T00:00:00.000Z"))).toBe(1);
+    expect(await storage.asearch([1, 0, 0], "/crew/research", ["storage"], { status: "updated" }, 5, 0))
+      .toHaveLength(1);
+    await storage.adelete("/crew/research", ["storage"], ["current"]);
+    expect(storage.count()).toBe(1);
+    await storage.asave([currentRecord]);
+    expect(storage.count()).toBe(2);
+    storage.reset("/crew/research");
+    expect(storage.count()).toBe(1);
+    storage.reset();
+    expect(storage.count()).toBe(0);
+  });
+
   it("analyzes memory content, recall queries, saves, and consolidation with safe fallbacks", async () => {
     const llm = (messages: readonly LLMMessage[], options?: LLMCallOptions) => {
       if (options?.responseModel === QueryAnalysis) {

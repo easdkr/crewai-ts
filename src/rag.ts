@@ -646,19 +646,27 @@ export type BaseCollectionParams = {
   collectionName?: string;
   collection_name?: string;
   metadata?: Record<string, unknown>;
+  [key: string]: unknown;
 };
 export const BaseCollectionParams = "BaseCollectionParams";
+
+export type BaseCollectionAddParams = BaseCollectionParams & {
+  documents: readonly BaseRecord[];
+  batchSize?: number;
+  batch_size?: number;
+};
 export const BaseCollectionAddParams = "BaseCollectionAddParams";
 
-export type BaseCollectionSearchParams = {
-  collectionName?: string;
-  collection_name?: string;
+export type BaseCollectionSearchParams = BaseCollectionParams & {
   query: string;
   limit?: number;
   metadataFilter?: Record<string, unknown> | null;
   metadata_filter?: Record<string, unknown> | null;
   scoreThreshold?: number | null;
   score_threshold?: number | null;
+  where?: Record<string, unknown> | null;
+  where_document?: unknown;
+  include?: unknown;
 };
 export const BaseCollectionSearchParams = "BaseCollectionSearchParams";
 
@@ -784,9 +792,16 @@ export type RagConfigType = ChromaDBConfig | QdrantConfig;
 export const RagConfigType = "RagConfigType";
 
 export type RagClient = {
+  get_or_create_collection?: (params: Record<string, unknown>) => unknown;
+  aget_or_create_collection?: (params: Record<string, unknown>) => Promise<unknown>;
+  add_documents?: (params: { collection_name: string; documents: readonly BaseRecord[] }) => unknown;
+  aadd_documents?: (params: { collection_name: string; documents: readonly BaseRecord[] }) => Promise<unknown>;
+  delete_collection?: (params: Record<string, unknown>) => unknown;
+  adelete_collection?: (params: Record<string, unknown>) => Promise<unknown>;
+  search?: (...args: never[]) => unknown;
+  asearch?: (params: BaseCollectionSearchParams) => Promise<unknown>;
   add?: (collectionName: string, records: readonly BaseRecord[]) => unknown;
-  search?: (collectionName: string, query: string, options?: { limit?: number; scoreThreshold?: number | null; filter?: Record<string, unknown> | null }) => unknown;
-  deleteCollection?: (collectionName: string) => unknown;
+  deleteCollection?: (...args: never[]) => unknown;
   reset?: () => unknown;
 };
 
@@ -795,6 +810,7 @@ export type RagClientFactory<TConfig extends RagConfigType = RagConfigType> = (c
 const ragClientFactories = new Map<RagProvider, RagClientFactory>();
 let currentRagConfig: RagConfigType | null = null;
 let currentRagClient: RagClient | null = null;
+type SimpleEmbeddingFunction = (...args: never[]) => unknown;
 
 export class ClientMethodMismatchError extends TypeError {
   constructor(methodName: string, expectedClient: string, altMethod: string, altClient: string) {
@@ -803,10 +819,10 @@ export class ClientMethodMismatchError extends TypeError {
   }
 }
 
-export class QdrantClient {
-  readonly client: unknown;
-  readonly embeddingFunction: EmbeddingFunction | AsyncEmbeddingFunction;
-  readonly embedding_function: EmbeddingFunction | AsyncEmbeddingFunction;
+export class ChromaDBClient {
+  readonly client: Record<string, unknown>;
+  readonly embeddingFunction: SimpleEmbeddingFunction;
+  readonly embedding_function: SimpleEmbeddingFunction;
   readonly defaultLimit: number;
   readonly default_limit: number;
   readonly defaultScoreThreshold: number;
@@ -816,7 +832,7 @@ export class QdrantClient {
 
   constructor(
     client: unknown,
-    embeddingFunction: EmbeddingFunction | AsyncEmbeddingFunction = (...args: readonly unknown[]) => {
+    embeddingFunction: SimpleEmbeddingFunction = (...args: readonly unknown[]) => {
       void args;
       return [[0]];
     },
@@ -824,7 +840,7 @@ export class QdrantClient {
     defaultScoreThreshold = 0.6,
     defaultBatchSize = 100,
   ) {
-    this.client = client;
+    this.client = client as Record<string, unknown>;
     this.embeddingFunction = embeddingFunction;
     this.embedding_function = embeddingFunction;
     this.defaultLimit = defaultLimit;
@@ -835,17 +851,335 @@ export class QdrantClient {
     this.default_batch_size = defaultBatchSize;
   }
 
-  createCollection(_params: Record<string, unknown> = {}): void {
-    void _params;
+  create_collection(params: BaseCollectionParams): void {
+    this.callClient("create_collection", "createCollection", {
+      name: sanitizeCollectionName(collectionNameFrom(params)),
+      metadata: normalizeChromaMetadata(params.metadata),
+      ...params,
+    });
   }
 
-  create_collection(params: Record<string, unknown> = {}): void {
-    this.createCollection(params);
+  createCollection(params: BaseCollectionParams): void {
+    this.create_collection(params);
   }
 
-  async acreate_collection(params: Record<string, unknown> = {}): Promise<void> {
-    await Promise.resolve();
-    this.createCollection(params);
+  async acreate_collection(params: BaseCollectionParams): Promise<void> {
+    await this.callClientAsync("create_collection", "createCollection", {
+      name: sanitizeCollectionName(collectionNameFrom(params)),
+      metadata: normalizeChromaMetadata(params.metadata),
+      ...params,
+    });
+  }
+
+  get_or_create_collection(params: BaseCollectionParams): unknown {
+    return this.callClient("get_or_create_collection", "getOrCreateCollection", {
+      name: sanitizeCollectionName(collectionNameFrom(params)),
+      metadata: normalizeChromaMetadata(params.metadata),
+      embedding_function: this.embeddingFunction,
+      ...params,
+    });
+  }
+
+  getOrCreateCollection(params: BaseCollectionParams): unknown {
+    return this.get_or_create_collection(params);
+  }
+
+  async aget_or_create_collection(params: BaseCollectionParams): Promise<unknown> {
+    return this.callClientAsync("get_or_create_collection", "getOrCreateCollection", {
+      name: sanitizeCollectionName(collectionNameFrom(params)),
+      metadata: normalizeChromaMetadata(params.metadata),
+      embedding_function: this.embeddingFunction,
+      ...params,
+    });
+  }
+
+  add_documents(params: BaseCollectionAddParams): void {
+    if (params.documents.length === 0) {
+      throw new Error("Documents list cannot be empty");
+    }
+    const collection = this.get_or_create_collection(params) as Record<string, unknown>;
+    const batchSize = params.batchSize ?? params.batch_size ?? this.defaultBatchSize;
+    const prepared = prepareDocuments(params.documents);
+    for (let index = 0; index < prepared.ids.length; index += batchSize) {
+      callMethod(collection, "upsert", "upsert", {
+        ids: prepared.ids.slice(index, index + batchSize),
+        documents: prepared.texts.slice(index, index + batchSize),
+        metadatas: prepared.metadatas.slice(index, index + batchSize),
+      });
+    }
+  }
+
+  addDocuments(params: BaseCollectionAddParams): void {
+    this.add_documents(params);
+  }
+
+  async aadd_documents(params: BaseCollectionAddParams): Promise<void> {
+    if (params.documents.length === 0) {
+      throw new Error("Documents list cannot be empty");
+    }
+    const collection = await this.aget_or_create_collection(params) as Record<string, unknown>;
+    const batchSize = params.batchSize ?? params.batch_size ?? this.defaultBatchSize;
+    const prepared = prepareDocuments(params.documents);
+    for (let index = 0; index < prepared.ids.length; index += batchSize) {
+      await callMethodAsync(collection, "upsert", "upsert", {
+        ids: prepared.ids.slice(index, index + batchSize),
+        documents: prepared.texts.slice(index, index + batchSize),
+        metadatas: prepared.metadatas.slice(index, index + batchSize),
+      });
+    }
+  }
+
+  search(params: BaseCollectionSearchParams): SearchResult[] {
+    const normalized = normalizeSearchParams(params, this.defaultLimit, this.defaultScoreThreshold);
+    const collection = this.get_or_create_collection(normalized) as Record<string, unknown>;
+    const result = callMethod(collection, "query", "query", {
+      query_texts: [normalized.query],
+      n_results: normalized.limit,
+      where: normalized.where ?? normalized.metadata_filter,
+      where_document: normalized.where_document,
+      include: normalized.include ?? ["documents", "metadatas", "distances"],
+    });
+    return processChromaQueryResult(result, normalized.score_threshold);
+  }
+
+  async asearch(params: BaseCollectionSearchParams): Promise<SearchResult[]> {
+    const normalized = normalizeSearchParams(params, this.defaultLimit, this.defaultScoreThreshold);
+    const collection = await this.aget_or_create_collection(normalized) as Record<string, unknown>;
+    const result = await callMethodAsync(collection, "query", "query", {
+      query_texts: [normalized.query],
+      n_results: normalized.limit,
+      where: normalized.where ?? normalized.metadata_filter,
+      where_document: normalized.where_document,
+      include: normalized.include ?? ["documents", "metadatas", "distances"],
+    });
+    return processChromaQueryResult(result, normalized.score_threshold);
+  }
+
+  delete_collection(params: BaseCollectionParams): void {
+    this.callClient("delete_collection", "deleteCollection", { name: sanitizeCollectionName(collectionNameFrom(params)), ...params });
+  }
+
+  deleteCollection(params: BaseCollectionParams): void {
+    this.delete_collection(params);
+  }
+
+  async adelete_collection(params: BaseCollectionParams): Promise<void> {
+    await this.callClientAsync("delete_collection", "deleteCollection", { name: sanitizeCollectionName(collectionNameFrom(params)), ...params });
+  }
+
+  reset(): void {
+    if (typeof this.client.reset === "function") {
+      (this.client.reset as () => void)();
+      return;
+    }
+    if (this.client.collections instanceof Map) {
+      this.client.collections.clear();
+    }
+  }
+
+  async areset(): Promise<void> {
+    if (typeof this.client.reset === "function") {
+      await (this.client.reset as () => void | Promise<void>)();
+      return;
+    }
+    this.reset();
+  }
+
+  private callClient(snakeName: string, camelName: string, params: Record<string, unknown>): unknown {
+    return callMethod(this.client, snakeName, camelName, params);
+  }
+
+  private async callClientAsync(snakeName: string, camelName: string, params: Record<string, unknown>): Promise<unknown> {
+    return callMethodAsync(this.client, snakeName, camelName, params);
+  }
+}
+
+export class QdrantClient {
+  readonly client: Record<string, unknown>;
+  readonly embeddingFunction: SimpleEmbeddingFunction;
+  readonly embedding_function: SimpleEmbeddingFunction;
+  readonly defaultLimit: number;
+  readonly default_limit: number;
+  readonly defaultScoreThreshold: number;
+  readonly default_score_threshold: number;
+  readonly defaultBatchSize: number;
+  readonly default_batch_size: number;
+
+  constructor(
+    client: unknown,
+    embeddingFunction: SimpleEmbeddingFunction = (...args: readonly unknown[]) => {
+      void args;
+      return [[0]];
+    },
+    defaultLimit = 5,
+    defaultScoreThreshold = 0.6,
+    defaultBatchSize = 100,
+  ) {
+    this.client = client as Record<string, unknown>;
+    this.embeddingFunction = embeddingFunction;
+    this.embedding_function = embeddingFunction;
+    this.defaultLimit = defaultLimit;
+    this.default_limit = defaultLimit;
+    this.defaultScoreThreshold = defaultScoreThreshold;
+    this.default_score_threshold = defaultScoreThreshold;
+    this.defaultBatchSize = defaultBatchSize;
+    this.default_batch_size = defaultBatchSize;
+  }
+
+  createCollection(params: BaseCollectionParams = {}): void {
+    this.create_collection(params);
+  }
+
+  create_collection(params: BaseCollectionParams = {}): void {
+    const collectionName = collectionNameFrom(params);
+    if (callMethod(this.client, "collection_exists", "collectionExists", collectionName) === true) {
+      throw new Error(`Collection '${collectionName}' already exists`);
+    }
+    callMethod(this.client, "create_collection", "createCollection", { collection_name: collectionName, ...params });
+  }
+
+  async acreate_collection(params: BaseCollectionParams = {}): Promise<void> {
+    const collectionName = collectionNameFrom(params);
+    if ((await callMethodAsync(this.client, "collection_exists", "collectionExists", collectionName)) === true) {
+      throw new Error(`Collection '${collectionName}' already exists`);
+    }
+    await callMethodAsync(this.client, "create_collection", "createCollection", { collection_name: collectionName, ...params });
+  }
+
+  get_or_create_collection(params: BaseCollectionParams = {}): unknown {
+    const collectionName = collectionNameFrom(params);
+    if (callMethod(this.client, "collection_exists", "collectionExists", collectionName) !== true) {
+      callMethod(this.client, "create_collection", "createCollection", { collection_name: collectionName, ...params });
+    }
+    return callMethod(this.client, "get_collection", "getCollection", collectionName);
+  }
+
+  getOrCreateCollection(params: BaseCollectionParams = {}): unknown {
+    return this.get_or_create_collection(params);
+  }
+
+  async aget_or_create_collection(params: BaseCollectionParams = {}): Promise<unknown> {
+    const collectionName = collectionNameFrom(params);
+    if ((await callMethodAsync(this.client, "collection_exists", "collectionExists", collectionName)) !== true) {
+      await callMethodAsync(this.client, "create_collection", "createCollection", { collection_name: collectionName, ...params });
+    }
+    return callMethodAsync(this.client, "get_collection", "getCollection", collectionName);
+  }
+
+  add_documents(params: BaseCollectionAddParams): void {
+    const collectionName = collectionNameFrom(params);
+    if (params.documents.length === 0) {
+      throw new Error("Documents list cannot be empty");
+    }
+    if (callMethod(this.client, "collection_exists", "collectionExists", collectionName) !== true) {
+      throw new Error(`Collection '${collectionName}' does not exist`);
+    }
+    const batchSize = params.batchSize ?? params.batch_size ?? this.defaultBatchSize;
+    for (let index = 0; index < params.documents.length; index += batchSize) {
+      const points = params.documents.slice(index, index + batchSize).map((document) => {
+        const normalized = normalizeBaseRecord(document);
+        return {
+          id: normalized.docId,
+          vector: callEmbeddingFunction(this.embeddingFunction, normalized.content),
+          payload: { id: normalized.docId, content: normalized.content, metadata: normalized.metadata ?? {} },
+        };
+      });
+      callMethod(this.client, "upsert", "upsert", { collection_name: collectionName, points });
+    }
+  }
+
+  addDocuments(params: BaseCollectionAddParams): void {
+    this.add_documents(params);
+  }
+
+  async aadd_documents(params: BaseCollectionAddParams): Promise<void> {
+    const collectionName = collectionNameFrom(params);
+    if (params.documents.length === 0) {
+      throw new Error("Documents list cannot be empty");
+    }
+    if ((await callMethodAsync(this.client, "collection_exists", "collectionExists", collectionName)) !== true) {
+      throw new Error(`Collection '${collectionName}' does not exist`);
+    }
+    const batchSize = params.batchSize ?? params.batch_size ?? this.defaultBatchSize;
+    for (let index = 0; index < params.documents.length; index += batchSize) {
+      const points = await Promise.all(params.documents.slice(index, index + batchSize).map(async (document) => {
+        const normalized = normalizeBaseRecord(document);
+        return {
+          id: normalized.docId,
+          vector: await callEmbeddingFunctionAsync(this.embeddingFunction, normalized.content),
+          payload: { id: normalized.docId, content: normalized.content, metadata: normalized.metadata ?? {} },
+        };
+      }));
+      await callMethodAsync(this.client, "upsert", "upsert", { collection_name: collectionName, points });
+    }
+  }
+
+  search(params: BaseCollectionSearchParams): SearchResult[] {
+    const collectionName = collectionNameFrom(params);
+    if (callMethod(this.client, "collection_exists", "collectionExists", collectionName) !== true) {
+      throw new Error(`Collection '${collectionName}' does not exist`);
+    }
+    const normalized = normalizeSearchParams(params, this.defaultLimit, this.defaultScoreThreshold);
+    const response = callMethod(this.client, "query_points", "queryPoints", {
+      collection_name: collectionName,
+      query: normalized.query,
+      query_embedding: callEmbeddingFunction(this.embeddingFunction, normalized.query),
+      limit: normalized.limit,
+      score_threshold: normalized.score_threshold,
+      filter: normalized.metadata_filter,
+    });
+    return processQdrantQueryResult(response, normalized.score_threshold);
+  }
+
+  async asearch(params: BaseCollectionSearchParams): Promise<SearchResult[]> {
+    const collectionName = collectionNameFrom(params);
+    if ((await callMethodAsync(this.client, "collection_exists", "collectionExists", collectionName)) !== true) {
+      throw new Error(`Collection '${collectionName}' does not exist`);
+    }
+    const normalized = normalizeSearchParams(params, this.defaultLimit, this.defaultScoreThreshold);
+    const response = await callMethodAsync(this.client, "query_points", "queryPoints", {
+      collection_name: collectionName,
+      query: normalized.query,
+      query_embedding: await callEmbeddingFunctionAsync(this.embeddingFunction, normalized.query),
+      limit: normalized.limit,
+      score_threshold: normalized.score_threshold,
+      filter: normalized.metadata_filter,
+    });
+    return processQdrantQueryResult(response, normalized.score_threshold);
+  }
+
+  delete_collection(params: BaseCollectionParams): void {
+    const collectionName = collectionNameFrom(params);
+    if (callMethod(this.client, "collection_exists", "collectionExists", collectionName) !== true) {
+      throw new Error(`Collection '${collectionName}' does not exist`);
+    }
+    callMethod(this.client, "delete_collection", "deleteCollection", { collection_name: collectionName });
+  }
+
+  deleteCollection(params: BaseCollectionParams): void {
+    this.delete_collection(params);
+  }
+
+  async adelete_collection(params: BaseCollectionParams): Promise<void> {
+    const collectionName = collectionNameFrom(params);
+    if ((await callMethodAsync(this.client, "collection_exists", "collectionExists", collectionName)) !== true) {
+      throw new Error(`Collection '${collectionName}' does not exist`);
+    }
+    await callMethodAsync(this.client, "delete_collection", "deleteCollection", { collection_name: collectionName });
+  }
+
+  reset(): void {
+    const response = callMethod(this.client, "get_collections", "getCollections");
+    for (const collection of extractCollectionNames(response)) {
+      callMethod(this.client, "delete_collection", "deleteCollection", { collection_name: collection });
+    }
+  }
+
+  async areset(): Promise<void> {
+    const response = await callMethodAsync(this.client, "get_collections", "getCollections");
+    for (const collection of extractCollectionNames(response)) {
+      await callMethodAsync(this.client, "delete_collection", "deleteCollection", { collection_name: collection });
+    }
   }
 }
 
@@ -854,6 +1188,136 @@ export class RagError extends Error {
     super(message);
     this.name = "RagError";
   }
+}
+
+function collectionNameFrom(params: BaseCollectionParams): string {
+  const collectionName = params.collectionName ?? params.collection_name;
+  if (!collectionName) {
+    throw new Error("collection_name is required");
+  }
+  return collectionName;
+}
+
+function sanitizeCollectionName(collectionName: string): string {
+  return collectionName
+    .replace(/[^a-zA-Z0-9_-]/g, "_")
+    .slice(0, MAX_COLLECTION_LENGTH)
+    .padEnd(Math.min(MIN_COLLECTION_LENGTH, MAX_COLLECTION_LENGTH), "_");
+}
+
+function normalizeChromaMetadata(metadata: Record<string, unknown> | undefined): Record<string, unknown> {
+  return { "hnsw:space": "cosine", ...(metadata ?? {}) };
+}
+
+function prepareDocuments(documents: readonly BaseRecord[]): PreparedDocuments {
+  const prepared = new PreparedDocuments();
+  for (const document of documents) {
+    const normalized = normalizeBaseRecord(document);
+    prepared.ids.push(normalized.docId);
+    prepared.texts.push(normalized.content);
+    const metadata = normalized.metadata && !Array.isArray(normalized.metadata)
+      ? normalized.metadata as Record<string, string | number | boolean>
+      : null;
+    prepared.metadatas.push({ ...(metadata ?? {}) });
+  }
+  return prepared;
+}
+
+function normalizeSearchParams(params: BaseCollectionSearchParams, defaultLimit: number, defaultScoreThreshold: number): {
+  collection_name: string;
+  query: string;
+  limit: number;
+  metadata_filter: Record<string, unknown> | null;
+  score_threshold: number | null;
+  where: Record<string, unknown> | null;
+  where_document: unknown;
+  include: unknown;
+} {
+  return {
+    collection_name: collectionNameFrom(params),
+    query: params.query,
+    limit: params.limit ?? defaultLimit,
+    metadata_filter: params.metadataFilter ?? params.metadata_filter ?? null,
+    score_threshold: params.scoreThreshold ?? params.score_threshold ?? defaultScoreThreshold,
+    where: params.where ?? null,
+    where_document: params.where_document ?? null,
+    include: params.include ?? null,
+  };
+}
+
+function callMethod(target: Record<string, unknown>, snakeName: string, camelName: string, params?: unknown): unknown {
+  const method = target[snakeName] ?? target[camelName];
+  if (typeof method !== "function") {
+    throw new TypeError(`Client method ${snakeName}() is not available.`);
+  }
+  return params === undefined
+    ? (method as () => unknown).call(target)
+    : (method as (value: unknown) => unknown).call(target, params);
+}
+
+function callMethodAsync(target: Record<string, unknown>, snakeName: string, camelName: string, params?: unknown): Promise<unknown> {
+  return Promise.resolve(callMethod(target, snakeName, camelName, params));
+}
+
+function callEmbeddingFunction(embeddingFunction: SimpleEmbeddingFunction, text: string): unknown {
+  const result = (embeddingFunction as (value: string) => unknown)(text);
+  if (result instanceof Promise) {
+    throw new TypeError("Async embedding function cannot be used with sync methods. Use async aliases instead.");
+  }
+  return result;
+}
+
+function callEmbeddingFunctionAsync(embeddingFunction: SimpleEmbeddingFunction, text: string): Promise<unknown> {
+  return Promise.resolve((embeddingFunction as (value: string) => unknown)(text));
+}
+
+function processChromaQueryResult(result: unknown, scoreThreshold: number | null): SearchResult[] {
+  const value = result as {
+    ids?: string[][];
+    documents?: string[][];
+    metadatas?: Record<string, unknown>[][];
+    distances?: number[][];
+  };
+  const ids = value.ids?.[0] ?? [];
+  const documents = value.documents?.[0] ?? [];
+  const metadatas = value.metadatas?.[0] ?? [];
+  const distances = value.distances?.[0] ?? [];
+  return ids
+    .map((id, index) => ({
+      id,
+      content: documents[index] ?? "",
+      metadata: metadatas[index] ?? {},
+      score: 1 / (1 + (distances[index] ?? 0)),
+    }))
+    .filter((resultItem) => scoreThreshold === null || resultItem.score >= scoreThreshold);
+}
+
+function processQdrantQueryResult(result: unknown, scoreThreshold: number | null): SearchResult[] {
+  const points = Array.isArray((result as { points?: unknown[] }).points)
+    ? (result as { points: Array<{ id?: unknown; payload?: Record<string, unknown>; score?: number }> }).points
+    : Array.isArray(result) ? result as Array<{ id?: unknown; payload?: Record<string, unknown>; score?: number }> : [];
+  return points
+    .map((point) => {
+      const payload = point.payload ?? {};
+      return {
+        id: stringFromUnknown(payload.id ?? payload.doc_id ?? point.id),
+        content: stringFromUnknown(payload.content),
+        metadata: (payload.metadata ?? {}) as Record<string, unknown>,
+        score: point.score ?? 0,
+      };
+    })
+    .filter((resultItem) => scoreThreshold === null || resultItem.score >= scoreThreshold);
+}
+
+function stringFromUnknown(value: unknown): string {
+  return typeof value === "string" || typeof value === "number" || typeof value === "boolean"
+    ? String(value)
+    : "";
+}
+
+function extractCollectionNames(response: unknown): string[] {
+  const collections = (response as { collections?: Array<{ name?: string } | string> }).collections ?? [];
+  return collections.map((collection) => typeof collection === "string" ? collection : collection.name).filter((name): name is string => Boolean(name));
 }
 
 export function registerRagClientFactory<TConfig extends RagConfigType>(
