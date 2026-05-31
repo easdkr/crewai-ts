@@ -11,7 +11,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `npm run lint`
   - `npm run smoke:pack`
   - `python3 scripts/check-export-parity.py`
-- Test suite: 442 passing tests.
+- Test suite: 443 passing tests.
 - Root export parity against upstream clone `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `5cdc420`: `total_missing=0`.
 - Public method parity has been tightened for core runtime classes:
   - `ConsoleFormatter`: `missing=0`
@@ -204,6 +204,7 @@ When more goal budget is available, continue from the behavioral parity audits b
   - `A2UIClientExtension` now filters restored conversation surfaces by configured catalog ID and advertises both default and custom catalog capabilities for v0.8/v0.9 metadata, matching upstream client extension semantics.
   - `A2UIServerExtension` now activates request hooks only when clients declare the server extension URI, matching upstream A2A server extension activation semantics.
   - `ServerExtensionRegistry` now isolates request/response hook failures and records successfully activated server extensions on the server context.
+  - A2UI standard catalog validation now skips unknown custom components and validates required fields for known standard components.
 - Added security compatibility behavior:
   - `SecurityConfig.validate_fingerprint` now exposes upstream-style fingerprint coercion for null, seed strings, dicts, and `Fingerprint` instances.
 - Added guardrail compatibility behavior:

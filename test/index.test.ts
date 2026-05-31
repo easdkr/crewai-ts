@@ -14,6 +14,7 @@ import {
   A2UI_MIME_TYPE,
   A2UI_STANDARD_CATALOG_ID,
   A2UIServerExtension,
+  A2UIValidationError,
   A2UI_V09_BASIC_CATALOG_ID,
   ExtensionContext,
   A2AServerConfig,
@@ -539,6 +540,7 @@ import {
   validateEmbeddings,
   LanceDBStorage,
   validateJwtToken,
+  validate_a2ui_message,
   ensureAllPropertiesRequired,
   ensureTypeInSchemas,
   stripNullFromTypes,
@@ -2813,6 +2815,28 @@ describe("a2a utilities", () => {
         },
       },
     });
+  });
+
+  it("validates A2UI standard catalog components like upstream", () => {
+    expect(() => validate_a2ui_message({
+      surfaceUpdate: {
+        surfaceId: "surface",
+        components: [{
+          id: "custom",
+          component: { CustomWidget: { missing: "schema" } },
+        }],
+      },
+    }, { validate_catalog: true })).not.toThrow();
+
+    expect(() => validate_a2ui_message({
+      surfaceUpdate: {
+        surfaceId: "surface",
+        components: [{
+          id: "title",
+          component: { Text: { usageHint: "h1" } },
+        }],
+      },
+    }, { validate_catalog: true })).toThrow(A2UIValidationError);
   });
 
   it("activates A2UI server hooks only for declared client extensions", async () => {
