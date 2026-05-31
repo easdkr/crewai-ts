@@ -19,6 +19,9 @@ import {
   A2UIServerExtension,
   A2UIValidationError,
   A2UI_V09_BASIC_CATALOG_ID,
+  SCHEMA_NAMES,
+  V09_SCHEMA_NAMES,
+  load_schema,
   ExtensionContext,
   ExtensionRegistry,
   A2AServerConfig,
@@ -182,6 +185,7 @@ import {
   PushNotificationHandler,
   StreamingConfig,
   StreamingHandler,
+  UpdateConfig,
   MemoryQueryCompletedEvent,
   MemoryQueryFailedEvent,
   MemoryQueryStartedEvent,
@@ -634,6 +638,10 @@ import {
   SkillCacheManager,
   SkillNotCachedError,
   SkillParseError,
+  ENV_VAR,
+  ExperimentalFeatureDisabledError,
+  is_enabled,
+  require_experimental_skills,
   HTTPTransport,
   SSETransport,
   StaticToolFilter,
@@ -1981,6 +1989,29 @@ describe("skills", () => {
     }
   });
 
+  it("gates experimental skills registry helpers like upstream", () => {
+    const previous = process.env[ENV_VAR];
+    try {
+      delete process.env.CREWAI_EXPERIMENTAL;
+      expect(is_enabled()).toBe(false);
+      expect(() => {
+        require_experimental_skills();
+      }).toThrow(ExperimentalFeatureDisabledError);
+
+      process.env.CREWAI_EXPERIMENTAL = "1";
+      expect(is_enabled()).toBe(true);
+      expect(() => {
+        require_experimental_skills();
+      }).not.toThrow();
+    } finally {
+      if (previous === undefined) {
+        delete process.env.CREWAI_EXPERIMENTAL;
+      } else {
+        process.env.CREWAI_EXPERIMENTAL = previous;
+      }
+    }
+  });
+
   it("stores registry tar and zip archives with upstream cache metadata", () => {
     const dir = mkdtempSync(join(tmpdir(), "crewai-ts-skill-archive-"));
     const cacheRoot = join(dir, "cache");
@@ -3222,6 +3253,23 @@ describe("a2a utilities", () => {
     });
   });
 
+  it("loads named A2UI schemas with upstream validation rules", () => {
+    expect(SCHEMA_NAMES.has("server_to_client")).toBe(true);
+    expect(V09_SCHEMA_NAMES.has("basic_catalog")).toBe(true);
+    expect(load_schema("server_to_client")).toMatchObject({
+      title: "v0.8 server_to_client",
+      "x-crewai-ts-schema-name": "server_to_client",
+      "x-crewai-ts-schema-version": "v0.8",
+    });
+    expect(load_schema("basic_catalog", { version: "v0.9" })).toMatchObject({
+      title: "v0.9 basic_catalog",
+      "x-crewai-ts-schema-name": "basic_catalog",
+      "x-crewai-ts-schema-version": "v0.9",
+    });
+    expect(() => load_schema("missing")).toThrow("Unknown schema");
+    expect(() => load_schema("server_to_client", { version: "v1" })).toThrow("Unknown version");
+  });
+
   it("validates A2UI standard catalog components like upstream", () => {
     expect(() => validate_a2ui_message({
       surfaceUpdate: {
@@ -3723,6 +3771,7 @@ describe("a2a utilities", () => {
   });
 
   it("resolves A2A update handlers from config classes like upstream", () => {
+    expect(UpdateConfig).toMatchObject({ kind: "UpdateConfig" });
     expect(get_handler(null)).toBe(StreamingHandler);
     expect(get_handler(new StreamingConfig())).toBe(StreamingHandler);
     expect(get_handler(new PollingConfig())).toBe(PollingHandler);

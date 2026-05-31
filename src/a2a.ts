@@ -155,6 +155,8 @@ export type PushNotificationHandlerKwargs = BaseHandlerKwargs & {
   polling_interval?: number;
   pollingInterval?: number;
 };
+export type UpdateConfig = PollingConfig | StreamingConfig | PushNotificationConfig;
+export const UpdateConfig = Object.freeze({ kind: "UpdateConfig" });
 
 export class CommonParams {
   readonly turn_number: number;

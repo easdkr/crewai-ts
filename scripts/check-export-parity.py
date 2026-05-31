@@ -71,16 +71,20 @@ def main() -> int:
         )
     )
 
+    upstream_paths: list[tuple[str, Path]] = []
+    for py_path in sorted(UPSTREAM.rglob("*.py")):
+        if py_path.name == "__init__.py":
+            export_path = str(py_path.parent.relative_to(UPSTREAM))
+            if export_path == ".":
+                export_path = ""
+        else:
+            export_path = str(py_path.with_suffix("").relative_to(UPSTREAM))
+        if export_path:
+            upstream_paths.append((export_path, py_path))
+
     rows: list[tuple[int, str, list[str]]] = []
     total = 0
-    for export_path in exports:
-        py_path = UPSTREAM / f"{export_path}.py"
-        if not py_path.exists():
-            init_path = UPSTREAM / export_path / "__init__.py"
-            if init_path.exists():
-                py_path = init_path
-            else:
-                continue
+    for export_path, py_path in upstream_paths:
         missing = sorted(name for name in py_names(py_path) if name not in js_keys)
         if missing:
             total += len(missing)
@@ -88,6 +92,7 @@ def main() -> int:
 
     print(f"upstream={UPSTREAM}")
     print(f"package_exports={len(exports)}")
+    print(f"upstream_modules={len(upstream_paths)}")
     print(f"root_export_keys={len(js_keys)}")
     print(f"total_missing={total}")
     for count, export_path, missing in sorted(rows, reverse=True)[:45]:

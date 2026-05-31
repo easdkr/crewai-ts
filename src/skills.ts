@@ -13,6 +13,7 @@ export const SKILL_NAME_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 export const METADATA = 1;
 export const INSTRUCTIONS = 2;
 export const RESOURCES = 3;
+export const ENV_VAR = "CREWAI_EXPERIMENTAL";
 
 export type DisclosureLevel = typeof METADATA | typeof INSTRUCTIONS | typeof RESOURCES;
 export const DisclosureLevel = Object.freeze({ METADATA, INSTRUCTIONS, RESOURCES });
@@ -55,6 +56,13 @@ export class SkillNotCachedError extends Error {
     super(`Skill ${JSON.stringify(ref)} is not cached locally. Run \`crewai skill install ${ref}\` to install it first.`);
     this.name = "SkillNotCachedError";
     this.ref = ref;
+  }
+}
+
+export class ExperimentalFeatureDisabledError extends Error {
+  constructor() {
+    super(`The Skills Repository (registry refs, cache, downloads) is experimental. Set ${ENV_VAR}=1 to enable it.`);
+    this.name = "ExperimentalFeatureDisabledError";
   }
 }
 
@@ -423,6 +431,16 @@ export function isRegistryRef(value: unknown): value is string {
 }
 
 export const is_registry_ref = isRegistryRef;
+
+export function is_enabled(): boolean {
+  return process.env[ENV_VAR] === "1";
+}
+
+export function require_experimental_skills(): void {
+  if (!is_enabled()) {
+    throw new ExperimentalFeatureDisabledError();
+  }
+}
 
 export function parseRegistryRef(ref: string): [org: string, name: string] {
   if (!ref.startsWith("@")) {

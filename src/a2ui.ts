@@ -1,5 +1,44 @@
 export type A2UIRecord = Record<string, unknown>;
 
+export const SCHEMA_NAMES: ReadonlySet<string> = new Set([
+  "server_to_client",
+  "client_to_server",
+  "standard_catalog_definition",
+  "server_to_client_with_standard_catalog",
+]);
+export const V09_SCHEMA_NAMES: ReadonlySet<string> = new Set([
+  "server_to_client",
+  "client_to_server",
+  "common_types",
+  "basic_catalog",
+  "client_capabilities",
+  "server_capabilities",
+  "client_data_model",
+]);
+const schemaCache = new Map<string, A2UIRecord>();
+
+export function load_schema(name: string, options: { version?: string } = {}): A2UIRecord {
+  const version = options.version ?? "v0.8";
+  const validNames = version === "v0.8" ? SCHEMA_NAMES : version === "v0.9" ? V09_SCHEMA_NAMES : null;
+  if (!validNames) {
+    throw new Error(`Unknown version ${JSON.stringify(version)}. Available: v0.8, v0.9`);
+  }
+  if (!validNames.has(name)) {
+    throw new Error(`Unknown schema ${JSON.stringify(name)} for ${version}. Available: ${JSON.stringify([...validNames].sort())}`);
+  }
+
+  const cacheKey = `${version}/${name}`;
+  const cached = schemaCache.get(cacheKey);
+  if (cached) {
+    return cached;
+  }
+  const schema = buildA2UISchema(name, version);
+  schemaCache.set(cacheKey, schema);
+  return schema;
+}
+
+export const loadSchema = load_schema;
+
 export class A2UIModel {
   constructor(options: A2UIRecord = {}) {
     Object.assign(this, options);
@@ -787,6 +826,17 @@ function compactA2UIValue(value: unknown): unknown {
 
 function snakeToCamelA2UI(value: string): string {
   return value.replaceAll(/_([a-z])/g, (_match, letter: string) => letter.toUpperCase());
+}
+
+function buildA2UISchema(name: string, version: string): A2UIRecord {
+  return {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    title: `${version} ${name}`,
+    type: "object",
+    additionalProperties: true,
+    "x-crewai-ts-schema-name": name,
+    "x-crewai-ts-schema-version": version,
+  };
 }
 
 function extractJsonObjectsWithKeys(text: string, keys: readonly string[]): A2UIRecord[] {
