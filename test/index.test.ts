@@ -7488,6 +7488,51 @@ describe("RAG configuration and factories", () => {
     fetchMock.mockRestore();
   });
 
+  it("calls Google Vertex's GenAI embedding API for new models", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({
+        embeddings: [
+          { values: [0.91, 0.92] },
+          { values: [0.93, 0.94] },
+        ],
+      }),
+    } as Response);
+
+    const vertexEmbedder = new GoogleGenAIVertexEmbeddingFunction({
+      api_key: "vertex-test",
+      model_name: "gemini-embedding-001",
+      task_type: "RETRIEVAL_QUERY",
+      output_dimensionality: 512,
+    }).asCallable();
+    await expect(vertexEmbedder(["first", "second"])).resolves.toEqual([[0.91, 0.92], [0.93, 0.94]]);
+
+    const fetchCall = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(fetchCall[0]).toBe("https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:batchEmbedContents?key=vertex-test");
+    expect(fetchCall[1].method).toBe("POST");
+    expect(fetchCall[1].headers).toMatchObject({ "content-type": "application/json" });
+    expect(fetchCall[1].body).toBe(JSON.stringify({
+      requests: [
+        {
+          model: "models/gemini-embedding-001",
+          content: { parts: [{ text: "first" }] },
+          taskType: "RETRIEVAL_QUERY",
+          outputDimensionality: 512,
+        },
+        {
+          model: "models/gemini-embedding-001",
+          content: { parts: [{ text: "second" }] },
+          taskType: "RETRIEVAL_QUERY",
+          outputDimensionality: 512,
+        },
+      ],
+    }));
+    fetchMock.mockRestore();
+
+    await expect(new GoogleGenAIVertexEmbeddingFunction().__call__(["legacy"]))
+      .rejects.toThrow("legacy textembedding-gecko models require Vertex AI SDK credentials");
+  });
+
   it("calls VoyageAI's embeddings API for VoyageAI providers", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
       ok: true,
@@ -7566,7 +7611,6 @@ describe("RAG configuration and factories", () => {
   it("exposes upstream __call__ aliases on embedding functions", () => {
     const custom = new CustomEmbeddingFunction((input) => input.map((value) => [String(value).length]));
     expect(custom.__call__(["CrewAI"])).toEqual([[6]]);
-    expect(new GoogleGenAIVertexEmbeddingFunction().__call__(["CrewAI"])).toEqual([[0]]);
     expect(new WatsonXEmbeddingFunction().__call__(["CrewAI"])).toEqual([[0]]);
   });
 });

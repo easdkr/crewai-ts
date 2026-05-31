@@ -272,6 +272,7 @@ export type VertexAIProviderConfig = {
   region?: string;
   task_type?: string;
   output_dimensionality?: number;
+  api_url?: string;
 };
 export const VertexAIProviderConfig = Object.freeze({ kind: "VertexAIProviderConfig" });
 export type VertexAIProviderSpec = BaseProviderSpec<"google-vertex", VertexAIProviderConfig>;
@@ -680,16 +681,85 @@ export class CustomProvider extends BaseEmbeddingsProvider {
 }
 
 export class GoogleGenAIVertexEmbeddingFunction {
+  static readonly LEGACY_MODELS = new Set([
+    "textembedding-gecko",
+    "textembedding-gecko@001",
+    "textembedding-gecko@002",
+    "textembedding-gecko@003",
+    "textembedding-gecko@latest",
+    "textembedding-gecko-multilingual",
+    "textembedding-gecko-multilingual@001",
+    "textembedding-gecko-multilingual@latest",
+  ]);
+
+  readonly api_key: string | null;
+  readonly model_name: string;
+  readonly project_id: string | null;
+  readonly location: string;
+  readonly task_type: string;
+  readonly output_dimensionality: number | null;
+  readonly api_url: string | null;
+
+  constructor(options: VertexAIProviderConfig = {}) {
+    this.api_key = options.api_key ?? null;
+    this.model_name = options.model_name ?? "textembedding-gecko";
+    this.project_id = options.project_id ?? null;
+    this.location = options.location ?? options.region ?? "us-central1";
+    this.task_type = options.task_type ?? "RETRIEVAL_DOCUMENT";
+    this.output_dimensionality = options.output_dimensionality ?? null;
+    this.api_url = options.api_url ?? null;
+  }
+
   static name(): string {
     return "google-vertex";
   }
 
-  call(input: Embeddable): unknown {
-    return defaultEmbeddingCallable(input);
+  async call(input: Embeddable): Promise<Embeddings> {
+    if (this.isLegacyModel()) {
+      throw new Error("Google Vertex legacy textembedding-gecko models require Vertex AI SDK credentials.");
+    }
+    const values = Array.isArray(input) ? input.map((value) => String(value)) : [String(input)];
+    const response = await fetch(this.endpointUrl(), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        requests: values.map((text) => ({
+          model: `models/${this.model_name}`,
+          content: { parts: [{ text }] },
+          taskType: this.task_type,
+          ...(typeof this.output_dimensionality === "number"
+            ? { outputDimensionality: this.output_dimensionality }
+            : {}),
+        })),
+      }),
+    });
+    if (!response.ok) {
+      throw new Error(`Google Vertex embeddings request failed with status ${String(response.status)}`);
+    }
+    return extractGoogleGenerativeAiEmbeddings(await response.json());
   }
 
-  __call__(input: Embeddable): unknown {
+  async __call__(input: Embeddable): Promise<Embeddings> {
     return this.call(input);
+  }
+
+  asCallable(): TypedEmbeddingFunction {
+    const callable: TypedEmbeddingFunction = (input: Embeddable) => this.call(input);
+    callable.embedQuery = callable;
+    callable.embed_query = callable;
+    return callable;
+  }
+
+  private isLegacyModel(): boolean {
+    return GoogleGenAIVertexEmbeddingFunction.LEGACY_MODELS.has(this.model_name) || this.model_name.startsWith("textembedding-gecko");
+  }
+
+  private endpointUrl(): string {
+    if (this.api_url) {
+      return appendGoogleApiKey(this.api_url, this.api_key);
+    }
+    const model = encodeURIComponent(this.model_name);
+    return appendGoogleApiKey(`https://generativelanguage.googleapis.com/v1beta/models/${model}:batchEmbedContents`, this.api_key);
   }
 }
 
@@ -791,12 +861,15 @@ export class VertexAIProvider extends BaseEmbeddingsProvider {
   readonly provider = "google-vertex";
 
   constructor(options: VertexAIProviderConfig = {}) {
-    super({
-      embeddingCallable: defaultEmbeddingCallable,
+    const config = {
       model_name: "textembedding-gecko",
       location: "us-central1",
       task_type: "RETRIEVAL_DOCUMENT",
       ...options,
+    };
+    super({
+      embeddingCallable: new GoogleGenAIVertexEmbeddingFunction(config).asCallable(),
+      ...config,
     });
   }
 }
