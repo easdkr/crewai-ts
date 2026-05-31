@@ -1,5 +1,7 @@
 import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
+import { stdin as input, stdout as output } from "node:process";
+import { createInterface } from "node:readline/promises";
 import { join, resolve } from "node:path";
 
 import type { Crew } from "./crew.js";
@@ -80,6 +82,12 @@ export type GenerateCrewChatInputsOptions = {
 };
 
 export type CrewChatLoader = () => [Crew, string];
+export type ChatLoopOptions = {
+  getUserInput?: () => string | Promise<string>;
+  onAssistantMessage?: (message: string) => void;
+  onError?: (error: unknown) => void;
+  maxTurns?: number;
+};
 
 let crewChatLoader: CrewChatLoader | null = null;
 
@@ -172,8 +180,29 @@ export function flushInput(): void {
 
 export const flush_input = flushInput;
 
-export function getUserInput(): string {
-  return "";
+export async function getUserInput(): Promise<string> {
+  if (!input.isTTY) {
+    return "exit";
+  }
+  const rl = createInterface({ input, output });
+  const lines: string[] = [];
+  try {
+    for (;;) {
+      const line = await rl.question(lines.length === 0
+        ? "\nYou (type your message below. Press Enter twice when you're done):\n"
+        : "");
+      if (line.trim().toLowerCase() === "exit") {
+        return "exit";
+      }
+      if (line === "") {
+        break;
+      }
+      lines.push(line);
+    }
+  } finally {
+    rl.close();
+  }
+  return lines.join("\n");
 }
 
 export const get_user_input = getUserInput;
@@ -204,12 +233,9 @@ export function chatLoop(
   messages: LLMMessage[],
   crewToolSchema: CrewChatToolSchema | Record<string, unknown>,
   availableFunctions: Record<string, unknown>,
-): void {
-  void chatLlm;
-  void messages;
-  void crewToolSchema;
-  void availableFunctions;
-  // Interactive CLI chat is intentionally not started from the library runtime.
+  options: ChatLoopOptions = {},
+): Promise<void> {
+  return runChatLoop(chatLlm, messages, crewToolSchema, availableFunctions, options);
 }
 
 export const chat_loop = chatLoop;
@@ -219,6 +245,39 @@ export function showLoading(event?: { isSet?: () => boolean; is_set?: () => bool
 }
 
 export const show_loading = showLoading;
+
+async function runChatLoop(
+  chatLlm: LLM | LLMClient,
+  messages: LLMMessage[],
+  crewToolSchema: CrewChatToolSchema | Record<string, unknown>,
+  availableFunctions: Record<string, unknown>,
+  options: ChatLoopOptions,
+): Promise<void> {
+  const readInput = options.getUserInput ?? getUserInput;
+  let turns = 0;
+  while (options.maxTurns === undefined || turns < options.maxTurns) {
+    try {
+      flushInput();
+      const userInput = await readInput();
+      if (userInput.trim().toLowerCase() === "exit") {
+        break;
+      }
+      const beforeLength = messages.length;
+      await handleUserInput(userInput, chatLlm, messages, crewToolSchema, availableFunctions);
+      const assistantMessage = messages.slice(beforeLength).findLast((message) => message.role === "assistant");
+      if (assistantMessage) {
+        options.onAssistantMessage?.(assistantMessage.content);
+      }
+      turns += 1;
+    } catch (error) {
+      if (options.onError) {
+        options.onError(error);
+        break;
+      }
+      throw error;
+    }
+  }
+}
 
 export function initializeChatLlm(crew: Crew): LLM | LLMClient | null {
   return createLLM(crew.chatLlm);
@@ -288,12 +347,23 @@ function loadCrewAndNameFromProject(): [Crew, string] {
   return [project.crew(), crewClassName];
 }
 
-export function runChat(): void {
-  const [crew] = loadCrewAndName();
+export async function runChat(): Promise<void> {
+  const [crew, crewName] = loadCrewAndName();
   const chatLlm = initializeChatLlm(crew);
   if (!chatLlm) {
     return;
   }
+  const crewChatInputs = await generateCrewChatInputs(crew, crewName, chatLlm);
+  const crewToolSchema = generateCrewToolSchema(crewChatInputs);
+  const systemMessage = buildSystemMessage(crewChatInputs);
+  const introductoryMessage = stringifyLlmResponse(await callLLM(createLLMClient(chatLlm), [{ role: "system", content: systemMessage }]));
+  const messages: LLMMessage[] = [
+    { role: "system", content: systemMessage },
+    { role: "assistant", content: introductoryMessage },
+  ];
+  await chatLoop(chatLlm, messages, crewToolSchema, {
+    [crewChatInputs.crewName]: createToolFunction(crew, messages),
+  });
 }
 
 export const run_chat = runChat;

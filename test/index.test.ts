@@ -463,6 +463,7 @@ import {
   convertWithInstructions,
   convertOneOfToAnyOf,
   checkConversationalCrewsVersion,
+  chatLoop,
   callableToString,
   clearEmbeddingProviderBuilders,
   clearCallableRegistry,
@@ -5685,6 +5686,49 @@ describe("crew chat utilities", () => {
     expect(messages).toEqual([
       { role: "user", content: "Please research CrewAI" },
       { role: "assistant", content: "Calling the crew now." },
+    ]);
+  });
+
+  it("runs crew chat loop until the user exits", async () => {
+    const messages: LLMMessage[] = [{ role: "system", content: "Collect inputs" }];
+    const inputs = ["Please research CrewAI", "exit"];
+    const assistantMessages: string[] = [];
+    const seenOptions: LLMCallOptions[] = [];
+    const toolSchema = generateCrewToolSchema(new ChatInputs({
+      crew_name: "research_crew",
+      crew_description: "Research topics",
+      inputs: [new ChatInputField({ name: "topic", description: "Topic to research" })],
+    }));
+    const availableFunctions = {
+      research_crew: () => "crew result",
+    };
+
+    await chatLoop(
+      {
+        call: (_messages: readonly LLMMessage[], options?: LLMCallOptions) => {
+          seenOptions.push(options ?? {});
+          return "Assistant response";
+        },
+      },
+      messages,
+      toolSchema,
+      availableFunctions,
+      {
+        getUserInput: () => inputs.shift() ?? "exit",
+        onAssistantMessage: (message) => {
+          assistantMessages.push(message);
+        },
+      },
+    );
+
+    expect(seenOptions).toHaveLength(1);
+    expect(seenOptions[0]?.tools).toEqual([toolSchema]);
+    expect(seenOptions[0]?.availableFunctions).toBe(availableFunctions);
+    expect(assistantMessages).toEqual(["Assistant response"]);
+    expect(messages).toEqual([
+      { role: "system", content: "Collect inputs" },
+      { role: "user", content: "Please research CrewAI" },
+      { role: "assistant", content: "Assistant response" },
     ]);
   });
 

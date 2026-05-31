@@ -640,6 +640,7 @@ export {
   show_loading,
   type ChatInputFieldOptions,
   type ChatInputsOptions,
+  type ChatLoopOptions,
   type CrewChatLoader,
   type CrewChatToolSchema,
   type GenerateCrewChatInputsOptions,
