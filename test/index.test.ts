@@ -18422,6 +18422,28 @@ describe("memory", () => {
     expect(memory.allRecords().map((record) => record.content)).toContain("Queued gamma memory");
   });
 
+  it("exposes upstream memory background encoding helpers", () => {
+    const memory = new Memory();
+    const encoded = memory._encode_batch(["Encoded helper memory"], "/helpers", ["helper"]);
+
+    expect(encoded[0]).toMatchObject({
+      content: "Encoded helper memory",
+      scope: "/helpers",
+      categories: ["helper"],
+    });
+
+    const future = memory._submit_save(
+      (contents) => memory._background_encode_batch(contents as readonly string[], "/queued", ["helper"]),
+      ["Submitted helper memory"],
+    );
+    expect(memory.allRecords().map((record) => record.content)).not.toContain("Submitted helper memory");
+    expect(future.result()[0]?.scope).toBe("/queued");
+    expect(memory.allRecords().map((record) => record.content)).toContain("Submitted helper memory");
+    expect(() => {
+      memory._on_save_done({ exception: () => null });
+    }).not.toThrow();
+  });
+
   it("deduplicates duplicate items inside a background memory batch", () => {
     const memory = new Memory();
     const seen: string[] = [];

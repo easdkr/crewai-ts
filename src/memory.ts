@@ -1953,6 +1953,86 @@ export class Memory {
     return this.embedder;
   }
 
+  _submit_save(fn: (...args: readonly unknown[]) => MemoryRecord[], ...args: readonly unknown[]): { result: () => MemoryRecord[] } {
+    let settled = false;
+    let value: MemoryRecord[] = [];
+    let failure: unknown = null;
+    const run = (): MemoryRecord[] => {
+      if (!settled) {
+        try {
+          value = fn(...args);
+        } catch (error) {
+          failure = error;
+        }
+        settled = true;
+        this._on_save_done({ exception: () => failure });
+      }
+      if (failure) {
+        throw failure instanceof Error ? failure : new Error(formatUnknownError(failure));
+      }
+      return value;
+    };
+    this.pendingWrites.push(run);
+    return { result: run };
+  }
+
+  _on_save_done(future: { exception?: () => unknown } | null): void {
+    const error = future?.exception?.();
+    if (error) {
+      crewaiEventBus.emit(this, new MemorySaveFailedEvent({
+        value: "background save",
+        error,
+      }));
+    }
+  }
+
+  _encode_batch(
+    contents: readonly string[],
+    scope: string | null = null,
+    categories: readonly string[] | null = null,
+    metadata: Record<string, unknown> | null = null,
+    importance: number | null = null,
+    source: string | null = null,
+    privateMemory = false,
+    rootScope: string | null = null,
+  ): MemoryRecord[] {
+    const records = contents.map((content) => this.createMemoryRecordFromResolvedItem({
+      content,
+      options: {
+        scope: rootScope ? joinScopePaths(rootScope, scope ?? "/") : scope,
+        categories,
+        metadata,
+        importance,
+        source,
+        private: privateMemory,
+      },
+    }));
+    this.records.push(...records);
+    return records;
+  }
+
+  _background_encode_batch(
+    contents: readonly string[],
+    scope: string | null = null,
+    categories: readonly string[] | null = null,
+    metadata: Record<string, unknown> | null = null,
+    importance: number | null = null,
+    source: string | null = null,
+    privateMemory = false,
+    agentRole: string | null = null,
+    rootScope: string | null = null,
+  ): MemoryRecord[] {
+    return this.runBackgroundSave(contents, {
+      scope: rootScope ? joinScopePaths(rootScope, scope ?? "/") : scope,
+      categories,
+      metadata,
+      importance,
+      source,
+      private: privateMemory,
+      agentRole,
+    });
+  }
+
   remember(
     content: string,
     options: {
@@ -3723,6 +3803,20 @@ function formatMetadataValue(value: unknown): string {
     return value.toString();
   }
   return JSON.stringify(value);
+}
+
+function formatUnknownError(error: unknown): string {
+  if (typeof error === "string") {
+    return error;
+  }
+  if (error && typeof error === "object") {
+    try {
+      return JSON.stringify(error);
+    } catch {
+      return Object.prototype.toString.call(error);
+    }
+  }
+  return String(error);
 }
 
 function coerceDate(value: Date | string | null | undefined): Date | null {
