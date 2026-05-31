@@ -6707,6 +6707,39 @@ describe("flow runtime", () => {
     expect(flow.flow_id).toBe("flow-alias");
   });
 
+  it("exposes upstream Flow model_post_init hook idempotently", () => {
+    class PostInitFlow extends Flow<{ id: string }> {
+      constructor() {
+        super({ name: "PostInitFlow", initialState: { id: "post-init-flow" } });
+      }
+    }
+    const events: FlowCreatedEvent[] = [];
+    const off = crewaiEventBus.on("flow_created", (_source, event) => {
+      events.push(event);
+    });
+    try {
+      const flow = new PostInitFlow();
+      expect(Object.hasOwn(Flow.prototype, "model_post_init")).toBe(true);
+
+      flow.model_post_init();
+      flow.model_post_init();
+
+      expect(events).toHaveLength(1);
+      expect(events[0]).toMatchObject({
+        type: "flow_created",
+        flow_name: "PostInitFlow",
+      });
+      expect(flow.flow_id).toBe("post-init-flow");
+      expect(flow.memory).toBeInstanceOf(Memory);
+
+      const disabled = new Flow({ memory: null });
+      disabled.model_post_init();
+      expect(disabled.memory).toBeNull();
+    } finally {
+      off();
+    }
+  });
+
   it("supports routers plus and/or flow conditions", async () => {
     class RoutingFlow extends Flow<{ events: string[] }> {
       constructor() {

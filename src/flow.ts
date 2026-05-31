@@ -7,6 +7,7 @@ import {
 } from "./context.js";
 import { Crew, type KickoffOptions } from "./crew.js";
 import {
+  FlowCreatedEvent,
   FlowFailedEvent,
   FlowFinishedEvent,
   FlowInputReceivedEvent,
@@ -660,6 +661,8 @@ export class Flow<TState extends object = Record<string, unknown>> {
   private currentMethodName: string | null = null;
   private currentFlowRequestId: string | null = null;
   private checkpointRestoreActive = false;
+  private flowPostInitDone = false;
+  private readonly autoMemoryDisabled: boolean;
 
   constructor(options: FlowOptions<TState> = {}) {
     this.name = options.name ?? null;
@@ -668,6 +671,7 @@ export class Flow<TState extends object = Record<string, unknown>> {
     this.persistence = options.persistence ?? null;
     this.stream = options.stream ?? false;
     this.checkpoint = coerceCheckpointConfig(options.checkpoint);
+    this.autoMemoryDisabled = "memory" in options && options.memory === null;
     this.memory = "memory" in options ? options.memory ?? null : (this.shouldSkipAutoMemory()
       ? null
       : new Memory({ rootScope: `/flow/${sanitize_scope_name(this.flowName())}` }));
@@ -677,6 +681,26 @@ export class Flow<TState extends object = Record<string, unknown>> {
       : initialState
         ? { ...initialState }
         : {} as TState;
+  }
+
+  model_post_init(_context: unknown = null): void {
+    void _context;
+    this.flowPostInit();
+  }
+
+  modelPostInit(context: unknown = null): void {
+    this.model_post_init(context);
+  }
+
+  private flowPostInit(): void {
+    if (this.flowPostInitDone) {
+      return;
+    }
+    this.flowPostInitDone = true;
+    if (!this.memory && !this.autoMemoryDisabled && !this.shouldSkipAutoMemory()) {
+      this.memory = new Memory({ rootScope: `/flow/${sanitize_scope_name(this.flowName())}` });
+    }
+    crewaiEventBus.emit(this, new FlowCreatedEvent({ flowName: this.flowName() }));
   }
 
   async kickoff(options: FlowKickoffOptions = {}): Promise<unknown> {
