@@ -50,17 +50,16 @@ export const ExecutorContext = Object.freeze({ kind: "ExecutorContext" });
 export const AsyncExecutorContext = Object.freeze({ kind: "AsyncExecutorContext" });
 
 export class SyncHumanInputProvider implements HumanInputProvider {
-  async requestFeedback(request: HumanInputRequest): Promise<string> {
+  requestFeedback(request: HumanInputRequest): string | Promise<string> {
     if (!input.isTTY) {
       return "";
     }
     const rl = createInterface({ input, output });
-    try {
-      const answer = await rl.question(defaultHumanInputPrompt(request));
-      return answer.trim();
-    } finally {
-      rl.close();
-    }
+    return rl.question(defaultHumanInputPrompt(request))
+      .then((answer) => answer.trim())
+      .finally(() => {
+        rl.close();
+      });
   }
 
   setupMessages(_context: ExecutorContext): boolean {
@@ -81,8 +80,21 @@ export class SyncHumanInputProvider implements HumanInputProvider {
   }
 
   handleFeedback(formattedAnswer: unknown, context: ExecutorContext): unknown {
-    const feedback = "";
-    return handleHumanFeedbackLoop(formattedAnswer, feedback, context, false);
+    const feedback = this.requestFeedback(createHumanInputRequest(formattedAnswer, context));
+    if (isPromiseLike(feedback)) {
+      return feedback.then((resolved) => handleHumanFeedbackLoopAsync(
+        formattedAnswer,
+        resolved,
+        context,
+        async (answer) => await this.requestFeedback(createHumanInputRequest(answer, context)),
+      ));
+    }
+    return handleHumanFeedbackLoop(
+      formattedAnswer,
+      feedback,
+      context,
+      (answer) => this.requestFeedback(createHumanInputRequest(answer, context)) as unknown as string,
+    );
   }
 
   handle_feedback(formatted_answer: unknown, context: ExecutorContext): unknown {
@@ -90,8 +102,13 @@ export class SyncHumanInputProvider implements HumanInputProvider {
   }
 
   async handleFeedbackAsync(formattedAnswer: unknown, context: AsyncExecutorContext): Promise<unknown> {
-    const feedback = "";
-    return await handleHumanFeedbackLoopAsync(formattedAnswer, feedback, context, false);
+    const feedback = await this.requestFeedback(createHumanInputRequest(formattedAnswer, context));
+    return await handleHumanFeedbackLoopAsync(
+      formattedAnswer,
+      feedback,
+      context,
+      async (answer) => await this.requestFeedback(createHumanInputRequest(answer, context)),
+    );
   }
 
   async handle_feedback_async(formatted_answer: unknown, context: AsyncExecutorContext): Promise<unknown> {
@@ -133,38 +150,60 @@ function defaultHumanInputPrompt(request: HumanInputRequest): string {
   ].join("\n");
 }
 
-function handleHumanFeedbackLoop(answer: unknown, feedback: string, context: ExecutorContext, prompted: boolean): unknown {
+function handleHumanFeedbackLoop(
+  currentAnswer: unknown,
+  initialFeedback: string,
+  context: ExecutorContext,
+  promptNext: (answer: unknown) => string,
+): unknown {
   if (isTrainingMode(context)) {
-    handleTrainingOutput(context, answer, feedback);
-    appendFeedback(context, feedback);
+    handleTrainingOutput(context, currentAnswer, initialFeedback);
+    appendFeedback(context, initialFeedback);
     const improvedAnswer = invokeLoop(context);
     handleTrainingOutput(context, improvedAnswer, null);
     setAskForHumanInput(context, false);
     return improvedAnswer;
   }
-  if (!prompted || feedback.trim() === "") {
-    setAskForHumanInput(context, false);
-    return answer;
+  let answer = currentAnswer;
+  let feedback = initialFeedback;
+  while (getAskForHumanInput(context)) {
+    if (feedback.trim() === "") {
+      setAskForHumanInput(context, false);
+      break;
+    }
+    appendFeedback(context, feedback);
+    answer = invokeLoop(context);
+    feedback = promptNext(answer);
   }
-  appendFeedback(context, feedback);
-  return invokeLoop(context);
+  return answer;
 }
 
-async function handleHumanFeedbackLoopAsync(answer: unknown, feedback: string, context: AsyncExecutorContext, prompted: boolean): Promise<unknown> {
+async function handleHumanFeedbackLoopAsync(
+  currentAnswer: unknown,
+  initialFeedback: string,
+  context: AsyncExecutorContext,
+  promptNext: (answer: unknown) => string | Promise<string>,
+): Promise<unknown> {
   if (isTrainingMode(context)) {
-    handleTrainingOutput(context, answer, feedback);
-    appendFeedback(context, feedback);
+    handleTrainingOutput(context, currentAnswer, initialFeedback);
+    appendFeedback(context, initialFeedback);
     const improvedAnswer = await ainvokeLoop(context);
     handleTrainingOutput(context, improvedAnswer, null);
     setAskForHumanInput(context, false);
     return improvedAnswer;
   }
-  if (!prompted || feedback.trim() === "") {
-    setAskForHumanInput(context, false);
-    return answer;
+  let answer = currentAnswer;
+  let feedback = initialFeedback;
+  while (getAskForHumanInput(context)) {
+    if (feedback.trim() === "") {
+      setAskForHumanInput(context, false);
+      break;
+    }
+    appendFeedback(context, feedback);
+    answer = await ainvokeLoop(context);
+    feedback = await promptNext(answer);
   }
-  appendFeedback(context, feedback);
-  return await ainvokeLoop(context);
+  return answer;
 }
 
 function appendFeedback(context: ExecutorContext, feedback: string): void {
@@ -201,4 +240,38 @@ function handleTrainingOutput(context: ExecutorContext, result: unknown, feedbac
 function setAskForHumanInput(context: ExecutorContext, value: boolean): void {
   context.askForHumanInput = value;
   context.ask_for_human_input = value;
+}
+
+function getAskForHumanInput(context: ExecutorContext): boolean {
+  return Boolean(context.askForHumanInput ?? context.ask_for_human_input);
+}
+
+function createHumanInputRequest(answer: unknown, context: ExecutorContext): HumanInputRequest {
+  const task = asRecord(context.task);
+  return {
+    taskName: getString(task, "name"),
+    taskDescription: getString(task, "description") ?? "",
+    expectedOutput: getString(task, "expectedOutput") ?? getString(task, "expected_output") ?? "",
+    output: answerToTaskOutput(answer),
+  };
+}
+
+function answerToTaskOutput(answer: unknown): TaskOutput {
+  const record = asRecord(answer);
+  const output = record?.output ?? record?.raw ?? answer;
+  const raw = typeof output === "string" ? output : JSON.stringify(output);
+  return { raw } as TaskOutput;
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" ? value as Record<string, unknown> : null;
+}
+
+function getString(record: Record<string, unknown> | null, key: string): string | null {
+  const value = record?.[key];
+  return typeof value === "string" ? value : null;
+}
+
+function isPromiseLike(value: unknown): value is Promise<string> {
+  return Boolean(value && typeof value === "object" && "then" in value && typeof (value as { then?: unknown }).then === "function");
 }

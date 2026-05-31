@@ -104,6 +104,7 @@ import {
   HTTPBasicAuth,
   HTTPDigestAuth,
   HumanFeedbackPending,
+  SyncHumanInputProvider,
   InvalidParamsError,
   InMemoryToolCache,
   JSONRPCServerConfig,
@@ -14112,6 +14113,64 @@ describe("crewai trigger payload context", () => {
 });
 
 describe("human input", () => {
+  it("routes SyncHumanInputProvider feedback through executor loops", () => {
+    class TestHumanInputProvider extends SyncHumanInputProvider {
+      private readonly feedback = ["Add approvals", ""];
+
+      override requestFeedback(): string {
+        return this.feedback.shift() ?? "";
+      }
+    }
+
+    const messages: unknown[] = [];
+    const answer = new AgentFinish({ thought: "done", output: "draft", text: "draft" });
+    const improved = new AgentFinish({ thought: "done", output: "revised", text: "revised" });
+    const context = {
+      task: { name: "Review", description: "Write report", expectedOutput: "Reviewed report" },
+      crew: null,
+      messages,
+      ask_for_human_input: true,
+      _format_feedback_message: (feedback: string) => ({ role: "user", content: `Human feedback:\n${feedback}` }),
+      _invoke_loop: vi.fn(() => improved),
+      _is_training_mode: () => false,
+    };
+
+    const result = new TestHumanInputProvider().handle_feedback(answer, context);
+
+    expect(result).toBe(improved);
+    expect(context._invoke_loop).toHaveBeenCalledTimes(1);
+    expect(messages).toEqual([{ role: "user", content: "Human feedback:\nAdd approvals" }]);
+    expect(context.ask_for_human_input).toBe(false);
+  });
+
+  it("routes SyncHumanInputProvider async feedback through async executor loops", async () => {
+    class TestHumanInputProvider extends SyncHumanInputProvider {
+      private readonly feedback = ["Add async approvals", ""];
+
+      override requestFeedback(): string {
+        return this.feedback.shift() ?? "";
+      }
+    }
+
+    const messages: unknown[] = [];
+    const answer = new AgentFinish({ thought: "done", output: "draft", text: "draft" });
+    const improved = new AgentFinish({ thought: "done", output: "async revised", text: "async revised" });
+    const context = {
+      task: { name: "Review", description: "Write report", expectedOutput: "Reviewed report" },
+      crew: null,
+      messages,
+      ask_for_human_input: true,
+      _format_feedback_message: (feedback: string) => ({ role: "user", content: `Human feedback:\n${feedback}` }),
+      _ainvoke_loop: vi.fn(() => Promise.resolve(improved)),
+      _is_training_mode: () => false,
+    };
+
+    await expect(new TestHumanInputProvider().handle_feedback_async(answer, context)).resolves.toBe(improved);
+    expect(context._ainvoke_loop).toHaveBeenCalledTimes(1);
+    expect(messages).toEqual([{ role: "user", content: "Human feedback:\nAdd async approvals" }]);
+    expect(context.ask_for_human_input).toBe(false);
+  });
+
   it("requests feedback for humanInput tasks and reruns until accepted", async () => {
     const prompts: string[] = [];
     const feedbackRequests: string[] = [];
