@@ -339,6 +339,14 @@ export abstract class BaseTool implements Tool {
     return this.validateMaxUsageCount(value);
   }
 
+  static defaultArgsSchema(value: ToolArgsSchema | null | undefined): ToolArgsSchema {
+    return value ?? {};
+  }
+
+  static _default_args_schema(value: ToolArgsSchema | null | undefined): ToolArgsSchema {
+    return this.defaultArgsSchema(value);
+  }
+
   static fromLangchain(tool: { name?: string; description?: string; func?: (...args: never[]) => MaybePromise<unknown>; args_schema?: ToolArgsSchema; argsSchema?: ToolArgsSchema }): StructuredTool {
     if (typeof tool.func !== "function") {
       throw new Error("The provided tool must have a callable 'func' attribute.");
@@ -370,6 +378,38 @@ export abstract class BaseTool implements Tool {
 
   model_post_init(_context?: unknown): void {
     this.modelPostInit(_context);
+  }
+
+  setArgsSchema(): ToolArgsSchema {
+    return this.argsSchema;
+  }
+
+  _set_args_schema(): ToolArgsSchema {
+    return this.setArgsSchema();
+  }
+
+  generateDescription(): string {
+    return this.renderDescription();
+  }
+
+  _generate_description(): string {
+    return this.generateDescription();
+  }
+
+  serializeArgsSchema(schema: ToolArgsSchema | null = this.argsSchema): ToolArgsSchema | null {
+    return schema === null ? null : { ...schema };
+  }
+
+  _serialize_args_schema(schema: ToolArgsSchema | null = this.argsSchema): ToolArgsSchema | null {
+    return this.serializeArgsSchema(schema);
+  }
+
+  validateKwargs(kwargs: Record<string, unknown>): Record<string, unknown> {
+    return validateArgs(this.name, this.argsSchema, kwargs);
+  }
+
+  _validate_kwargs(kwargs: Record<string, unknown>): Record<string, unknown> {
+    return this.validateKwargs(kwargs);
   }
 
   get env_vars(): readonly EnvVar[] {

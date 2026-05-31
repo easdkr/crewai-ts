@@ -12656,6 +12656,13 @@ describe("tools", () => {
     expect(StructuredTool.validate_max_usage_count(2)).toBe(2);
     expect(() => StructuredTool.validate_max_usage_count(0)).toThrow("max_usage_count must be a positive integer");
     toolInstance.model_post_init();
+    expect(StructuredTool._default_args_schema(null)).toEqual({});
+    expect(toolInstance._set_args_schema()).toEqual({});
+    expect(toolInstance._serialize_args_schema({ query: { type: "string" } })).toEqual({
+      query: { type: "string" },
+    });
+    expect(toolInstance._generate_description()).toContain("Tool Name: lookup_docs");
+    expect(toolInstance._validate_kwargs({ query: "CrewAI" })).toEqual({ query: "CrewAI" });
   });
 
   it("mirrors upstream original tool usage state when converted to structured tool", () => {
