@@ -999,6 +999,14 @@ export abstract class BaseLLM implements LLMClient {
     return this.supportsStopWords();
   }
 
+  supportsFunctionCalling(): boolean {
+    return true;
+  }
+
+  supports_function_calling(): boolean {
+    return this.supportsFunctionCalling();
+  }
+
   protected supportsStopWordsImplementation(): boolean {
     return this.stopSequences.length > 0;
   }
@@ -1059,6 +1067,34 @@ export abstract class BaseLLM implements LLMClient {
 
   get_file_uploader(): null {
     return this.getFileUploader();
+  }
+
+  get lastResponseId(): string | null {
+    return null;
+  }
+
+  get last_response_id(): string | null {
+    return this.lastResponseId;
+  }
+
+  get lastReasoningItems(): readonly unknown[] | null {
+    return null;
+  }
+
+  get last_reasoning_items(): readonly unknown[] | null {
+    return this.lastReasoningItems;
+  }
+
+  resetChain(): void {}
+
+  reset_chain(): void {
+    this.resetChain();
+  }
+
+  resetReasoningChain(): void {}
+
+  reset_reasoning_chain(): void {
+    this.resetReasoningChain();
   }
 
   emitCallStartedEvent(options: LLMEmitCallStartedOptions): void {

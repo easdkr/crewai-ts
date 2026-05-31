@@ -319,6 +319,10 @@ import {
   BaseRAGStorage,
   ChromaDBClient,
   ChromaDBConfig,
+  AnthropicCompletion,
+  AzureCompletion,
+  BedrockCompletion,
+  OpenAICompletion,
   EntraIdProvider,
   KeycloakProvider,
   Oauth2Settings,
@@ -8150,6 +8154,51 @@ describe("LLM providers", () => {
     expect(() => {
       validate_context_window_sizes({ tiny: 10 });
     }).toThrow("Context window for tiny");
+  });
+
+  it("exposes function-calling and response-chain provider parity helpers", () => {
+    class FallbackLLM extends BaseLLM {
+      call(): string {
+        return "done";
+      }
+    }
+
+    const fallback = new FallbackLLM({ model: "unknown/model" });
+    const openai = new OpenAICompletion({
+      model: "gpt-4o-mini",
+      previous_response_id: "resp-1",
+      auto_chain_reasoning: true,
+    });
+    const o1 = new OpenAICompletion({ model: "o1-mini" });
+    const azureOpenAI = new AzureCompletion({
+      model: "gpt-4o",
+      endpoint: "https://example.openai.azure.com/openai/deployments/gpt-4o",
+      previous_response_id: "az-resp-1",
+    });
+    const azureExternal = new AzureCompletion({
+      model: "mistral-large",
+      endpoint: "https://models.inference.ai.azure.com",
+    });
+
+    expect(fallback.supports_function_calling()).toBe(true);
+    expect(openai.supports_function_calling()).toBe(true);
+    expect(o1.supports_function_calling()).toBe(false);
+    expect(new AnthropicCompletion({ model: "claude-sonnet-4-5" }).supports_function_calling()).toBe(true);
+    expect(new BedrockCompletion({ model: "anthropic.claude-3-5-sonnet-20241022-v2:0" }).supports_function_calling()).toBe(true);
+    expect(azureOpenAI.supports_function_calling()).toBe(true);
+    expect(azureExternal.supports_function_calling()).toBe(false);
+    expect(azureOpenAI.supports_stop_words()).toBe(true);
+    expect(new AzureCompletion({ model: "o3-mini" }).supports_stop_words()).toBe(false);
+
+    expect(openai.last_response_id).toBe("resp-1");
+    expect(openai.last_reasoning_items).toEqual([]);
+    openai.reset_reasoning_chain();
+    expect(openai.last_reasoning_items).toEqual([]);
+    openai.reset_chain();
+    expect(openai.last_response_id).toBeNull();
+    expect(azureOpenAI.last_response_id).toBe("az-resp-1");
+    azureOpenAI.reset_chain();
+    expect(azureOpenAI.last_response_id).toBeNull();
   });
 
   it("creates configured LLM clients from strings, objects, clients, and environment fallback", async () => {

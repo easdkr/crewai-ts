@@ -61,6 +61,10 @@ When more goal budget is available, continue from the behavioral parity audits b
   - EventBus `runtimeState` / `runtime_state`, `setRuntimeState` / `set_runtime_state`, and third-argument runtime state delivery to handlers
   - runtime checkpoint serialization of completed methods, method outputs/counts, and flow state
   - `LockedListProxy`, `LockedDictProxy`, and `StateProxy` mutation helpers backed by the original state values
+- Added adapter-level LLM provider parity helpers:
+  - `supportsFunctionCalling` / `supports_function_calling`
+  - native OpenAI/Azure/Anthropic/Bedrock support overrides for function calling, stop words, and multimodal capability where deterministic
+  - OpenAI/Azure response-chain compatibility getters and reset methods (`last_response_id`, `last_reasoning_items`, `reset_chain`, `reset_reasoning_chain`)
 
 1. Storage backends
    - `memory/storage/backend.py`
@@ -72,7 +76,8 @@ When more goal budget is available, continue from the behavioral parity audits b
 
 2. LLM providers
    - OpenAI, Azure, Anthropic, Bedrock, Gemini provider classes.
-   - Fill `to_config_dict`, context window, function calling support, multimodal support, file uploader, response-chain/reset APIs.
+   - `to_config_dict`, context window, adapter-level function-calling support, deterministic multimodal support flags, and response-chain/reset compatibility are now covered for the native provider shims.
+   - Remaining: SDK-backed request/response translation details, streaming function-call accumulation, file uploader integrations, and Gemini-specific completion behavior.
    - Keep provider tests adapter-level and mock network calls. Do not introduce live API keys or provider-specific SDK side effects into the default test gate.
 
 3. Flow and persistence

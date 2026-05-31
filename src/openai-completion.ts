@@ -244,6 +244,8 @@ export class OpenAICompletion extends ConfiguredLLM {
   readonly is_o1_model: boolean;
   readonly isGpt4Model: boolean;
   readonly is_gpt4_model: boolean;
+  private responseChainId: string | null;
+  private reasoningChainItems: unknown[];
 
   constructor(options: OpenAICompletionOptions = { model: "gpt-4o" }) {
     const model = options.model;
@@ -318,10 +320,46 @@ export class OpenAICompletion extends ConfiguredLLM {
     this.is_o1_model = this.isO1Model;
     this.isGpt4Model = lowerModel.includes("gpt-4");
     this.is_gpt4_model = this.isGpt4Model;
+    this.responseChainId = this.previousResponseId;
+    this.reasoningChainItems = [];
   }
 
   override call(messages: readonly LLMMessage[], options?: LLMCallOptions): Promise<LLMResponse> {
     return super.call(messages, options);
+  }
+
+  override supportsFunctionCalling(): boolean {
+    return !this.isO1Model;
+  }
+
+  override supportsStopWords(): boolean {
+    const model = this.model.toLowerCase();
+    if (model.includes("gpt-5")) {
+      return false;
+    }
+    return !this.isO1Model;
+  }
+
+  override supportsMultimodal(): boolean {
+    const model = this.model.toLowerCase();
+    return ["gpt-4o", "gpt-4.1", "gpt-4-turbo", "gpt-4-vision", "gpt-5", "o1", "o3", "o4"]
+      .some((prefix) => model.startsWith(prefix));
+  }
+
+  override get lastResponseId(): string | null {
+    return this.responseChainId;
+  }
+
+  override get lastReasoningItems(): readonly unknown[] {
+    return [...this.reasoningChainItems];
+  }
+
+  override resetChain(): void {
+    this.responseChainId = null;
+  }
+
+  override resetReasoningChain(): void {
+    this.reasoningChainItems = [];
   }
 }
 

@@ -124,6 +124,20 @@ export class AnthropicCompletion extends ConfiguredLLM {
   override call(messages: readonly LLMMessage[], options?: LLMCallOptions): Promise<LLMResponse> {
     return super.call(messages, options);
   }
+
+  override supportsFunctionCalling(): boolean {
+    return true;
+  }
+
+  override supportsStopWords(): boolean {
+    return false;
+  }
+
+  override supportsMultimodal(): boolean {
+    const model = this.model.toLowerCase();
+    return ["claude-3", "claude-sonnet-4", "claude-opus-4", "claude-haiku-4"]
+      .some((prefix) => model.startsWith(prefix));
+  }
 }
 
 export const STRUCTURED_OUTPUT_TOOL_NAME = "structured_output";
@@ -219,6 +233,14 @@ export class BedrockCompletion extends ConfiguredLLM {
   override call(messages: readonly LLMMessage[], options?: LLMCallOptions): Promise<LLMResponse> {
     return super.call(messages, options);
   }
+
+  override supportsFunctionCalling(): boolean {
+    return true;
+  }
+
+  override supportsStopWords(): boolean {
+    return true;
+  }
 }
 
 export const AzureCompletionParams = Object.freeze({ kind: "AzureCompletionParams" });
@@ -304,6 +326,8 @@ export class AzureCompletion extends ConfiguredLLM {
   readonly is_azure_openai_endpoint: boolean;
   readonly credentialScopes: readonly string[] | null;
   readonly credential_scopes: readonly string[] | null;
+  private responseChainId: string | null;
+  private reasoningChainItems: unknown[];
 
   constructor(options: AzureCompletionOptions = { model: "gpt-4o-mini" }) {
     const endpoint = options.endpoint ?? process.env.AZURE_ENDPOINT ?? process.env.AZURE_OPENAI_ENDPOINT ?? process.env.AZURE_API_BASE ?? null;
@@ -345,6 +369,37 @@ export class AzureCompletion extends ConfiguredLLM {
     this.is_openai_model = this.isOpenAIModel;
     this.credentialScopes = options.credentialScopes ?? options.credential_scopes ?? null;
     this.credential_scopes = this.credentialScopes;
+    this.responseChainId = options.previousResponseId ?? options.previous_response_id ?? null;
+    this.reasoningChainItems = [];
+  }
+
+  override supportsFunctionCalling(): boolean {
+    return this.isOpenAIModel;
+  }
+
+  override supportsStopWords(): boolean {
+    const model = this.model.toLowerCase();
+    if (model.includes("gpt-5")) {
+      return false;
+    }
+    return !["o1", "o3", "o4", "o1-mini", "o3-mini", "o4-mini", "computer-use-preview"]
+      .some((unsupported) => model.includes(unsupported));
+  }
+
+  override get lastResponseId(): string | null {
+    return this.responseChainId;
+  }
+
+  override get lastReasoningItems(): readonly unknown[] {
+    return [...this.reasoningChainItems];
+  }
+
+  override resetChain(): void {
+    this.responseChainId = null;
+  }
+
+  override resetReasoningChain(): void {
+    this.reasoningChainItems = [];
   }
 }
 
