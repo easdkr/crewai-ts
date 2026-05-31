@@ -1674,6 +1674,9 @@ describe("i18n and prompt utilities", () => {
     expect(noTools.prompt).toContain("You are Researcher. Careful analyst");
     expect(noTools.prompt).toContain("Current Task: {input}");
     expect(noTools.prompt).toContain("Provide your complete response:");
+    expect(noTools.__getitem__("prompt")).toBe(noTools.prompt);
+    expect(noTools.__contains__("prompt")).toBe(true);
+    expect(noTools.__contains__("missing")).toBe(false);
 
     const tools = new Prompts({ agent: agentLike, hasTools: true }).task_execution();
     expect(tools.prompt).toContain("You ONLY have access to the following tools");

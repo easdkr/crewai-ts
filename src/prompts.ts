@@ -29,8 +29,19 @@ export class StandardPromptResult {
     return this.get(key);
   }
 
+  __getitem__(key: string): unknown {
+    if (!(key in this)) {
+      throw new Error(`Key not found: ${key}`);
+    }
+    return this.item(key);
+  }
+
   contains(key: string): boolean {
     return key in this && (this as unknown as Record<string, unknown>)[key] !== null;
+  }
+
+  __contains__(key: string): boolean {
+    return this.contains(key);
   }
 }
 

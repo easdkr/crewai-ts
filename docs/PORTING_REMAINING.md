@@ -251,6 +251,7 @@ When more goal budget is available, continue from the behavioral parity audits b
   - `SkillCacheManager.store` now unpacks registry tar.gz and zip archive bytes into the local cache with upstream-style metadata and path traversal protection.
 - Added i18n compatibility behavior:
   - `I18N.load_prompts` now exposes upstream-style prompt catalog reload semantics for custom prompt files and default prompts.
+  - `StandardPromptResult` now exposes upstream-style `__getitem__` and `__contains__` access for dict-like prompt result usage.
 - Added LiteAgent compatibility behavior:
   - `LiteAgent` now exposes upstream-style setup/helper methods for LLM setup, tool parsing, A2A setup, guardrail validation, and memory resolution.
   - `LiteAgent` now exposes before/after LLM hook getters, an upstream-style `key` property getter, and resolves `memory: true` to a default `Memory` instance.
