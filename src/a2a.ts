@@ -2543,9 +2543,7 @@ export function negotiateContentTypes(
   a2aAgentName: string | null = null,
   strict = false,
 ): NegotiatedContentTypes {
-  const skill = skillName ? agentCard.skills?.find((item) => item.name === skillName || item.id === skillName) ?? null : null;
-  const serverInputModes = skill?.inputModes ?? skill?.input_modes ?? agentCard.defaultInputModes ?? agentCard.default_input_modes ?? [TEXT_PLAIN];
-  const serverOutputModes = skill?.outputModes ?? skill?.output_modes ?? agentCard.defaultOutputModes ?? agentCard.default_output_modes ?? [TEXT_PLAIN];
+  const [serverInputModes, serverOutputModes, skill] = _get_effective_modes(agentCard, skillName);
   const compatibleInput = findCompatibleModes(clientInputModes, serverInputModes);
   const compatibleOutput = findCompatibleModes(clientOutputModes, serverOutputModes);
   if (strict) {
@@ -2584,6 +2582,45 @@ export function negotiateContentTypes(
 }
 
 export const negotiate_content_types = negotiateContentTypes;
+
+export function _get_effective_modes(
+  agentCard: {
+    defaultInputModes?: readonly string[];
+    default_input_modes?: readonly string[];
+    defaultOutputModes?: readonly string[];
+    default_output_modes?: readonly string[];
+    skills?: readonly {
+      id?: string;
+      name?: string;
+      inputModes?: readonly string[];
+      input_modes?: readonly string[];
+      outputModes?: readonly string[];
+      output_modes?: readonly string[];
+    }[];
+  },
+  skillName: string | null = null,
+): [readonly string[], readonly string[], {
+  id?: string;
+  name?: string;
+  inputModes?: readonly string[];
+  input_modes?: readonly string[];
+  outputModes?: readonly string[];
+  output_modes?: readonly string[];
+} | null] {
+  const defaultInputModes = agentCard.defaultInputModes ?? agentCard.default_input_modes ?? [TEXT_PLAIN];
+  const defaultOutputModes = agentCard.defaultOutputModes ?? agentCard.default_output_modes ?? [TEXT_PLAIN];
+  const skill = skillName ? agentCard.skills?.find((item) => item.name === skillName || item.id === skillName) ?? null : null;
+  if (!skill) {
+    return [defaultInputModes, defaultOutputModes, null];
+  }
+  const skillInputModes = skill.inputModes ?? skill.input_modes ?? [];
+  const skillOutputModes = skill.outputModes ?? skill.output_modes ?? [];
+  return [
+    skillInputModes.length > 0 ? skillInputModes : defaultInputModes,
+    skillOutputModes.length > 0 ? skillOutputModes : defaultOutputModes,
+    skill,
+  ];
+}
 
 export function validateContentType(contentType: string, allowedModes: readonly string[]): boolean {
   return allowedModes.some((mode) => mimeTypesCompatible(contentType, mode));

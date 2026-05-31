@@ -686,6 +686,7 @@ import {
   StaticToolFilter,
   StdioTransport,
   TransportType,
+  _get_effective_modes,
   isMCPServerConfig,
   isRetryableError,
   activateSkill,
@@ -3904,6 +3905,41 @@ describe("a2a utilities", () => {
       server_input_modes: ["image/png"],
       negotiated_input_modes: ["image/png"],
       negotiation_success: true,
+    });
+  });
+
+  it("falls back to agent-card defaults for skills with empty content modes", () => {
+    const agentCard = {
+      default_input_modes: ["text/plain", "application/json"],
+      default_output_modes: ["application/json"],
+      skills: [{
+        id: "empty-modes",
+        name: "Empty Modes",
+        input_modes: [],
+        output_modes: [],
+      }],
+    };
+
+    expect(_get_effective_modes(agentCard, "empty-modes")).toEqual([
+      ["text/plain", "application/json"],
+      ["application/json"],
+      agentCard.skills[0],
+    ]);
+    expect(negotiateContentTypes(
+      agentCard,
+      ["text/plain"],
+      ["application/json"],
+      "empty-modes",
+      false,
+      null,
+      null,
+      true,
+    )).toMatchObject({
+      input_modes: ["text/plain"],
+      output_modes: ["application/json"],
+      effective_input_modes: ["text/plain", "application/json"],
+      effective_output_modes: ["application/json"],
+      skill_name: "Empty Modes",
     });
   });
 
