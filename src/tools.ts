@@ -2,6 +2,7 @@ import type { InputValues, MaybePromise, Tool, ToolContext } from "./types.js";
 import {
   ToolUsageErrorEvent,
   ToolUsageFinishedEvent,
+  ToolSelectionErrorEvent,
   ToolUsageStartedEvent,
   ToolValidateInputErrorEvent,
   crewaiEventBus,
@@ -1350,8 +1351,9 @@ export type ToolUsageOptions = {
 };
 
 export class ToolUsage {
-  private readonly runAttempts = 1;
-  private readonly run_attempts = this.runAttempts;
+  private runAttempts = 1;
+  private readonly maxParsingAttempts = 3;
+  private readonly rememberFormatAfterUsages = 3;
   readonly toolsHandler: ToolsHandler | null;
   readonly tools_handler: ToolsHandler | null;
   readonly tools: readonly Tool[];
@@ -1374,6 +1376,22 @@ export class ToolUsage {
     this.action = options.action ?? null;
     this.fingerprintContext = options.fingerprintContext ?? options.fingerprint_context ?? {};
     this.fingerprint_context = this.fingerprintContext;
+  }
+
+  get run_attempts(): number {
+    return this.runAttempts;
+  }
+
+  get _run_attempts(): number {
+    return this.runAttempts;
+  }
+
+  get _max_parsing_attempts(): number {
+    return this.maxParsingAttempts;
+  }
+
+  get _remember_format_after_usages(): number {
+    return this.rememberFormatAfterUsages;
   }
 
   parseToolCalling(toolString: string): ToolCalling | ToolUsageError {
@@ -1407,6 +1425,159 @@ export class ToolUsage {
 
   async ause(calling: ToolCalling | ToolUsageError, toolString = ""): Promise<string> {
     return await this.use(calling, toolString);
+  }
+
+  async _ause(toolString: string, tool: Tool, calling: ToolCallingLike): Promise<string> {
+    if (this._check_tool_repeated_usage(calling)) {
+      return this._format_result(I18N_DEFAULT.errors("task_repeated_usage"));
+    }
+    const startedAt = Date.now() / 1000;
+    try {
+      const usageLimitError = ToolUsage._check_usage_limit(tool, sanitizeToolName(tool.name));
+      if (usageLimitError) {
+        throw new ToolUsageLimitExceededError(usageLimitError);
+      }
+      const input = calling.arguments ?? {};
+      const result = await tool.run(input);
+      this.onToolUseFinished(tool, calling, false, startedAt, result);
+      this.toolsHandler?.onToolUse(calling, stringifyToolOutput(result), true);
+      return this._format_result(result);
+    } catch (error) {
+      this.onToolError(tool, calling, error);
+      return stringifyToolError(error);
+    }
+  }
+
+  _format_result(result: unknown): string {
+    const taskRecord = getRecord(this.task);
+    if (taskRecord) {
+      const usedTools = typeof taskRecord.used_tools === "number" ? taskRecord.used_tools : 0;
+      taskRecord.used_tools = usedTools + 1;
+    }
+    const output = stringifyToolOutput(result);
+    return this._should_remember_format() ? this._remember_format(output) : output;
+  }
+
+  _should_remember_format(): boolean {
+    const usedTools = getNumberProperty(this.task, "used_tools");
+    return usedTools !== null && usedTools % this.rememberFormatAfterUsages === 0;
+  }
+
+  _remember_format(result: unknown): string {
+    const toolsSlice = I18N_DEFAULT.slice("tools")
+      .replaceAll("{tools}", renderToolsDescription(this.tools))
+      .replaceAll("{tool_names}", this.tools.map((tool) => sanitizeToolName(tool.name)).join(", "));
+    return `${stringifyToolOutput(result)}\n\n${toolsSlice}`;
+  }
+
+  _check_tool_repeated_usage(calling: ToolCallingLike): boolean {
+    const lastToolUsage = this.toolsHandler?.lastUsedTool;
+    if (!lastToolUsage) {
+      return false;
+    }
+    return sanitizedCallingName(calling) === sanitizedCallingName(lastToolUsage)
+      && JSON.stringify(calling.arguments ?? {}) === JSON.stringify(lastToolUsage.arguments ?? {});
+  }
+
+  static _check_usage_limit(tool: unknown, toolName: string): string | null {
+    const record = getRecord(tool);
+    const maxUsageCount = record?.max_usage_count ?? record?.maxUsageCount;
+    const currentUsageCount = record?.current_usage_count ?? record?.currentUsageCount;
+    if (typeof maxUsageCount === "number" && typeof currentUsageCount === "number" && currentUsageCount >= maxUsageCount) {
+      return `Tool '${toolName}' has reached its usage limit of ${String(maxUsageCount)} times and cannot be used anymore.`;
+    }
+    return null;
+  }
+
+  _check_usage_limit(tool: unknown, toolName: string): string | null {
+    return ToolUsage._check_usage_limit(tool, toolName);
+  }
+
+  _select_tool(toolName: string): Tool {
+    const sanitizedInput = sanitizeToolName(toolName);
+    const orderedTools = [...this.tools].sort((left, right) =>
+      toolNameSimilarity(right.name, sanitizedInput) - toolNameSimilarity(left.name, sanitizedInput));
+    for (const tool of orderedTools) {
+      const sanitizedTool = sanitizeToolName(tool.name);
+      if (sanitizedTool === sanitizedInput || toolNameSimilarity(tool.name, sanitizedInput) > 0.85) {
+        return tool;
+      }
+    }
+    incrementTaskToolErrors(this.task);
+    const error = toolName
+      ? `Action '${toolName}' don't exist, these are the only available Actions:\n${renderToolsDescription(this.tools)}`
+      : `I forgot the Action name, these are the only available Actions: ${renderToolsDescription(this.tools)}`;
+    crewaiEventBus.emit(this, new ToolSelectionErrorEvent({
+      toolName,
+      toolArgs: {},
+      toolClass: renderToolsDescription(this.tools),
+      error,
+    }));
+    throw new Error(error);
+  }
+
+  _original_tool_calling(_toolString: string, raiseError = false): ToolCalling | ToolUsageError {
+    const action = this.action;
+    if (!action) {
+      return new ToolUsageError(I18N_DEFAULT.errors("tool_arguments_error"));
+    }
+    try {
+      const tool = this._select_tool(action.tool);
+      const arguments_ = this._validate_tool_input(action.toolInput);
+      return new ToolCalling({
+        toolName: sanitizeToolName(tool.name),
+        arguments: arguments_,
+      });
+    } catch (error) {
+      if (raiseError) {
+        throw error;
+      }
+      return new ToolUsageError(I18N_DEFAULT.errors("tool_arguments_error"));
+    }
+  }
+
+  _validate_tool_input(toolInput: string | null | undefined): Record<string, unknown> {
+    if (toolInput === null || toolInput === undefined) {
+      return {};
+    }
+    if (typeof toolInput !== "string" || toolInput.trim().length === 0) {
+      const error = "Tool input must be a valid dictionary in JSON or Python literal format";
+      this._emit_validate_input_error(error);
+      throw new Error(error);
+    }
+    const parsed = parseToolInputDictionary(toolInput);
+    if (parsed) {
+      return parsed;
+    }
+    const error = "Tool input must be a valid dictionary in JSON or Python literal format";
+    this._emit_validate_input_error(error);
+    throw new Error(error);
+  }
+
+  _emit_validate_input_error(finalError: string): void {
+    crewaiEventBus.emit(this, new ToolValidateInputErrorEvent({
+      toolName: this.action?.tool ?? "",
+      toolArgs: this.action?.toolInput ?? "",
+      toolClass: this.constructor.name,
+      error: finalError,
+    }));
+  }
+
+  _prepare_event_data(tool: unknown, toolCalling: ToolCallingLike): Record<string, unknown> {
+    return this.prepareEventData(tool, toolCalling);
+  }
+
+  _build_fingerprint_config(): Record<string, unknown> {
+    const securityContext: Record<string, unknown> = {};
+    const agentFingerprint = fingerprintToRecord(getRecord(getRecord(this.agent)?.security_config)?.fingerprint);
+    if (agentFingerprint) {
+      securityContext.agent_fingerprint = agentFingerprint;
+    }
+    const taskFingerprint = fingerprintToRecord(getRecord(getRecord(this.task)?.security_config)?.fingerprint);
+    if (taskFingerprint) {
+      securityContext.task_fingerprint = taskFingerprint;
+    }
+    return Object.keys(securityContext).length > 0 ? { security_context: securityContext } : {};
   }
 
   onToolError(tool: unknown, toolCalling: ToolCallingLike, error: unknown): void {
@@ -1866,6 +2037,110 @@ function getTaskDisplayName(task: unknown): string | null {
 
 function getConstructorName(value: unknown): string | null {
   return value && typeof value === "object" ? value.constructor.name : null;
+}
+
+function incrementTaskToolErrors(task: unknown): void {
+  const record = getRecord(task);
+  if (!record) {
+    return;
+  }
+  if (typeof record.increment_tools_errors === "function") {
+    (record.increment_tools_errors as () => void).call(task);
+    return;
+  }
+  if (typeof record.incrementToolsErrors === "function") {
+    (record.incrementToolsErrors as () => void).call(task);
+    return;
+  }
+  const current = typeof record.tools_errors === "number" ? record.tools_errors : 0;
+  record.tools_errors = current + 1;
+}
+
+function parseToolInputDictionary(toolInput: string): Record<string, unknown> | null {
+  const candidates = [
+    toolInput,
+    toolInput.trim().replaceAll("'", "\""),
+    normalizePythonLiteralObject(toolInput),
+  ].filter((candidate): candidate is string => typeof candidate === "string");
+  for (const candidate of candidates) {
+    try {
+      const parsed: unknown = JSON.parse(candidate);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        return parsed as Record<string, unknown>;
+      }
+    } catch {
+      // Try the next compatible representation.
+    }
+  }
+  return null;
+}
+
+function normalizePythonLiteralObject(value: string): string | null {
+  const trimmed = value.trim();
+  if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) {
+    return null;
+  }
+  return trimmed
+    .replaceAll(/\bTrue\b/g, "true")
+    .replaceAll(/\bFalse\b/g, "false")
+    .replaceAll(/\bNone\b/g, "null")
+    .replaceAll(/'([^'\\]*(?:\\.[^'\\]*)*)'/g, (_match, content: string) => JSON.stringify(content.replaceAll("\\'", "'")));
+}
+
+function stringifyToolError(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+  if (typeof error === "string") {
+    return error;
+  }
+  return stringifyToolOutput(error);
+}
+
+function fingerprintToRecord(value: unknown): unknown {
+  const record = getRecord(value);
+  if (!record) {
+    return null;
+  }
+  if (typeof record.to_dict === "function") {
+    return (record.to_dict as () => unknown).call(value);
+  }
+  if (typeof record.toDict === "function") {
+    return (record.toDict as () => unknown).call(value);
+  }
+  return record;
+}
+
+function toolNameSimilarity(toolName: string, sanitizedInput: string): number {
+  return stringSimilarity(sanitizeToolName(toolName), sanitizedInput);
+}
+
+function stringSimilarity(left: string, right: string): number {
+  if (left === right) {
+    return 1;
+  }
+  if (left.length === 0 || right.length === 0) {
+    return 0;
+  }
+  const distance = levenshteinDistance(left, right);
+  return 1 - (distance / Math.max(left.length, right.length));
+}
+
+function levenshteinDistance(left: string, right: string): number {
+  const previous = Array.from({ length: right.length + 1 }, (_value, index) => index);
+  const current = Array.from({ length: right.length + 1 }, () => 0);
+  for (let leftIndex = 1; leftIndex <= left.length; leftIndex += 1) {
+    current[0] = leftIndex;
+    for (let rightIndex = 1; rightIndex <= right.length; rightIndex += 1) {
+      current[rightIndex] = Math.min(
+        (current[rightIndex - 1] ?? 0) + 1,
+        (previous[rightIndex] ?? 0) + 1,
+        (previous[rightIndex - 1] ?? 0) + (left[leftIndex - 1] === right[rightIndex - 1] ? 0 : 1),
+      );
+    }
+    previous.splice(0, previous.length, ...current);
+  }
+  return previous[right.length] ?? 0;
 }
 
 function inferFunctionParameterNames(func: unknown): string[] {

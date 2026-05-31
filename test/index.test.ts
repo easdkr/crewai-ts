@@ -12793,6 +12793,66 @@ describe("tools", () => {
     });
   });
 
+  it("exposes upstream ToolUsage helper methods for selection, parsing, format reminders, and fingerprints", () => {
+    const seen: Array<ToolValidateInputErrorEvent | ToolSelectionErrorEvent> = [];
+    crewaiEventBus.on("tool_validate_input_error", (_source, event) => {
+      seen.push(event);
+    });
+    crewaiEventBus.on("tool_selection_error", (_source, event) => {
+      seen.push(event);
+    });
+    const search = new StructuredTool({
+      name: "Search Tool",
+      description: "Search docs",
+      argsSchema: { query: { type: "string", required: true } },
+      maxUsageCount: 1,
+      currentUsageCount: 1,
+      func: ({ query }) => `found:${String(query)}`,
+    });
+    const task = { used_tools: 2, tools_errors: 0 };
+    const usage = new ToolUsage({
+      tools: [search],
+      toolsHandler: new ToolsHandler({ lastUsedTool: { toolName: "Search Tool", arguments: { query: "CrewAI" } } }),
+      task,
+      action: new AgentAction({
+        thought: "Search",
+        tool: "Search Tool",
+        toolInput: "{'query': 'CrewAI', 'fresh': True}",
+        text: "",
+      }),
+      agent: {
+        security_config: {
+          fingerprint: { to_dict: () => ({ hash: "agent-fingerprint" }) },
+        },
+      },
+      fingerprint_context: { trace_id: "trace-1" },
+    });
+
+    expect(usage._select_tool("search_tool")).toBe(search);
+    expect(usage._validate_tool_input("{'query': 'CrewAI', 'fresh': True}")).toEqual({ query: "CrewAI", fresh: true });
+    expect(usage._original_tool_calling("", true)).toMatchObject({
+      toolName: "search_tool",
+      arguments: { query: "CrewAI", fresh: true },
+    });
+    expect(usage._check_tool_repeated_usage({ toolName: "search_tool", arguments: { query: "CrewAI" } })).toBe(true);
+    expect(usage._check_usage_limit(search, "search_tool")).toContain("usage limit of 1");
+    expect(usage._format_result("done")).toContain("You ONLY have access to the following tools");
+    expect(task.used_tools).toBe(3);
+    expect(usage._prepare_event_data(search, { toolName: "Search Tool", arguments: { query: "CrewAI" } })).toMatchObject({
+      tool_name: "search_tool",
+      trace_id: "trace-1",
+    });
+    expect(usage._build_fingerprint_config()).toEqual({
+      security_context: { agent_fingerprint: { hash: "agent-fingerprint" } },
+    });
+
+    expect(() => usage._validate_tool_input("not-json")).toThrow("Tool input must be a valid dictionary");
+    expect(() => usage._select_tool("Missing Tool")).toThrow("Action 'Missing Tool' don't exist");
+    expect(task.tools_errors).toBe(1);
+    expect(seen[0]).toBeInstanceOf(ToolValidateInputErrorEvent);
+    expect(seen[1]).toBeInstanceOf(ToolSelectionErrorEvent);
+  });
+
   it("supports upstream structured tool invocation and snake_case aliases", async () => {
     function add(a: unknown, b: unknown): number {
       return Number(a) + Number(b);
