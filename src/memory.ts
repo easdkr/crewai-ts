@@ -515,7 +515,7 @@ export class EncodingFlow {
         if (!candidate || candidate.dropped || candidate.embedding.length === 0) {
           continue;
         }
-        if (cosineSimilarity(candidate.embedding, item.embedding) >= this.config.batchDedupThreshold) {
+        if (EncodingFlow._cosine_similarity(candidate.embedding, item.embedding) >= this.config.batchDedupThreshold) {
           item.dropped = true;
           this.state.items_dropped_dedup += 1;
           break;
@@ -592,7 +592,7 @@ export class EncodingFlow {
       const fieldsProvided = item.scope !== null && item.categories !== null && item.importance !== null;
       const hasSimilar = item.topSimilarity >= threshold;
       if (fieldsProvided) {
-        this.applyEncodingDefaults(item);
+        this._apply_defaults(item);
       } else {
         const analysis = await analyzeForSave(item.content, existingScopes, existingCategories, this.llm as LLM);
         this.applyEncodingAnalysis(item, analysis);
@@ -609,7 +609,14 @@ export class EncodingFlow {
     return this.parallel_analyze();
   }
 
-  private applyEncodingDefaults(item: ItemState): void {
+  static _cosine_similarity(a: readonly number[], b: readonly number[]): number {
+    if (a.length !== b.length || a.length === 0) {
+      return 0;
+    }
+    return cosineSimilarity(a, b);
+  }
+
+  _apply_defaults(item: ItemState): void {
     const innerScope = item.scope ?? "/";
     item.resolvedScope = item.root_scope ? joinScopePaths(item.root_scope, innerScope) : innerScope;
     item.resolved_scope = item.resolvedScope;

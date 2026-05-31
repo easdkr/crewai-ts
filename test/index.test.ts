@@ -17541,6 +17541,9 @@ describe("memory", () => {
       [1, 0, 0],
       [0, 1, 0],
     ]);
+    expect(EncodingFlow._cosine_similarity([1, 0], [1, 0])).toBe(1);
+    expect(EncodingFlow._cosine_similarity([1, 0], [0, 1])).toBe(0);
+    expect(EncodingFlow._cosine_similarity([1, 0], [1])).toBe(0);
 
     flow.intra_batch_dedup();
 
@@ -17597,6 +17600,9 @@ describe("memory", () => {
       top_similarity: 0.2,
     });
     flow.state.items.push(item);
+
+    flow._apply_defaults(item);
+    expect(item.resolved_scope).toBe("/crew/project");
 
     await flow.parallel_analyze();
 
