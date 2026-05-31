@@ -74,7 +74,11 @@ export type GenerateCrewChatInputsOptions = {
   generate_descriptions?: boolean;
 };
 
-export function checkConversationalCrewsVersion(crewaiVersion: string): boolean {
+export function checkConversationalCrewsVersion(crewaiVersion: string, _pyprojectData: Record<string, unknown> = {}): boolean {
+  void _pyprojectData;
+  if (!isValidVersion(crewaiVersion)) {
+    return false;
+  }
   return compareVersions(crewaiVersion, MIN_REQUIRED_CONVERSATIONAL_CREW_VERSION) >= 0;
 }
 
@@ -378,9 +382,13 @@ function compareVersions(left: string, right: string): number {
 }
 
 function parseVersion(value: string): number[] {
-  const match = value.match(/\d+(?:\.\d+)*/);
+  const match = value.trim().match(/^v?(\d+(?:\.\d+)*)(?:(?:a|b|rc|post|dev)\d*)?(?:\+[0-9A-Za-z.-]+)?$/i);
   if (!match) {
     return [];
   }
-  return match[0].split(".").map((part) => Number(part));
+  return (match[1] ?? "").split(".").map((part) => Number(part));
+}
+
+function isValidVersion(value: string): boolean {
+  return parseVersion(value).length > 0;
 }

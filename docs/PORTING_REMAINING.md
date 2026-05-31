@@ -146,6 +146,7 @@ When more goal budget is available, continue from the behavioral parity audits b
   - `FirstTimeTraceHandler` now exposes upstream-style first-time trace collection state hooks and records local consent/completion without enabling cloud upload behavior.
 - Added crew chat compatibility behavior:
   - `handleUserInput` now forwards the generated crew function schema and available function map to the chat LLM call so upstream-style conversational crew function calling can execute.
+  - `check_conversational_crews_version` now accepts the upstream pyproject data argument and rejects invalid version strings instead of loosely parsing embedded digits.
 - Added converter compatibility behavior:
   - `asyncConvertToModel` / `asyncHandlePartialJson` now use the agent LLM fallback path for non-JSON or malformed partial JSON results, matching upstream async conversion dispatch.
   - `OutputConverter` now explicitly exposes upstream-style `to_pydantic` and `to_json` methods while preserving the shared converter implementation.

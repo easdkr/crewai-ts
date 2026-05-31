@@ -4485,9 +4485,10 @@ describe("crew chat utilities", () => {
   });
 
   it("checks conversational crew version compatibility", () => {
-    expect(checkConversationalCrewsVersion("0.98.0")).toBe(true);
-    expect(checkConversationalCrewsVersion("1.2.3")).toBe(true);
-    expect(checkConversationalCrewsVersion("0.97.9")).toBe(false);
+    expect(checkConversationalCrewsVersion("0.98.0", {})).toBe(true);
+    expect(checkConversationalCrewsVersion("1.2.3", { project: { name: "crew" } })).toBe(true);
+    expect(checkConversationalCrewsVersion("0.97.9", {})).toBe(false);
+    expect(checkConversationalCrewsVersion("release-1", {})).toBe(false);
   });
 });
 
