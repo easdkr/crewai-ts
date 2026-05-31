@@ -466,48 +466,55 @@ export class ExtensionRegistry {
 
   inject_all_tools(agent: unknown): void {
     for (const extension of this.extensions) {
-      extension.injectTools?.(agent);
-      extension.inject_tools?.(agent);
+      if (extension.injectTools) {
+        extension.injectTools(agent);
+      } else {
+        extension.inject_tools?.(agent);
+      }
     }
   }
 
-  extract_all_states(conversation_history: readonly unknown[]): Map<A2AExtension, ConversationState> {
-    const states = new Map<A2AExtension, ConversationState>();
+  extract_all_states(conversation_history: readonly unknown[]): Map<unknown, ConversationState> {
+    const states = new Map<unknown, ConversationState>();
     for (const extension of this.extensions) {
       const state = extension.extractStateFromHistory?.(conversation_history) ?? extension.extract_state_from_history?.(conversation_history) ?? null;
       if (state) {
-        states.set(extension, state);
+        states.set(extensionStateKey(extension), state);
       }
     }
     return states;
   }
 
-  augment_prompt_with_all(base_prompt: string, extension_states: Map<A2AExtension, ConversationState>): string {
+  augment_prompt_with_all(base_prompt: string, extension_states: Map<unknown, ConversationState>): string {
     let prompt = base_prompt;
     for (const extension of this.extensions) {
-      const state = extension_states.get(extension) ?? null;
+      const state = extension_states.get(extensionStateKey(extension)) ?? null;
       prompt = extension.augmentPrompt?.(prompt, state) ?? extension.augment_prompt?.(prompt, state) ?? prompt;
     }
     return prompt;
   }
 
-  process_response_with_all(agent_response: unknown, extension_states: Map<A2AExtension, ConversationState>): unknown {
+  process_response_with_all(agent_response: unknown, extension_states: Map<unknown, ConversationState>): unknown {
     let response = agent_response;
     for (const extension of this.extensions) {
-      const state = extension_states.get(extension) ?? null;
+      const state = extension_states.get(extensionStateKey(extension)) ?? null;
       response = extension.processResponse?.(response, state) ?? extension.process_response?.(response, state) ?? response;
     }
     return response;
   }
 
-  prepare_all_metadata(extension_states: Map<A2AExtension, ConversationState>): Record<string, unknown> {
+  prepare_all_metadata(extension_states: Map<unknown, ConversationState>): Record<string, unknown> {
     const metadata: Record<string, unknown> = {};
     for (const extension of this.extensions) {
-      const state = extension_states.get(extension) ?? null;
+      const state = extension_states.get(extensionStateKey(extension)) ?? null;
       Object.assign(metadata, extension.prepareMessageMetadata?.(state) ?? extension.prepare_message_metadata?.(state) ?? {});
     }
     return metadata;
   }
+}
+
+function extensionStateKey(extension: A2AExtension): unknown {
+  return extension.constructor;
 }
 export class ExtensionsMiddleware {
   constructor(private readonly extensions: readonly string[]) {}

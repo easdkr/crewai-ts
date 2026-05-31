@@ -18,6 +18,7 @@ import {
   A2UIValidationError,
   A2UI_V09_BASIC_CATALOG_ID,
   ExtensionContext,
+  ExtensionRegistry,
   A2AServerConfig,
   A2ATransport,
   A2AHTTPException,
@@ -3025,6 +3026,42 @@ describe("a2a utilities", () => {
       ],
     }]);
     expect(deleted).toBeNull();
+  });
+
+  it("keys A2A client extension states by extension type and invokes aliases once", () => {
+    class ClientExtension {
+      readonly calls: string[] = [];
+
+      injectTools(agent: unknown): void {
+        void agent;
+        this.calls.push("injectTools");
+      }
+
+      inject_tools(agent: unknown): void {
+        void agent;
+        this.calls.push("inject_tools");
+      }
+
+      extract_state_from_history(history: readonly unknown[]): { marker: string; is_ready: () => boolean } {
+        void history;
+        return { marker: "state-from-history", is_ready: () => true };
+      }
+
+      prepare_message_metadata(state: unknown): Record<string, unknown> {
+        return { marker: typeof state === "object" && state !== null && "marker" in state ? state.marker : null };
+      }
+    }
+
+    const extension = new ClientExtension();
+    const registry = new ExtensionRegistry();
+    registry.register(extension);
+
+    registry.inject_all_tools({});
+    const states = registry.extract_all_states([]);
+
+    expect(extension.calls).toEqual(["injectTools"]);
+    expect(states.get(ClientExtension)).toMatchObject({ marker: "state-from-history" });
+    expect(registry.prepare_all_metadata(states)).toEqual({ marker: "state-from-history" });
   });
 
   it("activates A2UI server hooks only for declared client extensions", async () => {
