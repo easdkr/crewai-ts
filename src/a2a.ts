@@ -2910,6 +2910,28 @@ export class A2AClientConfig {
     const transport = options.transport ?? new ClientTransportConfig();
     this.transport = migrateClientTransport(transport, options.transportProtocol ?? options.transport_protocol ?? null, options.supportedTransports ?? options.supported_transports ?? null);
   }
+
+  migrateDeprecatedTransportFields(): this {
+    return this;
+  }
+
+  _migrate_deprecated_transport_fields(): this {
+    return this.migrateDeprecatedTransportFields();
+  }
+
+  serializeResponseModel(value: unknown): unknown {
+    if (typeof value === "function" && value.name) {
+      return value.name;
+    }
+    if (value && typeof value === "object" && "name" in value && typeof value.name === "string") {
+      return value.name;
+    }
+    return value;
+  }
+
+  _serialize_response_model(value: unknown): unknown {
+    return this.serializeResponseModel(value);
+  }
 }
 
 export class A2AConfig extends A2AClientConfig {}

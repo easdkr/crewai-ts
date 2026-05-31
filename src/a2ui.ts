@@ -211,12 +211,30 @@ export class A2UIMessage extends A2UIModel {
     super(options);
     assertExactlyOne(options, ["beginRendering", "begin_rendering", "surfaceUpdate", "surface_update", "dataModelUpdate", "data_model_update", "deleteSurface", "delete_surface"], "A2UI message type");
   }
+
+  checkExactlyOne(): this {
+    assertExactlyOneGroupSet(this.modelDump(), [["beginRendering", "begin_rendering"], ["surfaceUpdate", "surface_update"], ["dataModelUpdate", "data_model_update"], ["deleteSurface", "delete_surface"]], "A2UI message type");
+    return this;
+  }
+
+  _check_exactly_one(): this {
+    return this.checkExactlyOne();
+  }
 }
 
 export class A2UIEvent extends A2UIModel {
   constructor(options: A2UIRecord = {}) {
     super(options);
     assertExactlyOne(options, ["userAction", "user_action", "error"], "A2UI event type");
+  }
+
+  checkExactlyOne(): this {
+    assertExactlyOneGroupSet(this.modelDump(), [["userAction", "user_action"], ["error"]], "A2UI event type");
+    return this;
+  }
+
+  _check_exactly_one(): this {
+    return this.checkExactlyOne();
   }
 }
 
@@ -269,6 +287,15 @@ export class A2UIMessageV09 extends A2UIModel {
     this.version = "v0.9";
     assertExactlyOne(options, ["createSurface", "create_surface", "updateComponents", "update_components", "updateDataModel", "update_data_model", "deleteSurface", "delete_surface"], "A2UI v0.9 message type");
   }
+
+  checkExactlyOne(): this {
+    assertExactlyOneGroupSet(this.modelDump(), [["createSurface", "create_surface"], ["updateComponents", "update_components"], ["updateDataModel", "update_data_model"], ["deleteSurface", "delete_surface"]], "A2UI v0.9 message type");
+    return this;
+  }
+
+  _check_exactly_one(): this {
+    return this.checkExactlyOne();
+  }
 }
 
 export class A2UIEventV09 extends A2UIModel {
@@ -278,6 +305,15 @@ export class A2UIEventV09 extends A2UIModel {
     super({ version: "v0.9", ...options });
     this.version = "v0.9";
     assertExactlyOne(options, ["action", "error"], "A2UI v0.9 event type");
+  }
+
+  checkExactlyOne(): this {
+    assertExactlyOneGroupSet(this.modelDump(), [["action"], ["error"]], "A2UI v0.9 event type");
+    return this;
+  }
+
+  _check_exactly_one(): this {
+    return this.checkExactlyOne();
   }
 }
 
@@ -697,7 +733,21 @@ function assertExactlyOne(options: A2UIRecord, keys: readonly string[], label: s
   if (Object.keys(options).length === 0) {
     return;
   }
+  assertExactlyOneSet(options, keys, label);
+}
+
+function assertExactlyOneSet(options: A2UIRecord, keys: readonly string[], label: string): void {
   const count = keys.reduce((sum, key) => sum + (options[key] === undefined || options[key] === null ? 0 : 1), 0);
+  if (count !== 1) {
+    throw new Error(`Exactly one ${label} must be set, got ${String(count)}.`);
+  }
+}
+
+function assertExactlyOneGroupSet(options: A2UIRecord, groups: readonly (readonly string[])[], label: string): void {
+  const count = groups.reduce((sum, keys) => {
+    const present = keys.some((key) => options[key] !== undefined && options[key] !== null);
+    return sum + (present ? 1 : 0);
+  }, 0);
   if (count !== 1) {
     throw new Error(`Exactly one ${label} must be set, got ${String(count)}.`);
   }

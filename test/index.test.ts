@@ -17,6 +17,10 @@ import {
   A2UI_MIME_TYPE,
   A2UI_STANDARD_CATALOG_ID,
   A2UIServerExtension,
+  A2UIEvent,
+  A2UIEventV09,
+  A2UIMessage,
+  A2UIMessageV09,
   A2UIValidationError,
   A2UI_V09_BASIC_CATALOG_ID,
   SCHEMA_NAMES,
@@ -3300,6 +3304,20 @@ describe("a2a utilities", () => {
   });
 
   it("validates A2UI standard catalog components like upstream", () => {
+    expect(new A2UIMessage({
+      beginRendering: { surfaceId: "surface", root: "root" },
+    })._check_exactly_one()).toBeInstanceOf(A2UIMessage);
+    expect(new A2UIEvent({
+      userAction: {
+        name: "submit",
+        surfaceId: "surface",
+        sourceComponentId: "button",
+        timestamp: "2026-01-01T00:00:00.000Z",
+        context: {},
+      },
+    })._check_exactly_one()).toBeInstanceOf(A2UIEvent);
+    expect(() => new A2UIMessage()._check_exactly_one()).toThrow("Exactly one A2UI message type");
+
     expect(() => validate_a2ui_message({
       surfaceUpdate: {
         surfaceId: "surface",
@@ -3322,6 +3340,20 @@ describe("a2a utilities", () => {
   });
 
   it("validates A2UI v0.9 basic catalog components like upstream", () => {
+    expect(new A2UIMessageV09({
+      createSurface: { surfaceId: "surface", root: "root" },
+    })._check_exactly_one()).toBeInstanceOf(A2UIMessageV09);
+    expect(new A2UIEventV09({
+      action: {
+        name: "submit",
+        surfaceId: "surface",
+        sourceComponentId: "button",
+        timestamp: "2026-01-01T00:00:00.000Z",
+        context: {},
+      },
+    })._check_exactly_one()).toBeInstanceOf(A2UIEventV09);
+    expect(() => new A2UIEventV09()._check_exactly_one()).toThrow("Exactly one A2UI v0.9 event type");
+
     const unknownComponent = validate_a2ui_message_v09({
       version: "v0.9",
       updateComponents: {
@@ -4019,6 +4051,8 @@ describe("a2a utilities", () => {
     expect(client.failFast).toBe(false);
     expect(client.transport.preferred).toBe(A2ATransport.GRPC);
     expect(client.transport.supported).toEqual([A2ATransport.GRPC, A2ATransport.HTTP_JSON]);
+    expect(client._migrate_deprecated_transport_fields()).toBe(client);
+    expect(client._serialize_response_model({ name: "RemoteResponse" })).toBe("RemoteResponse");
     expect(new A2AClientConfig({ endpoint: "https://remote.example.com/a2a" }).updates).toBeInstanceOf(StreamingConfig);
     expect(server.endpoint).toBe("http://localhost:9000");
     expect(server.transport.preferred).toBe(A2ATransport.GRPC);
