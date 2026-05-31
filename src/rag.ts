@@ -486,7 +486,13 @@ export class VertexAIProvider extends BaseEmbeddingsProvider {
   readonly provider = "google-vertex";
 
   constructor(options: VertexAIProviderConfig = {}) {
-    super({ embeddingCallable: defaultEmbeddingCallable, ...options });
+    super({
+      embeddingCallable: defaultEmbeddingCallable,
+      model_name: "textembedding-gecko",
+      location: "us-central1",
+      task_type: "RETRIEVAL_DOCUMENT",
+      ...options,
+    });
   }
 }
 
@@ -576,7 +582,13 @@ export class SentenceTransformerProvider extends BaseEmbeddingsProvider {
   readonly provider = "sentence-transformer";
 
   constructor(options: SentenceTransformerProviderConfig = {}) {
-    super({ embeddingCallable: defaultEmbeddingCallable, ...options });
+    super({
+      embeddingCallable: defaultEmbeddingCallable,
+      model_name: "all-MiniLM-L6-v2",
+      device: "cpu",
+      normalize_embeddings: false,
+      ...options,
+    });
   }
 }
 
@@ -598,7 +610,13 @@ export class VoyageAIProvider extends BaseEmbeddingsProvider {
   readonly provider = "voyageai";
 
   constructor(options: VoyageAIProviderConfig = {}) {
-    super({ embeddingCallable: defaultEmbeddingCallable, ...options });
+    super({
+      embeddingCallable: defaultEmbeddingCallable,
+      model: "voyage-2",
+      truncation: true,
+      max_retries: 0,
+      ...options,
+    });
   }
 }
 

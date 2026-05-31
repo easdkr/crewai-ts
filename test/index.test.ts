@@ -353,6 +353,9 @@ import {
   GeminiCompletion,
   OpenAIProvider,
   OpenAICompletion,
+  SentenceTransformerProvider,
+  VertexAIProvider,
+  VoyageAIProvider,
   ResponsesAPIResult,
   EntraIdProvider,
   KeycloakProvider,
@@ -4618,6 +4621,9 @@ describe("RAG configuration and factories", () => {
       api_key: "az-test",
       deployment_id: "embed-deployment",
     });
+    const sentence = new SentenceTransformerProvider();
+    const voyage = new VoyageAIProvider({ api_key: "voyage-test" });
+    const vertex = new VertexAIProvider({ project_id: "gcp-project" });
 
     expect(openai).toMatchObject({
       provider: "openai",
@@ -4639,6 +4645,26 @@ describe("RAG configuration and factories", () => {
       api_version: "2024-02-01",
       model_name: "text-embedding-ada-002",
       deployment_id: "embed-deployment",
+    });
+    expect(sentence).toMatchObject({
+      provider: "sentence-transformer",
+      model_name: "all-MiniLM-L6-v2",
+      device: "cpu",
+      normalize_embeddings: false,
+    });
+    expect(voyage).toMatchObject({
+      provider: "voyageai",
+      api_key: "voyage-test",
+      model: "voyage-2",
+      truncation: true,
+      max_retries: 0,
+    });
+    expect(vertex).toMatchObject({
+      provider: "google-vertex",
+      project_id: "gcp-project",
+      model_name: "textembedding-gecko",
+      location: "us-central1",
+      task_type: "RETRIEVAL_DOCUMENT",
     });
   });
 });
