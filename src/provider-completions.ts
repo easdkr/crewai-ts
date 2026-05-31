@@ -222,6 +222,34 @@ export class AnthropicCompletion extends ConfiguredLLM {
     return this.applyToolSearch(tools);
   }
 
+  extractAnthropicTokenUsage(response: unknown): Record<string, number> {
+    return AnthropicCompletion.extractAnthropicTokenUsage(response);
+  }
+
+  _extract_anthropic_token_usage(response: unknown): Record<string, number> {
+    return this.extractAnthropicTokenUsage(response);
+  }
+
+  static extractAnthropicTokenUsage(response: unknown): Record<string, number> {
+    const usage = readObject(readObject(response).usage);
+    if (Object.keys(usage).length === 0) {
+      return { total_tokens: 0 };
+    }
+    const inputTokens = numberField(usage, "input_tokens");
+    const outputTokens = numberField(usage, "output_tokens");
+    return {
+      input_tokens: inputTokens,
+      output_tokens: outputTokens,
+      total_tokens: inputTokens + outputTokens,
+      cached_prompt_tokens: numberField(usage, "cache_read_input_tokens"),
+      cache_creation_tokens: numberField(usage, "cache_creation_input_tokens"),
+    };
+  }
+
+  static _extract_anthropic_token_usage(response: unknown): Record<string, number> {
+    return AnthropicCompletion.extractAnthropicTokenUsage(response);
+  }
+
   override supportsFunctionCalling(): boolean {
     return true;
   }

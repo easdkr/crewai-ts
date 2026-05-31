@@ -8930,6 +8930,25 @@ describe("LLM providers", () => {
     });
   });
 
+  it("extracts Anthropic token usage from SDK response shapes", () => {
+    expect(AnthropicCompletion._extract_anthropic_token_usage({
+      usage: {
+        input_tokens: 14,
+        output_tokens: 6,
+        cache_read_input_tokens: 4,
+        cache_creation_input_tokens: 3,
+      },
+    })).toEqual({
+      input_tokens: 14,
+      output_tokens: 6,
+      total_tokens: 20,
+      cached_prompt_tokens: 4,
+      cache_creation_tokens: 3,
+    });
+
+    expect(AnthropicCompletion._extract_anthropic_token_usage({})).toEqual({ total_tokens: 0 });
+  });
+
   it("prepares Bedrock Converse request bodies with tools and provider fields", () => {
     const search = new StructuredTool({
       name: "search docs",
