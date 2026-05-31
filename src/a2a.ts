@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 
 import { validateJwtToken } from "./auth.js";
 import {
+  A2AAgentCardFetchedEvent,
   A2AConnectionErrorEvent,
   A2AContentTypeNegotiatedEvent,
   A2APollingStartedEvent,
@@ -3615,15 +3616,73 @@ export async function aexecute_a2a_delegation(options: Record<string, unknown> |
   return execute_a2a_delegation(options, ...args);
 }
 
-export function fetch_agent_card(endpoint: string, _auth: unknown = null, _timeout = 30): Record<string, unknown> {
-  void _auth;
-  void _timeout;
-  return { url: endpoint, name: endpoint };
+export async function fetch_agent_card(endpoint: string, auth: unknown = null, timeout = 30): Promise<Record<string, unknown>> {
+  const start = Date.now();
+  const agentCardUrl = resolveAgentCardUrl(endpoint);
+  const headers = await prepareA2AAuthHeaders(auth);
+  const response = await fetch(agentCardUrl, {
+    method: "GET",
+    headers,
+    signal: AbortSignal.timeout(timeout * 1000),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to fetch A2A agent card: ${String(response.status)}`);
+  }
+  const agentCard = await response.json() as Record<string, unknown>;
+  crewaiEventBus.emit(null, new A2AAgentCardFetchedEvent({
+    endpoint,
+    a2a_agent_name: stringOrNull(agentCard.name),
+    agent_card: agentCard,
+    protocol_version: stringOrNull(agentCard.protocol_version),
+    provider: recordOrNullA2A(agentCard.provider),
+    cached: false,
+    fetch_time_ms: Date.now() - start,
+  }));
+  return agentCard;
 }
 
 export async function afetch_agent_card(endpoint: string, auth: unknown = null, timeout = 30): Promise<Record<string, unknown>> {
-  await Promise.resolve();
   return fetch_agent_card(endpoint, auth, timeout);
+}
+
+function resolveAgentCardUrl(endpoint: string): string {
+  if (endpoint.includes("/.well-known/agent-card.json")) {
+    return endpoint;
+  }
+  const parsed = new URL(endpoint);
+  if (parsed.pathname && parsed.pathname !== "/") {
+    return parsed.toString();
+  }
+  parsed.pathname = "/.well-known/agent-card.json";
+  return parsed.toString();
+}
+
+async function prepareA2AAuthHeaders(auth: unknown): Promise<Record<string, string>> {
+  if (!auth || typeof auth !== "object") {
+    return {};
+  }
+  const authLike = auth as {
+    apply_auth?: (client: unknown, headers: Record<string, string>) => unknown;
+    applyAuth?: (client: unknown, headers: Record<string, string>) => unknown;
+  };
+  const applyAuth = authLike.apply_auth ?? authLike.applyAuth;
+  if (!applyAuth) {
+    return {};
+  }
+  const headers: unknown = await applyAuth(null, {});
+  return typeof headers === "object" && headers !== null
+    ? Object.fromEntries(Object.entries(headers).map(([key, value]) => [key, String(value)]))
+    : {};
+}
+
+function stringOrNull(value: unknown): string | null {
+  return typeof value === "string" ? value : null;
+}
+
+function recordOrNullA2A(value: unknown): Record<string, unknown> | null {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
 }
 
 export function inject_a2a_server_methods(agent: unknown): unknown {

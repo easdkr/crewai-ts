@@ -454,6 +454,7 @@ import {
   getTaskFiles,
   getTriggeringEventId,
   fetchRequiredInputs,
+  fetch_agent_card,
   generateCrewChatInputs,
   generateCrewDescriptionWithAi,
   generateCrewToolSchema,
@@ -2905,6 +2906,35 @@ describe("a2a utilities", () => {
     expect(get_handler(new StreamingConfig())).toBe(StreamingHandler);
     expect(get_handler(new PollingConfig())).toBe(PollingHandler);
     expect(get_handler(new PushNotificationConfig({ url: "https://push.example.com/callback" }))).toBe(PushNotificationHandler);
+  });
+
+  it("fetches A2A agent cards from resolved well-known paths and emits events", async () => {
+    const events: A2AAgentCardFetchedEvent[] = [];
+    crewaiEventBus.on("a2a_agent_card_fetched", (_source, event) => {
+      events.push(event);
+    });
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({
+        name: "remote",
+        url: "https://remote.example.com/a2a",
+        protocol_version: "0.3.0",
+        provider: { organization: "Example" },
+      }),
+    } as Response);
+
+    const card = await fetch_agent_card("https://remote.example.com/a2a");
+
+    expect(fetchMock).toHaveBeenCalledWith("https://remote.example.com/a2a", expect.objectContaining({ method: "GET" }));
+    expect(card).toMatchObject({ name: "remote", protocol_version: "0.3.0" });
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      endpoint: "https://remote.example.com/a2a",
+      a2a_agent_name: "remote",
+      protocol_version: "0.3.0",
+      provider: { organization: "Example" },
+      cached: false,
+    });
   });
 
   it("models A2A client and server transport configuration with aliases", () => {
