@@ -129,6 +129,8 @@ import {
   OIDCAuth,
   OutputFormat,
   PDFKnowledgeSource,
+  PollingHandler,
+  PushNotificationHandler,
   MemoryQueryCompletedEvent,
   MemoryQueryFailedEvent,
   MemoryQueryStartedEvent,
@@ -3223,6 +3225,83 @@ describe("a2a utilities", () => {
       status: { state: A2ATaskState.failed },
       history: [{ role: "agent", parts: [{ root: { kind: "text", text: "failed detail" } }] }],
     }, "default")).toBe("failed detail");
+  });
+
+  it("executes A2A polling and push notification handlers", async () => {
+    async function* taskStream() {
+      await Promise.resolve();
+      yield [{ id: "task-42", context_id: "ctx-1", status: { state: A2ATaskState.working } }, null] as const;
+    }
+    const client = {
+      send_message: vi.fn(() => taskStream()),
+      get_task: vi.fn(async () => {
+        await Promise.resolve();
+        return {
+          id: "task-42",
+          context_id: "ctx-1",
+          status: { state: A2ATaskState.completed },
+          artifacts: [{ parts: [{ text: "polled result" }] }],
+        };
+      }),
+    };
+    const newMessages: Parameters<typeof PollingHandler.execute>[2] = [];
+
+    await expect(PollingHandler.execute(client, { role: "user", parts: [{ text: "go" }] }, newMessages, {
+      name: "remote",
+      url: "https://remote.example.com/a2a",
+    }, {
+      polling_interval: 0,
+      polling_timeout: 1,
+      max_polls: 2,
+    })).resolves.toMatchObject({
+      status: A2ATaskState.completed,
+      result: "polled result",
+      agent_card: {
+        name: "remote",
+        url: "https://remote.example.com/a2a",
+      },
+    });
+    expect(client.send_message).toHaveBeenCalledTimes(1);
+    expect(client.get_task).toHaveBeenCalledTimes(1);
+
+    async function* pushStream() {
+      await Promise.resolve();
+      yield [{ id: "task-43", context_id: "ctx-2", status: { state: A2ATaskState.working } }, null] as const;
+    }
+    const pushClient = { send_message: vi.fn(() => pushStream()) };
+    const resultStore = {
+      wait_for_result: vi.fn(async () => {
+        await Promise.resolve();
+        return {
+          id: "task-43",
+          context_id: "ctx-2",
+          status: { state: A2ATaskState.completed },
+          artifacts: [{ parts: [{ text: "push result" }] }],
+        };
+      }),
+    };
+
+    await expect(PushNotificationHandler.execute(pushClient, { role: "user", parts: [{ text: "go" }] }, [], {
+      name: "remote",
+      url: "https://remote.example.com/a2a",
+    }, {
+      config: { url: "https://app.example.com/callback" },
+      result_store: resultStore,
+      polling_timeout: 1,
+      polling_interval: 0,
+    })).resolves.toMatchObject({
+      status: A2ATaskState.completed,
+      result: "push result",
+    });
+    expect(resultStore.wait_for_result).toHaveBeenCalledWith("task-43", 1, 0);
+
+    await expect(PushNotificationHandler.execute(pushClient, { role: "user", parts: [] }, [], {
+      name: "remote",
+      url: "https://remote.example.com/a2a",
+    }, {})).resolves.toMatchObject({
+      status: A2ATaskState.failed,
+      error: "PushNotificationConfig is required for push notification handler",
+    });
   });
 });
 

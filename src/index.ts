@@ -81,11 +81,14 @@ export {
   PREVIOUS_A2A_CONVERSATION_TEMPLATE,
   PENDING_STATES,
   MAX_RESUBSCRIBE_ATTEMPTS,
+  PollingConfig,
+  PollingHandler,
   PollingHandlerKwargs,
   PollingHandlerType,
   ProtocolVersion,
   PushNotificationConfig,
   PushNotificationNotSupportedError,
+  PushNotificationHandler,
   PushNotificationHandlerKwargs,
   PushNotificationHandlerType,
   PushNotificationResultStore,
@@ -2567,22 +2570,6 @@ export class StreamingConfig {
 
   constructor(timeout: number | null = null) {
     this.timeout = timeout;
-  }
-}
-
-export class PushNotificationHandler {
-  readonly kind = "PushNotificationHandler";
-}
-
-export class PollingHandler {
-  readonly kind = "PollingHandler";
-}
-
-export class PollingConfig {
-  readonly interval: number;
-
-  constructor(interval = 2) {
-    this.interval = interval;
   }
 }
 

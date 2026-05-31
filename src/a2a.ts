@@ -3,6 +3,11 @@ import { readFileSync } from "node:fs";
 
 import { validateJwtToken } from "./auth.js";
 import {
+  A2AConnectionErrorEvent,
+  A2APollingStartedEvent,
+  A2APollingStatusEvent,
+  A2APushNotificationRegisteredEvent,
+  A2APushNotificationTimeoutEvent,
   A2ATransportNegotiatedEvent,
   crewaiEventBus,
 } from "./events.js";
@@ -704,10 +709,345 @@ export class StreamingHandler {
     return null;
   }
 }
+
+export type A2AUpdateClient = {
+  sendMessage?: (message: A2AMessageLike) => AsyncIterable<SendMessageEvent>;
+  send_message?: (message: A2AMessageLike) => AsyncIterable<SendMessageEvent>;
+  getTask?: (params: { id: string; historyLength?: number; history_length?: number }) => Promise<A2ATaskLike>;
+  get_task?: (params: { id: string; historyLength?: number; history_length?: number }) => Promise<A2ATaskLike>;
+};
+
+export class PollingHandler {
+  readonly kind = "PollingHandler";
+
+  static async execute(
+    client: A2AUpdateClient,
+    message: A2AMessageLike,
+    newMessages: A2AMessageLike[],
+    agentCard: A2AAgentCard,
+    kwargs: PollingHandlerKwargs = {},
+  ): Promise<A2ATaskStateResult> {
+    const pollingInterval = kwargs.polling_interval ?? kwargs.pollingInterval ?? 2;
+    const pollingTimeout = kwargs.polling_timeout ?? kwargs.pollingTimeout ?? 300;
+    const historyLength = kwargs.history_length ?? kwargs.historyLength ?? 100;
+    const maxPolls = kwargs.max_polls ?? kwargs.maxPolls ?? null;
+    const params = extractCommonParams({ ...kwargs, endpoint: kwargs.endpoint ?? agentCard.url });
+    const agentBranch = kwargs.agent_branch ?? kwargs.agentBranch;
+    let taskId = kwargs.task_id ?? kwargs.taskId ?? null;
+
+    try {
+      const resultOrTaskId = await sendMessageAndGetTaskId({
+        eventStream: getClientEventStream(client, message),
+        newMessages,
+        agentCard,
+        turnNumber: params.turn_number,
+        isMultiturn: params.is_multiturn,
+        agentRole: params.agent_role,
+      });
+      if (typeof resultOrTaskId !== "string") {
+        return resultOrTaskId;
+      }
+      taskId = resultOrTaskId;
+
+      crewaiEventBus.emit(agentBranch, new A2APollingStartedEvent({
+        task_id: taskId,
+        context_id: params.context_id,
+        polling_interval: pollingInterval,
+        endpoint: params.endpoint,
+        a2a_agent_name: params.a2a_agent_name,
+        from_task: params.from_task,
+        from_agent: params.from_agent,
+      }));
+
+      const finalTask = await pollTaskUntilComplete(client, {
+        taskId,
+        historyLength,
+        pollingInterval,
+        pollingTimeout,
+        maxPolls,
+        params,
+        agentBranch,
+        agentCard,
+      });
+      const result = processTaskState({
+        a2aTask: finalTask,
+        newMessages,
+        agentCard,
+        turnNumber: params.turn_number,
+        isMultiturn: params.is_multiturn,
+        agentRole: params.agent_role,
+        endpoint: params.endpoint,
+        a2aAgentName: params.a2a_agent_name,
+      });
+      return result ?? {
+        status: A2ATaskState.failed,
+        error: `Unexpected task state: ${finalTask.status?.state ?? "unknown"}`,
+        history: newMessages,
+      };
+    } catch (error) {
+      const errorMessage = error instanceof A2APollingTimeoutError
+        ? error.message
+        : `Unexpected error during polling: ${formatA2AError(error)}`;
+      newMessages.push(createA2AErrorMessage(errorMessage, params.context_id, taskId));
+      crewaiEventBus.emit(agentBranch, new A2AConnectionErrorEvent({
+        endpoint: params.endpoint,
+        error,
+        error_type: error instanceof A2APollingTimeoutError ? "polling_timeout" : "unexpected_error",
+        operation: "polling",
+        context_id: params.context_id,
+        task_id: taskId,
+        a2a_agent_name: params.a2a_agent_name,
+        from_task: params.from_task,
+        from_agent: params.from_agent,
+      }));
+      return {
+        status: A2ATaskState.failed,
+        error: errorMessage,
+        history: newMessages,
+      };
+    }
+  }
+}
+
+export class PushNotificationHandler {
+  readonly kind = "PushNotificationHandler";
+
+  static async execute(
+    client: A2AUpdateClient,
+    message: A2AMessageLike,
+    newMessages: A2AMessageLike[],
+    agentCard: A2AAgentCard,
+    kwargs: PushNotificationHandlerKwargs = {},
+  ): Promise<A2ATaskStateResult> {
+    const params = extractCommonParams({ ...kwargs, endpoint: kwargs.endpoint ?? agentCard.url });
+    const config = kwargs.config as { url?: string | URL } | null | undefined;
+    const resultStore = kwargs.result_store ?? kwargs.resultStore ?? null;
+    const pollingTimeout = kwargs.polling_timeout ?? kwargs.pollingTimeout ?? 300;
+    const pollingInterval = kwargs.polling_interval ?? kwargs.pollingInterval ?? 2;
+    const agentBranch = kwargs.agent_branch ?? kwargs.agentBranch;
+    let taskId = kwargs.task_id ?? kwargs.taskId ?? null;
+
+    if (!config) {
+      const error = "PushNotificationConfig is required for push notification handler";
+      emitPushConfigurationError(error, params, taskId);
+      return { status: A2ATaskState.failed, error, history: newMessages };
+    }
+    if (!resultStore) {
+      const error = "PushNotificationResultStore is required for push notification handler";
+      emitPushConfigurationError(error, params, taskId);
+      return { status: A2ATaskState.failed, error, history: newMessages };
+    }
+
+    try {
+      const resultOrTaskId = await sendMessageAndGetTaskId({
+        eventStream: getClientEventStream(client, message),
+        newMessages,
+        agentCard,
+        turnNumber: params.turn_number,
+        isMultiturn: params.is_multiturn,
+        agentRole: params.agent_role,
+      });
+      if (typeof resultOrTaskId !== "string") {
+        return resultOrTaskId;
+      }
+      taskId = resultOrTaskId;
+
+      crewaiEventBus.emit(agentBranch, new A2APushNotificationRegisteredEvent({
+        task_id: taskId,
+        context_id: params.context_id,
+        callback_url: config.url?.toString() ?? "",
+        endpoint: params.endpoint,
+        a2a_agent_name: params.a2a_agent_name,
+        from_task: params.from_task,
+        from_agent: params.from_agent,
+      }));
+
+      const finalTask = await waitForPushResult(resultStore, taskId, pollingTimeout, pollingInterval);
+      if (!finalTask) {
+        crewaiEventBus.emit(agentBranch, new A2APushNotificationTimeoutEvent({
+          task_id: taskId,
+          context_id: params.context_id,
+          timeout_seconds: pollingTimeout,
+          endpoint: params.endpoint,
+          a2a_agent_name: params.a2a_agent_name,
+          from_task: params.from_task,
+          from_agent: params.from_agent,
+        }));
+        return {
+          status: A2ATaskState.failed,
+          error: `Push notification timeout after ${String(pollingTimeout)}s`,
+          history: newMessages,
+        };
+      }
+
+      const result = processTaskState({
+        a2aTask: finalTask,
+        newMessages,
+        agentCard,
+        turnNumber: params.turn_number,
+        isMultiturn: params.is_multiturn,
+        agentRole: params.agent_role,
+        endpoint: params.endpoint,
+        a2aAgentName: params.a2a_agent_name,
+      });
+      return result ?? {
+        status: A2ATaskState.failed,
+        error: `Unexpected task state: ${finalTask.status?.state ?? "unknown"}`,
+        history: newMessages,
+      };
+    } catch (error) {
+      const errorMessage = `Unexpected error during push notification: ${formatA2AError(error)}`;
+      newMessages.push(createA2AErrorMessage(errorMessage, params.context_id, taskId));
+      crewaiEventBus.emit(agentBranch, new A2AConnectionErrorEvent({
+        endpoint: params.endpoint,
+        error,
+        error_type: "unexpected_error",
+        operation: "push_notification",
+        context_id: params.context_id,
+        task_id: taskId,
+        a2a_agent_name: params.a2a_agent_name,
+        from_task: params.from_task,
+        from_agent: params.from_agent,
+      }));
+      return {
+        status: A2ATaskState.failed,
+        error: errorMessage,
+        history: newMessages,
+      };
+    }
+  }
+}
+
+export class PollingConfig {
+  readonly interval: number;
+
+  constructor(interval = 2) {
+    this.interval = interval;
+  }
+}
+
 export type A2AStreamingClient = {
   get_task?: (...args: readonly unknown[]) => Promise<A2ATaskLike>;
   resubscribe?: (...args: readonly unknown[]) => AsyncIterable<SendMessageEvent>;
 };
+
+function getClientEventStream(client: A2AUpdateClient, message: A2AMessageLike): AsyncIterable<SendMessageEvent> {
+  if (client.send_message) {
+    return client.send_message(message);
+  }
+  if (client.sendMessage) {
+    return client.sendMessage(message);
+  }
+  throw new Error("A2A update client does not provide send_message.");
+}
+
+async function pollTaskUntilComplete(
+  client: A2AUpdateClient,
+  options: {
+    taskId: string;
+    historyLength: number;
+    pollingInterval: number;
+    pollingTimeout: number;
+    maxPolls: number | null;
+    params: CommonParams;
+    agentBranch: unknown;
+    agentCard: A2AAgentCard;
+  },
+): Promise<A2ATaskLike> {
+  const startedAt = Date.now();
+  let pollCount = 0;
+  for (;;) {
+    pollCount += 1;
+    const task = await getClientTask(client, options.taskId, options.historyLength);
+    const state = normalizeTaskState(task.status?.state);
+    const elapsedSeconds = (Date.now() - startedAt) / 1000;
+    crewaiEventBus.emit(options.agentBranch, new A2APollingStatusEvent({
+      task_id: options.taskId,
+      context_id: task.context_id ?? task.contextId ?? options.params.context_id,
+      state: state ?? task.status?.state ?? "unknown",
+      elapsed_seconds: elapsedSeconds,
+      poll_count: pollCount,
+      endpoint: options.params.endpoint,
+      a2a_agent_name: options.params.a2a_agent_name,
+      from_task: options.params.from_task,
+      from_agent: options.params.from_agent,
+    }));
+
+    if (state && (TERMINAL_STATES.has(state) || ACTIONABLE_STATES.has(state))) {
+      return task;
+    }
+    if (elapsedSeconds > options.pollingTimeout) {
+      throw new A2APollingTimeoutError(`Polling timeout after ${String(options.pollingTimeout)}s (${String(pollCount)} polls)`);
+    }
+    if (options.maxPolls !== null && pollCount >= options.maxPolls) {
+      throw new A2APollingTimeoutError(`Max polls (${String(options.maxPolls)}) exceeded after ${elapsedSeconds.toFixed(1)}s`);
+    }
+    await sleepSeconds(options.pollingInterval);
+  }
+}
+
+async function getClientTask(client: A2AUpdateClient, taskId: string, historyLength: number): Promise<A2ATaskLike> {
+  const params = { id: taskId, historyLength, history_length: historyLength };
+  if (client.get_task) {
+    return await client.get_task(params);
+  }
+  if (client.getTask) {
+    return await client.getTask(params);
+  }
+  throw new Error("A2A update client does not provide get_task.");
+}
+
+async function waitForPushResult(
+  store: PushNotificationResultStore,
+  taskId: string,
+  timeout: number,
+  pollInterval: number,
+): Promise<A2ATaskLike | null> {
+  const result = store.wait_for_result
+    ? await store.wait_for_result(taskId, timeout, pollInterval)
+    : store.waitForResult
+      ? await store.waitForResult(taskId, timeout, pollInterval)
+      : null;
+  return isA2ATaskLike(result) ? result : null;
+}
+
+function emitPushConfigurationError(error: string, params: CommonParams, taskId: string | null): void {
+  crewaiEventBus.emit(null, new A2AConnectionErrorEvent({
+    endpoint: params.endpoint,
+    error,
+    error_type: "configuration_error",
+    operation: "push_notification",
+    context_id: params.context_id,
+    task_id: taskId,
+    a2a_agent_name: params.a2a_agent_name,
+    from_task: params.from_task,
+    from_agent: params.from_agent,
+  }));
+}
+
+function createA2AErrorMessage(error: string, contextId: string | null, taskId: string | null): A2AMessageLike {
+  return {
+    role: "agent",
+    message_id: randomId(),
+    parts: [{ text: error }],
+    context_id: contextId,
+    task_id: taskId,
+  };
+}
+
+function isA2ATaskLike(value: unknown): value is A2ATaskLike {
+  return Boolean(value && typeof value === "object" && "status" in value);
+}
+
+function formatA2AError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+async function sleepSeconds(seconds: number): Promise<void> {
+  await new Promise((resolve) => {
+    setTimeout(resolve, Math.max(0, seconds) * 1000);
+  });
+}
 export type A2AHeaders = Record<string, string>;
 export type APIKeyLocation = "header" | "query" | "cookie";
 type A2ARequestLike = { url: string | URL };
