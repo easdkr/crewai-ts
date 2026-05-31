@@ -53,6 +53,9 @@ import {
   KnowledgeSearchQueryFailedEvent,
   LLMGuardrailCompletedEvent,
   LLMGuardrailStartedEvent,
+  MemoryRetrievalCompletedEvent,
+  MemoryRetrievalFailedEvent,
+  MemoryRetrievalStartedEvent,
   crewaiEventBus,
 } from "./events.js";
 import { Converter, type StructuredModel } from "./converter.js";
@@ -813,6 +816,91 @@ export class Agent {
 
   async _aexecute_with_timeout(task_prompt: string, task: unknown, timeout: number): Promise<unknown> {
     return await this.aexecuteWithTimeout(task_prompt, task, timeout);
+  }
+
+  retrieveMemoryContext(task: unknown, taskPrompt: string): string {
+    if (!this.isAnyAvailableMemory()) {
+      return taskPrompt;
+    }
+    const taskId = stringRecordValue(task, "id");
+    const startedAt = Date.now();
+    crewaiEventBus.emit(this, new MemoryRetrievalStartedEvent({ task_id: taskId }));
+    try {
+      const crewPrivateMemory = readRecordValue(this.crew, "_memory") as Memory | MemoryScope | null;
+      const crewMemory = readRecordValue(this.crew, "memory") as Memory | MemoryScope | null;
+      const memory = this.memory ?? crewPrivateMemory ?? crewMemory ?? null;
+      const query = stringRecordValue(task, "description") ?? taskPrompt;
+      const matches = memory?.recall(query, { limit: 5 }) ?? [];
+      const memoryContent = matches.length > 0
+        ? `Relevant memories:\n${matches.map((match) => match.format()).join("\n")}`
+        : "";
+      crewaiEventBus.emit(this, new MemoryRetrievalCompletedEvent({
+        task_id: taskId,
+        memory_content: memoryContent,
+        retrieval_time_ms: Date.now() - startedAt,
+      }));
+      return memoryContent
+        ? [
+            taskPrompt,
+            "# Memories from past conversations:",
+            memoryContent,
+            "IMPORTANT: The memories above are an automatic selection and may be INCOMPLETE. If the task involves counting, listing, or summing items, use the Search memory tool with several different queries before answering.",
+          ].join("\n\n")
+        : taskPrompt;
+    } catch (error) {
+      crewaiEventBus.emit(this, new MemoryRetrievalFailedEvent({
+        task_id: taskId,
+        error,
+      }));
+      return taskPrompt;
+    }
+  }
+
+  _retrieve_memory_context(task: unknown, task_prompt: string): string {
+    return this.retrieveMemoryContext(task, task_prompt);
+  }
+
+  finalizeTaskPrompt(taskPrompt: string, _tools: readonly Tool[] | null, _task: unknown): string {
+    void _tools;
+    void _task;
+    return this._use_trained_data(this._training_handler(taskPrompt));
+  }
+
+  _finalize_task_prompt(task_prompt: string, tools: readonly Tool[] | null, task: unknown): string {
+    return this.finalizeTaskPrompt(task_prompt, tools, task);
+  }
+
+  async finalizeTaskExecution(task: unknown, result: unknown): Promise<unknown> {
+    const output = typeof result === "string" ? result : stringifyAgentGuardrailValue(result);
+    crewaiEventBus.emit(this, new AgentExecutionCompletedEvent({
+      agent: this,
+      task,
+      output,
+    }));
+    await this.cleanupMcpClients();
+    return result;
+  }
+
+  async _finalize_task_execution(task: unknown, result: unknown): Promise<unknown> {
+    return await this.finalizeTaskExecution(task, result);
+  }
+
+  checkExecutionError(error: unknown, task: unknown): void {
+    const current = readRecordValue(this, "_times_executed");
+    const next = (typeof current === "number" ? current : 0) + 1;
+    (this as unknown as { _times_executed: number })._times_executed = next;
+    if (next > this.maxRetryLimit || isNonRetryableExecutionError(error)) {
+      crewaiEventBus.emit(this, new AgentExecutionErrorEvent({
+        agent: this,
+        task,
+        error,
+      }));
+      throw error;
+    }
+  }
+
+  _check_execution_error(error: unknown, task: unknown): void {
+    this.checkExecutionError(error, task);
   }
 
   private executorPayload(taskPrompt: string, task: unknown): Record<string, unknown> {
@@ -1904,6 +1992,20 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function readRecordValue(value: unknown, key: string): unknown {
   return isRecord(value) ? value[key] : undefined;
+}
+
+function stringRecordValue(value: unknown, key: string): string | null {
+  const field = readRecordValue(value, key);
+  if (typeof field === "string") {
+    return field;
+  }
+  if (field === undefined || field === null) {
+    return null;
+  }
+  if (typeof field === "number" || typeof field === "boolean" || typeof field === "bigint") {
+    return field.toString();
+  }
+  return JSON.stringify(field);
 }
 
 function extractExecutorOutput(result: unknown): unknown {

@@ -7605,6 +7605,53 @@ describe("core crew runtime", () => {
       .rejects.toThrow("Task 'Executor task' execution timed out after 0.001 seconds");
   });
 
+  it("exposes agent task finalization and memory helper methods", async () => {
+    const events: CrewAIEvent[] = [];
+    crewaiEventBus.on("memory_retrieval_started", (_source, event) => {
+      events.push(event);
+    });
+    crewaiEventBus.on("memory_retrieval_completed", (_source, event) => {
+      events.push(event);
+    });
+    crewaiEventBus.on("agent_execution_completed", (_source, event) => {
+      events.push(event);
+    });
+    crewaiEventBus.on("agent_execution_error", (_source, event) => {
+      events.push(event);
+    });
+    const memory = new Memory();
+    memory.remember("Executor task should mention CrewAI memory.");
+    const agentInstance = new Agent({
+      role: "Researcher",
+      goal: "Use memory",
+      backstory: "Careful analyst",
+      memory,
+      maxRetryLimit: 0,
+    });
+    const taskInstance = new Task({
+      id: "memory-task",
+      description: "Executor task",
+      expectedOutput: "Done",
+    });
+
+    const prompt = agentInstance._retrieve_memory_context(taskInstance, "Base prompt");
+
+    expect(prompt).toContain("Relevant memories:");
+    expect(prompt).toContain("CrewAI memory");
+    expect(agentInstance._finalize_task_prompt("Task prompt", [], taskInstance)).toBe("Task prompt");
+    await expect(agentInstance._finalize_task_execution(taskInstance, { answer: "done" }))
+      .resolves.toEqual({ answer: "done" });
+    expect(() => {
+      agentInstance._check_execution_error(new Error("boom"), taskInstance);
+    }).toThrow("boom");
+    expect(events.map((event) => event.type)).toEqual([
+      "memory_retrieval_started",
+      "memory_retrieval_completed",
+      "agent_execution_completed",
+      "agent_execution_error",
+    ]);
+  });
+
   it("executes OpenAI and LangGraph agent adapters through upstream public methods", async () => {
     const events: string[] = [];
     crewaiEventBus.on("agent_execution_started", (_source, event) => {
