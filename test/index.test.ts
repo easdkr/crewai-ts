@@ -16571,6 +16571,30 @@ describe("global hooks", () => {
     });
   });
 
+  it("exposes BaseInterceptor pydantic schema compatibility hooks", () => {
+    class TestInterceptor extends BaseInterceptor {
+      on_outbound(message: unknown): unknown {
+        return message;
+      }
+
+      on_inbound(message: unknown): unknown {
+        return message;
+      }
+    }
+
+    const schema = BaseInterceptor.__get_pydantic_core_schema__();
+    expect(schema.type).toBe("plain-validator");
+    expect(typeof schema.validator).toBe("function");
+    expect(schema.serialization).toEqual({ type: "identity" });
+    expect(schema).toEqual({
+      type: "plain-validator",
+      validator: schema.validator,
+      serialization: { type: "identity" },
+    });
+    expect(BaseInterceptor.validate_interceptor(new TestInterceptor())).toBeInstanceOf(TestInterceptor);
+    expect(() => BaseInterceptor.validate_interceptor({})).toThrow("Expected BaseInterceptor instance");
+  });
+
   it("exposes upstream callable aliases on filtered hook wrappers", () => {
     const llmContext = new LLMCallHookContext({ messages: [{ role: "user", content: "hello" }] });
     const toolContext = new ToolCallHookContext({

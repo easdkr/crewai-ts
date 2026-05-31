@@ -106,6 +106,30 @@ export abstract class BaseInterceptor<TOutbound = unknown, TInbound = unknown> {
   abstract on_outbound(message: TOutbound): TOutbound;
   abstract on_inbound(message: TInbound): TInbound;
 
+  static __get_pydantic_core_schema__(): {
+    type: "plain-validator";
+    validator: (value: unknown) => BaseInterceptor;
+    serialization: { type: "identity" };
+  } {
+    return {
+      type: "plain-validator",
+      validator: (value: unknown) => this.validate_interceptor(value),
+      serialization: { type: "identity" },
+    };
+  }
+
+  static validateInterceptor(value: unknown): BaseInterceptor {
+    if (!(value instanceof BaseInterceptor)) {
+      const typeName = value === null ? "null" : Array.isArray(value) ? "Array" : typeof value === "object" ? value.constructor.name : typeof value;
+      throw new Error(`Expected BaseInterceptor instance, got ${typeName}`);
+    }
+    return value;
+  }
+
+  static validate_interceptor(value: unknown): BaseInterceptor {
+    return this.validateInterceptor(value);
+  }
+
   async aon_outbound(message: TOutbound): Promise<TOutbound> {
     await Promise.resolve();
     return this.on_outbound(message);
