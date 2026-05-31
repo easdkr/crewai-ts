@@ -70,6 +70,7 @@ When more goal budget is available, continue from the behavioral parity audits b
   - LLM-backed `GoalAlignmentEvaluator` and `SemanticQualityEvaluator` with upstream-style prompts and JSON score parsing
   - `EvaluationDisplayFormatter` aggregation helpers for per-agent metric averages, feedback summaries, and iteration display text
   - `AgentEvaluator` aggregation now reuses display formatter logic and emits started/completed/failed evaluation lifecycle events
+  - `EvaluationTraceCallback` now subscribes to event bus hooks for agent/lite-agent execution, tool success/error, validation errors, and LLM call traces
 
 1. Storage backends
    - `memory/storage/backend.py`
@@ -110,7 +111,7 @@ When more goal budget is available, continue from the behavioral parity audits b
 6. Evaluation and tracing listeners
    - Agent evaluator now has behavior-bearing display aggregation and lifecycle event helper methods.
    - Goal-alignment and semantic-quality evaluator placeholders have been replaced with LLM-backed evaluators.
-   - Evaluation trace callback listener hooks.
+   - Evaluation trace callback now records event-bus-driven agent/lite-agent traces, tool uses, tool errors, validation errors, LLM calls, and final output.
    - Telemetry span methods are mostly compatibility placeholders and should be audited.
    - Separate no-op compatibility shims from behavior-bearing event hooks in tests, so placeholders stay intentional.
 

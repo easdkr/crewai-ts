@@ -193,6 +193,7 @@ import {
   ToolFilterContext,
   ToolUsageErrorEvent,
   ToolUsageFinishedEvent,
+  ToolValidateInputErrorEvent,
   TextFileKnowledgeSource,
   ToolUsageStartedEvent,
   ToolUsageLimitExceededError,
@@ -201,6 +202,7 @@ import {
   ToolsHandler,
   GoalAlignmentEvaluator,
   EvaluationDisplayFormatter,
+  create_evaluation_callbacks,
   ToolSelectionEvaluator,
   __version__,
   afterLlmCall,
@@ -3142,6 +3144,80 @@ describe("evaluator utilities", () => {
       offCompleted();
       offFailed();
     }
+  });
+
+  it("collects evaluation traces from event bus listener hooks", () => {
+    const callback = create_evaluation_callbacks();
+    const agent = { id: "agent-1", role: "Researcher", goal: "Find facts" };
+    const task = { id: "task-1", description: "Summarize CrewAI" };
+
+    crewaiEventBus.emit(null, new AgentExecutionStartedEvent({
+      agent,
+      task,
+      tools: [{ name: "search" }],
+      taskPrompt: "Summarize CrewAI",
+    }));
+    crewaiEventBus.emit(null, new LLMCallStartedEvent({
+      messages: [{ role: "user", content: "Summarize CrewAI" }],
+      tools: [{ name: "search" }],
+      call_id: "call-1",
+      model: "demo/model",
+    }));
+    crewaiEventBus.emit(null, new LLMCallCompletedEvent({
+      messages: [{ role: "user", content: "Summarize CrewAI" }],
+      response: { text: "Need search", usage: { total_tokens: 7 } },
+      usage: { total_tokens: 7 },
+      call_type: LLMCallType.LLM_CALL,
+      call_id: "call-1",
+      model: "demo/model",
+    }));
+    crewaiEventBus.emit(null, new ToolUsageFinishedEvent({
+      toolName: "Search",
+      toolArgs: { query: "CrewAI" },
+      startedAt: new Date("2026-01-01T00:00:00.000Z"),
+      output: "result",
+    }));
+    crewaiEventBus.emit(null, new ToolValidateInputErrorEvent({
+      toolName: "Search",
+      toolArgs: "{bad json",
+      error: "invalid input",
+    }));
+    crewaiEventBus.emit(null, new AgentExecutionCompletedEvent({
+      agent,
+      task,
+      output: "final summary",
+    }));
+
+    const trace = callback.get_trace("agent-1", "task-1");
+
+    expect(trace).toMatchObject({
+      agent_id: "agent-1",
+      task_id: "task-1",
+      final_output: "final summary",
+    });
+    expect(trace.tool_uses).toEqual([
+      expect.objectContaining({
+        tool: "Search",
+        args: { query: "CrewAI" },
+        result: "result",
+        success: true,
+      }),
+      expect.objectContaining({
+        tool: "Search",
+        args: "{bad json",
+        result: "invalid input",
+        success: false,
+        error: true,
+        error_type: "validation_error",
+      }),
+    ]);
+    expect(trace.llm_calls).toEqual([
+      expect.objectContaining({
+        messages: [{ role: "user", content: "Summarize CrewAI" }],
+        response: { text: "Need search", usage: { total_tokens: 7 } },
+        total_tokens: 7,
+      }),
+    ]);
   });
 
   it("evaluates task output into structured quality suggestions and emits events", async () => {

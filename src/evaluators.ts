@@ -7,6 +7,7 @@ import {
   CrewTestResultEvent,
   TaskEvaluationEvent,
   crewaiEventBus,
+  type EventBus,
 } from "./events.js";
 import { I18N_DEFAULT } from "./i18n.js";
 import { createLLMClient, resolveLLMProvider, type LLMClient } from "./llm.js";
@@ -596,6 +597,112 @@ export class EvaluationTraceCallback {
   readonly traces: Record<string, Record<string, unknown>> = {};
   current_agent_id: string | null = null;
   current_task_id: string | null = null;
+  current_llm_call: Record<string, unknown> = {};
+  private unsubscribeHandlers: Array<() => void> = [];
+
+  setupListeners(eventBus: EventBus = crewaiEventBus): void {
+    this.disposeListeners();
+    this.unsubscribeHandlers = [
+      eventBus.on("agent_execution_started", (_source, event) => {
+        this.on_agent_start(event.agent, event.task);
+      }),
+      eventBus.on("lite_agent_execution_started", (_source, event) => {
+        this.on_lite_agent_start(event.agentInfo);
+      }),
+      eventBus.on("agent_execution_completed", (_source, event) => {
+        this.on_agent_finish(event.agent, event.task, event.output);
+      }),
+      eventBus.on("lite_agent_execution_completed", (_source, event) => {
+        this.on_lite_agent_finish(event.output);
+      }),
+      eventBus.on("tool_usage_finished", (_source, event) => {
+        this.on_tool_use(event.toolName, event.toolArgs, event.output, { success: true });
+      }),
+      eventBus.on("tool_usage_error", (_source, event) => {
+        this.on_tool_use(event.toolName, event.toolArgs, event.error, { success: false, error_type: "usage_error" });
+      }),
+      eventBus.on("tool_execution_error", (_source, event) => {
+        this.on_tool_use(event.tool_name, event.tool_args, event.error, { success: false, error_type: "execution_error" });
+      }),
+      eventBus.on("tool_selection_error", (_source, event) => {
+        this.on_tool_use(event.toolName, event.toolArgs, event.error, { success: false, error_type: "selection_error" });
+      }),
+      eventBus.on("tool_validate_input_error", (_source, event) => {
+        this.on_tool_use(event.toolName, event.toolArgs, event.error, { success: false, error_type: "validation_error" });
+      }),
+      eventBus.on("llm_call_started", (_source, event) => {
+        this.on_llm_call_start(event.messages, event.tools);
+      }),
+      eventBus.on("llm_call_completed", (_source, event) => {
+        this.on_llm_call_end(event.messages, event.response, event.usage);
+      }),
+    ];
+  }
+
+  setup_listeners(eventBus: EventBus = crewaiEventBus): void {
+    this.setupListeners(eventBus);
+  }
+
+  disposeListeners(): void {
+    for (const unsubscribe of this.unsubscribeHandlers) {
+      unsubscribe();
+    }
+    this.unsubscribeHandlers = [];
+  }
+
+  dispose_listeners(): void {
+    this.disposeListeners();
+  }
+
+  on_agent_start(agent: unknown, task: unknown): void {
+    const agentId = stringifyEvaluationValue((agent as { id?: unknown }).id ?? "");
+    const taskId = stringifyEvaluationValue((task as { id?: unknown }).id ?? "");
+    this.current_agent_id = agentId;
+    this.current_task_id = taskId;
+    this.initTrace(`${agentId}_${taskId}`, {
+      agent_id: agentId,
+      task_id: taskId,
+      tool_uses: [],
+      llm_calls: [],
+      start_time: new Date(),
+      final_output: null,
+    });
+  }
+
+  on_lite_agent_start(agentInfo: Record<string, unknown>): void {
+    const agentId = stringifyEvaluationValue(agentInfo.id ?? "");
+    this.current_agent_id = agentId;
+    this.current_task_id = "lite_task";
+    this.initTrace(`${agentId}_lite_task`, {
+      agent_id: agentId,
+      task_id: "lite_task",
+      tool_uses: [],
+      llm_calls: [],
+      start_time: new Date(),
+      final_output: null,
+    });
+  }
+
+  on_agent_finish(agent: unknown, task: unknown, output: unknown): void {
+    const agentId = stringifyEvaluationValue((agent as { id?: unknown }).id ?? this.current_agent_id ?? "");
+    const taskId = stringifyEvaluationValue((task as { id?: unknown }).id ?? this.current_task_id ?? "");
+    const trace = this.traces[`${agentId}_${taskId}`];
+    if (trace) {
+      trace.final_output = output;
+      trace.end_time = new Date();
+    }
+    this.resetCurrent();
+  }
+
+  on_lite_agent_finish(output: unknown): void {
+    const key = `${this.current_agent_id ?? ""}_lite_task`;
+    const trace = this.traces[key];
+    if (trace) {
+      trace.final_output = output;
+      trace.end_time = new Date();
+    }
+    this.resetCurrent();
+  }
 
   get_trace(agent_id: string, task_id: string): Record<string, unknown> {
     return this.traces[`${agent_id}_${task_id}`] ?? {};
@@ -605,15 +712,74 @@ export class EvaluationTraceCallback {
     const key = `${this.current_agent_id ?? ""}_${this.current_task_id ?? ""}`;
     const trace = this.traces[key] ?? { tool_uses: [] };
     const uses = Array.isArray(trace.tool_uses) ? trace.tool_uses : [];
-    uses.push({ tool, args, result, success: options.success ?? true, error_type: options.error_type ?? null });
+    uses.push({
+      tool,
+      args,
+      result,
+      success: options.success ?? true,
+      ...(options.success === false && options.error_type ? { error: true, error_type: options.error_type } : { error_type: options.error_type ?? null }),
+    });
     trace.tool_uses = uses;
     this.traces[key] = trace;
+  }
+
+  on_llm_call_start(messages: unknown, tools: readonly Record<string, unknown>[] | null = null): void {
+    if (!this.current_agent_id || !this.current_task_id) {
+      return;
+    }
+    const key = `${this.current_agent_id}_${this.current_task_id}`;
+    if (!this.traces[key]) {
+      return;
+    }
+    this.current_llm_call = {
+      messages,
+      tools,
+      start_time: new Date(),
+      response: null,
+      end_time: null,
+    };
+  }
+
+  on_llm_call_end(messages: unknown, response: unknown, usage: Record<string, unknown> | null = null): void {
+    if (!this.current_agent_id || !this.current_task_id) {
+      return;
+    }
+    const key = `${this.current_agent_id}_${this.current_task_id}`;
+    const trace = this.traces[key];
+    if (!trace) {
+      return;
+    }
+    const calls = Array.isArray(trace.llm_calls) ? trace.llm_calls : [];
+    const now = new Date();
+    const responseUsage = response && typeof response === "object" && "usage" in response
+      ? (response as { usage?: unknown }).usage
+      : null;
+    const usageRecord = asNullableRecord(usage) ?? asNullableRecord(responseUsage);
+    calls.push({
+      messages,
+      response,
+      start_time: this.current_llm_call.start_time ?? now,
+      end_time: now,
+      total_tokens: toNumberOrZero(usageRecord?.total_tokens ?? usageRecord?.totalTokens),
+    });
+    trace.llm_calls = calls;
+    this.current_llm_call = {};
+  }
+
+  private initTrace(key: string, trace: Record<string, unknown>): void {
+    this.traces[key] = trace;
+  }
+
+  private resetCurrent(): void {
+    this.current_agent_id = null;
+    this.current_task_id = null;
   }
 }
 
 const evaluationTraceCallback = new EvaluationTraceCallback();
 
 export function create_evaluation_callbacks(): EvaluationTraceCallback {
+  evaluationTraceCallback.setupListeners(crewaiEventBus);
   return evaluationTraceCallback;
 }
 
@@ -1212,6 +1378,10 @@ function asRecord(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
+function asNullableRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
+}
+
 function toStringList(value: unknown): string[] {
   return Array.isArray(value) ? value.map((entry) => String(entry)) : [];
 }
@@ -1222,6 +1392,11 @@ function toNumber(value: unknown): number {
     throw new Error(`Expected numeric quality value, got ${String(value)}.`);
   }
   return numberValue;
+}
+
+function toNumberOrZero(value: unknown): number {
+  const numberValue = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(numberValue) ? numberValue : 0;
 }
 
 function stringifyEvaluationValue(value: unknown): string {
