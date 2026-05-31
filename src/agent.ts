@@ -65,6 +65,8 @@ import type { Memory, MemoryScope } from "./memory.js";
 import { renderInputFiles, withReadFileTool, type InputFiles } from "./input-files.js";
 import { Skill, formatSkillContext } from "./skills.js";
 import type { EmbedderConfig } from "./rag.js";
+import { CREWAI_TRAINED_AGENTS_FILE_ENV, TRAINED_AGENTS_DATA_FILE, TRAINING_DATA_FILE } from "./settings.js";
+import { CrewTrainingHandler } from "./training-handler.js";
 
 export type AgentGuardrailResult =
   | readonly [boolean, unknown]
@@ -726,6 +728,39 @@ export class Agent {
       return null;
     }
     return this.getOutputConverter(llm, text, model, instructions);
+  }
+
+  _training_handler(taskPrompt: string): string {
+    const data = new CrewTrainingHandler(TRAINING_DATA_FILE).load();
+    if (!isRecord(data)) {
+      return taskPrompt;
+    }
+    const idValue = readRecordValue(this, "id");
+    const agentTraining = data[typeof idValue === "string" || typeof idValue === "number" ? String(idValue) : this.key];
+    if (!isRecord(agentTraining)) {
+      return taskPrompt;
+    }
+    const feedbacks = Object.values(agentTraining)
+      .map((entry) => isRecord(entry) ? entry.human_feedback : null)
+      .filter((feedback): feedback is string => typeof feedback === "string" && feedback.length > 0);
+    return feedbacks.length > 0
+      ? `${taskPrompt}\n\nYou MUST follow these instructions: \n ${feedbacks.join("\n - ")}`
+      : taskPrompt;
+  }
+
+  _use_trained_data(taskPrompt: string): string {
+    const trainedFile = process.env[CREWAI_TRAINED_AGENTS_FILE_ENV] ?? TRAINED_AGENTS_DATA_FILE;
+    const data = new CrewTrainingHandler(trainedFile).load();
+    if (!isRecord(data)) {
+      return taskPrompt;
+    }
+    const roleTraining = data[this.role];
+    const suggestions = isRecord(roleTraining) && Array.isArray(roleTraining.suggestions)
+      ? roleTraining.suggestions.filter((suggestion): suggestion is string => typeof suggestion === "string" && suggestion.length > 0)
+      : [];
+    return suggestions.length > 0
+      ? `${taskPrompt}\n\nYou MUST follow these instructions: \n - ${suggestions.join("\n - ")}`
+      : taskPrompt;
   }
 
   createAgentExecutor(): unknown {
@@ -1636,6 +1671,14 @@ function isNonRetryableExecutionError(error: unknown): boolean {
     || error instanceof ToolUsageLimitExceededError
     || error instanceof AgentGuardrailError
     || error instanceof AgentExecutionTimeoutError;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function readRecordValue(value: unknown, key: string): unknown {
+  return isRecord(value) ? value[key] : undefined;
 }
 
 export class AgentGuardrailError extends Error {

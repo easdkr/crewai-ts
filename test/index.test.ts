@@ -2,7 +2,7 @@ import { generateKeyPairSync, sign, type KeyObject } from "node:crypto";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { gzipSync } from "node:zlib";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -7417,6 +7417,49 @@ describe("core crew runtime", () => {
     });
     expect(Agent.get_output_converter({ call: () => "converted" }, "raw", { name: "Output" }, "Convert"))
       .toBeInstanceOf(Converter);
+
+    try {
+      writeFileSync("training_data.pkl", JSON.stringify({
+        [agentInstance.key]: {
+          "0": { human_feedback: "Prefer concise answers" },
+          "1": { human_feedback: "Mention source constraints" },
+        },
+      }), "utf8");
+      expect(agentInstance._training_handler("Task prompt")).toContain([
+        "Task prompt",
+        "",
+        "You MUST follow these instructions: ",
+        " Prefer concise answers",
+        " - Mention source constraints",
+      ].join("\n"));
+    } finally {
+      rmSync("training_data.pkl", { force: true });
+    }
+
+    const previousTrainedFile = process.env.CREWAI_TRAINED_AGENTS_FILE;
+    const trainedFile = join(mkdtempSync(join(tmpdir(), "crewai-trained-agent-")), "trained_agents_data.pkl");
+    try {
+      process.env.CREWAI_TRAINED_AGENTS_FILE = trainedFile;
+      writeFileSync(trainedFile, JSON.stringify({
+        [agentInstance.role]: {
+          suggestions: ["Use markdown", "Avoid speculation"],
+        },
+      }), "utf8");
+      expect(agentInstance._use_trained_data("Task prompt")).toContain([
+        "Task prompt",
+        "",
+        "You MUST follow these instructions: ",
+        " - Use markdown",
+        " - Avoid speculation",
+      ].join("\n"));
+    } finally {
+      if (previousTrainedFile === undefined) {
+        delete process.env.CREWAI_TRAINED_AGENTS_FILE;
+      } else {
+        process.env.CREWAI_TRAINED_AGENTS_FILE = previousTrainedFile;
+      }
+      rmSync(dirname(trainedFile), { recursive: true, force: true });
+    }
 
     const output = await agentInstance.execute_task("Summarize CrewAI");
     expect(output).toContain("Summarize CrewAI");
