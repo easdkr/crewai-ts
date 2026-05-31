@@ -34,6 +34,7 @@ import type { CrewOutput } from "./outputs.js";
 import { FlowStreamingOutput } from "./streaming.js";
 import { CheckpointConfig, coerceCheckpointConfig, RuntimeState, type CheckpointOption } from "./state.js";
 import type { InputValues, MaybePromise } from "./types.js";
+import { _dotted_path_to_instance, _instance_to_dotted_path } from "./utilities.js";
 import { renderInteractive } from "./flow-visualization.js";
 import { Memory, MemoryScope, MemorySlice, sanitize_scope_name, type MemoryMatch, type MemoryRecord } from "./memory.js";
 
@@ -84,6 +85,82 @@ export const StateSchemaInfo = Object.freeze({ kind: "StateSchemaInfo" });
 export const FlowStructureInfo = Object.freeze({ kind: "FlowStructureInfo" });
 export const ConsoleProvider = ConsoleInputProvider;
 export const flow_config = flowConfig;
+export const _INITIAL_STATE_CLASS_MARKER = "__crewai_pydantic_class_schema__";
+
+export function _resolve_persistence(value: unknown): unknown {
+  if (value === null || value === undefined || isFlowPersistence(value)) {
+    return value ?? null;
+  }
+  if (isRecord(value)) {
+    const persistenceType = typeof value.persistence_type === "string" ? value.persistence_type : typeof value.persistenceType === "string" ? value.persistenceType : null;
+    if (persistenceType === "SQLiteFlowPersistence") {
+      return new SQLiteFlowPersistence(typeof value.db_path === "string" ? value.db_path : typeof value.dbPath === "string" ? value.dbPath : undefined);
+    }
+  }
+  return value;
+}
+
+export function _serialize_persistence(value: unknown): Record<string, unknown> | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  if (isFlowPersistence(value)) {
+    if (typeof value.toJSON === "function") {
+      return value.toJSON() as Record<string, unknown>;
+    }
+    const record = value as unknown as Record<string, unknown>;
+    return {
+      ...record,
+      persistence_type: typeof record.persistence_type === "string" ? record.persistence_type : value.constructor.name,
+    };
+  }
+  throw new TypeError(`Cannot serialize Flow.persistence of type ${typeName(value)}: expected FlowPersistence or None.`);
+}
+
+export async function _validate_input_provider(value: unknown): Promise<unknown> {
+  if (value === null || value === undefined || isInputProviderLike(value)) {
+    return value ?? null;
+  }
+  const resolved = await _dotted_path_to_instance(value);
+  if (resolved === null || resolved === undefined || isInputProviderLike(resolved)) {
+    return resolved ?? null;
+  }
+  throw new Error(`Resolved input_provider ${typeName(resolved)} does not implement the InputProvider protocol (missing request_input).`);
+}
+
+export function _serialize_input_provider(value: unknown): string | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  return _instance_to_dotted_path(value);
+}
+
+export function _serialize_initial_state(value: unknown): unknown {
+  if (typeof value === "function") {
+    const schema = (value as { model_json_schema?: () => unknown; modelJsonSchema?: () => unknown; schema?: unknown }).model_json_schema?.()
+      ?? (value as { modelJsonSchema?: () => unknown }).modelJsonSchema?.()
+      ?? (value as { schema?: unknown }).schema;
+    return schema ? { [_INITIAL_STATE_CLASS_MARKER]: schema } : null;
+  }
+  if (value && typeof value === "object") {
+    const modelDump = (value as { model_dump?: (options?: unknown) => unknown; modelDump?: (options?: unknown) => unknown }).model_dump
+      ?? (value as { modelDump?: (options?: unknown) => unknown }).modelDump;
+    if (modelDump) {
+      return modelDump.call(value, { mode: "json" });
+    }
+  }
+  return value;
+}
+
+export function _deserialize_initial_state(value: unknown): unknown {
+  if (isRecord(value) && _INITIAL_STATE_CLASS_MARKER in value) {
+    return {
+      schema: value[_INITIAL_STATE_CLASS_MARKER],
+      [_INITIAL_STATE_CLASS_MARKER]: true,
+    };
+  }
+  return value;
+}
 
 export type FlowConditionInput = string | FlowCondition | ((...args: never[]) => unknown);
 
@@ -3095,4 +3172,24 @@ function nestedConditionSatisfied(
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function isFlowPersistence(value: unknown): value is FlowPersistence & { toJSON?: () => unknown } {
+  return Boolean(value)
+    && typeof value === "object"
+    && (typeof (value as { saveState?: unknown; save_state?: unknown }).saveState === "function"
+      || typeof (value as { saveState?: unknown; save_state?: unknown }).save_state === "function"
+      || typeof (value as { loadState?: unknown; load_state?: unknown }).loadState === "function"
+      || typeof (value as { loadState?: unknown; load_state?: unknown }).load_state === "function");
+}
+
+function isInputProviderLike(value: unknown): value is InputProvider {
+  return Boolean(value)
+    && typeof value === "object"
+    && (typeof (value as { requestInput?: unknown; request_input?: unknown }).requestInput === "function"
+      || typeof (value as { requestInput?: unknown; request_input?: unknown }).request_input === "function");
+}
+
+function typeName(value: unknown): string {
+  return value && typeof value === "object" ? value.constructor.name : typeof value;
 }

@@ -247,6 +247,7 @@ import {
   ItemState,
   RememberTool,
   QueryAnalysis,
+  _INITIAL_STATE_CLASS_MARKER,
   MCPServerHTTP,
   MCPServerSSE,
   MCPServerStdio,
@@ -269,6 +270,12 @@ import {
   SkillActivatedEvent,
   StorageBackend,
   _coerce_secret_str,
+  _deserialize_initial_state,
+  _resolve_persistence,
+  _serialize_initial_state,
+  _serialize_input_provider,
+  _serialize_persistence,
+  _validate_input_provider,
   SkillFrontmatter,
   SkillDiscoveryCompletedEvent,
   SkillDownloadCompletedEvent,
@@ -11766,6 +11773,48 @@ describe("flow runtime", () => {
       });
       await backend.clear_pending_feedback("snake-flow");
       await expect(backend.load_pending_feedback("snake-flow")).resolves.toBeNull();
+    }
+  });
+
+  it("exposes upstream flow serialization validators", async () => {
+    const sqliteDirectory = mkdtempSync(join(tmpdir(), "crewai-ts-flow-serialize-"));
+    const persistence = new SQLiteFlowPersistence(join(sqliteDirectory, "flows.db"));
+    const inputProvider = {
+      requestInput: () => ({ text: "approved" }),
+    };
+    const StateModel = Object.assign(function StateModel() {}, {
+      model_json_schema: () => ({ title: "StateModel", type: "object", properties: { topic: { type: "string" } } }),
+    });
+    const stateInstance = {
+      model_dump: () => ({ id: "flow-1", topic: "CrewAI" }),
+    };
+
+    try {
+      expect(_resolve_persistence(null)).toBeNull();
+      expect(_resolve_persistence(persistence)).toBe(persistence);
+      expect(_resolve_persistence({ persistence_type: "SQLiteFlowPersistence", db_path: join(sqliteDirectory, "restored.db") }))
+        .toBeInstanceOf(SQLiteFlowPersistence);
+      expect(_serialize_persistence(persistence)).toMatchObject({
+        persistence_type: "SQLiteFlowPersistence",
+        db_path: join(sqliteDirectory, "flows.db"),
+      });
+      await expect(_validate_input_provider(inputProvider)).resolves.toBe(inputProvider);
+      const snakeProvider = { request_input: () => ({ text: "ok" }) };
+      await expect(_validate_input_provider(snakeProvider)).resolves.toBe(snakeProvider);
+      expect(_serialize_input_provider(null)).toBeNull();
+      expect(_serialize_initial_state(StateModel)).toEqual({
+        [_INITIAL_STATE_CLASS_MARKER]: { title: "StateModel", type: "object", properties: { topic: { type: "string" } } },
+      });
+      expect(_serialize_initial_state(stateInstance)).toEqual({ id: "flow-1", topic: "CrewAI" });
+      expect(_serialize_initial_state(Map)).toBeNull();
+      expect(_deserialize_initial_state({
+        [_INITIAL_STATE_CLASS_MARKER]: { title: "StateModel" },
+      })).toEqual({
+        schema: { title: "StateModel" },
+        [_INITIAL_STATE_CLASS_MARKER]: true,
+      });
+    } finally {
+      rmSync(sqliteDirectory, { recursive: true, force: true });
     }
   });
 
