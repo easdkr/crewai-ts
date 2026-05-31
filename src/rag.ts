@@ -1071,25 +1071,128 @@ export class HuggingFaceProvider extends BaseEmbeddingsProvider {
 }
 
 export class WatsonXEmbeddingFunction {
+  readonly config: Record<string, unknown>;
+
+  constructor(options: Record<string, unknown> = {}) {
+    this.config = options;
+  }
+
   static name(): string {
     return "watsonx";
   }
 
-  call(input: Embeddable): unknown {
-    return defaultEmbeddingCallable(input);
+  async call(input: Embeddable): Promise<Embeddings> {
+    const values = Array.isArray(input) ? input.map((value) => String(value)) : [String(input)];
+    const client = resolveWatsonXEmbeddingClient(this.config);
+    const result = await invokeWatsonXEmbeddings(client, values, this.buildRequest(values));
+    return extractWatsonXEmbeddings(result);
   }
 
-  __call__(input: Embeddable): unknown {
+  async __call__(input: Embeddable): Promise<Embeddings> {
     return this.call(input);
   }
+
+  asCallable(): TypedEmbeddingFunction {
+    const callable: TypedEmbeddingFunction = (input: Embeddable) => this.call(input);
+    callable.embedQuery = callable;
+    callable.embed_query = callable;
+    return callable;
+  }
+
+  private buildRequest(input: readonly string[]): Record<string, unknown> {
+    const request: Record<string, unknown> = {
+      inputs: input,
+      model_id: this.config.model_id,
+      params: this.config.params ?? {
+        truncate_input_tokens: 3,
+        return_options: { input_text: true },
+      },
+    };
+    if (this.config.project_id) {
+      request.project_id = this.config.project_id;
+    }
+    if (this.config.space_id) {
+      request.space_id = this.config.space_id;
+    }
+    return request;
+  }
+}
+
+type WatsonXEmbeddingClient = {
+  embed_documents?: (input: readonly string[]) => unknown;
+  embedDocuments?: (input: readonly string[]) => unknown;
+  embed_documents_with_params?: (input: Record<string, unknown>) => unknown;
+  embedDocumentsWithParams?: (input: Record<string, unknown>) => unknown;
+  embed?: (input: Record<string, unknown> | readonly string[]) => unknown;
+};
+
+function resolveWatsonXEmbeddingClient(config: Record<string, unknown>): WatsonXEmbeddingClient {
+  const candidates = [config.api_client, config.credentials];
+  for (const candidate of candidates) {
+    if (isWatsonXEmbeddingClient(candidate)) {
+      return candidate;
+    }
+  }
+  throw new Error("WatsonX embeddings require an api_client or credentials object with an embedding method.");
+}
+
+function isWatsonXEmbeddingClient(value: unknown): value is WatsonXEmbeddingClient {
+  return isRecord(value)
+    && (
+      typeof value.embed_documents === "function"
+      || typeof value.embedDocuments === "function"
+      || typeof value.embed_documents_with_params === "function"
+      || typeof value.embedDocumentsWithParams === "function"
+      || typeof value.embed === "function"
+    );
+}
+
+function invokeWatsonXEmbeddings(
+  client: WatsonXEmbeddingClient,
+  input: readonly string[],
+  request: Record<string, unknown>,
+): Promise<unknown> {
+  if (client.embed_documents) {
+    return Promise.resolve(client.embed_documents(input));
+  }
+  if (client.embedDocuments) {
+    return Promise.resolve(client.embedDocuments(input));
+  }
+  if (client.embed_documents_with_params) {
+    return Promise.resolve(client.embed_documents_with_params(request));
+  }
+  if (client.embedDocumentsWithParams) {
+    return Promise.resolve(client.embedDocumentsWithParams(request));
+  }
+  if (client.embed) {
+    return Promise.resolve(client.embed(request));
+  }
+  throw new Error("WatsonX embedding client does not provide an embedding method.");
+}
+
+function extractWatsonXEmbeddings(payload: unknown): Embeddings {
+  if (Array.isArray(payload) && payload.every(isNumberArray)) {
+    return payload;
+  }
+  if (isRecord(payload) && Array.isArray(payload.embeddings) && payload.embeddings.every(isNumberArray)) {
+    return payload.embeddings;
+  }
+  if (isRecord(payload) && Array.isArray(payload.results)) {
+    const embeddings = payload.results
+      .filter(isRecord)
+      .map((result) => result.embedding);
+    if (embeddings.length > 0 && embeddings.every(isNumberArray)) {
+      return embeddings;
+    }
+  }
+  throw new Error("WatsonX embeddings response did not include embeddings.");
 }
 
 export class WatsonXProvider extends BaseEmbeddingsProvider {
   readonly provider = "watsonx";
 
   constructor(options: WatsonXProviderConfig = {}) {
-    super({
-      embeddingCallable: defaultEmbeddingCallable,
+    const config = {
       persistent_connection: true,
       batch_size: 100,
       concurrency_limit: 10,
@@ -1103,6 +1206,10 @@ export class WatsonXProvider extends BaseEmbeddingsProvider {
       delay_time: null,
       retry_status_codes: null,
       ...options,
+    };
+    super({
+      embeddingCallable: new WatsonXEmbeddingFunction(config).asCallable(),
+      ...config,
     });
   }
 

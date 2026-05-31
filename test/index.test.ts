@@ -7388,6 +7388,35 @@ describe("RAG configuration and factories", () => {
     }));
   });
 
+  it("calls WatsonX embedding clients when provided", async () => {
+    const apiClient = {
+      embed_documents_with_params: vi.fn((request: Record<string, unknown>) => ({
+        results: (request.inputs as string[]).map((text, index) => ({
+          embedding: [text.length, index],
+        })),
+      })),
+    };
+
+    const watsonEmbedder = new WatsonXProvider({
+      api_key: "watson-test",
+      url: "https://watson.example",
+      model_id: "ibm/slate-125m-english-rtrvr",
+      project_id: "project",
+      api_client: apiClient,
+    }).build();
+
+    await expect(watsonEmbedder(["first", "second"])).resolves.toEqual([[5, 0], [6, 1]]);
+    expect(apiClient.embed_documents_with_params).toHaveBeenCalledWith({
+      inputs: ["first", "second"],
+      model_id: "ibm/slate-125m-english-rtrvr",
+      params: {
+        truncate_input_tokens: 3,
+        return_options: { input_text: true },
+      },
+      project_id: "project",
+    });
+  });
+
   it("calls Cohere's embeddings API for Cohere providers", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
       ok: true,
@@ -7638,7 +7667,7 @@ describe("RAG configuration and factories", () => {
   it("exposes upstream __call__ aliases on embedding functions", () => {
     const custom = new CustomEmbeddingFunction((input) => input.map((value) => [String(value).length]));
     expect(custom.__call__(["CrewAI"])).toEqual([[6]]);
-    expect(new WatsonXEmbeddingFunction().__call__(["CrewAI"])).toEqual([[0]]);
+    expect(WatsonXEmbeddingFunction.name()).toBe("watsonx");
   });
 });
 
