@@ -520,7 +520,7 @@ export class A2UIClientExtension {
     if (!surfaceId) {
       return;
     }
-    if ("deleteSurface" in data) {
+    if (getA2UIRecordValue(data, "deleteSurface", "delete_surface")) {
       state.activeSurfaces = Object.fromEntries(Object.entries(state.activeSurfaces).filter(([key]) => key !== surfaceId));
       state.active_surfaces = state.activeSurfaces;
       state.dataModels = Object.fromEntries(Object.entries(state.dataModels).filter(([key]) => key !== surfaceId));
@@ -528,8 +528,8 @@ export class A2UIClientExtension {
       state.initializedSurfaces.delete(surfaceId);
       return;
     }
-    for (const key of ["beginRendering", "createSurface", "surfaceUpdate", "updateComponents"]) {
-      const value = data[key];
+    for (const [key, snakeKey] of [["beginRendering", "begin_rendering"], ["createSurface", "create_surface"], ["surfaceUpdate", "surface_update"], ["updateComponents", "update_components"]] as const) {
+      const value = getA2UIRecordValue(data, key, snakeKey);
       if (isRecord(value)) {
         state.activeSurfaces[surfaceId] = value;
         if (key === "beginRendering" || key === "createSurface") {
@@ -537,13 +537,13 @@ export class A2UIClientExtension {
         }
       }
     }
-    const dataModelUpdate = data.dataModelUpdate;
+    const dataModelUpdate = getA2UIRecordValue(data, "dataModelUpdate", "data_model_update");
     if (isRecord(dataModelUpdate)) {
       const contents = Array.isArray(dataModelUpdate.contents) ? dataModelUpdate.contents : [];
       state.dataModels[surfaceId] ??= [];
       state.dataModels[surfaceId].push(...contents.filter(isRecord));
     }
-    const updateDataModel = data.updateDataModel;
+    const updateDataModel = getA2UIRecordValue(data, "updateDataModel", "update_data_model");
     if (isRecord(updateDataModel)) {
       state.dataModels[surfaceId] ??= [];
       state.dataModels[surfaceId].push(updateDataModel);
@@ -554,12 +554,12 @@ export class A2UIClientExtension {
     if (!this.catalogId) {
       return true;
     }
-    const beginRendering = data.beginRendering;
+    const beginRendering = getA2UIRecordValue(data, "beginRendering", "begin_rendering");
     if (isRecord(beginRendering)) {
       const catalogId = beginRendering.catalogId;
       return typeof catalogId !== "string" || catalogId === this.catalogId;
     }
-    const createSurface = data.createSurface;
+    const createSurface = getA2UIRecordValue(data, "createSurface", "create_surface");
     if (isRecord(createSurface)) {
       const catalogId = createSurface.catalogId;
       return typeof catalogId !== "string" || catalogId === this.catalogId;
@@ -671,8 +671,12 @@ function isRecord(value: unknown): value is A2UIRecord {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
+function getA2UIRecordValue(data: A2UIRecord, key: string, alias: string): unknown {
+  return data[key] ?? data[alias];
+}
+
 function getSurfaceId(data: A2UIRecord): string | null {
-  for (const key of ["beginRendering", "surfaceUpdate", "dataModelUpdate", "deleteSurface", "createSurface", "updateComponents", "updateDataModel"]) {
+  for (const key of ["beginRendering", "begin_rendering", "surfaceUpdate", "surface_update", "dataModelUpdate", "data_model_update", "deleteSurface", "delete_surface", "createSurface", "create_surface", "updateComponents", "update_components", "updateDataModel", "update_data_model"]) {
     const value = data[key];
     if (isRecord(value) && typeof value.surfaceId === "string") {
       return value.surfaceId;

@@ -2970,6 +2970,63 @@ describe("a2a utilities", () => {
     ]);
   });
 
+  it("restores A2UI conversation state from snake_case message aliases", () => {
+    const extension = new A2UIClientExtension();
+    const state = extension.extract_state_from_history([{
+      parts: [
+        {
+          root: {
+            kind: "data",
+            metadata: { mimeType: A2UI_MIME_TYPE },
+            data: {
+              begin_rendering: { surfaceId: "surface", root: "root" },
+            },
+          },
+        },
+        {
+          root: {
+            kind: "data",
+            metadata: { mimeType: A2UI_MIME_TYPE },
+            data: {
+              data_model_update: {
+                surfaceId: "surface",
+                contents: [{ key: "name", valueString: "Ada" }],
+              },
+            },
+          },
+        },
+      ],
+    }]);
+
+    expect(state?.active_surfaces.surface).toEqual({ surfaceId: "surface", root: "root" });
+    expect(state?.data_models.surface).toEqual([{ key: "name", valueString: "Ada" }]);
+    expect(state?.initialized_surfaces.has("surface")).toBe(true);
+
+    const deleted = extension.extract_state_from_history([{
+      parts: [
+        {
+          root: {
+            kind: "data",
+            metadata: { mimeType: A2UI_MIME_TYPE },
+            data: {
+              begin_rendering: { surfaceId: "surface", root: "root" },
+            },
+          },
+        },
+        {
+          root: {
+            kind: "data",
+            metadata: { mimeType: A2UI_MIME_TYPE },
+            data: {
+              delete_surface: { surfaceId: "surface" },
+            },
+          },
+        },
+      ],
+    }]);
+    expect(deleted).toBeNull();
+  });
+
   it("activates A2UI server hooks only for declared client extensions", async () => {
     const extension = new A2UIServerExtension(["catalog-supported"]);
     const inactiveContext = {
