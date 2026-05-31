@@ -13310,6 +13310,7 @@ describe("LLM providers", () => {
       base_url: "https://example.test",
       additional_params: { top_p: 0.8 },
     });
+    const summaryModel = { name: "SummaryModel", parse: (value: unknown) => value };
 
     expect(llm.stop_sequences).toEqual(["STOP"]);
     expect(llm.supports_stop_words()).toBe(DEFAULT_SUPPORTS_STOP_WORDS);
@@ -13317,6 +13318,9 @@ describe("LLM providers", () => {
     expect(llm.supports_multimodal()).toBe(false);
     expect(llm.format_text_content("hello")).toEqual({ type: "text", text: "hello" });
     expect(llm.get_file_uploader()).toBeNull();
+    expect(llm._convert_tools_for_interference([])).toEqual([]);
+    expect(llm._serialize_response_format({ type: "json_object" })).toEqual({ type: "json_object" });
+    expect(llm._serialize_response_format(summaryModel)).toBe("SummaryModel");
     expect(llm.to_config_dict()).toMatchObject({
       model: "demo/model",
       api_key: "key",
@@ -13324,6 +13328,16 @@ describe("LLM providers", () => {
       provider: "openai",
       stop: ["STOP"],
       additional_params: { top_p: 0.8 },
+    });
+    expect(BaseLLM._validate_init_fields({
+      model: "demo/model",
+      stop_sequences: "END",
+      extra_flag: true,
+    })).toMatchObject({
+      model: "demo/model",
+      provider: "openai",
+      stop: ["END"],
+      additional_params: { extra_flag: true },
     });
 
     await expect(callLLM(llm, [{ role: "user", content: "answer STOP trailing" }])).resolves.toBe("answer");
@@ -13434,6 +13448,36 @@ describe("LLM providers", () => {
     await expect(callLLM(llm, [{ role: "user", content: "answer BASE trailing" }])).resolves.toBe("answer");
     expect(callIds).toHaveLength(1);
     expect(callIds[0]).toMatch(/[0-9a-f-]{36}/);
+  });
+
+  it("exposes BaseLLM direct-call before and after hook helpers", async () => {
+    class HookLLM extends BaseLLM {
+      call(): string {
+        return "done";
+      }
+    }
+    const llm = new HookLLM({ model: "demo/model" });
+    const messages: LLMMessage[] = [{ role: "user", content: "hello" }];
+
+    beforeLlmCall((context) => {
+      const [message] = context.messages;
+      if (message) {
+        message.content = "rewritten";
+      }
+      return true;
+    });
+    afterLlmCall((context) => typeof context.response === "string" ? `${context.response} after` : null);
+
+    await expect(llm._invoke_before_llm_call_hooks(messages)).resolves.toBe(true);
+    expect(messages[0]?.content).toBe("rewritten");
+    await expect(llm._invoke_after_llm_call_hooks(messages, "before")).resolves.toBe("before after");
+
+    clearAllGlobalHooks();
+    beforeLlmCall(() => false);
+    await expect(llm._invoke_before_llm_call_hooks(messages)).resolves.toBe(false);
+    await expect(llm._invoke_before_llm_call_hooks(messages, { role: "agent" })).resolves.toBe(true);
+    await expect(llm._invoke_after_llm_call_hooks(messages, "agent response", { role: "agent" }))
+      .resolves.toBe("agent response");
   });
 
   it("validates structured LLM output from direct or embedded JSON", () => {

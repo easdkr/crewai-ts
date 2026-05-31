@@ -1214,6 +1214,29 @@ export type BaseLLMOptions = {
   context_window_size?: number;
 };
 
+const BASE_LLM_OPTION_FIELDS = new Set([
+  "model",
+  "temperature",
+  "apiKey",
+  "api_key",
+  "baseUrl",
+  "base_url",
+  "provider",
+  "preferUpload",
+  "prefer_upload",
+  "isLitellm",
+  "is_litellm",
+  "stop",
+  "stopSequences",
+  "stop_sequences",
+  "additionalParams",
+  "additional_params",
+  "responseFormat",
+  "response_format",
+  "contextWindowSize",
+  "context_window_size",
+]);
+
 export abstract class BaseLLM implements LLMClient {
   readonly llmType = "base";
   readonly llm_type = "base";
@@ -1531,6 +1554,14 @@ export abstract class BaseLLM implements LLMClient {
     return await this.handleToolExecution(options);
   }
 
+  convertToolsForInterference(tools: readonly Tool[]): readonly unknown[] {
+    return tools;
+  }
+
+  _convert_tools_for_interference(tools: readonly Tool[]): readonly unknown[] {
+    return this.convertToolsForInterference(tools);
+  }
+
   formatMessages(messages: LLMMessageInput): LLMMessage[] {
     if (typeof messages === "string") {
       return [{ role: "user", content: messages }];
@@ -1607,6 +1638,84 @@ export abstract class BaseLLM implements LLMClient {
     return this.toConfigDict();
   }
 
+  serializeResponseFormat(value: unknown): unknown {
+    if (value === null || value === undefined) {
+      return value;
+    }
+    if (isJsonResponseFormat(value) || isStructuredOutputValidator(value)) {
+      return serializeResponseFormat(value);
+    }
+    return value;
+  }
+
+  _serialize_response_format(value: unknown): unknown {
+    return this.serializeResponseFormat(value);
+  }
+
+  async invokeBeforeLlmCallHooks(
+    messages: LLMMessage[],
+    fromAgent: unknown = null,
+  ): Promise<boolean> {
+    if (fromAgent !== null && fromAgent !== undefined) {
+      return true;
+    }
+    const context = new LLMCallHookContext({
+      messages,
+      llm: this,
+      agent: null,
+      task: null,
+      crew: null,
+    });
+    try {
+      await runBeforeLlmCallHooks(context);
+      return true;
+    } catch (error) {
+      if (error instanceof Error && error.message.includes("blocked by before_llm_call hook")) {
+        return false;
+      }
+      return true;
+    }
+  }
+
+  async _invoke_before_llm_call_hooks(
+    messages: LLMMessage[],
+    from_agent: unknown = null,
+  ): Promise<boolean> {
+    return await this.invokeBeforeLlmCallHooks(messages, from_agent);
+  }
+
+  async invokeAfterLlmCallHooks(
+    messages: LLMMessage[],
+    response: string,
+    fromAgent: unknown = null,
+  ): Promise<string> {
+    if (fromAgent !== null && fromAgent !== undefined || typeof response !== "string") {
+      return response;
+    }
+    const context = new LLMCallHookContext({
+      messages,
+      llm: this,
+      agent: null,
+      task: null,
+      crew: null,
+      response,
+    });
+    try {
+      const result = await runAfterLlmCallHooks(context);
+      return typeof result === "string" ? result : response;
+    } catch {
+      return response;
+    }
+  }
+
+  async _invoke_after_llm_call_hooks(
+    messages: LLMMessage[],
+    response: string,
+    from_agent: unknown = null,
+  ): Promise<string> {
+    return await this.invokeAfterLlmCallHooks(messages, response, from_agent);
+  }
+
   trackTokenUsageInternal(usageData: Record<string, unknown>): void {
     const promptTokens = numberFromUsage(usageData, "prompt_tokens", "prompt_token_count", "input_tokens");
     const completionTokens = numberFromUsage(usageData, "completion_tokens", "candidates_token_count", "output_tokens");
@@ -1674,6 +1783,50 @@ export abstract class BaseLLM implements LLMClient {
     responseFormat: StructuredOutputValidator<T> | null = null,
   ): string | T {
     return validateStructuredOutput(response, responseFormat);
+  }
+
+  static validateInitFields<T>(data: T): T;
+  static validateInitFields(data: Record<string, unknown>): Record<string, unknown>;
+  static validateInitFields(data: unknown): unknown {
+    if (!isRecord(data)) {
+      return data;
+    }
+    const normalized: Record<string, unknown> = {};
+    const extras: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(data)) {
+      if (BASE_LLM_OPTION_FIELDS.has(key)) {
+        normalized[key] = value;
+      } else {
+        extras[key] = value;
+      }
+    }
+    if (!normalized.model) {
+      throw new Error("Model name is required and cannot be empty.");
+    }
+    const stopSequences = normalized.stop_sequences ?? normalized.stopSequences;
+    const stop = stopSequences ?? normalized.stop;
+    if (stop === null || stop === undefined) {
+      normalized.stop = [];
+    } else if (typeof stop === "string") {
+      normalized.stop = [stop];
+    } else if (Array.isArray(stop)) {
+      normalized.stop = stop;
+    } else if (isIterable(stop)) {
+      normalized.stop = [...stop];
+    }
+    if (!normalized.provider) {
+      normalized.provider = "openai";
+    }
+    normalized.additional_params = {
+      ...(isRecord(normalized.additionalParams) ? normalized.additionalParams : {}),
+      ...(isRecord(normalized.additional_params) ? normalized.additional_params : {}),
+      ...extras,
+    };
+    return normalized;
+  }
+
+  static _validate_init_fields(data: unknown): unknown {
+    return this.validateInitFields(data);
   }
 
   static extractProvider(model: string): string {
@@ -2199,6 +2352,28 @@ function parseStructuredOutputJson(response: string, responseFormatName: string)
 
 function validatorName(validator: StructuredOutputValidator): string {
   return validator.name ?? "response_format";
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isIterable(value: unknown): value is Iterable<unknown> {
+  return typeof (value as { [Symbol.iterator]?: unknown })[Symbol.iterator] === "function";
+}
+
+function isJsonResponseFormat(value: unknown): value is JsonResponseFormat {
+  return isRecord(value) && value.type === "json_object";
+}
+
+function isStructuredOutputValidator(value: unknown): value is StructuredOutputValidator {
+  return isRecord(value) && (
+    typeof value.name === "string"
+    || typeof value.modelValidate === "function"
+    || typeof value.model_validate === "function"
+    || typeof value.parse === "function"
+    || typeof value.validate === "function"
+  );
 }
 
 function serializeResponseFormat(responseFormat: JsonResponseFormat | StructuredOutputValidator): unknown {
