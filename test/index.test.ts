@@ -63,6 +63,10 @@ import {
   Crew,
   CrewOutput,
   CrewAIPlugin,
+  CrewBaseEvent,
+  CrewKickoffCompletedEvent,
+  CrewKickoffFailedEvent,
+  CrewKickoffStartedEvent,
   CrewProject,
   CrewStreamingOutput,
   CrewTestCompletedEvent,
@@ -2461,6 +2465,58 @@ describe("orchestration lifecycle events", () => {
 });
 
 describe("crew tool and memory lifecycle events", () => {
+  it("applies CrewBaseEvent fingerprint serialization to kickoff events", () => {
+    const crew = {
+      fingerprint: {
+        uuid_str: "crew-fp",
+        metadata: { project: "research" },
+      },
+    };
+    const started = new CrewKickoffStartedEvent({
+      crew_name: "ResearchCrew",
+      crew,
+      inputs: { topic: "decorators" },
+    });
+    const completed = new CrewKickoffCompletedEvent({
+      crew,
+      output: new CrewOutput({ raw: "done" }),
+      totalTokens: 7,
+    });
+    const failed = new CrewKickoffFailedEvent({
+      crew,
+      error: new Error("kickoff failed"),
+    });
+
+    expect(started).toBeInstanceOf(CrewBaseEvent);
+    expect(started).toMatchObject({
+      type: "crew_kickoff_started",
+      sourceType: "crew",
+      sourceFingerprint: "crew-fp",
+      crew_name: "ResearchCrew",
+      fingerprint_metadata: { project: "research" },
+    });
+    expect(completed).toMatchObject({
+      type: "crew_kickoff_completed",
+      sourceFingerprint: "crew-fp",
+      totalTokens: 7,
+    });
+    expect(failed).toMatchObject({
+      type: "crew_kickoff_failed",
+      sourceFingerprint: "crew-fp",
+      error: "kickoff failed",
+    });
+
+    const serialized = started.to_json();
+    expect(serialized).toMatchObject({
+      type: "crew_kickoff_started",
+      crew_name: "ResearchCrew",
+      source_fingerprint: "crew-fp",
+      fingerprint_metadata: { project: "research" },
+      inputs: { topic: "decorators" },
+    });
+    expect(serialized).not.toHaveProperty("crew");
+  });
+
   it("exposes crew train and test lifecycle events with crew fingerprint metadata", () => {
     const crew = {
       fingerprint: {

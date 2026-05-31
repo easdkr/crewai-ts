@@ -241,54 +241,135 @@ export abstract class ReasoningEvent extends BaseEvent {}
 
 export abstract class ToolUsageEvent extends BaseEvent {}
 
-export abstract class CrewBaseEvent extends BaseEvent {}
+export type CrewBaseEventOptions = Omit<BaseEventOptions, "sourceType" | "sourceFingerprint"> & {
+  sourceType?: string | null | undefined;
+  sourceFingerprint?: string | null | undefined;
+  crewName?: string | null | undefined;
+  crew_name?: string | null | undefined;
+  crew?: unknown;
+  fingerprintMetadata?: Record<string, unknown> | null | undefined;
+  fingerprint_metadata?: Record<string, unknown> | null | undefined;
+};
+
+export abstract class CrewBaseEvent extends BaseEvent {
+  readonly crewName: string | null;
+  readonly crew_name: string | null;
+  readonly crew: unknown;
+  readonly fingerprintMetadata: Record<string, unknown> | null;
+  readonly fingerprint_metadata: Record<string, unknown> | null;
+
+  constructor(options: CrewBaseEventOptions) {
+    const crewFingerprint = getCrewSourceFingerprint(options.crew);
+    const crewMetadata = getCrewFingerprintMetadata(options.crew);
+    super({
+      ...options,
+      sourceType: crewFingerprint ? "crew" : (options.sourceType ?? "crew"),
+      sourceFingerprint: options.sourceFingerprint ?? crewFingerprint,
+    });
+    this.crewName = options.crewName ?? options.crew_name ?? null;
+    this.crew_name = this.crewName;
+    this.crew = options.crew ?? null;
+    this.fingerprintMetadata = options.fingerprintMetadata ?? options.fingerprint_metadata ?? crewMetadata;
+    this.fingerprint_metadata = this.fingerprintMetadata;
+  }
+
+  override toJSON(): Record<string, unknown> {
+    return {
+      ...super.toJSON(),
+      crewName: this.crewName,
+      fingerprintMetadata: this.fingerprintMetadata,
+    };
+  }
+
+  override to_json(exclude: Set<string> | readonly string[] | null = null): Record<string, unknown> {
+    const excluded = new Set([...(exclude ?? []), "crew"]);
+    const result = super.to_json(excluded);
+    const baseFields = new Set([
+      "timestamp",
+      "type",
+      "eventId",
+      "emissionSequence",
+      "sourceType",
+      "sourceFingerprint",
+      "parentEventId",
+      "previousEventId",
+      "triggeredByEventId",
+      "startedEventId",
+      "crew",
+    ]);
+    for (const [key, value] of Object.entries(this)) {
+      if (!baseFields.has(key) && !excluded.has(key)) {
+        result[key] = value;
+      }
+    }
+    if (!excluded.has("crew_name")) {
+      result.crew_name = this.crewName;
+    }
+    if (!excluded.has("fingerprint_metadata")) {
+      result.fingerprint_metadata = this.fingerprintMetadata;
+    }
+    if ("totalTokens" in this && !excluded.has("total_tokens")) {
+      result.total_tokens = (this as { totalTokens?: unknown }).totalTokens;
+    }
+    return Object.fromEntries(Object.entries(result).filter(([key]) => !excluded.has(key)));
+  }
+}
 
 export abstract class MemoryBaseEvent extends BaseEvent {}
 
-export class CrewKickoffStartedEvent extends BaseEvent {
-  readonly crewName: string | null;
+export class CrewKickoffStartedEvent extends CrewBaseEvent {
   readonly inputs: InputValues | null;
 
-  constructor(options: { crewName?: string | null; inputs?: InputValues | null } = {}) {
-    super({ type: "crew_kickoff_started", sourceType: "crew" });
-    this.crewName = options.crewName ?? null;
+  constructor(options: { crewName?: string | null; crew_name?: string | null; crew?: unknown; inputs?: InputValues | null; startedEventId?: string | null; started_event_id?: string | null } = {}) {
+    super({
+      type: "crew_kickoff_started",
+      crewName: options.crewName,
+      crew_name: options.crew_name,
+      crew: options.crew,
+      startedEventId: options.startedEventId ?? options.started_event_id ?? null,
+    });
     this.inputs = options.inputs ?? null;
   }
 }
 
-export class CrewKickoffCompletedEvent extends BaseEvent {
-  readonly crewName: string | null;
+export class CrewKickoffCompletedEvent extends CrewBaseEvent {
   readonly output: CrewOutput;
   readonly totalTokens: number;
+  readonly total_tokens: number;
 
-  constructor(options: { crewName?: string | null; output: CrewOutput; totalTokens?: number }) {
-    super({ type: "crew_kickoff_completed", sourceType: "crew" });
-    this.crewName = options.crewName ?? null;
+  constructor(options: { crewName?: string | null; crew_name?: string | null; crew?: unknown; output: CrewOutput; totalTokens?: number; total_tokens?: number; startedEventId?: string | null; started_event_id?: string | null }) {
+    super({
+      type: "crew_kickoff_completed",
+      crewName: options.crewName,
+      crew_name: options.crew_name,
+      crew: options.crew,
+      startedEventId: options.startedEventId ?? options.started_event_id ?? null,
+    });
     this.output = options.output;
-    this.totalTokens = options.totalTokens ?? 0;
+    this.totalTokens = options.totalTokens ?? options.total_tokens ?? 0;
+    this.total_tokens = this.totalTokens;
   }
 }
 
-export class CrewKickoffFailedEvent extends BaseEvent {
-  readonly crewName: string | null;
+export class CrewKickoffFailedEvent extends CrewBaseEvent {
   readonly error: string;
 
-  constructor(options: { crewName?: string | null; error: unknown }) {
-    super({ type: "crew_kickoff_failed", sourceType: "crew" });
-    this.crewName = options.crewName ?? null;
+  constructor(options: { crewName?: string | null; crew_name?: string | null; crew?: unknown; error: unknown; startedEventId?: string | null; started_event_id?: string | null }) {
+    super({
+      type: "crew_kickoff_failed",
+      crewName: options.crewName,
+      crew_name: options.crew_name,
+      crew: options.crew,
+      startedEventId: options.startedEventId ?? options.started_event_id ?? null,
+    });
     this.error = formatError(options.error);
   }
 }
 
-export class CrewTrainStartedEvent extends BaseEvent {
-  readonly crewName: string | null;
-  readonly crew_name: string | null;
-  readonly crew: unknown;
+export class CrewTrainStartedEvent extends CrewBaseEvent {
   readonly n_iterations: number;
   readonly filename: string;
   readonly inputs: InputValues | null;
-  readonly fingerprintMetadata: Record<string, unknown> | null;
-  readonly fingerprint_metadata: Record<string, unknown> | null;
 
   constructor(options: {
     crewName?: string | null;
@@ -298,26 +379,16 @@ export class CrewTrainStartedEvent extends BaseEvent {
     filename: string;
     inputs?: InputValues | null;
   }) {
-    super({ type: "crew_train_started", sourceType: "crew", sourceFingerprint: getCrewSourceFingerprint(options.crew) });
-    this.crewName = options.crewName ?? options.crew_name ?? null;
-    this.crew_name = this.crewName;
-    this.crew = options.crew ?? null;
+    super({ type: "crew_train_started", crewName: options.crewName, crew_name: options.crew_name, crew: options.crew });
     this.n_iterations = options.n_iterations;
     this.filename = options.filename;
     this.inputs = options.inputs ?? null;
-    this.fingerprintMetadata = getCrewFingerprintMetadata(options.crew);
-    this.fingerprint_metadata = this.fingerprintMetadata;
   }
 }
 
-export class CrewTrainCompletedEvent extends BaseEvent {
-  readonly crewName: string | null;
-  readonly crew_name: string | null;
-  readonly crew: unknown;
+export class CrewTrainCompletedEvent extends CrewBaseEvent {
   readonly n_iterations: number;
   readonly filename: string;
-  readonly fingerprintMetadata: Record<string, unknown> | null;
-  readonly fingerprint_metadata: Record<string, unknown> | null;
 
   constructor(options: {
     crewName?: string | null;
@@ -326,45 +397,25 @@ export class CrewTrainCompletedEvent extends BaseEvent {
     n_iterations: number;
     filename: string;
   }) {
-    super({ type: "crew_train_completed", sourceType: "crew", sourceFingerprint: getCrewSourceFingerprint(options.crew) });
-    this.crewName = options.crewName ?? options.crew_name ?? null;
-    this.crew_name = this.crewName;
-    this.crew = options.crew ?? null;
+    super({ type: "crew_train_completed", crewName: options.crewName, crew_name: options.crew_name, crew: options.crew });
     this.n_iterations = options.n_iterations;
     this.filename = options.filename;
-    this.fingerprintMetadata = getCrewFingerprintMetadata(options.crew);
-    this.fingerprint_metadata = this.fingerprintMetadata;
   }
 }
 
-export class CrewTrainFailedEvent extends BaseEvent {
-  readonly crewName: string | null;
-  readonly crew_name: string | null;
-  readonly crew: unknown;
+export class CrewTrainFailedEvent extends CrewBaseEvent {
   readonly error: string;
-  readonly fingerprintMetadata: Record<string, unknown> | null;
-  readonly fingerprint_metadata: Record<string, unknown> | null;
 
   constructor(options: { crewName?: string | null; crew_name?: string | null; crew?: unknown; error: unknown }) {
-    super({ type: "crew_train_failed", sourceType: "crew", sourceFingerprint: getCrewSourceFingerprint(options.crew) });
-    this.crewName = options.crewName ?? options.crew_name ?? null;
-    this.crew_name = this.crewName;
-    this.crew = options.crew ?? null;
+    super({ type: "crew_train_failed", crewName: options.crewName, crew_name: options.crew_name, crew: options.crew });
     this.error = formatError(options.error);
-    this.fingerprintMetadata = getCrewFingerprintMetadata(options.crew);
-    this.fingerprint_metadata = this.fingerprintMetadata;
   }
 }
 
-export class CrewTestStartedEvent extends BaseEvent {
-  readonly crewName: string | null;
-  readonly crew_name: string | null;
-  readonly crew: unknown;
+export class CrewTestStartedEvent extends CrewBaseEvent {
   readonly n_iterations: number;
   readonly eval_llm: unknown;
   readonly inputs: InputValues | null;
-  readonly fingerprintMetadata: Record<string, unknown> | null;
-  readonly fingerprint_metadata: Record<string, unknown> | null;
 
   constructor(options: {
     crewName?: string | null;
@@ -374,51 +425,25 @@ export class CrewTestStartedEvent extends BaseEvent {
     eval_llm?: unknown;
     inputs?: InputValues | null;
   }) {
-    super({ type: "crew_test_started", sourceType: "crew", sourceFingerprint: getCrewSourceFingerprint(options.crew) });
-    this.crewName = options.crewName ?? options.crew_name ?? null;
-    this.crew_name = this.crewName;
-    this.crew = options.crew ?? null;
+    super({ type: "crew_test_started", crewName: options.crewName, crew_name: options.crew_name, crew: options.crew });
     this.n_iterations = options.n_iterations;
     this.eval_llm = options.eval_llm ?? null;
     this.inputs = options.inputs ?? null;
-    this.fingerprintMetadata = getCrewFingerprintMetadata(options.crew);
-    this.fingerprint_metadata = this.fingerprintMetadata;
   }
 }
 
-export class CrewTestCompletedEvent extends BaseEvent {
-  readonly crewName: string | null;
-  readonly crew_name: string | null;
-  readonly crew: unknown;
-  readonly fingerprintMetadata: Record<string, unknown> | null;
-  readonly fingerprint_metadata: Record<string, unknown> | null;
-
+export class CrewTestCompletedEvent extends CrewBaseEvent {
   constructor(options: { crewName?: string | null; crew_name?: string | null; crew?: unknown } = {}) {
-    super({ type: "crew_test_completed", sourceType: "crew", sourceFingerprint: getCrewSourceFingerprint(options.crew) });
-    this.crewName = options.crewName ?? options.crew_name ?? null;
-    this.crew_name = this.crewName;
-    this.crew = options.crew ?? null;
-    this.fingerprintMetadata = getCrewFingerprintMetadata(options.crew);
-    this.fingerprint_metadata = this.fingerprintMetadata;
+    super({ type: "crew_test_completed", crewName: options.crewName, crew_name: options.crew_name, crew: options.crew });
   }
 }
 
-export class CrewTestFailedEvent extends BaseEvent {
-  readonly crewName: string | null;
-  readonly crew_name: string | null;
-  readonly crew: unknown;
+export class CrewTestFailedEvent extends CrewBaseEvent {
   readonly error: string;
-  readonly fingerprintMetadata: Record<string, unknown> | null;
-  readonly fingerprint_metadata: Record<string, unknown> | null;
 
   constructor(options: { crewName?: string | null; crew_name?: string | null; crew?: unknown; error: unknown }) {
-    super({ type: "crew_test_failed", sourceType: "crew", sourceFingerprint: getCrewSourceFingerprint(options.crew) });
-    this.crewName = options.crewName ?? options.crew_name ?? null;
-    this.crew_name = this.crewName;
-    this.crew = options.crew ?? null;
+    super({ type: "crew_test_failed", crewName: options.crewName, crew_name: options.crew_name, crew: options.crew });
     this.error = formatError(options.error);
-    this.fingerprintMetadata = getCrewFingerprintMetadata(options.crew);
-    this.fingerprint_metadata = this.fingerprintMetadata;
   }
 }
 
@@ -474,14 +499,11 @@ export class TaskEvaluationEvent extends BaseEvent {
   }
 }
 
-export class CrewTestResultEvent extends BaseEvent {
+export class CrewTestResultEvent extends CrewBaseEvent {
   readonly quality: number;
   readonly executionDuration: number | null;
   readonly execution_duration: number | null;
   readonly model: string | null;
-  readonly crewName: string | null;
-  readonly crew_name: string | null;
-  readonly crew: unknown;
 
   constructor(options: {
     quality: number;
@@ -492,14 +514,11 @@ export class CrewTestResultEvent extends BaseEvent {
     crew_name?: string | null;
     crew?: unknown;
   }) {
-    super({ type: "crew_test_result", sourceType: "crew" });
+    super({ type: "crew_test_result", crewName: options.crewName, crew_name: options.crew_name, crew: options.crew });
     this.quality = options.quality;
     this.executionDuration = options.executionDuration ?? options.execution_duration ?? null;
     this.execution_duration = this.executionDuration;
     this.model = options.model ?? null;
-    this.crewName = options.crewName ?? options.crew_name ?? null;
-    this.crew_name = this.crewName;
-    this.crew = options.crew ?? null;
   }
 }
 
