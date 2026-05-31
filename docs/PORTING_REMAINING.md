@@ -11,7 +11,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `npm run lint`
   - `npm run smoke:pack`
   - `python3 scripts/check-export-parity.py`
-- Test suite: 387 passing tests.
+- Test suite: 389 passing tests.
 - Root export parity against upstream clone `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `5cdc420`: `total_missing=0`.
 - Public method parity has been tightened for core runtime classes:
   - `ConsoleFormatter`: `missing=0`
@@ -78,6 +78,7 @@ When more goal budget is available, continue from the behavioral parity audits b
   - `MemoryScope` / `MemorySlice` `remember_many`, `extract_memories`, and `bind`
   - `MemoryScope` relative sub-scope writes/recalls plus `read_only`, `tree`, and `list_categories`
   - `MemorySlice` upstream-style default read-only writes, opt-in writable slices, category-filtered recall, `tree`, `list_categories`, and path-scoped listing aggregation
+  - `Memory.model_post_init` now exposes upstream-style runtime initialization and preserves memory kind/read-only/root-scope aliases.
 - Added Flow checkpoint restoration/fork compatibility plus mutable locked proxy behavior:
   - `Flow.fromCheckpoint` / `Flow.from_checkpoint`
   - `Flow.fork`
@@ -118,6 +119,7 @@ When more goal budget is available, continue from the behavioral parity audits b
   - `BaseEvent.to_json` now exposes upstream-style event serialization with exclusion support and snake_case compatibility keys.
   - Agent execution lifecycle events now expose upstream-style `set_fingerprint_data` helpers for fingerprint metadata refresh.
   - `Telemetry` now exposes deterministic local span recording for upstream task/tool/test/crew/flow/environment/human-feedback/feature/template span methods without enabling network exporters
+  - `EventListener.setup_listeners` and `TraceCollectionListener.setup_listeners` now expose subclass-level upstream listener setup aliases.
 - Added crew chat compatibility behavior:
   - `handleUserInput` now forwards the generated crew function schema and available function map to the chat LLM call so upstream-style conversational crew function calling can execute.
 - Added converter compatibility behavior:
@@ -137,6 +139,7 @@ When more goal budget is available, continue from the behavioral parity audits b
   - `CacheTools.hit_cache` now exposes the upstream direct cache lookup helper used by the generated cache tool.
 - Added project wrapper compatibility behavior:
   - `TaskMethod` now exposes upstream-style `ensure_task_name` and applies default task names on direct `call`/`invoke` paths.
+  - `CrewAIPlugin.get_class_decorator_hook` now exposes a deterministic no-op-compatible mypy plugin hook surface for `CrewBase` decorator metadata.
 - Added planning compatibility behavior:
   - `StepObservation.coerce_single_refinement_to_list` now exposes the upstream validator helper for single refinement objects.
 - Added rate-limit compatibility behavior:

@@ -41,6 +41,7 @@ import {
   ConsoleFormatter,
   Crew,
   CrewOutput,
+  CrewAIPlugin,
   CrewProject,
   CrewStreamingOutput,
   CrewTestCompletedEvent,
@@ -56,6 +57,8 @@ import {
   CheckpointStartedEvent,
   EventNode,
   EventRecord,
+  EventBus,
+  EventListener,
   Fingerprint,
   Flow,
   FlowCreatedEvent,
@@ -505,6 +508,7 @@ import {
   TokenProcess,
   TokenCalcHandler,
   TrainingConverter,
+  TraceCollectionListener,
   WorkosProvider,
   OutputParserError,
   OptionalDependencyError,
@@ -6388,6 +6392,26 @@ describe("top-level CrewAI exports", () => {
     expect(LLM).toBe(ConfiguredLLM);
     expect(llm).toBeInstanceOf(ConfiguredLLM);
     expect(__version__).toBe("0.0.0");
+  });
+
+  it("exposes upstream plugin and listener setup hooks", () => {
+    const pluginInstance = new CrewAIPlugin();
+    const hook = pluginInstance.get_class_decorator_hook("crewai.project.CrewBase");
+    expect(typeof hook).toBe("function");
+    expect(pluginInstance.getClassDecoratorHook("custom.Decorator")).toBeNull();
+
+    const ctx = { cls: { info: { fullname: "demo.Crew", names: {} as Record<string, unknown> } } };
+    hook?.(ctx);
+    expect(Object.keys(ctx.cls.info.names).sort()).toEqual(["agents_config", "tasks_config"]);
+
+    expect(Object.hasOwn(EventListener.prototype, "setup_listeners")).toBe(true);
+    expect(Object.hasOwn(TraceCollectionListener.prototype, "setup_listeners")).toBe(true);
+    expect(() => {
+      new EventListener(new EventBus()).setup_listeners(new EventBus());
+    }).not.toThrow();
+    expect(() => {
+      new TraceCollectionListener(new EventBus()).setup_listeners(new EventBus());
+    }).not.toThrow();
   });
 });
 
@@ -13031,6 +13055,30 @@ describe("memory", () => {
     });
     expect(memory.allRecords()).toHaveLength(3);
     expect(seen).toEqual(["consolidation"]);
+  });
+
+  it("exposes upstream memory model_post_init runtime initialization", () => {
+    const memory = new Memory({
+      root_scope: "/crew",
+      read_only: false,
+      recency_weight: 0.1,
+      semantic_weight: 0.7,
+      importance_weight: 0.2,
+      default_importance: 0.9,
+    });
+
+    expect(memory.memory_kind).toBe("memory");
+    expect(memory.root_scope).toBe("/crew");
+    expect(memory.read_only).toBe(false);
+    memory.model_post_init();
+
+    const record = memory.remember("Post init preserves runtime config", {
+      scope: "/research",
+    });
+    expect(record).toMatchObject({
+      scope: "/crew/research",
+      importance: 0.9,
+    });
   });
 
   it("uses configured memory LLM consolidation plans to update similar records", async () => {

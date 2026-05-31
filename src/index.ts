@@ -2485,6 +2485,39 @@ export const version = "0.0.0";
 
 export class CrewAIPlugin {
   readonly kind = "CrewAIPlugin";
+
+  getClassDecoratorHook(fullname: string): ((ctx: { cls?: { info?: { fullname?: string; names?: Record<string, unknown> } } }) => void) | null {
+    if (fullname === "crewai.project.CrewBase" || fullname === "crewai.project.crew_base.CrewBase") {
+      return (ctx) => {
+        CrewAIPlugin.crewBaseHook(ctx);
+      };
+    }
+    return null;
+  }
+
+  get_class_decorator_hook(fullname: string): ReturnType<CrewAIPlugin["getClassDecoratorHook"]> {
+    return this.getClassDecoratorHook(fullname);
+  }
+
+  private static crewBaseHook(ctx: { cls?: { info?: { fullname?: string; names?: Record<string, unknown> } } }): void {
+    const info = ctx.cls?.info;
+    if (!info) {
+      return;
+    }
+    info.names ??= {};
+    info.names.agents_config = {
+      kind: "MDEF",
+      name: "agents_config",
+      fullname: `${info.fullname ?? "Crew"}.agents_config`,
+      type: "dict[str, Any]",
+    };
+    info.names.tasks_config = {
+      kind: "MDEF",
+      name: "tasks_config",
+      fullname: `${info.fullname ?? "Crew"}.tasks_config`,
+      type: "dict[str, Any]",
+    };
+  }
 }
 
 export function plugin(): CrewAIPlugin {

@@ -4133,6 +4133,10 @@ export class EventListener extends BaseEventListener {
   setupListeners(_eventBus: EventBus): void {
     void _eventBus;
   }
+
+  override setup_listeners(eventBus: EventBus): void {
+    this.setupListeners(eventBus);
+  }
 }
 export const event_listener = EventListener.getInstance();
 
@@ -4606,6 +4610,10 @@ export class ConsoleFormatter {
 export class TraceCollectionListener extends BaseEventListener {
   setupListeners(_eventBus: EventBus): void {
     void _eventBus;
+  }
+
+  override setup_listeners(eventBus: EventBus): void {
+    this.setupListeners(eventBus);
   }
 }
 

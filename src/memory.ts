@@ -837,18 +837,35 @@ export type MemoryTreeNode = {
 };
 
 export class Memory {
+  readonly memoryKind = "memory";
+  readonly memory_kind = "memory";
   readonly readOnly: boolean;
+  readonly read_only: boolean;
   readonly rootScope: string | null;
+  readonly root_scope: string | null;
   readonly llm: LLM | null;
-  private readonly config: MemoryConfig;
+  private config: MemoryConfig;
+  private readonly configOptions: ConstructorParameters<typeof MemoryConfig>[0];
   private readonly records: MemoryRecord[] = [];
   private readonly pendingWrites: Array<() => MemoryRecord[]> = [];
 
   constructor(options: MemoryOptions = {}) {
     this.readOnly = options.readOnly ?? options.read_only ?? false;
+    this.read_only = this.readOnly;
     this.rootScope = options.rootScope ?? options.root_scope ?? null;
+    this.root_scope = this.rootScope;
     this.llm = options.llm ?? null;
-    this.config = new MemoryConfig(options);
+    this.configOptions = { ...options };
+    this.config = new MemoryConfig(this.configOptions);
+  }
+
+  modelPostInit(_context: unknown = null): void {
+    void _context;
+    this.config = new MemoryConfig(this.configOptions);
+  }
+
+  model_post_init(_context: unknown = null): void {
+    this.modelPostInit(_context);
   }
 
   remember(
