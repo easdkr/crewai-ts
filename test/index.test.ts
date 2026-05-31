@@ -412,6 +412,7 @@ import {
   GeminiCompletion,
   GenerativeAiProvider,
   HuggingFaceProvider,
+  InternalInstructor,
   InstructorProvider,
   JinaProvider,
   OllamaProvider,
@@ -1389,6 +1390,32 @@ describe("training utilities", () => {
     expect(converter._process_field_value("[\"a\",\"b\"]", "list")).toEqual(["a", "b"]);
     expect(TrainingConverter._parse_float("none")).toBe(0);
     expect(TrainingConverter._strip_bullet("* Item")).toBe("Item");
+  });
+
+  it("converts InternalInstructor responses to structured models", () => {
+    const calls: Array<{ messages: readonly LLMMessage[]; options: Record<string, unknown> | undefined }> = [];
+    const model = {
+      model_validate(value: unknown) {
+        const record = value as Record<string, unknown>;
+        return { summary: String(record.summary), score: Number(record.score) };
+      },
+      model_dump(value: { summary: string; score: number }) {
+        return value;
+      },
+    };
+    const llm = {
+      model: "test-model",
+      call(messages: readonly LLMMessage[], options?: Record<string, unknown>) {
+        calls.push({ messages, options });
+        return "{\"summary\":\"CrewAI port\",\"score\":9}";
+      },
+    };
+    const instructor = new InternalInstructor("Summarize CrewAI", model, null, llm);
+
+    expect(instructor.to_pydantic()).toEqual({ summary: "CrewAI port", score: 9 });
+    expect(instructor.to_json()).toBe(JSON.stringify({ summary: "CrewAI port", score: 9 }, null, 2));
+    expect(calls[0]?.messages).toEqual([{ role: "user", content: "Summarize CrewAI" }]);
+    expect(calls[0]?.options?.responseModel).toBe(model);
   });
 });
 

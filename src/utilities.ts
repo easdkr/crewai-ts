@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 
+import type { LLMMessage } from "./types.js";
 import { __version__ } from "./version.js";
 
 export class ImportError extends Error {
@@ -42,15 +43,31 @@ export class InternalInstructor {
     this.content = content;
     this.model = model;
     this.agent = agent;
-    this.llm = llm;
+    this.llm = llm ?? resolveInstructorAgentLlm(agent);
   }
 
   toJson(): string {
-    return JSON.stringify({ content: this.content });
+    return JSON.stringify(dumpInstructorModel(this.toPydantic(), this.model), null, 2);
   }
 
   to_json(): string {
     return this.toJson();
+  }
+
+  toPydantic(): unknown {
+    if (!isValidInstructorLlm(this.llm)) {
+      throw new Error("LLM must be provided and have a model attribute or be a string");
+    }
+    const messages: LLMMessage[] = [{ role: "user", content: this.content }];
+    const response = callInstructorLlm(this.llm, messages, this.model);
+    if (isPromiseLike(response)) {
+      throw new Error("InternalInstructor.to_pydantic received an async LLM response; use a synchronous LLM client for this compatibility helper.");
+    }
+    return coerceInstructorResponseToModel(response, this.model);
+  }
+
+  to_pydantic(): unknown {
+    return this.toPydantic();
   }
 }
 
@@ -88,6 +105,101 @@ export function reset_memories_command(
   void agent_knowledge;
   void kickoff_outputs;
   void all;
+}
+
+function resolveInstructorAgentLlm(agent: unknown): unknown {
+  if (!agent || typeof agent !== "object") {
+    return null;
+  }
+  const record = agent as {
+    function_calling_llm?: unknown;
+    functionCallingLlm?: unknown;
+    llm?: unknown;
+  };
+  return record.function_calling_llm ?? record.functionCallingLlm ?? record.llm ?? null;
+}
+
+function isValidInstructorLlm(llm: unknown): boolean {
+  return llm !== null
+    && llm !== undefined
+    && (typeof llm === "string" || typeof llm === "function" || (typeof llm === "object" && ("model" in llm || "call" in llm)));
+}
+
+function callInstructorLlm(llm: unknown, messages: readonly LLMMessage[], model: unknown): unknown {
+  if (typeof llm === "function") {
+    const callable = llm as (messages: readonly LLMMessage[], options?: Record<string, unknown>) => unknown;
+    return callable(messages, { responseModel: model, response_model: model });
+  }
+  if (llm && typeof llm === "object" && "call" in llm && typeof (llm as { call?: unknown }).call === "function") {
+    return (llm as { call(messages: readonly LLMMessage[], options?: Record<string, unknown>): unknown }).call(messages, {
+      responseModel: model,
+      response_model: model,
+    });
+  }
+  throw new Error("InternalInstructor requires an LLM client with a call method in TypeScript.");
+}
+
+function coerceInstructorResponseToModel(response: unknown, model: unknown): unknown {
+  const value = typeof response === "string" ? parseInstructorJson(response) : response;
+  if (typeof model === "function") {
+    const validate = model as (value: unknown) => unknown;
+    return validate(value);
+  }
+  if (model && typeof model === "object") {
+    const record = model as {
+      modelValidate?: (value: unknown) => unknown;
+      model_validate?: (value: unknown) => unknown;
+      modelValidateJson?: (value: string) => unknown;
+      model_validate_json?: (value: string) => unknown;
+    };
+    if (record.modelValidate) {
+      return record.modelValidate(value);
+    }
+    if (record.model_validate) {
+      return record.model_validate(value);
+    }
+    if (typeof response === "string" && record.modelValidateJson) {
+      return record.modelValidateJson(response);
+    }
+    if (typeof response === "string" && record.model_validate_json) {
+      return record.model_validate_json(response);
+    }
+  }
+  return value;
+}
+
+function dumpInstructorModel(value: unknown, model: unknown): Record<string, unknown> {
+  if (model && typeof model === "object") {
+    const record = model as {
+      modelDump?: (value: unknown) => Record<string, unknown>;
+      model_dump?: (value: unknown) => Record<string, unknown>;
+    };
+    if (record.modelDump) {
+      return record.modelDump(value);
+    }
+    if (record.model_dump) {
+      return record.model_dump(value);
+    }
+  }
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? { ...(value as Record<string, unknown>) }
+    : { value };
+}
+
+function parseInstructorJson(response: string): unknown {
+  try {
+    return JSON.parse(response);
+  } catch {
+    const match = /({.*})/s.exec(response);
+    if (match?.[1]) {
+      return JSON.parse(match[1]);
+    }
+    return response;
+  }
+}
+
+function isPromiseLike<T>(value: T | PromiseLike<T>): value is PromiseLike<T> {
+  return typeof value === "object" && value !== null && "then" in value && typeof (value as { then?: unknown }).then === "function";
 }
 
 export type SerializablePrimitive = string | number | boolean | null;
