@@ -12,6 +12,8 @@ import { I18N_DEFAULT } from "./i18n.js";
 import { BaseTool, type BaseToolOptions, type ToolArgsSchema } from "./tools.js";
 import type { LLMMessage, Tool } from "./types.js";
 
+const RECALL_OVERSAMPLE_FACTOR = 2;
+
 export type MemoryRecordOptions = {
   id?: string;
   content: string;
@@ -2559,8 +2561,10 @@ export class MemorySlice {
   recall(query: string, options: Omit<MemoryRecallOptions, "scope"> = {}): MemoryMatch[] {
     const matches = new Map<string, MemoryMatch>();
     const categories = options.categories ?? this.categories ?? undefined;
+    const limit = options.limit ?? 10;
+    const perScopeLimit = limit * RECALL_OVERSAMPLE_FACTOR;
     for (const scope of this.scopes) {
-      const recallOptions: MemoryRecallOptions = { ...options, scope };
+      const recallOptions: MemoryRecallOptions = { ...options, scope, limit: perScopeLimit };
       if (categories !== undefined) {
         recallOptions.categories = categories;
       }
@@ -2571,7 +2575,7 @@ export class MemorySlice {
         }
       }
     }
-    return [...matches.values()].sort((left, right) => right.score - left.score);
+    return [...matches.values()].sort((left, right) => right.score - left.score).slice(0, limit);
   }
 
   extractMemories(content: string): readonly string[] {

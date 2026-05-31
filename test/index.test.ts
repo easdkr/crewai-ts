@@ -13668,6 +13668,17 @@ describe("memory", () => {
     expect(memory.tree(true).children.projects?.children.alpha?.count).toBe(2);
   });
 
+  it("limits memory slice recall after merging scoped oversampled results", () => {
+    const memory = new Memory();
+    memory.remember("Alpha target memory", { scope: "/projects/alpha", importance: 0.9 });
+    memory.remember("Beta target memory", { scope: "/projects/beta", importance: 0.8 });
+
+    const slice = memory.slice(["/projects/alpha", "/projects/beta"]);
+    const results = slice.recall("target", { limit: 1, scoreThreshold: null });
+
+    expect(results).toHaveLength(1);
+  });
+
   it("mirrors upstream scoped memory subpaths, categories, trees, and read-only slices", () => {
     const memory = new Memory();
     const alpha = memory.scope("/projects/alpha");
