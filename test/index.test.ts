@@ -44,10 +44,16 @@ import {
   A2ATransportNegotiatedEvent,
   A2ATaskState,
   APIKeyAuth,
+  AuthMetadataPlugin,
   _build_task_description,
+  _create_grpc_channel_factory,
+  _create_grpc_interceptors,
   _create_file_parts,
   _create_result_artifact,
   _extract_response_schema,
+  _inject_metadata,
+  _merge_metadata,
+  _normalize_grpc_metadata,
   _parse_redis_url,
   Agent,
   AgentCardSigningConfig,
@@ -122,6 +128,7 @@ import {
   FlowMethod,
   FlowTrackable,
   GoalAchievedEarlyEvent,
+  GRPCClientConfig,
   GRPCServerConfig,
   HTTPBasicAuth,
   HTTPDigestAuth,
@@ -4372,6 +4379,50 @@ describe("a2a utilities", () => {
     expect(() => negotiateTransport(agentCard, {
       client_supported_transports: ["WEBSOCKET"],
     })).toThrow(TransportNegotiationError);
+  });
+
+  it("normalizes and injects A2A gRPC metadata like upstream interceptors", async () => {
+    expect(_normalize_grpc_metadata([["X-A2A-Extensions", "a2ui"], ["Authorization", "Bearer token"]])).toEqual([
+      ["x-a2a-extensions", "a2ui"],
+      ["authorization", "Bearer token"],
+    ]);
+    expect(_merge_metadata([["X-Trace", "1"]], [["Authorization", "Bearer token"]])).toEqual([
+      ["x-trace", "1"],
+      ["authorization", "Bearer token"],
+    ]);
+    expect(_merge_metadata(null, null)).toBeNull();
+
+    const details = {
+      metadata: [["X-Trace", "1"]] as Array<readonly [string, string]>,
+      _replace(update: { metadata: Array<readonly [string, string]> | null }) {
+        return { metadata: update.metadata, replaced: true };
+      },
+    };
+    expect(_inject_metadata(details, [["Authorization", "Bearer token"]])).toEqual({
+      metadata: [["x-trace", "1"], ["authorization", "Bearer token"]],
+      replaced: true,
+    });
+
+    const [unaryUnary] = _create_grpc_interceptors([["Authorization", "Bearer token"]]);
+    await expect(unaryUnary.intercept_unary_unary((nextDetails, request) => Promise.resolve({ nextDetails, request }), {
+      metadata: [["X-A2A-Extensions", "a2ui"]],
+    }, { id: "req-1" })).resolves.toEqual({
+      nextDetails: { metadata: [["x-a2a-extensions", "a2ui"], ["authorization", "Bearer token"]] },
+      request: { id: "req-1" },
+    });
+
+    const callback = vi.fn();
+    new AuthMetadataPlugin([["authorization", "Bearer token"]]).call(null, callback);
+    expect(callback).toHaveBeenCalledWith([["authorization", "Bearer token"]], null);
+
+    const factory = _create_grpc_channel_factory(new GRPCClientConfig({
+      max_send_message_length: 1024,
+      keepalive_time_ms: 30_000,
+    }));
+    expect(factory("localhost:50051")).toMatchObject({
+      target: "localhost:50051",
+      options: [["grpc.max_send_message_length", 1024], ["grpc.keepalive_time_ms", 30000]],
+    });
   });
 
   it("creates A2A JSON-RPC errors and renders templates", () => {

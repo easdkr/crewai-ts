@@ -2909,6 +2909,132 @@ export class ClientTransportConfig {
   }
 }
 
+export type GrpcMetadata = ReadonlyArray<readonly [string, string]>;
+
+export function _normalize_grpc_metadata(metadata: GrpcMetadata | null | undefined): Array<readonly [string, string]> | null {
+  if (!metadata) {
+    return null;
+  }
+  return metadata.map(([key, value]) => [key.toLowerCase(), value] as const);
+}
+
+export function _merge_metadata(existing: GrpcMetadata | null | undefined, auth: GrpcMetadata | null | undefined): Array<readonly [string, string]> | null {
+  const merged: Array<readonly [string, string]> = [
+    ...(existing ?? []),
+    ...(auth ?? []),
+  ];
+  return merged.length > 0 ? _normalize_grpc_metadata(merged) : null;
+}
+
+export function _inject_metadata(
+  clientCallDetails: { metadata?: GrpcMetadata | null; _replace?: (updates: { metadata: Array<readonly [string, string]> | null }) => unknown },
+  authMetadata: GrpcMetadata | null = null,
+): unknown {
+  const metadata = _merge_metadata(clientCallDetails.metadata, authMetadata);
+  if (clientCallDetails._replace) {
+    return clientCallDetails._replace({ metadata });
+  }
+  return { ...clientCallDetails, metadata };
+}
+
+export class MetadataUnaryUnary {
+  constructor(readonly authMetadata: GrpcMetadata | null = null) {}
+
+  async intercept_unary_unary<TRequest, TResponse>(
+    continuation: (details: unknown, request: TRequest) => Promise<TResponse> | TResponse,
+    clientCallDetails: { metadata?: GrpcMetadata | null },
+    request: TRequest,
+  ): Promise<TResponse> {
+    return await continuation(_inject_metadata(clientCallDetails, this.authMetadata), request);
+  }
+}
+
+export class MetadataUnaryStream {
+  constructor(readonly authMetadata: GrpcMetadata | null = null) {}
+
+  async intercept_unary_stream<TRequest, TResponse>(
+    continuation: (details: unknown, request: TRequest) => Promise<TResponse> | TResponse,
+    clientCallDetails: { metadata?: GrpcMetadata | null },
+    request: TRequest,
+  ): Promise<TResponse> {
+    return await continuation(_inject_metadata(clientCallDetails, this.authMetadata), request);
+  }
+}
+
+export class MetadataStreamUnary {
+  constructor(readonly authMetadata: GrpcMetadata | null = null) {}
+
+  async intercept_stream_unary<TRequest, TResponse>(
+    continuation: (details: unknown, requestIterator: TRequest) => Promise<TResponse> | TResponse,
+    clientCallDetails: { metadata?: GrpcMetadata | null },
+    requestIterator: TRequest,
+  ): Promise<TResponse> {
+    return await continuation(_inject_metadata(clientCallDetails, this.authMetadata), requestIterator);
+  }
+}
+
+export class MetadataStreamStream {
+  constructor(readonly authMetadata: GrpcMetadata | null = null) {}
+
+  async intercept_stream_stream<TRequest, TResponse>(
+    continuation: (details: unknown, requestIterator: TRequest) => Promise<TResponse> | TResponse,
+    clientCallDetails: { metadata?: GrpcMetadata | null },
+    requestIterator: TRequest,
+  ): Promise<TResponse> {
+    return await continuation(_inject_metadata(clientCallDetails, this.authMetadata), requestIterator);
+  }
+}
+
+export function _create_grpc_interceptors(auth_metadata: GrpcMetadata | null = null): [MetadataUnaryUnary, MetadataUnaryStream, MetadataStreamUnary, MetadataStreamStream] {
+  return [
+    new MetadataUnaryUnary(auth_metadata),
+    new MetadataUnaryStream(auth_metadata),
+    new MetadataStreamUnary(auth_metadata),
+    new MetadataStreamStream(auth_metadata),
+  ];
+}
+
+export class AuthMetadataPlugin {
+  readonly metadata: Array<readonly [string, string]>;
+
+  constructor(metadata: GrpcMetadata) {
+    this.metadata = [...metadata];
+  }
+
+  call(_context: unknown, callback: (metadata: Array<readonly [string, string]>, error: Error | null) => void): void {
+    callback(this.metadata, null);
+  }
+}
+
+export function _create_grpc_channel_factory(grpc_config: GRPCClientConfig, auth: { applyAuth?: () => Promise<Record<string, string>> | Record<string, string>; apply_auth?: (client: unknown, headers: Record<string, string>) => Promise<Record<string, string>> | Record<string, string> } | null = null): (target: string) => Record<string, unknown> {
+  return (target: string) => {
+    const options = grpcChannelOptions(grpc_config);
+    return {
+      target,
+      options,
+      auth,
+      interceptors: _create_grpc_interceptors(),
+    };
+  };
+}
+
+function grpcChannelOptions(config: GRPCClientConfig): Array<readonly [string, number]> {
+  const options: Array<readonly [string, number]> = [];
+  if (config.maxSendMessageLength !== null) {
+    options.push(["grpc.max_send_message_length", config.maxSendMessageLength]);
+  }
+  if (config.maxReceiveMessageLength !== null) {
+    options.push(["grpc.max_receive_message_length", config.maxReceiveMessageLength]);
+  }
+  if (config.keepaliveTimeMs !== null) {
+    options.push(["grpc.keepalive_time_ms", config.keepaliveTimeMs]);
+  }
+  if (config.keepaliveTimeoutMs !== null) {
+    options.push(["grpc.keepalive_timeout_ms", config.keepaliveTimeoutMs]);
+  }
+  return options;
+}
+
 export type A2AClientConfigOptions = {
   endpoint: string;
   auth?: unknown;
