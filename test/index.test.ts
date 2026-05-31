@@ -451,6 +451,7 @@ import {
   HuggingFaceProvider,
   InternalInstructor,
   InstructorProvider,
+  JinaEmbeddingFunction,
   JinaProvider,
   OllamaEmbeddingFunction,
   OllamaProvider,
@@ -7381,6 +7382,38 @@ describe("RAG configuration and factories", () => {
     expect(fetchCall[1].body).toBe(JSON.stringify({
       texts: ["first", "second"],
       model: "embed-english-v3.0",
+    }));
+    fetchMock.mockRestore();
+  });
+
+  it("calls Jina's embeddings API for Jina providers", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({
+        data: [
+          { index: 0, embedding: [0.31, 0.32] },
+          { index: 1, embedding: [0.41, 0.42] },
+        ],
+      }),
+    } as Response);
+
+    const jinaEmbedder = new JinaEmbeddingFunction({
+      api_key: "jina-test",
+      model_name: "jina-embeddings-v3",
+      api_url: "https://jina.example/v1/embeddings",
+    }).asCallable();
+    await expect(jinaEmbedder(["first", "second"])).resolves.toEqual([[0.31, 0.32], [0.41, 0.42]]);
+
+    const fetchCall = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(fetchCall[0]).toBe("https://jina.example/v1/embeddings");
+    expect(fetchCall[1].method).toBe("POST");
+    expect(fetchCall[1].headers).toMatchObject({
+      authorization: "Bearer jina-test",
+      "content-type": "application/json",
+    });
+    expect(fetchCall[1].body).toBe(JSON.stringify({
+      input: ["first", "second"],
+      model: "jina-embeddings-v3",
     }));
     fetchMock.mockRestore();
   });

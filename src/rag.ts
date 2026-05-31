@@ -792,14 +792,66 @@ export class InstructorProvider extends BaseEmbeddingsProvider {
   }
 }
 
+export class JinaEmbeddingFunction {
+  readonly api_key: string | null;
+  readonly model_name: string;
+  readonly api_url: string;
+
+  constructor(options: JinaProviderConfig & { api_url?: string } = {}) {
+    this.api_key = options.api_key ?? null;
+    this.model_name = options.model_name ?? "jina-embeddings-v2-base-en";
+    this.api_url = options.api_url ?? "https://api.jina.ai/v1/embeddings";
+  }
+
+  async call(input: Embeddable): Promise<Embeddings> {
+    const values = Array.isArray(input) ? input.map((value) => String(value)) : [String(input)];
+    const response = await fetch(this.api_url, {
+      method: "POST",
+      headers: this.requestHeaders(),
+      body: JSON.stringify({
+        input: values,
+        model: this.model_name,
+      }),
+    });
+    if (!response.ok) {
+      throw new Error(`Jina embeddings request failed with status ${String(response.status)}`);
+    }
+    return extractOpenAIEmbeddings(await response.json());
+  }
+
+  async __call__(input: Embeddable): Promise<Embeddings> {
+    return this.call(input);
+  }
+
+  asCallable(): TypedEmbeddingFunction {
+    const callable: TypedEmbeddingFunction = (input: Embeddable) => this.call(input);
+    callable.embedQuery = callable;
+    callable.embed_query = callable;
+    return callable;
+  }
+
+  private requestHeaders(): Record<string, string> {
+    const headers: Record<string, string> = {
+      "content-type": "application/json",
+    };
+    if (this.api_key) {
+      headers.authorization = `Bearer ${this.api_key}`;
+    }
+    return headers;
+  }
+}
+
 export class JinaProvider extends BaseEmbeddingsProvider {
   readonly provider = "jina";
 
   constructor(options: JinaProviderConfig = {}) {
-    super({
-      embeddingCallable: defaultEmbeddingCallable,
+    const config = {
       model_name: "jina-embeddings-v2-base-en",
       ...options,
+    };
+    super({
+      embeddingCallable: new JinaEmbeddingFunction(config).asCallable(),
+      ...config,
     });
   }
 }

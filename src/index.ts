@@ -1907,6 +1907,7 @@ export {
   INVALID_CHARS_PATTERN,
   IntegerType,
   IPV4_PATTERN,
+  JinaEmbeddingFunction,
   JinaProvider,
   JinaProviderConfig,
   JinaProviderSpec,
