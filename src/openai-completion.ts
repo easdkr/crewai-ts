@@ -1,4 +1,4 @@
-import { ConfiguredLLM, LocalFileUploader, type BaseLLMOptions, type LLMCallOptions, type LLMResponse } from "./llm.js";
+import { ConfiguredLLM, LocalFileUploader, type BaseLLMOptions, type LLMCallOptions, type LLMMessageInput, type LLMResponse } from "./llm.js";
 import { convertToolsToOpenAISchema } from "./agent-utils.js";
 import type { LLMMessage, Tool } from "./types.js";
 
@@ -327,6 +327,10 @@ export class OpenAICompletion extends ConfiguredLLM {
 
   override call(messages: readonly LLMMessage[], options?: LLMCallOptions): Promise<LLMResponse> {
     return super.call(messages, options);
+  }
+
+  override async acall(messages: LLMMessageInput, options?: LLMCallOptions): Promise<LLMResponse> {
+    return await super.acall(messages, options);
   }
 
   prepareCompletionParams(messages: readonly LLMMessage[], tools: readonly Tool[] | null = null): Record<string, unknown> {
@@ -751,6 +755,10 @@ export class OpenAICompletion extends ConfiguredLLM {
     return !this.isO1Model;
   }
 
+  override supports_function_calling(): boolean {
+    return this.supportsFunctionCalling();
+  }
+
   override supportsStopWords(): boolean {
     const model = this.model.toLowerCase();
     if (model.includes("gpt-5")) {
@@ -759,30 +767,74 @@ export class OpenAICompletion extends ConfiguredLLM {
     return !this.isO1Model;
   }
 
+  override supports_stop_words(): boolean {
+    return this.supportsStopWords();
+  }
+
   override supportsMultimodal(): boolean {
     const model = this.model.toLowerCase();
     return ["gpt-4o", "gpt-4.1", "gpt-4-turbo", "gpt-4-vision", "gpt-5", "o1", "o3", "o4"]
       .some((prefix) => model.startsWith(prefix));
   }
 
+  override supports_multimodal(): boolean {
+    return this.supportsMultimodal();
+  }
+
   override getFileUploader(): LocalFileUploader {
     return new LocalFileUploader("openai", { llm: this });
+  }
+
+  override get_file_uploader(): LocalFileUploader {
+    return this.getFileUploader();
+  }
+
+  override getContextWindowSize(): number {
+    return super.getContextWindowSize();
+  }
+
+  override get_context_window_size(): number {
+    return this.getContextWindowSize();
   }
 
   override get lastResponseId(): string | null {
     return this.responseChainId;
   }
 
+  override get last_response_id(): string | null {
+    return this.lastResponseId;
+  }
+
   override get lastReasoningItems(): readonly unknown[] {
     return [...this.reasoningChainItems];
+  }
+
+  override get last_reasoning_items(): readonly unknown[] {
+    return this.lastReasoningItems;
   }
 
   override resetChain(): void {
     this.responseChainId = null;
   }
 
+  override reset_chain(): void {
+    this.resetChain();
+  }
+
   override resetReasoningChain(): void {
     this.reasoningChainItems = [];
+  }
+
+  override reset_reasoning_chain(): void {
+    this.resetReasoningChain();
+  }
+
+  override toConfigDict(): Record<string, unknown> {
+    return super.toConfigDict();
+  }
+
+  override to_config_dict(): Record<string, unknown> {
+    return this.toConfigDict();
   }
 }
 

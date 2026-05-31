@@ -8857,7 +8857,7 @@ describe("LLM providers", () => {
         content_type: "text/plain",
       },
     ]);
-    expect(openai.get_file_uploader()?.uploads).toEqual([]);
+    expect(openai.get_file_uploader().uploads).toEqual([]);
     expect(new AnthropicCompletion({ model: "claude-3-5-sonnet-20241022" }).get_file_uploader()).toMatchObject({ provider: "anthropic" });
     expect(new GeminiCompletion({ model: "gemini-2.5-flash" }).get_file_uploader()).toMatchObject({ provider: "gemini" });
     expect(new BedrockCompletion({ model: "amazon.nova-pro-v1:0" }).get_file_uploader()).toMatchObject({ provider: "bedrock" });
@@ -8926,6 +8926,27 @@ describe("LLM providers", () => {
     expect(azureOpenAI.last_response_id).toBe("az-resp-1");
     azureOpenAI.reset_chain();
     expect(azureOpenAI.last_response_id).toBeNull();
+  });
+
+  it("exposes upstream OpenAICompletion aliases directly on the provider class", async () => {
+    const openai = new OpenAICompletion({ model: "gpt-4o-mini", previous_response_id: "resp-1" });
+    for (const methodName of [
+      "acall",
+      "get_context_window_size",
+      "get_file_uploader",
+      "reset_chain",
+      "reset_reasoning_chain",
+      "supports_function_calling",
+      "supports_multimodal",
+      "supports_stop_words",
+      "to_config_dict",
+    ]) {
+      expect(Object.hasOwn(OpenAICompletion.prototype, methodName)).toBe(true);
+    }
+    expect(openai.last_response_id).toBe("resp-1");
+    expect(openai.last_reasoning_items).toEqual([]);
+    expect(openai.to_config_dict()).toMatchObject({ model: "gpt-4o-mini", provider: "openai" });
+    await expect(openai.acall([{ role: "user", content: "hello" }])).rejects.toThrow("No LLM provider registered");
   });
 
   it("prepares OpenAI chat and responses request parameters without SDK side effects", () => {
