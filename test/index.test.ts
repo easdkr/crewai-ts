@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { gzipSync } from "node:zlib";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { HTTPTransport as HookHTTPTransport } from "../src/llms-hooks-transport.js";
 import {
   A2AClientConfig,
   A2AError,
@@ -49,6 +50,7 @@ import {
   BaseLLM,
   LLM,
   BaseTransport,
+  BaseInterceptor,
   ConfiguredLLM,
   BearerTokenAuth,
   CSVKnowledgeSource,
@@ -16549,6 +16551,26 @@ describe("runtime state", () => {
 });
 
 describe("global hooks", () => {
+  it("intercepts synchronous LLM hook transport requests", () => {
+    class TestInterceptor extends BaseInterceptor<{ path: string }, { path: string; response?: boolean }> {
+      on_outbound(message: { path: string }): { path: string } {
+        return { path: `${message.path}?outbound=1` };
+      }
+
+      on_inbound(message: { path: string; response?: boolean }): { path: string; response?: boolean } {
+        return { ...message, response: true };
+      }
+    }
+
+    const transport = new HookHTTPTransport(new TestInterceptor(), { retries: 2 });
+
+    expect(transport.kwargs).toEqual({ retries: 2 });
+    expect(transport.handle_request({ path: "/v1/chat" })).toEqual({
+      path: "/v1/chat?outbound=1",
+      response: true,
+    });
+  });
+
   it("exposes upstream callable aliases on filtered hook wrappers", () => {
     const llmContext = new LLMCallHookContext({ messages: [{ role: "user", content: "hello" }] });
     const toolContext = new ToolCallHookContext({

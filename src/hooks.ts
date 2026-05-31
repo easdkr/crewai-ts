@@ -130,6 +130,21 @@ export class AsyncHTTPTransport {
     return await this.interceptor.aon_inbound(outbound);
   }
 }
+
+export class HTTPTransport {
+  readonly interceptor: BaseInterceptor;
+  readonly kwargs: HTTPTransportKwargs;
+
+  constructor(interceptor: BaseInterceptor, kwargs: HTTPTransportKwargs = {}) {
+    this.interceptor = interceptor;
+    this.kwargs = { ...kwargs };
+  }
+
+  handle_request(request: unknown): unknown {
+    const outbound = this.interceptor.on_outbound(request);
+    return this.interceptor.on_inbound(outbound);
+  }
+}
 export const BeforeLLMCallHook = Object.freeze({ kind: "BeforeLLMCallHook" });
 export const AfterLLMCallHook = Object.freeze({ kind: "AfterLLMCallHook" });
 export const BeforeToolCallHook = Object.freeze({ kind: "BeforeToolCallHook" });

@@ -770,8 +770,8 @@
       "import": "./dist/index.js"
     },
     "./llms/hooks/transport": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
+      "types": "./dist/llms-hooks-transport.d.ts",
+      "import": "./dist/llms-hooks-transport.js"
     },
     "./llms/providers/anthropic/completion": {
       "types": "./dist/index.d.ts",
