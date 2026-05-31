@@ -581,6 +581,101 @@ export class OpenAICompletion extends ConfiguredLLM {
     return this.extractReasoningItems(response);
   }
 
+  extractBuiltinToolOutputs(response: unknown): ResponsesAPIResult {
+    const responseRecord = readObject(response);
+    const result = new ResponsesAPIResult({
+      text: typeof responseRecord.output_text === "string" ? responseRecord.output_text : "",
+      response_id: typeof responseRecord.id === "string" ? responseRecord.id : null,
+    });
+
+    for (const rawItem of responseOutput(response)) {
+      const item = readObject(rawItem);
+      const type = typeof item.type === "string" ? item.type : "";
+      if (type === "web_search_call" || type === "web_search_preview") {
+        result.web_search_results.push({
+          id: stringOrNull(item.id),
+          status: stringOrNull(item.status),
+          type,
+        });
+      } else if (type === "file_search_call" || type === "file_search") {
+        const rawResults = Array.isArray(item.results) ? item.results : [];
+        result.file_search_results.push({
+          id: stringOrNull(item.id),
+          status: stringOrNull(item.status),
+          type,
+          queries: Array.isArray(item.queries) ? item.queries.filter((query): query is string => typeof query === "string") : [],
+          results: rawResults.map((rawResult) => {
+            const fileResult = readObject(rawResult);
+            return {
+              file_id: stringOrNull(fileResult.file_id),
+              filename: stringOrNull(fileResult.filename),
+              text: stringOrNull(fileResult.text),
+              score: typeof fileResult.score === "number" ? fileResult.score : null,
+              attributes: readStringNumberBooleanRecord(fileResult.attributes),
+            };
+          }),
+        });
+      } else if (type === "code_interpreter_call" || type === "code_interpreter") {
+        const rawOutputs = Array.isArray(item.outputs) ? item.outputs : [];
+        const codeResults: Array<CodeInterpreterLogResult | CodeInterpreterFileResult> = [];
+        for (const rawOutput of rawOutputs) {
+          const output = readObject(rawOutput);
+          if (output.type === "logs") {
+            codeResults.push({ type: "logs", logs: typeof output.logs === "string" ? output.logs : "" });
+          } else if (output.type === "image") {
+            codeResults.push({ type: "files", files: [{ url: output.url }] });
+          }
+        }
+        result.code_interpreter_results.push({
+          id: stringOrNull(item.id),
+          status: stringOrNull(item.status),
+          type,
+          code: stringOrNull(item.code),
+          container_id: stringOrNull(item.container_id),
+          results: codeResults,
+        });
+      } else if (type === "computer_call" || type === "computer_use_preview") {
+        const rawSafetyChecks = Array.isArray(item.pending_safety_checks) ? item.pending_safety_checks : [];
+        result.computer_use_results.push({
+          id: stringOrNull(item.id),
+          status: stringOrNull(item.status),
+          type,
+          call_id: stringOrNull(item.call_id),
+          action: readObject(item.action),
+          pending_safety_checks: rawSafetyChecks.map((rawCheck) => {
+            const check = readObject(rawCheck);
+            return {
+              id: stringOrNull(check.id),
+              code: stringOrNull(check.code),
+              message: stringOrNull(check.message),
+            };
+          }),
+        });
+      } else if (type === "reasoning") {
+        const rawSummary = Array.isArray(item.summary) ? item.summary : [];
+        result.reasoning_summaries.push({
+          id: stringOrNull(item.id),
+          status: stringOrNull(item.status),
+          type,
+          summary: rawSummary.map((entry) => readObject(entry)),
+          encrypted_content: stringOrNull(item.encrypted_content),
+        });
+      } else if (type === "function_call") {
+        result.function_calls.push({
+          id: item.call_id,
+          name: item.name,
+          arguments: item.arguments,
+        });
+      }
+    }
+
+    return result;
+  }
+
+  _extract_builtin_tool_outputs(response: unknown): ResponsesAPIResult {
+    return this.extractBuiltinToolOutputs(response);
+  }
+
   override supportsFunctionCalling(): boolean {
     return !this.isO1Model;
   }
@@ -776,4 +871,20 @@ function numberField(record: Record<string, unknown>, key: string): number {
 function responseOutput(response: unknown): unknown[] {
   const output = readObject(response).output;
   return Array.isArray(output) ? output : [];
+}
+
+function stringOrNull(value: unknown): string | null {
+  return typeof value === "string" ? value : null;
+}
+
+function readStringNumberBooleanRecord(value: unknown): Record<string, string | number | boolean> | null {
+  const record = readObject(value);
+  if (Object.keys(record).length === 0) {
+    return null;
+  }
+  return Object.fromEntries(
+    Object.entries(record).filter(([, entry]) => (
+      typeof entry === "string" || typeof entry === "number" || typeof entry === "boolean"
+    )),
+  ) as Record<string, string | number | boolean>;
 }

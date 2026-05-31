@@ -337,6 +337,7 @@ import {
   BedrockCompletion,
   GeminiCompletion,
   OpenAICompletion,
+  ResponsesAPIResult,
   EntraIdProvider,
   KeycloakProvider,
   Oauth2Settings,
@@ -8808,6 +8809,86 @@ describe("LLM providers", () => {
     expect((openai as unknown as {
       _extract_reasoning_items(response: unknown): unknown[];
     })._extract_reasoning_items(response)).toEqual([reasoningItem]);
+  });
+
+  it("extracts OpenAI Responses API built-in tool outputs", () => {
+    const openai = new OpenAICompletion({ model: "gpt-4.1", api: "responses" });
+    const parsed = (openai as unknown as {
+      _extract_builtin_tool_outputs(response: unknown): ResponsesAPIResult;
+    })._extract_builtin_tool_outputs({
+      id: "resp_1",
+      output_text: "Final answer",
+      output: [
+        { type: "web_search_call", id: "ws_1", status: "completed" },
+        {
+          type: "file_search_call",
+          id: "fs_1",
+          status: "completed",
+          queries: ["CrewAI"],
+          results: [{ file_id: "file_1", filename: "docs.md", text: "CrewAI docs", score: 0.8, attributes: { kind: "doc" } }],
+        },
+        {
+          type: "code_interpreter_call",
+          id: "ci_1",
+          status: "completed",
+          code: "print('hi')",
+          container_id: "ctr_1",
+          outputs: [{ type: "logs", logs: "hi\n" }, { type: "image", url: "https://example.test/plot.png" }],
+        },
+        {
+          type: "computer_call",
+          id: "cu_1",
+          status: "completed",
+          call_id: "comp_1",
+          action: { type: "click", x: 10, y: 20 },
+          pending_safety_checks: [{ id: "safe_1", code: "confirm", message: "Confirm action" }],
+        },
+        {
+          type: "reasoning",
+          id: "rs_1",
+          status: "completed",
+          summary: [{ type: "summary_text", text: "Need search" }],
+          encrypted_content: "encrypted",
+        },
+        { type: "function_call", call_id: "call_1", name: "search_docs", arguments: "{\"query\":\"CrewAI\"}" },
+      ],
+    });
+
+    expect(parsed).toBeInstanceOf(ResponsesAPIResult);
+    expect(parsed.text).toBe("Final answer");
+    expect(parsed.response_id).toBe("resp_1");
+    expect(parsed.web_search_results).toEqual([{ id: "ws_1", status: "completed", type: "web_search_call" }]);
+    expect(parsed.file_search_results).toEqual([{
+      id: "fs_1",
+      status: "completed",
+      type: "file_search_call",
+      queries: ["CrewAI"],
+      results: [{ file_id: "file_1", filename: "docs.md", text: "CrewAI docs", score: 0.8, attributes: { kind: "doc" } }],
+    }]);
+    expect(parsed.code_interpreter_results).toEqual([{
+      id: "ci_1",
+      status: "completed",
+      type: "code_interpreter_call",
+      code: "print('hi')",
+      container_id: "ctr_1",
+      results: [{ type: "logs", logs: "hi\n" }, { type: "files", files: [{ url: "https://example.test/plot.png" }] }],
+    }]);
+    expect(parsed.computer_use_results).toEqual([{
+      id: "cu_1",
+      status: "completed",
+      type: "computer_call",
+      call_id: "comp_1",
+      action: { type: "click", x: 10, y: 20 },
+      pending_safety_checks: [{ id: "safe_1", code: "confirm", message: "Confirm action" }],
+    }]);
+    expect(parsed.reasoning_summaries).toEqual([{
+      id: "rs_1",
+      status: "completed",
+      type: "reasoning",
+      summary: [{ type: "summary_text", text: "Need search" }],
+      encrypted_content: "encrypted",
+    }]);
+    expect(parsed.function_calls).toEqual([{ id: "call_1", name: "search_docs", arguments: "{\"query\":\"CrewAI\"}" }]);
   });
 
   it("prepares Azure completion request parameters with model extras and endpoint rules", () => {
