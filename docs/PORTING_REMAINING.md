@@ -4,13 +4,13 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
 
 ## Current Verified State
 
-- Full gate passed on 2026-05-28:
+- Full gate passed on 2026-05-31:
   - `npm run check`
   - `npm test`
   - `npm run build`
   - `npm run lint`
   - `npm run smoke:pack`
-- Test suite: 292 passing tests.
+- Test suite: 314 passing tests.
 - Root export parity against upstream clone `/tmp/crewai-upstream.lPeuQi/crewAI` at commit `2148c7e`: `total_missing=0`.
 - Public method parity has been tightened for core runtime classes:
   - `ConsoleFormatter`: `missing=0`
@@ -54,6 +54,8 @@ When more goal budget is available, continue from the behavioral parity audits b
 - Added unified memory compatibility helpers used by Flow and scoped views:
   - `Memory.remember_many`, `extract_memories`, `update`, `drain_writes`, `close`
   - `MemoryScope` / `MemorySlice` `remember_many`, `extract_memories`, and `bind`
+  - `MemoryScope` relative sub-scope writes/recalls plus `read_only`, `tree`, and `list_categories`
+  - `MemorySlice` upstream-style default read-only writes, opt-in writable slices, category-filtered recall, `tree`, and `list_categories`
 - Added Flow checkpoint restoration/fork compatibility plus mutable locked proxy behavior:
   - `Flow.fromCheckpoint` / `Flow.from_checkpoint`
   - `Flow.fork`
@@ -101,9 +103,8 @@ When more goal budget is available, continue from the behavioral parity audits b
 4. Unified memory
    - Async aliases and record/scope/category listing.
    - `remember_many`, `extract_memories`, `update`, `drain_writes`, `close`.
+   - `MemoryScope` / `MemorySlice` scoped writes/recalls, `bind`, `read_only`, `tree`, and `list_categories`.
    - These compatibility helpers are now present in the deterministic TS memory shim; remaining work is deeper async/background write and LLM-powered extraction parity.
-   - `MemoryScope` / `MemorySlice` methods like `bind`, `read_only`, `tree`, `list_categories`.
-   - Confirm the intended TS shape for scoped memory before widening public types, so Python aliases do not force an awkward API.
 
 5. RAG clients
    - ChromaDB/Qdrant client method parity.

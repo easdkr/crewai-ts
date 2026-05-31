@@ -955,8 +955,8 @@ export class Memory {
     return new MemoryScope(this, path);
   }
 
-  slice(scopes: readonly string[] | string): MemorySlice {
-    return new MemorySlice(this, typeof scopes === "string" ? [scopes] : scopes);
+  slice(scopes: readonly string[] | string, options: { categories?: readonly string[] | null; readOnly?: boolean } = {}): MemorySlice {
+    return new MemorySlice(this, typeof scopes === "string" ? [scopes] : scopes, options);
   }
 
   listScopes(full = false): readonly string[] | readonly ScopeInfo[] {
@@ -1094,6 +1094,10 @@ export function normalize_scope_path(path: string): string {
 
 export const join_scope_paths = joinScopePaths;
 
+type MemoryRememberOptions = NonNullable<Parameters<Memory["remember"]>[1]>;
+type MemoryRecallOptions = NonNullable<Parameters<Memory["recall"]>[1]>;
+type MemoryForgetOptions = NonNullable<Parameters<Memory["forget"]>[0]>;
+
 export class MemoryScope {
   readonly memory: Memory;
   readonly rootPath: string;
@@ -1107,19 +1111,23 @@ export class MemoryScope {
     return this.memory.readOnly;
   }
 
-  remember(content: string, options: Omit<Parameters<Memory["remember"]>[1], "scope"> = {}): MemoryRecord | null {
-    return this.memory.remember(content, { ...options, scope: this.rootPath });
+  get read_only(): boolean {
+    return this.readOnly;
   }
 
-  recall(query: string, options: Omit<Parameters<Memory["recall"]>[1], "scope"> = {}): MemoryMatch[] {
-    return this.memory.recall(query, { ...options, scope: this.rootPath });
+  remember(content: string, options: MemoryRememberOptions = {}): MemoryRecord | null {
+    return this.memory.remember(content, { ...options, scope: joinScopePaths(this.rootPath, options.scope ?? "/") });
   }
 
-  rememberMany(contents: readonly string[], options: Omit<Parameters<Memory["remember"]>[1], "scope"> = {}): MemoryRecord[] {
-    return this.memory.rememberMany(contents, { ...options, scope: this.rootPath });
+  recall(query: string, options: MemoryRecallOptions = {}): MemoryMatch[] {
+    return this.memory.recall(query, { ...options, scope: joinScopePaths(this.rootPath, options.scope ?? "/") });
   }
 
-  remember_many(contents: readonly string[], options: Omit<Parameters<Memory["remember"]>[1], "scope"> = {}): MemoryRecord[] {
+  rememberMany(contents: readonly string[], options: MemoryRememberOptions = {}): MemoryRecord[] {
+    return this.memory.rememberMany(contents, { ...options, scope: joinScopePaths(this.rootPath, options.scope ?? "/") });
+  }
+
+  remember_many(contents: readonly string[], options: MemoryRememberOptions = {}): MemoryRecord[] {
     return this.rememberMany(contents, options);
   }
 
@@ -1131,8 +1139,8 @@ export class MemoryScope {
     return this.extractMemories(content);
   }
 
-  forget(options: Omit<Parameters<Memory["forget"]>[0], "scope"> = {}): number {
-    return this.memory.forget({ ...options, scope: this.rootPath });
+  forget(options: MemoryForgetOptions = {}): number {
+    return this.memory.forget({ ...options, scope: joinScopePaths(this.rootPath, options.scope ?? "/") });
   }
 
   reset(): void {
@@ -1182,6 +1190,18 @@ export class MemoryScope {
     };
   }
 
+  listCategories(full = false): Record<string, number> | Record<string, { count: number; scopes: readonly string[] }> {
+    return categoriesForRecords(this.memory.allRecords().filter((record) => record.scope.startsWith(this.rootPath)), full);
+  }
+
+  list_categories(full = false): Record<string, number> | Record<string, { count: number; scopes: readonly string[] }> {
+    return this.listCategories(full);
+  }
+
+  tree(full = false, maxDepth = Number.POSITIVE_INFINITY): MemoryTreeNode {
+    return treeForRecords(this.memory.allRecords().filter((record) => record.scope.startsWith(this.rootPath)), full, maxDepth);
+  }
+
   subscope(path: string): MemoryScope {
     return new MemoryScope(this.memory, joinScopePaths(this.rootPath, path));
   }
@@ -1194,32 +1214,51 @@ export class MemoryScope {
 export class MemorySlice {
   readonly memory: Memory;
   readonly scopes: readonly string[];
+  readonly categories: readonly string[] | null;
+  private readonly readOnlyValue: boolean;
 
-  constructor(memory: Memory, scopes: readonly string[]) {
+  constructor(memory: Memory, scopes: readonly string[], options: { categories?: readonly string[] | null; readOnly?: boolean } = {}) {
     this.memory = memory;
     this.scopes = scopes.map((scope) => normalizeScope(scope));
+    this.categories = options.categories ?? null;
+    this.readOnlyValue = options.readOnly ?? true;
   }
 
   get readOnly(): boolean {
-    return this.memory.readOnly;
+    return this.readOnlyValue || this.memory.readOnly;
   }
 
-  remember(content: string, options: Omit<Parameters<Memory["remember"]>[1], "scope"> = {}): MemoryRecord | null {
+  get read_only(): boolean {
+    return this.readOnly;
+  }
+
+  remember(content: string, options: Omit<MemoryRememberOptions, "scope"> = {}): MemoryRecord | null {
+    if (this.readOnly) {
+      return null;
+    }
     return this.memory.remember(content, { ...options, scope: this.scopes[0] ?? "/" });
   }
 
-  rememberMany(contents: readonly string[], options: Omit<Parameters<Memory["remember"]>[1], "scope"> = {}): MemoryRecord[] {
+  rememberMany(contents: readonly string[], options: Omit<MemoryRememberOptions, "scope"> = {}): MemoryRecord[] {
+    if (this.readOnly) {
+      return [];
+    }
     return this.memory.rememberMany(contents, { ...options, scope: this.scopes[0] ?? "/" });
   }
 
-  remember_many(contents: readonly string[], options: Omit<Parameters<Memory["remember"]>[1], "scope"> = {}): MemoryRecord[] {
+  remember_many(contents: readonly string[], options: Omit<MemoryRememberOptions, "scope"> = {}): MemoryRecord[] {
     return this.rememberMany(contents, options);
   }
 
-  recall(query: string, options: Omit<Parameters<Memory["recall"]>[1], "scope"> = {}): MemoryMatch[] {
+  recall(query: string, options: Omit<MemoryRecallOptions, "scope"> = {}): MemoryMatch[] {
     const matches = new Map<string, MemoryMatch>();
+    const categories = options.categories ?? this.categories ?? undefined;
     for (const scope of this.scopes) {
-      for (const match of this.memory.recall(query, { ...options, scope })) {
+      const recallOptions: MemoryRecallOptions = { ...options, scope };
+      if (categories !== undefined) {
+        recallOptions.categories = categories;
+      }
+      for (const match of this.memory.recall(query, recallOptions)) {
         const existing = matches.get(match.record.id);
         if (!existing || match.score > existing.score) {
           matches.set(match.record.id, match);
@@ -1238,7 +1277,10 @@ export class MemorySlice {
   }
 
   subscope(path: string): MemorySlice {
-    return new MemorySlice(this.memory, this.scopes.map((scope) => joinScopePaths(scope, path)));
+    return new MemorySlice(this.memory, this.scopes.map((scope) => joinScopePaths(scope, path)), {
+      categories: this.categories,
+      readOnly: this.readOnlyValue,
+    });
   }
 
   listScopes(full = false): readonly string[] | readonly ScopeInfo[] {
@@ -1271,8 +1313,26 @@ export class MemorySlice {
     };
   }
 
+  listCategories(full = false): Record<string, number> | Record<string, { count: number; scopes: readonly string[] }> {
+    return categoriesForRecords(this.recordsInSlice(), full);
+  }
+
+  list_categories(full = false): Record<string, number> | Record<string, { count: number; scopes: readonly string[] }> {
+    return this.listCategories(full);
+  }
+
+  tree(full = false, maxDepth = Number.POSITIVE_INFINITY): MemoryTreeNode {
+    return treeForRecords(this.recordsInSlice(), full, maxDepth);
+  }
+
   bind(memory: Memory): MemorySlice {
-    return new MemorySlice(memory, this.scopes);
+    return new MemorySlice(memory, this.scopes, { categories: this.categories, readOnly: this.readOnlyValue });
+  }
+
+  private recordsInSlice(): readonly MemoryRecord[] {
+    return this.memory.allRecords().filter((record) =>
+      this.scopes.some((scope) => record.scope.startsWith(scope)),
+    );
   }
 }
 
@@ -1532,6 +1592,14 @@ function categoriesForRecords(
     category,
     { count: entry.count, scopes: [...entry.scopes].sort() },
   ]));
+}
+
+function treeForRecords(records: readonly MemoryRecord[], full: boolean, maxDepth: number): MemoryTreeNode {
+  const root: MemoryTreeNode = { path: "/", count: 0, children: {} };
+  for (const record of records) {
+    addRecordToTree(root, record, full, maxDepth);
+  }
+  return root;
 }
 
 function addRecordToTree(root: MemoryTreeNode, record: MemoryRecord, full: boolean, maxDepth: number): void {

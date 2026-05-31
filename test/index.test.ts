@@ -10496,6 +10496,32 @@ describe("memory", () => {
     expect(memory.list_scopes()).toEqual(["/projects/alpha", "/projects/beta"]);
     expect(memory.tree(true).children.projects?.children.alpha?.count).toBe(2);
   });
+
+  it("mirrors upstream scoped memory subpaths, categories, trees, and read-only slices", () => {
+    const memory = new Memory();
+    const alpha = memory.scope("/projects/alpha");
+    alpha.remember("Alpha parent memory", { categories: ["planning"] });
+    alpha.remember("Alpha child memory", {
+      scope: "notes",
+      categories: ["notes"],
+    });
+    memory.scope("/projects/beta").remember("Beta memory", { categories: ["planning"] });
+
+    expect(alpha.recall("child", { scope: "notes", scoreThreshold: null })[0]?.record.scope)
+      .toBe("/projects/alpha/notes");
+    expect(alpha.list_categories()).toEqual({ notes: 1, planning: 1 });
+    expect(alpha.tree(true).children.projects?.children.alpha?.children.notes?.count).toBe(1);
+
+    const readOnlySlice = memory.slice(["/projects/alpha"]);
+    expect(readOnlySlice.readOnly).toBe(true);
+    expect(readOnlySlice.remember("No-op slice write")).toBeNull();
+    expect(memory.allRecords().some((record) => record.content === "No-op slice write")).toBe(false);
+
+    const writableSlice = memory.slice(["/projects/alpha"], { readOnly: false });
+    expect(writableSlice.remember("Writable slice memory", { categories: ["slice"] })?.scope)
+      .toBe("/projects/alpha");
+    expect(writableSlice.list_categories()).toEqual({ notes: 1, planning: 1, slice: 1 });
+  });
 });
 
 describe("knowledge", () => {
