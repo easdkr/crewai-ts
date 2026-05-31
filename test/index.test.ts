@@ -180,6 +180,7 @@ import {
   MCPConnectionStartedEvent,
   MCPConfigFetchFailedEvent,
   MCPClient,
+  MCPToolResolver,
   MCPToolWrapper,
   MCPToolExecutionFailedEvent,
   Telemetry,
@@ -2078,6 +2079,51 @@ describe("mcp configuration", () => {
     expect(context.runContext).toEqual({ branch: "main" });
     expect(dynamic(context, { name: "search_issues" })).toBe(true);
     expect(dynamic(context, { name: "danger_delete_repo" })).toBe(false);
+  });
+
+  it("applies MCP resolver dynamic filters with agent context", async () => {
+    const agentContext = { role: "Code Reviewer" };
+    const seen: Array<{ role: unknown; serverName: string; toolName: unknown }> = [];
+    const connectSpy = vi.spyOn(MCPClient.prototype, "connect").mockImplementation(function (this: MCPClient) {
+      return Promise.resolve(this);
+    });
+    const listToolsSpy = vi.spyOn(MCPClient.prototype, "listTools").mockResolvedValue([
+      { name: "search_issues", description: "Search issues", inputSchema: {} },
+      { name: "danger_delete_repo", description: "Delete repo", inputSchema: {} },
+    ]);
+    const disconnectSpy = vi.spyOn(MCPClient.prototype, "disconnect").mockResolvedValue();
+    try {
+      const filter = createDynamicToolFilter(async (context, toolDefinition) => {
+        await Promise.resolve();
+        seen.push({
+          role: (context.agent as { role?: unknown }).role,
+          serverName: context.serverName,
+          toolName: toolDefinition.name,
+        });
+        return context.agent === agentContext && !String(toolDefinition.name).startsWith("danger_");
+      });
+      const resolver = new MCPToolResolver({ agent: agentContext });
+      const tools = await resolver.resolve([
+        new MCPServerStdio({
+          command: "fake-mcp",
+          args: ["repo"],
+          tool_filter: filter,
+        }),
+      ]);
+
+      expect(tools.map((toolInstance) => toolInstance.name)).toEqual(["fake_mcp_repo_search_issues"]);
+      expect(seen).toEqual([
+        { role: "Code Reviewer", serverName: "fake_mcp_repo", toolName: "search_issues" },
+        { role: "Code Reviewer", serverName: "fake_mcp_repo", toolName: "danger_delete_repo" },
+      ]);
+      expect(connectSpy).toHaveBeenCalledTimes(1);
+      expect(listToolsSpy).toHaveBeenCalledTimes(1);
+      expect(disconnectSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      connectSpy.mockRestore();
+      listToolsSpy.mockRestore();
+      disconnectSpy.mockRestore();
+    }
   });
 
   it("models MCP server configs and transport types with SDK-backed transports", async () => {

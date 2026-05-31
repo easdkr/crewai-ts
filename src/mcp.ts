@@ -51,9 +51,11 @@ export class ToolFilterContext {
   }
 }
 
+type MaybePromise<T> = T | Promise<T>;
+
 export type ToolFilter =
-  | ((tool: MCPToolDefinition) => boolean)
-  | ((context: ToolFilterContext, tool: MCPToolDefinition) => boolean);
+  | ((tool: MCPToolDefinition) => MaybePromise<boolean>)
+  | ((context: ToolFilterContext, tool: MCPToolDefinition) => MaybePromise<boolean>);
 export const ToolFilter = Object.freeze({ kind: "ToolFilter" });
 
 export class StaticToolFilter {
@@ -104,7 +106,7 @@ export function createStaticToolFilter(
 
 export const create_static_tool_filter = createStaticToolFilter;
 
-export function createDynamicToolFilter<TFilter extends (context: ToolFilterContext, tool: MCPToolDefinition) => boolean>(
+export function createDynamicToolFilter<TFilter extends (context: ToolFilterContext, tool: MCPToolDefinition) => MaybePromise<boolean>>(
   filterFunc: TFilter,
 ): TFilter {
   return filterFunc;
@@ -792,7 +794,6 @@ export class MCPToolResolver {
       }
       tools.push(...await this.resolveNative(config));
     }
-    void this.agent;
     return tools;
   }
 
@@ -817,21 +818,24 @@ export class MCPToolResolver {
     try {
       await discoveryClient.connect();
       const definitions = await discoveryClient.listTools();
-      return definitions
-        .filter((definition) => passesToolFilter(config, definition))
-        .map((definition) => {
-          const originalName = typeof definition.original_name === "string"
-            ? definition.original_name
-            : typeof definition.name === "string" ? definition.name : "";
-          const sanitizedName = sanitizeToolName(originalName);
-          return new MCPNativeTool({
-            clientFactory: () => new MCPClient(transportForConfig(config), clientOptions),
-            toolName: sanitizedName,
-            originalToolName: originalName,
-            toolSchema: definition,
-            serverName,
-          });
-        });
+      const tools: BaseTool[] = [];
+      for (const definition of definitions) {
+        if (!await passesToolFilter(config, definition, this.agent)) {
+          continue;
+        }
+        const originalName = typeof definition.original_name === "string"
+          ? definition.original_name
+          : typeof definition.name === "string" ? definition.name : "";
+        const sanitizedName = sanitizeToolName(originalName);
+        tools.push(new MCPNativeTool({
+          clientFactory: () => new MCPClient(transportForConfig(config), clientOptions),
+          toolName: sanitizedName,
+          originalToolName: originalName,
+          toolSchema: definition,
+          serverName,
+        }));
+      }
+      return tools;
     } finally {
       await discoveryClient.disconnect();
     }
@@ -1044,18 +1048,18 @@ function splitMCPRef(ref: string): [string, string | null] {
   return [ref.slice(0, markerIndex), ref.slice(markerIndex + 1) || null];
 }
 
-function passesToolFilter(config: MCPServerConfig, definition: MCPToolDefinition): boolean {
+async function passesToolFilter(config: MCPServerConfig, definition: MCPToolDefinition, agent: unknown): Promise<boolean> {
   const filter = config.toolFilter ?? config.tool_filter;
   if (!filter) {
     return true;
   }
   if (filter.length >= 2) {
-    return (filter as (context: ToolFilterContext, tool: MCPToolDefinition) => boolean)(
-      new ToolFilterContext({ agent: null, serverName: serverNameForConfig(config) }),
+    return await (filter as (context: ToolFilterContext, tool: MCPToolDefinition) => MaybePromise<boolean>)(
+      new ToolFilterContext({ agent, serverName: serverNameForConfig(config) }),
       definition,
     );
   }
-  return (filter as (tool: MCPToolDefinition) => boolean)(definition);
+  return await (filter as (tool: MCPToolDefinition) => MaybePromise<boolean>)(definition);
 }
 
 function headersFromInit(headers: unknown): Record<string, string> {
