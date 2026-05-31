@@ -1742,6 +1742,8 @@ export {
   ScopeInfo,
   StorageBackend,
   VECTOR_NAME,
+  _default_embedder,
+  _passthrough,
   analyzeForConsolidation,
   analyzeForSave,
   analyzeQuery,

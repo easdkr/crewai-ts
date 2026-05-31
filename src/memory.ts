@@ -9,10 +9,20 @@ import {
 } from "./events.js";
 import { callLLM, createLLMClient, type LLM } from "./llm.js";
 import { I18N_DEFAULT } from "./i18n.js";
+import { buildEmbedder } from "./rag.js";
 import { BaseTool, type BaseToolOptions, type ToolArgsSchema } from "./tools.js";
 import type { LLMMessage, Tool } from "./types.js";
 
 const RECALL_OVERSAMPLE_FACTOR = 2;
+const UNINITIALIZED_EMBEDDER = Symbol("uninitialized_embedder");
+
+export function _passthrough<T>(value: T): T {
+  return value;
+}
+
+export function _default_embedder(): unknown {
+  return buildEmbedder({ provider: "openai", config: {} });
+}
 
 export type MemoryRecordOptions = {
   id?: string;
@@ -1937,6 +1947,7 @@ export class Memory {
   readonly root_scope: string | null;
   readonly llm: LLM | null;
   readonly embedder: unknown;
+  private embedderInstance: unknown = UNINITIALIZED_EMBEDDER;
   private config: MemoryConfig;
   private readonly configOptions: ConstructorParameters<typeof MemoryConfig>[0];
   private readonly records: MemoryRecord[] = [];
@@ -1949,6 +1960,7 @@ export class Memory {
     this.root_scope = this.rootScope;
     this.llm = options.llm ?? null;
     this.embedder = options.embedder ?? null;
+    this.embedderInstance = this.embedder && !isRecord(this.embedder) ? this.embedder : UNINITIALIZED_EMBEDDER;
     this.configOptions = { ...options };
     this.config = new MemoryConfig(this.configOptions);
   }
@@ -1967,7 +1979,20 @@ export class Memory {
   }
 
   get _embedder(): unknown {
-    return this.embedder;
+    if (this.embedderInstance === UNINITIALIZED_EMBEDDER) {
+      try {
+        this.embedderInstance = isRecord(this.embedder)
+          ? buildEmbedder(this.embedder as Parameters<typeof buildEmbedder>[0])
+          : _default_embedder();
+      } catch (error) {
+        throw new Error([
+          `Memory requires an embedder for vector search but initialization failed: ${formatUnknownError(error)}`,
+          "",
+          "To fix this, set OPENAI_API_KEY for the default embedder, pass a provider config, or pass a callable embedder.",
+        ].join("\n"), { cause: error });
+      }
+    }
+    return this.embedderInstance;
   }
 
   _submit_save(fn: (...args: readonly unknown[]) => MemoryRecord[], ...args: readonly unknown[]): { result: () => MemoryRecord[] } {

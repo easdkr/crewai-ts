@@ -227,6 +227,8 @@ import {
   MemoryConfig,
   MemoryRecord,
   MemorySlice,
+  _default_embedder,
+  _passthrough,
   ScopeInfo,
   EncodingFlow,
   RecallFlow,
@@ -19099,6 +19101,20 @@ describe("memory", () => {
       scope: "/crew/research",
       importance: 0.9,
     });
+  });
+
+  it("exposes upstream unified-memory passthrough and lazy default embedder helpers", () => {
+    const value = { provider: "custom" };
+    const callable = (texts: readonly unknown[]) => texts.map(() => [0.1, 0.2]);
+    const configured = new Memory({
+      embedder: { provider: "custom", config: { embedding_callable: callable } },
+    });
+    const defaultMemory = new Memory();
+
+    expect(_passthrough(value)).toBe(value);
+    expect(typeof _default_embedder()).toBe("function");
+    expect(configured._embedder).toBe(callable);
+    expect(typeof defaultMemory._embedder).toBe("function");
   });
 
   it("uses configured memory LLM consolidation plans to update similar records", async () => {
