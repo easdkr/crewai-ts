@@ -7,6 +7,9 @@ import {
   LiteAgentExecutionCompletedEvent,
   LiteAgentExecutionErrorEvent,
   LiteAgentExecutionStartedEvent,
+  MemoryRetrievalCompletedEvent,
+  MemoryRetrievalFailedEvent,
+  MemoryRetrievalStartedEvent,
   crewaiEventBus,
 } from "./events.js";
 import { getAfterLlmCallHooks, getBeforeLlmCallHooks, type AfterLLMCallHook, type BeforeLLMCallHook } from "./hooks.js";
@@ -341,6 +344,62 @@ export class LiteAgent {
 
   _append_message(message: LLMMessage): void {
     this._appendMessage(message);
+  }
+
+  _injectMemoryContext(): void {
+    if (!this.memory) {
+      return;
+    }
+    const startedAt = Date.now();
+    crewaiEventBus.emit(this, new MemoryRetrievalStartedEvent({ task_id: null }));
+    try {
+      const matches = this.memory.recall(this._getLastUserContent(), { limit: 10 });
+      const memoryBlock = matches.length > 0
+        ? `Relevant memories:\n${matches.map((match) => match.format()).join("\n")}`
+        : "";
+      if (memoryBlock) {
+        const formatted = `# Memories from past conversations:\n${memoryBlock}`;
+        const [firstMessage] = this.currentMessages;
+        if (firstMessage?.role === "system" && typeof firstMessage.content === "string") {
+          this.currentMessages[0] = {
+            ...firstMessage,
+            content: `${firstMessage.content}\n\n${formatted}`,
+          };
+        } else {
+          this.currentMessages.unshift({ role: "system", content: formatted });
+        }
+      }
+      crewaiEventBus.emit(this, new MemoryRetrievalCompletedEvent({
+        task_id: null,
+        memory_content: memoryBlock,
+        retrieval_time_ms: Date.now() - startedAt,
+      }));
+    } catch (error) {
+      crewaiEventBus.emit(this, new MemoryRetrievalFailedEvent({
+        task_id: null,
+        error,
+      }));
+    }
+  }
+
+  _inject_memory_context(): void {
+    this._injectMemoryContext();
+  }
+
+  _saveToMemory(outputText: string): void {
+    if (!this.memory || this.memory.readOnly) {
+      return;
+    }
+    const inputText = this._getLastUserContent() || "User request";
+    const raw = `Input: ${inputText}\nAgent: ${this.role}\nResult: ${outputText}`;
+    const extracted = this.memory.extract_memories(raw);
+    if (extracted.length > 0) {
+      this.memory.remember_many(extracted, { agentRole: this.role });
+    }
+  }
+
+  _save_to_memory(output_text: string): void {
+    this._saveToMemory(output_text);
   }
 
   private toAgent(): Agent {

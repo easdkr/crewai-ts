@@ -20218,6 +20218,29 @@ describe("lite agent", () => {
       .toThrow("Guardrail function must accept exactly 1 parameter");
   });
 
+  it("exposes upstream LiteAgent memory injection and save helpers", () => {
+    const memory = new Memory();
+    memory.remember("Prefer concise TypeScript ports");
+    const agent = new LiteAgent({
+      role: "Memory Agent",
+      goal: "Use memory",
+      backstory: "Remembers useful facts",
+      llm: () => "ok",
+      memory,
+    });
+
+    agent._append_message({ role: "user", content: "How should we port CrewAI?" });
+    agent._inject_memory_context();
+
+    expect(agent.messages[0]?.role).toBe("system");
+    expect(agent.messages[0]?.content).toContain("Relevant memories:");
+    expect(agent.messages[0]?.content).toContain("Prefer concise TypeScript ports");
+
+    agent._save_to_memory("Use existing project patterns.");
+    expect(memory.recall("existing project patterns", { scoreThreshold: null })[0]?.record.content)
+      .toContain("Use existing project patterns.");
+  });
+
   it("runs direct messages and returns a LiteAgentOutput with metrics and messages", async () => {
     const agent = new LiteAgent({
       role: "Research Assistant",
