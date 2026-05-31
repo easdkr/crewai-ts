@@ -6472,6 +6472,44 @@ describe("flow runtime", () => {
     expect(flow.state.events).toEqual(["begin", "finish:ok"]);
   });
 
+  it("auto-configures flow memory and delegates remember, recall, and extract_memories", () => {
+    class MemoryFlow extends Flow<{ id: string }> {
+      constructor() {
+        super({ initialState: { id: "memory-flow" }, name: "Memory Flow" });
+      }
+    }
+
+    const flow = new MemoryFlow();
+    const single = flow.remember("Flow remembers standard decorators", {
+      categories: ["flow"],
+      metadata: { source: "test" },
+    });
+    const batch = flow.remember([
+      "Flow batch memory one",
+      "Flow batch memory two",
+    ], { categories: ["batch"] });
+
+    expect(single).toBeInstanceOf(MemoryRecord);
+    expect(batch).toHaveLength(2);
+    expect(flow.recall("standard decorators", { scoreThreshold: null })[0]?.record.scope)
+      .toBe("/flow/memory-flow");
+    expect(flow.recall("batch", { categories: ["batch"], scoreThreshold: null })).toHaveLength(2);
+    expect(flow.extract_memories("Remember this flow fact.")).toEqual(["Remember this flow fact."]);
+  });
+
+  it("uses explicitly configured flow memory and rejects memory helpers when disabled", () => {
+    const memory = new Memory({ rootScope: "/custom" });
+    const flow = new Flow({ memory });
+    const disabled = new Flow({ memory: null });
+
+    flow.remember("Custom flow memory");
+
+    expect(memory.recall("custom", { scoreThreshold: null })[0]?.record.scope).toBe("/custom");
+    expect(() => disabled.remember("no memory")).toThrow("No memory configured for this flow");
+    expect(() => disabled.recall("no memory")).toThrow("No memory configured for this flow");
+    expect(() => disabled.extract_memories("no memory")).toThrow("No memory configured for this flow");
+  });
+
   it("runs conditional starts and repeated listeners from fresh triggers", async () => {
     class ConditionalStartFlow extends Flow<{ events: string[]; iteration: number }> {
       constructor() {

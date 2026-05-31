@@ -47,6 +47,13 @@ When more goal budget is available, continue from the behavioral parity audits b
   - `clear_pending_feedback`
 - Added `persistence_type` metadata on `JsonFlowPersistence` to match the persistence backend convention already present on SQLite.
 - Added focused JSON and SQLite tests for these aliases, including pending-feedback round trip and clear semantics.
+- Added Flow memory helper parity for auto-created flow memory plus explicit/disabled memory configuration:
+  - `Flow.remember`
+  - `Flow.recall`
+  - `Flow.extract_memories`
+- Added unified memory compatibility helpers used by Flow and scoped views:
+  - `Memory.remember_many`, `extract_memories`, `update`, `drain_writes`, `close`
+  - `MemoryScope` / `MemorySlice` `remember_many`, `extract_memories`, and `bind`
 
 1. Storage backends
    - `memory/storage/backend.py`
@@ -67,11 +74,13 @@ When more goal budget is available, continue from the behavioral parity audits b
    - Locked dict/list proxy behavior.
    - Prioritize persistence replay and resume behavior because it affects user-visible workflow recovery.
    - Flow persistence backends now expose upstream snake_case aliases for state and pending-feedback lifecycle methods.
-   - Remaining: audit `Flow` memory helpers (`remember`, `recall`, `extract_memories`), checkpoint restoration/fork API parity, and locked proxy semantics against upstream `flow.py`.
+   - Flow now supports auto memory plus `remember`, `recall`, and `extract_memories` delegation.
+   - Remaining: audit checkpoint restoration/fork API parity and locked proxy semantics against upstream `flow.py`.
 
 4. Unified memory
    - Async aliases and record/scope/category listing.
    - `remember_many`, `extract_memories`, `update`, `drain_writes`, `close`.
+   - These compatibility helpers are now present in the deterministic TS memory shim; remaining work is deeper async/background write and LLM-powered extraction parity.
    - `MemoryScope` / `MemorySlice` methods like `bind`, `read_only`, `tree`, `list_categories`.
    - Confirm the intended TS shape for scoped memory before widening public types, so Python aliases do not force an awkward API.
 

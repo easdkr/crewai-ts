@@ -105,6 +105,7 @@ export class MemoryMatch {
 export type MemoryOptions = {
   readOnly?: boolean;
   rootScope?: string | null;
+  llm?: LLM | null;
 };
 
 export class ExtractedMetadata {
@@ -777,11 +778,13 @@ export type MemoryTreeNode = {
 export class Memory {
   readonly readOnly: boolean;
   readonly rootScope: string | null;
+  readonly llm: LLM | null;
   private readonly records: MemoryRecord[] = [];
 
   constructor(options: MemoryOptions = {}) {
     this.readOnly = options.readOnly ?? false;
     this.rootScope = options.rootScope ?? null;
+    this.llm = options.llm ?? null;
   }
 
   remember(
@@ -838,6 +841,22 @@ export class Memory {
     return contents
       .map((content) => this.remember(content, options))
       .filter((record): record is MemoryRecord => record !== null);
+  }
+
+  remember_many(contents: readonly string[], options: Parameters<Memory["remember"]>[1] = {}): MemoryRecord[] {
+    return this.rememberMany(contents, options);
+  }
+
+  extractMemories(content: string): readonly string[] {
+    const trimmed = content.trim();
+    if (!trimmed) {
+      return [];
+    }
+    return [trimmed];
+  }
+
+  extract_memories(content: string): readonly string[] {
+    return this.extractMemories(content);
   }
 
   recall(
@@ -898,6 +917,30 @@ export class Memory {
       }
     }
     return before - this.records.length;
+  }
+
+  update(record: MemoryRecord | MemoryRecordOptions): MemoryRecord | null {
+    if (this.readOnly) {
+      return null;
+    }
+    const memoryRecord = record instanceof MemoryRecord ? record : new MemoryRecord(record);
+    const index = this.records.findIndex((candidate) => candidate.id === memoryRecord.id);
+    if (index >= 0) {
+      this.records[index] = memoryRecord;
+    } else {
+      this.records.push(memoryRecord);
+    }
+    return memoryRecord;
+  }
+
+  drainWrites(): void {}
+
+  drain_writes(): void {
+    this.drainWrites();
+  }
+
+  close(): void {
+    this.drainWrites();
   }
 
   reset(scope?: string | null): void {
@@ -1076,6 +1119,18 @@ export class MemoryScope {
     return this.memory.rememberMany(contents, { ...options, scope: this.rootPath });
   }
 
+  remember_many(contents: readonly string[], options: Omit<Parameters<Memory["remember"]>[1], "scope"> = {}): MemoryRecord[] {
+    return this.rememberMany(contents, options);
+  }
+
+  extractMemories(content: string): readonly string[] {
+    return this.memory.extractMemories(content);
+  }
+
+  extract_memories(content: string): readonly string[] {
+    return this.extractMemories(content);
+  }
+
   forget(options: Omit<Parameters<Memory["forget"]>[0], "scope"> = {}): number {
     return this.memory.forget({ ...options, scope: this.rootPath });
   }
@@ -1130,6 +1185,10 @@ export class MemoryScope {
   subscope(path: string): MemoryScope {
     return new MemoryScope(this.memory, joinScopePaths(this.rootPath, path));
   }
+
+  bind(memory: Memory): MemoryScope {
+    return new MemoryScope(memory, this.rootPath);
+  }
 }
 
 export class MemorySlice {
@@ -1149,6 +1208,14 @@ export class MemorySlice {
     return this.memory.remember(content, { ...options, scope: this.scopes[0] ?? "/" });
   }
 
+  rememberMany(contents: readonly string[], options: Omit<Parameters<Memory["remember"]>[1], "scope"> = {}): MemoryRecord[] {
+    return this.memory.rememberMany(contents, { ...options, scope: this.scopes[0] ?? "/" });
+  }
+
+  remember_many(contents: readonly string[], options: Omit<Parameters<Memory["remember"]>[1], "scope"> = {}): MemoryRecord[] {
+    return this.rememberMany(contents, options);
+  }
+
   recall(query: string, options: Omit<Parameters<Memory["recall"]>[1], "scope"> = {}): MemoryMatch[] {
     const matches = new Map<string, MemoryMatch>();
     for (const scope of this.scopes) {
@@ -1160,6 +1227,14 @@ export class MemorySlice {
       }
     }
     return [...matches.values()].sort((left, right) => right.score - left.score);
+  }
+
+  extractMemories(content: string): readonly string[] {
+    return this.memory.extractMemories(content);
+  }
+
+  extract_memories(content: string): readonly string[] {
+    return this.extractMemories(content);
   }
 
   subscope(path: string): MemorySlice {
@@ -1194,6 +1269,10 @@ export class MemorySlice {
       readOnly: this.readOnly,
       read_only: this.readOnly,
     };
+  }
+
+  bind(memory: Memory): MemorySlice {
+    return new MemorySlice(memory, this.scopes);
   }
 }
 

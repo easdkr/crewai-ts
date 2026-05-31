@@ -33,6 +33,7 @@ import { FlowStreamingOutput } from "./streaming.js";
 import { coerceCheckpointConfig, type CheckpointConfig, type CheckpointOption } from "./state.js";
 import type { InputValues, MaybePromise } from "./types.js";
 import { renderInteractive } from "./flow-visualization.js";
+import { Memory, MemoryScope, MemorySlice, sanitize_scope_name, type MemoryMatch, type MemoryRecord } from "./memory.js";
 
 export const AND_CONDITION = "AND";
 export const OR_CONDITION = "OR";
@@ -100,6 +101,7 @@ export type FlowOptions<TState extends object = Record<string, unknown>> = {
   persistence?: FlowPersistence | null;
   stream?: boolean;
   checkpoint?: CheckpointOption;
+  memory?: Memory | MemoryScope | MemorySlice | null;
 };
 
 export class LockedDictProxy<TValue extends Record<string, unknown> = Record<string, unknown>> {
@@ -410,6 +412,7 @@ export class Flow<TState extends object = Record<string, unknown>> {
   persistence: FlowPersistence | null;
   stream: boolean;
   checkpoint: CheckpointConfig | false | null;
+  memory: Memory | MemoryScope | MemorySlice | null;
   state: TState;
   private currentInputFiles: InputFiles = {};
   private readonly runtimeMethodOutputs: unknown[] = [];
@@ -431,6 +434,9 @@ export class Flow<TState extends object = Record<string, unknown>> {
     this.persistence = options.persistence ?? null;
     this.stream = options.stream ?? false;
     this.checkpoint = coerceCheckpointConfig(options.checkpoint);
+    this.memory = "memory" in options ? options.memory ?? null : (this.shouldSkipAutoMemory()
+      ? null
+      : new Memory({ rootScope: `/flow/${sanitize_scope_name(this.flowName())}` }));
     const initialState = options.initialState;
     this.state = typeof initialState === "function"
       ? initialState()
@@ -555,6 +561,40 @@ export class Flow<TState extends object = Record<string, unknown>> {
       this.currentFlowRequestId = null;
       this.currentInputFiles = previousInputFiles;
     }
+  }
+
+  recall(query: string, options: Parameters<Memory["recall"]>[1] = {}): MemoryMatch[] {
+    if (!this.memory) {
+      throw new Error("No memory configured for this flow");
+    }
+    return this.memory.recall(query, options);
+  }
+
+  remember(
+    content: string | readonly string[],
+    options: Parameters<Memory["remember"]>[1] = {},
+  ): MemoryRecord | MemoryRecord[] | null {
+    if (!this.memory) {
+      throw new Error("No memory configured for this flow");
+    }
+    if (Array.isArray(content)) {
+      if (!(this.memory instanceof Memory)) {
+        throw new TypeError(`Batch remember requires a Memory instance, got ${this.memory.constructor.name}`);
+      }
+      return this.memory.rememberMany(content, options);
+    }
+    return this.memory.remember(String(content), options);
+  }
+
+  extractMemories(content: string): readonly string[] {
+    if (!this.memory) {
+      throw new Error("No memory configured for this flow");
+    }
+    return this.memory.extractMemories(content);
+  }
+
+  extract_memories(content: string): readonly string[] {
+    return this.extractMemories(content);
   }
 
   async akickoff(options: FlowKickoffOptions = {}): Promise<unknown> {
@@ -1074,6 +1114,10 @@ export class Flow<TState extends object = Record<string, unknown>> {
 
   private flowName(): string {
     return this.name ?? this.constructor.name;
+  }
+
+  private shouldSkipAutoMemory(): boolean {
+    return Boolean((this as { _skip_auto_memory?: unknown })._skip_auto_memory);
   }
 
   private flowPersistenceId(): string {
