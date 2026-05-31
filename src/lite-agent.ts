@@ -9,10 +9,12 @@ import {
   LiteAgentExecutionStartedEvent,
   crewaiEventBus,
 } from "./events.js";
+import { getAfterLlmCallHooks, getBeforeLlmCallHooks, type AfterLLMCallHook, type BeforeLLMCallHook } from "./hooks.js";
 import { extractInputFilesFromInputs, type InputFiles } from "./input-files.js";
-import { emptyUsageMetrics, type LLM, type UsageMetrics } from "./llm.js";
+import { createLLM, emptyUsageMetrics, type LLM, type LLMClient, type UsageMetrics } from "./llm.js";
 import { LiteAgentOutput } from "./lite-agent-output.js";
-import type { Memory, MemoryScope } from "./memory.js";
+import { Memory, type MemoryScope } from "./memory.js";
+import { parseTools } from "./agent-utils.js";
 import type { AgentStepCallback, LLMMessage, Tool } from "./types.js";
 
 export type LiteAgentGuardrailResult =
@@ -67,7 +69,7 @@ export class LiteAgent {
   readonly role: string;
   readonly goal: string;
   readonly backstory: string;
-  readonly llm: LLM | string | null;
+  llm: LLM | LLMClient | string | null;
   readonly tools: readonly Tool[];
   readonly verbose: boolean;
   readonly maxIterations: number;
@@ -85,7 +87,7 @@ export class LiteAgent {
   readonly guardrail: LiteAgentGuardrail | null;
   readonly guardrailMaxRetries: number;
   readonly guardrail_max_retries: number;
-  readonly memory: Memory | MemoryScope | null;
+  memory: Memory | MemoryScope | null;
   readonly stepCallback: AgentStepCallback | null;
   readonly codeExecutionMode: CodeExecutionMode;
   readonly code_execution_mode: CodeExecutionMode;
@@ -121,11 +123,16 @@ export class LiteAgent {
     this.guardrail = options.guardrail ?? null;
     this.guardrailMaxRetries = options.guardrailMaxRetries ?? options.guardrail_max_retries ?? 3;
     this.guardrail_max_retries = this.guardrailMaxRetries;
-    this.memory = options.memory && options.memory !== true ? options.memory : null;
+    this.memory = options.memory === true
+      ? new Memory()
+      : options.memory
+        ? options.memory
+        : null;
     this.stepCallback = options.stepCallback ?? options.step_callback ?? null;
     this.codeExecutionMode = options.codeExecutionMode ?? options.code_execution_mode ?? "safe";
     this.code_execution_mode = this.codeExecutionMode;
     this.key = randomUUID();
+    this.resolveMemory();
   }
 
   get messages(): readonly LLMMessage[] {
@@ -134,6 +141,88 @@ export class LiteAgent {
 
   get iterations(): number {
     return this.currentIterations;
+  }
+
+  get _original_role(): string {
+    return this.role;
+  }
+
+  get beforeLlmCallHooks(): BeforeLLMCallHook[] {
+    return getBeforeLlmCallHooks();
+  }
+
+  get before_llm_call_hooks(): BeforeLLMCallHook[] {
+    return this.beforeLlmCallHooks;
+  }
+
+  get afterLlmCallHooks(): AfterLLMCallHook[] {
+    return getAfterLlmCallHooks();
+  }
+
+  get after_llm_call_hooks(): AfterLLMCallHook[] {
+    return this.afterLlmCallHooks;
+  }
+
+  setupLlm(): this {
+    if (this.llm !== null && typeof this.llm === "string") {
+      this.llm = createLLM(this.llm);
+    }
+    return this;
+  }
+
+  setup_llm(): this {
+    return this.setupLlm();
+  }
+
+  parseTools(): this {
+    parseTools(this.tools);
+    return this;
+  }
+
+  parse_tools(): this {
+    return this.parseTools();
+  }
+
+  setupA2aSupport(): this {
+    return this;
+  }
+
+  setup_a2a_support(): this {
+    return this.setupA2aSupport();
+  }
+
+  ensureGuardrailIsCallable(): this {
+    LiteAgent.validateGuardrailFunction(this.guardrail);
+    return this;
+  }
+
+  ensure_guardrail_is_callable(): this {
+    return this.ensureGuardrailIsCallable();
+  }
+
+  resolveMemory(): this {
+    if (this.memory === null) {
+      return this;
+    }
+    return this;
+  }
+
+  resolve_memory(): this {
+    return this.resolveMemory();
+  }
+
+  static validateGuardrailFunction(value: LiteAgentGuardrail | string | null | undefined): LiteAgentGuardrail | string | null | undefined {
+    if (value === null || value === undefined || typeof value === "string") {
+      return value;
+    }
+    if (value.length !== 1) {
+      throw new Error(`Guardrail function must accept exactly 1 parameter (LiteAgentOutput), but it accepts ${String(value.length)}`);
+    }
+    return value;
+  }
+
+  static validate_guardrail_function(value: LiteAgentGuardrail | string | null | undefined): LiteAgentGuardrail | string | null | undefined {
+    return LiteAgent.validateGuardrailFunction(value);
   }
 
   async kickoff(

@@ -13258,6 +13258,31 @@ describe("global hooks", () => {
 });
 
 describe("lite agent", () => {
+  it("exposes upstream LiteAgent setup helpers, hooks, and memory resolution", () => {
+    beforeLlmCall(() => true);
+    afterLlmCall(() => null);
+    const agent = new LiteAgent({
+      role: "Helper Agent",
+      goal: "Expose helpers",
+      backstory: "Compatibility focused",
+      llm: () => "ok",
+      memory: true,
+    });
+
+    expect(agent.setup_llm()).toBe(agent);
+    expect(agent.parse_tools()).toBe(agent);
+    expect(agent.setup_a2a_support()).toBe(agent);
+    expect(agent.ensure_guardrail_is_callable()).toBe(agent);
+    expect(agent.resolve_memory()).toBe(agent);
+    expect(agent.before_llm_call_hooks).toHaveLength(1);
+    expect(agent.after_llm_call_hooks).toHaveLength(1);
+    expect(agent.memory).toBeInstanceOf(Memory);
+    expect(agent.key).toHaveLength(36);
+    expect(agent._original_role).toBe("Helper Agent");
+    expect(() => LiteAgent.validate_guardrail_function(() => [true, "ok"]))
+      .toThrow("Guardrail function must accept exactly 1 parameter");
+  });
+
   it("runs direct messages and returns a LiteAgentOutput with metrics and messages", async () => {
     const agent = new LiteAgent({
       role: "Research Assistant",
