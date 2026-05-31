@@ -13405,6 +13405,20 @@ describe("memory", () => {
     expect(results.map((match) => match.record.content)).toEqual(["target memory"]);
   });
 
+  it("re-embeds Memory records when content is updated", () => {
+    const embedder = vi.fn((texts: readonly string[]) =>
+      texts.map((text) => text.includes("updated") ? [1, 0, 0] : [0, 1, 0]));
+    const memory = new Memory({ embedder });
+    const stale = memory.remember("old stale memory", { importance: 0.8 });
+    memory.remember("other updated memory", { importance: 0.8 });
+
+    const updated = memory.update(stale?.id ?? "", { content: "updated primary memory" });
+
+    expect(updated?.embedding).toEqual([1, 0, 0]);
+    expect(memory.recall("updated", { depth: "shallow", limit: 1 })[0]?.record.content)
+      .toBe("updated primary memory");
+  });
+
   it("automatically appends relevant crew memories to task prompts", async () => {
     const memory = new Memory();
     memory.remember("Nest should consume crewai-ts as a normal TypeScript library", {

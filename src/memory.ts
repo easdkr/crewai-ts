@@ -1723,7 +1723,7 @@ export class Memory {
         private: existing.private,
         createdAt: existing.createdAt,
         lastAccessed: new Date(),
-        ...(existing.embedding === undefined ? {} : { embedding: existing.embedding }),
+        embedding: this.embeddingForText(newContent) ?? existing.embedding ?? null,
       });
       this.update(updated);
       updatedRecords.set(recordId, updated);
@@ -1933,7 +1933,9 @@ export class Memory {
         private: existing.private,
         createdAt: existing.createdAt,
         lastAccessed: new Date(),
-        ...(existing.embedding === undefined ? {} : { embedding: existing.embedding }),
+        embedding: updates.content === undefined || updates.content === null
+          ? existing.embedding ?? null
+          : this.embeddingForText(updates.content) ?? existing.embedding ?? null,
       });
       const index = this.records.findIndex((candidate) => candidate.id === memoryRecord.id);
       this.records[index] = memoryRecord;
