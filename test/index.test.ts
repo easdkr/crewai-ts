@@ -447,6 +447,7 @@ import {
   CustomEmbeddingFunction,
   GeminiCompletion,
   GenerativeAiProvider,
+  GoogleGenerativeAiEmbeddingFunction,
   GoogleGenAIVertexEmbeddingFunction,
   HuggingFaceEmbeddingFunction,
   HuggingFaceProvider,
@@ -7444,6 +7445,45 @@ describe("RAG configuration and factories", () => {
     expect(fetchCall[1].body).toBe(JSON.stringify({
       inputs: ["first", "second"],
       options: { wait_for_model: true },
+    }));
+    fetchMock.mockRestore();
+  });
+
+  it("calls Google Generative AI's batch embedding API", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({
+        embeddings: [
+          { values: [0.71, 0.72] },
+          { values: [0.81, 0.82] },
+        ],
+      }),
+    } as Response);
+
+    const googleEmbedder = new GoogleGenerativeAiEmbeddingFunction({
+      api_key: "google-test",
+      model_name: "text-embedding-005",
+      task_type: "RETRIEVAL_QUERY",
+    }).asCallable();
+    await expect(googleEmbedder(["first", "second"])).resolves.toEqual([[0.71, 0.72], [0.81, 0.82]]);
+
+    const fetchCall = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(fetchCall[0]).toBe("https://generativelanguage.googleapis.com/v1beta/models/text-embedding-005:batchEmbedContents?key=google-test");
+    expect(fetchCall[1].method).toBe("POST");
+    expect(fetchCall[1].headers).toMatchObject({ "content-type": "application/json" });
+    expect(fetchCall[1].body).toBe(JSON.stringify({
+      requests: [
+        {
+          model: "models/text-embedding-005",
+          content: { parts: [{ text: "first" }] },
+          taskType: "RETRIEVAL_QUERY",
+        },
+        {
+          model: "models/text-embedding-005",
+          content: { parts: [{ text: "second" }] },
+          taskType: "RETRIEVAL_QUERY",
+        },
+      ],
     }));
     fetchMock.mockRestore();
   });

@@ -258,6 +258,7 @@ export type GenerativeAiProviderConfig = {
   api_key?: string;
   model_name?: "gemini-embedding-001" | "text-embedding-005" | "text-multilingual-embedding-002";
   task_type?: string;
+  api_url?: string;
 };
 export const GenerativeAiProviderConfig = Object.freeze({ kind: "GenerativeAiProviderConfig" });
 export type GenerativeAiProviderSpec = BaseProviderSpec<"google-generativeai", GenerativeAiProviderConfig>;
@@ -692,15 +693,96 @@ export class GoogleGenAIVertexEmbeddingFunction {
   }
 }
 
+export class GoogleGenerativeAiEmbeddingFunction {
+  readonly api_key: string | null;
+  readonly model_name: string;
+  readonly task_type: string;
+  readonly api_url: string | null;
+
+  constructor(options: GenerativeAiProviderConfig = {}) {
+    this.api_key = options.api_key ?? null;
+    this.model_name = options.model_name ?? "gemini-embedding-001";
+    this.task_type = options.task_type ?? "RETRIEVAL_DOCUMENT";
+    this.api_url = options.api_url ?? null;
+  }
+
+  static name(): string {
+    return "google-generativeai";
+  }
+
+  async call(input: Embeddable): Promise<Embeddings> {
+    const values = Array.isArray(input) ? input.map((value) => String(value)) : [String(input)];
+    const response = await fetch(this.endpointUrl(), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        requests: values.map((text) => ({
+          model: `models/${this.model_name}`,
+          content: { parts: [{ text }] },
+          taskType: this.task_type,
+        })),
+      }),
+    });
+    if (!response.ok) {
+      throw new Error(`Google Generative AI embeddings request failed with status ${String(response.status)}`);
+    }
+    return extractGoogleGenerativeAiEmbeddings(await response.json());
+  }
+
+  async __call__(input: Embeddable): Promise<Embeddings> {
+    return this.call(input);
+  }
+
+  asCallable(): TypedEmbeddingFunction {
+    const callable: TypedEmbeddingFunction = (input: Embeddable) => this.call(input);
+    callable.embedQuery = callable;
+    callable.embed_query = callable;
+    return callable;
+  }
+
+  private endpointUrl(): string {
+    if (this.api_url) {
+      return appendGoogleApiKey(this.api_url, this.api_key);
+    }
+    const model = encodeURIComponent(this.model_name);
+    return appendGoogleApiKey(`https://generativelanguage.googleapis.com/v1beta/models/${model}:batchEmbedContents`, this.api_key);
+  }
+}
+
+function appendGoogleApiKey(url: string, apiKey: string | null): string {
+  if (!apiKey) {
+    return url;
+  }
+  const separator = url.includes("?") ? "&" : "?";
+  return `${url}${separator}key=${encodeURIComponent(apiKey)}`;
+}
+
+function extractGoogleGenerativeAiEmbeddings(payload: unknown): Embeddings {
+  if (!isRecord(payload) || !Array.isArray(payload.embeddings)) {
+    throw new Error("Google Generative AI embeddings response did not include embeddings.");
+  }
+  const embeddings: Embedding[] = [];
+  for (const item of payload.embeddings) {
+    if (!isRecord(item) || !isNumberArray(item.values)) {
+      throw new Error("Google Generative AI embeddings response did not include numeric values.");
+    }
+    embeddings.push(item.values);
+  }
+  return embeddings;
+}
+
 export class GenerativeAiProvider extends BaseEmbeddingsProvider {
   readonly provider = "google-generativeai";
 
   constructor(options: GenerativeAiProviderConfig = {}) {
-    super({
-      embeddingCallable: defaultEmbeddingCallable,
-      model_name: "gemini-embedding-001",
+    const config = {
+      model_name: "gemini-embedding-001" as const,
       task_type: "RETRIEVAL_DOCUMENT",
       ...options,
+    };
+    super({
+      embeddingCallable: new GoogleGenerativeAiEmbeddingFunction(config).asCallable(),
+      ...config,
     });
   }
 }
