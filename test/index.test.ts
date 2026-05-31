@@ -50,6 +50,7 @@ import {
   StepExecutor,
   StepExecutionContext,
   OpenAIAgentAdapter,
+  BaseConverterAdapter,
   LangGraphAgentAdapter,
   BaseAgent,
   AuthenticatedUser,
@@ -8367,6 +8368,11 @@ describe("core crew runtime", () => {
       backstory: "Adapter",
       model: "gpt-test",
     });
+    expect(BaseConverterAdapter._validate_json("{\"summary\":\"ok\"}")).toBe("{\"summary\":\"ok\"}");
+    expect(BaseConverterAdapter._validate_json("not json")).toBeNull();
+    expect(BaseConverterAdapter._extract_json_from_text("```json\n{\"summary\":\"ok\"}\n```")).toBe("{\"summary\":\"ok\"}");
+    expect(BaseConverterAdapter._extract_json_from_text("prefix {\"score\":9} suffix")).toBe("{\"score\":9}");
+    expect(BaseConverterAdapter._extract_json_from_text(42)).toBe("42");
     const openaiResult = await openai.execute_task(taskInstance, "adapter context");
 
     expect(openaiResult).toContain("adapter context");

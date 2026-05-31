@@ -64,11 +64,51 @@ export abstract class BaseConverterAdapter {
 
   postProcessResult(result: unknown): string {
     const text = typeof result === "string" ? result : stringifyAdapterValue(result);
-    return this.outputFormat ? extractJsonFromText(text) : text;
+    return this.outputFormat ? BaseConverterAdapter.extractJsonFromText(result) : text;
   }
 
   post_process_result(result: unknown): string {
     return this.postProcessResult(result);
+  }
+
+  static validateJson(text: string): string | null {
+    try {
+      JSON.parse(text);
+      return text;
+    } catch {
+      return null;
+    }
+  }
+
+  static _validate_json(text: string): string | null {
+    return this.validateJson(text);
+  }
+
+  static extractJsonFromText(result: unknown): string {
+    if (typeof result !== "string") {
+      return String(result);
+    }
+
+    const valid = this.validateJson(result);
+    if (valid !== null) {
+      return valid;
+    }
+
+    for (const pattern of [/```(?:json)?\s*([\s\S]*?)```/g, /\{[\s\S]*}/g]) {
+      for (const match of result.matchAll(pattern)) {
+        const candidate = (match[1] ?? match[0]).trim();
+        const validCandidate = this.validateJson(candidate);
+        if (validCandidate !== null) {
+          return validCandidate;
+        }
+      }
+    }
+
+    return result;
+  }
+
+  static _extract_json_from_text(result: unknown): string {
+    return this.extractJsonFromText(result);
   }
 
   protected configureFormatFromTask(task: unknown): void {
@@ -502,27 +542,6 @@ function normalizeToolArgs(args: unknown): Record<string, unknown> {
     }
   }
   return args && typeof args === "object" && !Array.isArray(args) ? args as Record<string, unknown> : {};
-}
-
-function extractJsonFromText(result: string): string {
-  try {
-    JSON.parse(result);
-    return result;
-  } catch {
-    // Continue with extraction.
-  }
-  for (const pattern of [/```(?:json)?\s*([\s\S]*?)```/g, /\{[\s\S]*}/g]) {
-    for (const match of result.matchAll(pattern)) {
-      const candidate = (match[1] ?? match[0]).trim();
-      try {
-        JSON.parse(candidate);
-        return candidate;
-      } catch {
-        // Try next candidate.
-      }
-    }
-  }
-  return result;
 }
 
 function stringifyAdapterValue(value: unknown): string {
