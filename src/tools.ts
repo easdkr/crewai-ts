@@ -303,9 +303,7 @@ export abstract class BaseTool implements Tool {
 
   constructor(options: BaseToolOptions) {
     const maxUsageCount = options.maxUsageCount ?? options.max_usage_count ?? null;
-    if (maxUsageCount !== null && maxUsageCount <= 0) {
-      throw new Error("maxUsageCount must be a positive integer.");
-    }
+    BaseTool.validateMaxUsageCount(maxUsageCount);
     this.name = sanitizeToolName(options.name);
     this.description = options.description;
     this.envVars = options.envVars ?? options.env_vars ?? [];
@@ -315,6 +313,50 @@ export abstract class BaseTool implements Tool {
     this.maxUsageCount = maxUsageCount;
     this.cacheFunction = options.cacheFunction ?? options.cache_function ?? (() => true);
     this.cache = options.cache === false ? null : options.cache ?? new InMemoryToolCache();
+  }
+
+  static validateMaxUsageCount(value: number | null): number | null {
+    if (value !== null && value <= 0) {
+      throw new Error("max_usage_count must be a positive integer");
+    }
+    return value;
+  }
+
+  static validate_max_usage_count(value: number | null): number | null {
+    return this.validateMaxUsageCount(value);
+  }
+
+  static fromLangchain(tool: { name?: string; description?: string; func?: (...args: never[]) => MaybePromise<unknown>; args_schema?: ToolArgsSchema; argsSchema?: ToolArgsSchema }): StructuredTool {
+    if (typeof tool.func !== "function") {
+      throw new Error("The provided tool must have a callable 'func' attribute.");
+    }
+    const func = tool.func as (args: Record<string, unknown>) => MaybePromise<unknown>;
+    return new StructuredTool({
+      name: tool.name ?? "Unnamed Tool",
+      description: tool.description ?? "",
+      argsSchema: tool.argsSchema ?? tool.args_schema ?? {},
+      func,
+    });
+  }
+
+  static from_langchain(tool: { name?: string; description?: string; func?: (...args: never[]) => MaybePromise<unknown>; args_schema?: ToolArgsSchema; argsSchema?: ToolArgsSchema }): StructuredTool {
+    return this.fromLangchain(tool);
+  }
+
+  get toolType(): string {
+    return this.constructor.name;
+  }
+
+  get tool_type(): string {
+    return this.toolType;
+  }
+
+  modelPostInit(_context?: unknown): void {
+    void _context;
+  }
+
+  model_post_init(_context?: unknown): void {
+    this.modelPostInit(_context);
   }
 
   get env_vars(): readonly EnvVar[] {

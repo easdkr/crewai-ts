@@ -7870,6 +7870,23 @@ describe("tools", () => {
     expect(addTool.has_reached_max_usage_count()).toBe(false);
   });
 
+  it("exposes upstream BaseTool metadata and LangChain conversion helpers", () => {
+    const langchainTool = {
+      name: "lookup docs",
+      description: "Lookup documentation",
+      func: ({ query }: { query: string }) => `found ${query}`,
+    };
+    const toolInstance = StructuredTool.from_langchain(langchainTool);
+
+    expect(toolInstance).toBeInstanceOf(StructuredTool);
+    expect(toolInstance.tool_type).toContain("StructuredTool");
+    expect(toolInstance.invoke({ query: "CrewAI" })).toBe("found CrewAI");
+    expect(StructuredTool.validate_max_usage_count(null)).toBeNull();
+    expect(StructuredTool.validate_max_usage_count(2)).toBe(2);
+    expect(() => StructuredTool.validate_max_usage_count(0)).toThrow("max_usage_count must be a positive integer");
+    toolInstance.model_post_init();
+  });
+
   it("exports upstream CrewStructuredTool and EnvVar runtime values", async () => {
     function multiply(a: unknown, b: unknown): number {
       return Number(a) * Number(b);
