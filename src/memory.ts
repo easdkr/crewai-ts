@@ -786,6 +786,8 @@ export class RecallState {
   limit: number;
   queryEmbeddings: Array<readonly [string, readonly number[]]>;
   query_embeddings: Array<readonly [string, readonly number[]]>;
+  queryAnalysis: QueryAnalysis | null;
+  query_analysis: QueryAnalysis | null;
   candidateScopes: string[];
   candidate_scopes: string[];
   chunkFindings: unknown[];
@@ -811,6 +813,8 @@ export class RecallState {
     limit?: number;
     queryEmbeddings?: Array<readonly [string, readonly number[]]>;
     query_embeddings?: Array<readonly [string, readonly number[]]>;
+    queryAnalysis?: QueryAnalysis | null;
+    query_analysis?: QueryAnalysis | null;
     candidateScopes?: readonly string[];
     candidate_scopes?: readonly string[];
     chunkFindings?: readonly unknown[];
@@ -836,6 +840,8 @@ export class RecallState {
     this.limit = options.limit ?? 10;
     this.queryEmbeddings = [...(options.queryEmbeddings ?? options.query_embeddings ?? [])];
     this.query_embeddings = this.queryEmbeddings;
+    this.queryAnalysis = options.queryAnalysis ?? options.query_analysis ?? null;
+    this.query_analysis = this.queryAnalysis;
     this.candidateScopes = [...(options.candidateScopes ?? options.candidate_scopes ?? [])];
     this.candidate_scopes = this.candidateScopes;
     this.chunkFindings = [...(options.chunkFindings ?? options.chunk_findings ?? [])];
@@ -1163,6 +1169,190 @@ export class RecallFlow {
 
   constructor(private readonly storage: MemoryVectorStorageLike, private readonly llm: unknown = null, private readonly embedder: unknown = null, private readonly config = new MemoryConfig()) {
     void this.llm;
+  }
+
+  analyze_query_step(): QueryAnalysis {
+    this.state.explorationBudget = this.config.explorationBudget;
+    this.state.exploration_budget = this.state.explorationBudget;
+    const skipLlm = this.state.query.length < this.config.queryAnalysisThreshold;
+    const analysis = skipLlm
+      ? new QueryAnalysis({
+        keywords: [],
+        suggestedScopes: [],
+        complexity: "simple",
+        recallQueries: [this.state.query],
+      })
+      : new QueryAnalysis({
+        keywords: [],
+        suggestedScopes: [],
+        complexity: "simple",
+        recallQueries: [this.state.query],
+      });
+    this.state.queryAnalysis = analysis;
+    this.state.query_analysis = analysis;
+    const queries = (analysis.recall_queries.length > 0 ? analysis.recall_queries : [this.state.query]).slice(0, 3);
+    const embeddings = embed_texts(this.embedder, queries);
+    let pairs = queries
+      .map((query, index) => [query, embeddings[index] ?? []] as const)
+      .filter(([, embedding]) => embedding.length > 0);
+    if (pairs.length === 0) {
+      const fallback = embed_texts(this.embedder, [this.state.query])[0] ?? [];
+      if (fallback.length > 0) {
+        pairs = [[this.state.query, fallback]];
+      }
+    }
+    this.state.queryEmbeddings = pairs;
+    this.state.query_embeddings = pairs;
+    return analysis;
+  }
+
+  analyzeQueryStep(): QueryAnalysis {
+    return this.analyze_query_step();
+  }
+
+  filter_and_chunk(): string[] {
+    const analysis = this.state.query_analysis;
+    const scopePrefix = (this.state.scope ?? "/").replace(/\/+$/u, "") || "/";
+    let candidates = analysis && analysis.suggested_scopes.length > 0
+      ? analysis.suggested_scopes.filter((scope) => scope.length > 0)
+      : [];
+    if (candidates.length === 0) {
+      const storage = this.storage as MemoryVectorStorageLike & {
+        list_scopes?: (scopePrefix?: string | null) => readonly string[];
+        listScopes?: (scopePrefix?: string | null) => readonly string[];
+      };
+      try {
+        candidates = [...(storage.list_scopes?.(scopePrefix) ?? storage.listScopes?.(scopePrefix) ?? [])];
+      } catch {
+        candidates = [];
+      }
+    }
+    if (candidates.length === 0) {
+      candidates = [scopePrefix];
+    }
+    this.state.candidateScopes = candidates.slice(0, 20);
+    this.state.candidate_scopes = this.state.candidateScopes;
+    return this.state.candidateScopes;
+  }
+
+  filterAndChunk(): string[] {
+    return this.filter_and_chunk();
+  }
+
+  private mergedCategories(): readonly string[] | null {
+    return this.state.categories && this.state.categories.length > 0 ? this.state.categories : null;
+  }
+
+  private doSearch(): Array<{ scope: string; results: Array<readonly [MemoryRecord, number]>; top_score: number }> {
+    const findings: Array<{ scope: string; results: Array<readonly [MemoryRecord, number]>; top_score: number }> = [];
+    const scopes = this.state.candidate_scopes.length > 0 ? this.state.candidate_scopes : [this.state.scope ?? "/"];
+    for (const [, embedding] of this.state.query_embeddings) {
+      for (const scope of scopes) {
+        let results: Array<readonly [MemoryRecord, number]>;
+        try {
+          results = this.storage.search(embedding, {
+            scope_prefix: scope,
+            categories: this.mergedCategories(),
+            limit: this.state.limit * this.config.recallOversampleFactor,
+            min_score: 0,
+          });
+        } catch {
+          continue;
+        }
+        const timeCutoff = this.state.time_cutoff;
+        if (timeCutoff) {
+          results = results.filter(([record]) => record.createdAt >= timeCutoff);
+        }
+        if (!this.state.include_private) {
+          results = results.filter(([record]) => !record.private || record.source === this.state.source);
+        }
+        const firstResult = results[0];
+        if (firstResult) {
+          const [topScore] = compute_composite_score(firstResult[0], firstResult[1], this.config);
+          findings.push({ scope, results, top_score: topScore });
+        }
+      }
+    }
+    this.state.chunkFindings = findings;
+    this.state.chunk_findings = findings;
+    this.state.confidence = findings.reduce((max, finding) => Math.max(max, finding.top_score), 0);
+    return findings;
+  }
+
+  search_chunks(): Array<{ scope: string; results: Array<readonly [MemoryRecord, number]>; top_score: number }> {
+    return this.doSearch();
+  }
+
+  searchChunks(): Array<{ scope: string; results: Array<readonly [MemoryRecord, number]>; top_score: number }> {
+    return this.search_chunks();
+  }
+
+  decide_depth(): "explore_deeper" | "synthesize" {
+    const analysis = this.state.query_analysis;
+    if (
+      analysis
+      && analysis.complexity === "complex"
+      && this.state.confidence < this.config.complexQueryThreshold
+      && this.state.exploration_budget > 0
+    ) {
+      return "explore_deeper";
+    }
+    if (this.state.confidence >= this.config.confidenceThresholdHigh) {
+      return "synthesize";
+    }
+    if (this.state.exploration_budget > 0 && this.state.confidence < this.config.confidenceThresholdLow) {
+      return "explore_deeper";
+    }
+    return "synthesize";
+  }
+
+  decideDepth(): "explore_deeper" | "synthesize" {
+    return this.decide_depth();
+  }
+
+  synthesize_results(): MemoryMatch[] {
+    const seen = new Set<string>();
+    const matches: MemoryMatch[] = [];
+    for (const finding of this.state.chunk_findings) {
+      if (!finding || typeof finding !== "object" || !("results" in finding)) {
+        continue;
+      }
+      const results = (finding as { results?: unknown }).results;
+      if (!Array.isArray(results)) {
+        continue;
+      }
+      for (const item of results) {
+        if (!Array.isArray(item) || item.length < 2) {
+          continue;
+        }
+        const record: unknown = item[0];
+        const semanticScore: unknown = item[1];
+        if (!(record instanceof MemoryRecord) || seen.has(record.id)) {
+          continue;
+        }
+        seen.add(record.id);
+        const [score, reasons] = compute_composite_score(record, Number(semanticScore), this.config);
+        matches.push(new MemoryMatch({ record, score, matchReasons: reasons }));
+      }
+    }
+    matches.sort((left, right) => right.score - left.score);
+    const finalResults = matches.slice(0, this.state.limit);
+    const topResult = finalResults[0];
+    if (this.state.evidence_gaps.length > 0 && topResult) {
+      finalResults[0] = new MemoryMatch({
+        record: topResult.record,
+        score: topResult.score,
+        matchReasons: topResult.matchReasons,
+        evidenceGaps: this.state.evidence_gaps,
+      });
+    }
+    this.state.finalResults = finalResults;
+    this.state.final_results = finalResults;
+    return finalResults;
+  }
+
+  synthesizeResults(): MemoryMatch[] {
+    return this.synthesize_results();
   }
 
   async kickoff(options: { inputs?: Partial<RecallState> } = {}): Promise<MemoryMatch[]> {

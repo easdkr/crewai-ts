@@ -165,6 +165,7 @@ import {
   MemoryRecord,
   MemorySlice,
   EncodingFlow,
+  RecallFlow,
   ItemState,
   RememberTool,
   QueryAnalysis,
@@ -13094,6 +13095,157 @@ describe("memory", () => {
     expect(flow.state.records_inserted).toBe(1);
     expect(updateItem.result_record).toMatchObject({ id: "existing", content: "updated memory" });
     expect(insertItem.result_record).toMatchObject({ content: "brand new memory", scope: "/crew/new" });
+  });
+
+  it("runs RecallFlow query analysis fast path without LLM for short queries", () => {
+    const llm = vi.fn();
+    const embedder = vi.fn((texts: readonly string[]) => texts.map(() => [1, 0, 0]));
+    const storage = { search: vi.fn() };
+    const flow = new RecallFlow(storage, llm, embedder, new MemoryConfig({
+      exploration_budget: 2,
+      query_analysis_threshold: 50,
+    }));
+    flow.state.query = "CrewAI memory";
+
+    const analysis = flow.analyze_query_step();
+
+    expect(llm).not.toHaveBeenCalled();
+    expect(embedder).toHaveBeenCalledWith(["CrewAI memory"]);
+    expect(analysis).toBeInstanceOf(QueryAnalysis);
+    expect(analysis.recall_queries).toEqual(["CrewAI memory"]);
+    expect(flow.state.query_analysis).toBe(analysis);
+    expect(flow.state.query_embeddings).toEqual([["CrewAI memory", [1, 0, 0]]]);
+    expect(flow.state.exploration_budget).toBe(2);
+  });
+
+  it("selects RecallFlow candidate scopes from query analysis before storage fallback", () => {
+    const storage = {
+      search: vi.fn(),
+      list_scopes: vi.fn(() => ["/crew/a", "/crew/b"]),
+    };
+    const flow = new RecallFlow(storage, null, null);
+    flow.state.scope = "/crew";
+    flow.state.query_analysis = new QueryAnalysis({
+      suggested_scopes: ["/crew/priority"],
+      recall_queries: ["memory"],
+    });
+
+    expect(flow.filter_and_chunk()).toEqual(["/crew/priority"]);
+    expect(storage.list_scopes).not.toHaveBeenCalled();
+
+    flow.state.query_analysis = new QueryAnalysis();
+    expect(flow.filter_and_chunk()).toEqual(["/crew/a", "/crew/b"]);
+    expect(storage.list_scopes).toHaveBeenCalledWith("/crew");
+  });
+
+  it("searches RecallFlow chunks with filters and updates confidence", () => {
+    const visible = new MemoryRecord({
+      id: "visible",
+      content: "visible CrewAI memory",
+      scope: "/crew",
+      categories: ["memory"],
+      importance: 0.9,
+      embedding: [1, 0, 0],
+      createdAt: "2026-05-30T00:00:00.000Z",
+    });
+    const privateOther = new MemoryRecord({
+      id: "private",
+      content: "private CrewAI memory",
+      scope: "/crew",
+      categories: ["memory"],
+      private: true,
+      source: "other",
+      embedding: [1, 0, 0],
+      createdAt: "2026-05-30T00:00:00.000Z",
+    });
+    const old = new MemoryRecord({
+      id: "old",
+      content: "old CrewAI memory",
+      scope: "/crew",
+      categories: ["memory"],
+      embedding: [1, 0, 0],
+      createdAt: "2026-05-01T00:00:00.000Z",
+    });
+    const search = vi.fn((): Array<readonly [MemoryRecord, number]> => [[visible, 0.8], [privateOther, 0.99], [old, 0.95]]);
+    const flow = new RecallFlow({ search }, null, null, new MemoryConfig({ recall_oversample_factor: 2 }));
+    flow.state.query_embeddings = [["CrewAI memory", [1, 0, 0]]];
+    flow.state.candidate_scopes = ["/crew"];
+    flow.state.categories = ["memory"];
+    flow.state.limit = 2;
+    flow.state.time_cutoff = new Date("2026-05-20T00:00:00.000Z");
+    flow.state.include_private = false;
+    flow.state.source = "self";
+
+    const findings = flow.search_chunks();
+
+    expect(search).toHaveBeenCalledWith([1, 0, 0], {
+      scope_prefix: "/crew",
+      categories: ["memory"],
+      limit: 4,
+      min_score: 0,
+    });
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.results).toEqual([[visible, 0.8]]);
+    expect(flow.state.chunk_findings).toBe(findings);
+    expect(flow.state.confidence).toBeGreaterThan(0);
+  });
+
+  it("synthesizes RecallFlow results by deduping ranking and attaching evidence gaps", () => {
+    const newer = new MemoryRecord({
+      id: "newer",
+      content: "newer memory",
+      importance: 0.9,
+      embedding: [1, 0, 0],
+      createdAt: "2026-05-30T00:00:00.000Z",
+    });
+    const duplicate = new MemoryRecord({
+      id: "newer",
+      content: "duplicate memory",
+      importance: 0.2,
+      embedding: [1, 0, 0],
+      createdAt: "2026-05-29T00:00:00.000Z",
+    });
+    const lower = new MemoryRecord({
+      id: "lower",
+      content: "lower memory",
+      importance: 0.1,
+      embedding: [0, 1, 0],
+      createdAt: "2026-05-28T00:00:00.000Z",
+    });
+    const flow = new RecallFlow({ search: vi.fn() }, null, null);
+    flow.state.limit = 2;
+    flow.state.evidence_gaps = ["missing recent deployment detail"];
+    flow.state.chunk_findings = [
+      { scope: "/", results: [[lower, 0.4], [newer, 0.9], [duplicate, 0.99]] },
+    ];
+
+    const results = flow.synthesize_results();
+
+    expect(results.map((match) => match.record.id)).toEqual(["newer", "lower"]);
+    expect(results[0]?.evidence_gaps).toEqual(["missing recent deployment detail"]);
+    expect(flow.state.final_results).toBe(results);
+  });
+
+  it("routes RecallFlow depth decisions from confidence complexity and budget", () => {
+    const flow = new RecallFlow({ search: vi.fn() }, null, null, new MemoryConfig({
+      confidence_threshold_high: 0.8,
+      confidence_threshold_low: 0.5,
+      complex_query_threshold: 0.7,
+    }));
+    flow.state.query_analysis = new QueryAnalysis({ complexity: "complex" });
+    flow.state.confidence = 0.6;
+    flow.state.exploration_budget = 1;
+    expect(flow.decide_depth()).toBe("explore_deeper");
+
+    flow.state.confidence = 0.9;
+    expect(flow.decide_depth()).toBe("synthesize");
+
+    flow.state.query_analysis = new QueryAnalysis({ complexity: "simple" });
+    flow.state.confidence = 0.2;
+    expect(flow.decide_depth()).toBe("explore_deeper");
+
+    flow.state.exploration_budget = 0;
+    expect(flow.decide_depth()).toBe("synthesize");
   });
 
   it("automatically appends relevant crew memories to task prompts", async () => {
