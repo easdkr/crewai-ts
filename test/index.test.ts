@@ -10285,6 +10285,36 @@ describe("top-level CrewAI exports", () => {
       new TraceCollectionListener(new EventBus()).setup_listeners(new EventBus());
     }).not.toThrow();
   });
+
+  it("registers upstream-style EventListener console handlers", () => {
+    const bus = new EventBus();
+    const listener = new EventListener(bus);
+    listener.formatter = new ConsoleFormatter({ verbose: false });
+    const reasoningSpy = vi.spyOn(listener.formatter, "handle_reasoning_completed").mockImplementation(() => {});
+    const streamSpy = vi.spyOn(listener.formatter, "handle_llm_stream_chunk").mockImplementation(() => {});
+    const toolSpy = vi.spyOn(listener.formatter, "handle_tool_usage_started").mockImplementation(() => {});
+    const mcpSpy = vi.spyOn(listener.formatter, "handle_mcp_connection_started").mockImplementation(() => {});
+
+    bus.emit(null, new AgentReasoningCompletedEvent({ plan: "step plan", ready: true }));
+    bus.emit(null, new LLMStreamChunkEvent({
+      call_id: "call-1",
+      model: "gpt-4o-mini",
+      chunk: "partial",
+      call_type: LLMCallType.LLM_CALL,
+    }));
+    bus.emit(null, new ToolUsageStartedEvent({ toolName: "search", toolArgs: { q: "crew" } }));
+    bus.emit(null, new MCPConnectionStartedEvent({
+      server_name: "local",
+      server_url: "stdio://local",
+      transport_type: "stdio",
+      connect_timeout: 5,
+    }));
+
+    expect(reasoningSpy).toHaveBeenCalledWith("step plan", true);
+    expect(streamSpy).toHaveBeenCalledWith("partial", LLMCallType.LLM_CALL);
+    expect(toolSpy).toHaveBeenCalledWith("search", { q: "crew" }, null);
+    expect(mcpSpy).toHaveBeenCalledWith("local", "stdio://local", "stdio", false, 5);
+  });
 });
 
 describe("flow runtime", () => {

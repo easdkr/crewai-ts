@@ -4503,16 +4503,89 @@ function getEntityType(entity: unknown): string | null {
   return typeof value === "string" ? value : null;
 }
 
+function getEventValue(record: unknown, ...keys: string[]): unknown {
+  if (!record || typeof record !== "object") {
+    return null;
+  }
+  const values = record as Record<string, unknown>;
+  for (const key of keys) {
+    if (key in values) {
+      return values[key];
+    }
+  }
+  return null;
+}
+
+function getEventString(record: unknown, ...keys: string[]): string | null {
+  const value = getEventValue(record, ...keys);
+  return typeof value === "string" ? value : null;
+}
+
+function getEventNumber(record: unknown, ...keys: string[]): number | null {
+  const value = getEventValue(record, ...keys);
+  return typeof value === "number" ? value : null;
+}
+
+function getEventRecord(record: unknown, ...keys: string[]): Record<string, unknown> | null {
+  const value = getEventValue(record, ...keys);
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
+}
+
+function getEventStringArray(record: unknown, ...keys: string[]): readonly string[] | null {
+  const value = getEventValue(record, ...keys);
+  return Array.isArray(value) && value.every((entry) => typeof entry === "string") ? value : null;
+}
+
+function formatEventValue(value: unknown): string {
+  if (value === null || value === undefined) {
+    return "";
+  }
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+  if (typeof value === "string") {
+    return value;
+  }
+  if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") {
+    return value.toString();
+  }
+  return JSON.stringify(value);
+}
+
+function getSourceString(source: unknown, ...keys: string[]): string | null {
+  return getEventString(source, ...keys);
+}
+
+function getSourceId(source: unknown): string {
+  return getSourceString(source, "id") ?? "";
+}
+
+function getTaskName(source: unknown): string | null {
+  return getSourceString(source, "name") ?? getSourceString(source, "description");
+}
+
+function getAgentRole(source: unknown): string {
+  const agent = getEventRecord(source, "agent");
+  return getEventString(agent, "role") ?? "";
+}
+
+function isLLMSource(source: unknown): boolean {
+  return getEntityType(source) === "llm" || getSourceString(source, "sourceType", "source_type") === "llm";
+}
+
 export const crewaiEventBus = new EventBus();
 export const crewai_event_bus = crewaiEventBus;
 export const CrewAIEventsBus = EventBus;
 
 export class EventListener extends BaseEventListener {
   private static instance: EventListener | null = null;
+  formatter = new ConsoleFormatter({ verbose: true });
   executionSpans = new Map<unknown, unknown>();
   execution_spans = this.executionSpans;
   nextChunk = 0;
   next_chunk = 0;
+  textStream = "";
+  text_stream = "";
   knowledgeRetrievalInProgress = false;
   knowledge_retrieval_in_progress = false;
   knowledgeQueryInProgress = false;
@@ -4523,15 +4596,273 @@ export class EventListener extends BaseEventListener {
     return EventListener.instance;
   }
 
-  setupListeners(_eventBus: EventBus): void {
-    void _eventBus;
+  setupListeners(eventBus: EventBus): void {
+    const onEvent = (eventType: EventType, handler: (source: unknown, event: Record<string, unknown>) => void): void => {
+      eventBus.on(eventType, (source, event) => {
+        handler(source, event as unknown as Record<string, unknown>);
+      });
+    };
+
+    onEvent("crew_kickoff_started", (source, event) => {
+      this.formatter.handle_crew_started(getEventString(event, "crew_name", "crewName") ?? "Crew", getSourceId(source));
+    });
+    onEvent("crew_kickoff_completed", (source, event) => {
+      const output = getEventRecord(event, "output");
+      const finalOutput = getEventString(output, "raw") ?? "";
+      this.formatter.handle_crew_status(getEventString(event, "crew_name", "crewName") ?? "Crew", getSourceId(source), "completed", finalOutput);
+    });
+    onEvent("crew_kickoff_failed", (source, event) => {
+      this.formatter.handle_crew_status(getEventString(event, "crew_name", "crewName") ?? "Crew", getSourceId(source), "failed");
+    });
+    onEvent("crew_train_started", (_source, event) => {
+      this.formatter.handle_crew_train_started(getEventString(event, "crew_name", "crewName") ?? "Crew", formatEventValue(getEventValue(event, "timestamp")));
+    });
+    onEvent("crew_train_completed", (_source, event) => {
+      this.formatter.handle_crew_train_completed(getEventString(event, "crew_name", "crewName") ?? "Crew", formatEventValue(getEventValue(event, "timestamp")));
+    });
+    onEvent("crew_train_failed", (_source, event) => {
+      this.formatter.handle_crew_train_failed(getEventString(event, "crew_name", "crewName") ?? "Crew");
+    });
+    onEvent("crew_test_started", (source, event) => {
+      this.formatter.handle_crew_test_started(getEventString(event, "crew_name", "crewName") ?? "Crew", getSourceId(source), getEventNumber(event, "n_iterations", "nIterations") ?? 0);
+    });
+    onEvent("crew_test_completed", (_source, event) => {
+      this.formatter.handle_crew_test_completed(getEventString(event, "crew_name", "crewName") ?? "Crew");
+    });
+    onEvent("crew_test_failed", (_source, event) => {
+      this.formatter.handle_crew_test_failed(getEventString(event, "crew_name", "crewName") ?? "Crew");
+    });
+    onEvent("task_started", (source) => {
+      this.executionSpans.set(source, true);
+      this.formatter.handle_task_started(getSourceId(source), getTaskName(source));
+    });
+    onEvent("task_completed", (source) => {
+      this.executionSpans.delete(source);
+      this.formatter.handle_task_status(getSourceId(source), getAgentRole(source), "completed", getTaskName(source));
+    });
+    onEvent("task_failed", (source) => {
+      this.executionSpans.delete(source);
+      this.formatter.handle_task_status(getSourceId(source), getAgentRole(source), "failed", getTaskName(source));
+    });
+    onEvent("lite_agent_execution_started", (_source, event) => {
+      const agentInfo = getEventRecord(event, "agent_info", "agentInfo") ?? {};
+      this.formatter.handle_lite_agent_execution(getEventString(agentInfo, "role") ?? "", "started", null, agentInfo);
+    });
+    onEvent("lite_agent_execution_completed", (_source, event) => {
+      const agentInfo = getEventRecord(event, "agent_info", "agentInfo") ?? {};
+      this.formatter.handle_lite_agent_execution(getEventString(agentInfo, "role") ?? "", "completed", null, agentInfo);
+    });
+    onEvent("lite_agent_execution_error", (_source, event) => {
+      const agentInfo = getEventRecord(event, "agent_info", "agentInfo") ?? {};
+      this.formatter.handle_lite_agent_execution(getEventString(agentInfo, "role") ?? "", "failed", getEventValue(event, "error"), agentInfo);
+    });
+    onEvent("flow_created", (_source, event) => {
+      this.formatter.handle_flow_created(getEventString(event, "flow_name", "flowName") ?? "Flow", getEventString(event, "flow_id", "flowId") ?? "");
+    });
+    onEvent("flow_started", (source, event) => {
+      const flowId = getEventString(event, "flow_id", "flowId") ?? getSourceString(source, "flow_id", "flowId") ?? "";
+      const flowName = getEventString(event, "flow_name", "flowName") ?? "Flow";
+      this.formatter.handle_flow_created(flowName, flowId);
+      this.formatter.handle_flow_started(flowName, flowId);
+    });
+    onEvent("flow_finished", (source, event) => {
+      this.formatter.handle_flow_status(getEventString(event, "flow_name", "flowName") ?? "Flow", getEventString(event, "flow_id", "flowId") ?? getSourceString(source, "flow_id", "flowId") ?? "");
+    });
+    onEvent("flow_paused", (_source, event) => {
+      this.formatter.handle_flow_status(getEventString(event, "flow_name", "flowName") ?? "Flow", getEventString(event, "flow_id", "flowId") ?? "", "paused");
+    });
+    onEvent("method_execution_started", (_source, event) => {
+      this.formatter.handle_method_status(getEventString(event, "method_name", "methodName") ?? "", "running");
+    });
+    onEvent("method_execution_finished", (_source, event) => {
+      this.formatter.handle_method_status(getEventString(event, "method_name", "methodName") ?? "", "completed");
+    });
+    onEvent("method_execution_failed", (_source, event) => {
+      this.formatter.handle_method_status(getEventString(event, "method_name", "methodName") ?? "", "failed");
+    });
+    onEvent("method_execution_paused", (_source, event) => {
+      this.formatter.handle_method_status(getEventString(event, "method_name", "methodName") ?? "", "paused");
+    });
+    onEvent("tool_usage_started", (source, event) => {
+      if (isLLMSource(source)) {
+        this.formatter.handle_llm_tool_usage_started(getEventString(event, "tool_name", "toolName") ?? "", getEventRecord(event, "tool_args", "toolArgs") ?? getEventString(event, "tool_args", "toolArgs") ?? "");
+      } else {
+        this.formatter.handle_tool_usage_started(getEventString(event, "tool_name", "toolName") ?? "", getEventRecord(event, "tool_args", "toolArgs") ?? getEventString(event, "tool_args", "toolArgs") ?? "", getEventNumber(event, "run_attempts", "runAttempts"));
+      }
+    });
+    onEvent("tool_usage_finished", (source, event) => {
+      if (isLLMSource(source)) {
+        this.formatter.handle_llm_tool_usage_finished(getEventString(event, "tool_name", "toolName") ?? "");
+      } else {
+        this.formatter.handle_tool_usage_finished(getEventString(event, "tool_name", "toolName") ?? "", getEventString(event, "output") ?? "", getEventNumber(event, "run_attempts", "runAttempts"));
+      }
+    });
+    onEvent("tool_usage_error", (source, event) => {
+      if (isLLMSource(source)) {
+        this.formatter.handle_llm_tool_usage_error(getEventString(event, "tool_name", "toolName") ?? "", getEventString(event, "error") ?? "");
+      } else {
+        this.formatter.handle_tool_usage_error(getEventString(event, "tool_name", "toolName") ?? "", getEventString(event, "error") ?? "", getEventNumber(event, "run_attempts", "runAttempts"));
+      }
+    });
+    onEvent("llm_call_started", () => {
+      this.textStream = "";
+      this.text_stream = "";
+      this.nextChunk = 0;
+      this.next_chunk = 0;
+    });
+    onEvent("llm_call_completed", () => {
+      this.formatter.handle_llm_stream_completed();
+    });
+    onEvent("llm_call_failed", (_source, event) => {
+      this.formatter.handle_llm_stream_completed();
+      this.formatter.handle_llm_call_failed(getEventString(event, "error") ?? "");
+    });
+    onEvent("llm_stream_chunk", (_source, event) => {
+      this.textStream += getEventString(event, "chunk") ?? "";
+      this.text_stream = this.textStream;
+      this.nextChunk = this.textStream.length;
+      this.next_chunk = this.nextChunk;
+      this.formatter.handle_llm_stream_chunk(this.textStream, getEventValue(event, "call_type", "callType"));
+    });
+    onEvent("llm_guardrail_started", (_source, event) => {
+      const guardrail = formatEventValue(getEventValue(event, "guardrail"));
+      this.formatter.handle_guardrail_started(guardrail.length > 50 ? `${guardrail.slice(0, 50)}...` : guardrail, getEventNumber(event, "retry_count", "retryCount") ?? 0);
+    });
+    onEvent("llm_guardrail_completed", (_source, event) => {
+      this.formatter.handle_guardrail_completed(Boolean(getEventValue(event, "success")), getEventString(event, "error"), getEventNumber(event, "retry_count", "retryCount") ?? 0);
+    });
+    onEvent("knowledge_search_query_started", () => {
+      if (!this.knowledgeQueryInProgress) {
+        this.knowledgeQueryInProgress = true;
+        this.knowledge_query_in_progress = true;
+      }
+    });
+    onEvent("knowledge_search_query_completed", () => {
+      this.knowledgeQueryInProgress = false;
+      this.knowledge_query_in_progress = false;
+    });
+    onEvent("knowledge_query_failed", (_source, event) => {
+      this.formatter.handle_knowledge_query_failed(getEventString(event, "error") ?? "");
+    });
+    onEvent("knowledge_query_completed", () => {
+      this.formatter.handle_knowledge_query_completed();
+    });
+    onEvent("knowledge_search_query_failed", (_source, event) => {
+      this.formatter.handle_knowledge_search_query_failed(getEventString(event, "error") ?? "");
+    });
+    onEvent("memory_retrieval_started", () => {
+      if (!this.knowledgeRetrievalInProgress) {
+        this.knowledgeRetrievalInProgress = true;
+        this.knowledge_retrieval_in_progress = true;
+        this.formatter.handle_knowledge_retrieval_started();
+      }
+    });
+    onEvent("memory_retrieval_completed", (_source, event) => {
+      this.knowledgeRetrievalInProgress = false;
+      this.knowledge_retrieval_in_progress = false;
+      this.formatter.handle_memory_retrieval_completed(getEventString(event, "memory_content", "memoryContent") ?? "", getEventNumber(event, "retrieval_time_ms", "retrievalTimeMs") ?? 0);
+    });
+    onEvent("memory_query_failed", (_source, event) => {
+      this.formatter.handle_memory_query_failed(getEventString(event, "error") ?? "", getEventString(event, "source_type", "sourceType") ?? "");
+    });
+    onEvent("memory_save_started", () => {
+      this.formatter.handle_memory_save_started();
+    });
+    onEvent("memory_save_completed", (_source, event) => {
+      this.formatter.handle_memory_save_completed(getEventNumber(event, "save_time_ms", "saveTimeMs") ?? 0, getEventString(event, "source_type", "sourceType") ?? "");
+    });
+    onEvent("memory_save_failed", (_source, event) => {
+      this.formatter.handle_memory_save_failed(getEventString(event, "error") ?? "", getEventString(event, "source_type", "sourceType") ?? "");
+    });
+    onEvent("agent_reasoning_started", (_source, event) => {
+      this.formatter.handle_reasoning_started(getEventNumber(event, "attempt") ?? 0);
+    });
+    onEvent("agent_reasoning_completed", (_source, event) => {
+      this.formatter.handle_reasoning_completed(getEventString(event, "plan") ?? "", Boolean(getEventValue(event, "ready")));
+    });
+    onEvent("agent_reasoning_failed", (_source, event) => {
+      this.formatter.handle_reasoning_failed(getEventString(event, "error") ?? "");
+    });
+    onEvent("step_observation_started", (_source, event) => {
+      this.formatter.handle_observation_started(getEventString(event, "agent_role", "agentRole") ?? "", getEventNumber(event, "step_number", "stepNumber") ?? 0, getEventString(event, "step_description", "stepDescription") ?? "");
+    });
+    onEvent("step_observation_completed", (_source, event) => {
+      this.formatter.handle_observation_completed(
+        getEventString(event, "agent_role", "agentRole") ?? "",
+        getEventNumber(event, "step_number", "stepNumber") ?? 0,
+        Boolean(getEventValue(event, "step_completed_successfully", "stepCompletedSuccessfully")),
+        Boolean(getEventValue(event, "remaining_plan_still_valid", "remainingPlanStillValid")),
+        getEventString(event, "key_information_learned", "keyInformationLearned") ?? "",
+        Boolean(getEventValue(event, "needs_full_replan", "needsFullReplan")),
+        Boolean(getEventValue(event, "goal_already_achieved", "goalAlreadyAchieved")),
+      );
+    });
+    onEvent("step_observation_failed", (_source, event) => {
+      this.formatter.handle_observation_failed(getEventNumber(event, "step_number", "stepNumber") ?? 0, getEventString(event, "error") ?? "");
+    });
+    onEvent("plan_refinement", (_source, event) => {
+      this.formatter.handle_plan_refinement(getEventNumber(event, "step_number", "stepNumber") ?? 0, getEventNumber(event, "refined_step_count", "refinedStepCount") ?? 0, getEventStringArray(event, "refinements"));
+    });
+    onEvent("plan_replan_triggered", (_source, event) => {
+      this.formatter.handle_plan_replan(getEventString(event, "replan_reason", "replanReason") ?? "", getEventNumber(event, "replan_count", "replanCount") ?? 0, getEventNumber(event, "completed_steps_preserved", "completedStepsPreserved") ?? 0);
+    });
+    onEvent("goal_achieved_early", (_source, event) => {
+      this.formatter.handle_goal_achieved_early(getEventNumber(event, "steps_completed", "stepsCompleted") ?? 0, getEventNumber(event, "steps_remaining", "stepsRemaining") ?? 0);
+    });
+    onEvent("agent_logs_started", (_source, event) => {
+      this.formatter.handle_agent_logs_started(getEventString(event, "agent_role", "agentRole") ?? "", getEventString(event, "task_description", "taskDescription"), Boolean(getEventValue(event, "verbose")));
+    });
+    onEvent("agent_logs_execution", (_source, event) => {
+      this.formatter.handle_agent_logs_execution(getEventString(event, "agent_role", "agentRole") ?? "", getEventValue(event, "formatted_answer", "formattedAnswer"), Boolean(getEventValue(event, "verbose")));
+    });
+    onEvent("a2a_delegation_started", (_source, event) => {
+      this.formatter.handle_a2a_delegation_started(getEventString(event, "endpoint") ?? "", getEventString(event, "task_description", "taskDescription") ?? "", getEventString(event, "agent_id", "agentId") ?? "", Boolean(getEventValue(event, "is_multiturn", "isMultiturn")), getEventNumber(event, "turn_number", "turnNumber") ?? 1);
+    });
+    onEvent("a2a_delegation_completed", (_source, event) => {
+      this.formatter.handle_a2a_delegation_completed(getEventString(event, "status") ?? "", getEventString(event, "result"), getEventString(event, "error"), Boolean(getEventValue(event, "is_multiturn", "isMultiturn")));
+    });
+    onEvent("a2a_conversation_started", (_source, event) => {
+      this.formatter.handle_a2a_conversation_started(getEventString(event, "agent_id", "agentId") ?? "", getEventString(event, "endpoint") ?? "");
+    });
+    onEvent("a2a_message_sent", (_source, event) => {
+      this.formatter.handle_a2a_message_sent(getEventString(event, "message") ?? "", getEventNumber(event, "turn_number", "turnNumber") ?? 0, getEventString(event, "agent_role", "agentRole"));
+    });
+    onEvent("a2a_response_received", (_source, event) => {
+      this.formatter.handle_a2a_response_received(getEventString(event, "response") ?? "", getEventNumber(event, "turn_number", "turnNumber") ?? 0, getEventString(event, "status") ?? "", getEventString(event, "agent_role", "agentRole"));
+    });
+    onEvent("a2a_conversation_completed", (_source, event) => {
+      this.formatter.handle_a2a_conversation_completed(getEventString(event, "status") ?? "", getEventString(event, "final_result", "finalResult"), getEventString(event, "error"), getEventNumber(event, "total_turns", "totalTurns") ?? 0);
+    });
+    onEvent("a2a_polling_started", (_source, event) => {
+      this.formatter.handle_a2a_polling_started(getEventString(event, "task_id", "taskId") ?? "", getEventNumber(event, "polling_interval", "pollingInterval") ?? 0, getEventString(event, "endpoint") ?? "");
+    });
+    onEvent("a2a_polling_status", (_source, event) => {
+      this.formatter.handle_a2a_polling_status(getEventString(event, "task_id", "taskId") ?? "", getEventString(event, "state") ?? "", getEventNumber(event, "elapsed_seconds", "elapsedSeconds") ?? 0, getEventNumber(event, "poll_count", "pollCount") ?? 0);
+    });
+    onEvent("mcp_connection_started", (_source, event) => {
+      this.formatter.handle_mcp_connection_started(getEventString(event, "server_name", "serverName") ?? "", getEventString(event, "server_url", "serverUrl"), getEventString(event, "transport_type", "transportType"), Boolean(getEventValue(event, "is_reconnect", "isReconnect")), getEventNumber(event, "connect_timeout", "connectTimeout"));
+    });
+    onEvent("mcp_connection_completed", (_source, event) => {
+      this.formatter.handle_mcp_connection_completed(getEventString(event, "server_name", "serverName") ?? "", getEventString(event, "server_url", "serverUrl"), getEventString(event, "transport_type", "transportType"), getEventNumber(event, "connection_duration_ms", "connectionDurationMs"), Boolean(getEventValue(event, "is_reconnect", "isReconnect")));
+    });
+    onEvent("mcp_connection_failed", (_source, event) => {
+      this.formatter.handle_mcp_connection_failed(getEventString(event, "server_name", "serverName") ?? "", getEventString(event, "server_url", "serverUrl"), getEventString(event, "transport_type", "transportType"), getEventString(event, "error") ?? "", getEventString(event, "error_type", "errorType"));
+    });
+    onEvent("mcp_config_fetch_failed", (_source, event) => {
+      this.formatter.handle_mcp_config_fetch_failed(getEventString(event, "slug") ?? "", getEventString(event, "error") ?? "", getEventString(event, "error_type", "errorType"));
+    });
+    onEvent("mcp_tool_execution_started", (_source, event) => {
+      this.formatter.handle_mcp_tool_execution_started(getEventString(event, "server_name", "serverName") ?? "", getEventString(event, "tool_name", "toolName") ?? "", getEventRecord(event, "tool_args", "toolArgs"));
+    });
+    onEvent("mcp_tool_execution_failed", (_source, event) => {
+      this.formatter.handle_mcp_tool_execution_failed(getEventString(event, "server_name", "serverName") ?? "", getEventString(event, "tool_name", "toolName") ?? "", getEventRecord(event, "tool_args", "toolArgs"), getEventString(event, "error") ?? "", getEventString(event, "error_type", "errorType"));
+    });
   }
 
   override setup_listeners(eventBus: EventBus): void {
     this.setupListeners(eventBus);
   }
 }
-export const event_listener = EventListener.getInstance();
 
 export class ConsoleFormatter {
   readonly verbose: boolean;
@@ -5048,6 +5379,8 @@ export class ConsoleFormatter {
     }
   }
 }
+
+export const event_listener = EventListener.getInstance();
 
 export class TraceCollectionListener extends BaseEventListener {
   setupListeners(_eventBus: EventBus): void {
