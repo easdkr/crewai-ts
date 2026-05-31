@@ -3064,6 +3064,24 @@ describe("a2a utilities", () => {
     expect(registry.prepare_all_metadata(states)).toEqual({ marker: "state-from-history" });
   });
 
+  it("validates A2A client extension protocol at config creation", () => {
+    expect(() => new A2AClientConfig({
+      endpoint: "https://remote.example.com/a2a",
+      client_extensions: [{}],
+    })).toThrow("Value must implement A2AExtension protocol");
+
+    expect(() => new A2AClientConfig({
+      endpoint: "https://remote.example.com/a2a",
+      client_extensions: [{
+        inject_tools: () => undefined,
+        extract_state_from_history: () => null,
+        augment_prompt: (prompt: string) => prompt,
+        process_response: (response: unknown) => response,
+        prepare_message_metadata: () => ({}),
+      }],
+    })).not.toThrow();
+  });
+
   it("activates A2UI server hooks only for declared client extensions", async () => {
     const extension = new A2UIServerExtension(["catalog-supported"]);
     const inactiveContext = {

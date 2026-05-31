@@ -2886,7 +2886,7 @@ export class A2AClientConfig {
     this.acceptedOutputModes = [...(options.acceptedOutputModes ?? options.accepted_output_modes ?? ["application/json"])];
     this.accepted_output_modes = this.acceptedOutputModes;
     this.extensions = [...(options.extensions ?? [])];
-    this.clientExtensions = [...(options.clientExtensions ?? options.client_extensions ?? [])];
+    this.clientExtensions = [...(options.clientExtensions ?? options.client_extensions ?? [])].map(validateA2AExtension);
     this.client_extensions = this.clientExtensions;
     const transport = options.transport ?? new ClientTransportConfig();
     this.transport = migrateClientTransport(transport, options.transportProtocol ?? options.transport_protocol ?? null, options.supportedTransports ?? options.supported_transports ?? null);
@@ -4145,7 +4145,28 @@ function stringifyA2AValue(value: unknown): string {
 }
 
 function isA2AExtension(value: unknown): value is A2AExtension {
-  return Boolean(value && typeof value === "object");
+  return Boolean(
+    value
+    && typeof value === "object"
+    && hasA2AExtensionMethod(value, "injectTools", "inject_tools")
+    && hasA2AExtensionMethod(value, "extractStateFromHistory", "extract_state_from_history")
+    && hasA2AExtensionMethod(value, "augmentPrompt", "augment_prompt")
+    && hasA2AExtensionMethod(value, "processResponse", "process_response")
+    && hasA2AExtensionMethod(value, "prepareMessageMetadata", "prepare_message_metadata"),
+  );
+}
+
+function validateA2AExtension(value: unknown): A2AExtension {
+  if (!isA2AExtension(value)) {
+    const typeName = value && typeof value === "object" ? value.constructor.name : typeof value;
+    throw new Error(`Value must implement A2AExtension protocol. Got ${typeName} which is missing required methods.`);
+  }
+  return value;
+}
+
+function hasA2AExtensionMethod(value: object, camelName: string, snakeName: string): boolean {
+  const record = value as Record<string, unknown>;
+  return typeof record[camelName] === "function" || typeof record[snakeName] === "function";
 }
 
 function isObjectClient(value: unknown): value is object {
