@@ -44,6 +44,9 @@ import {
   A2ATransportNegotiatedEvent,
   A2ATaskState,
   APIKeyAuth,
+  _build_task_description,
+  _extract_response_schema,
+  _parse_redis_url,
   Agent,
   AgentCardSigningConfig,
   AgentExecutor,
@@ -692,6 +695,7 @@ import {
   _get_effective_modes,
   _get_tls_verify,
   _prepare_auth_headers,
+  get_timestamp,
   isMCPServerConfig,
   isRetryableError,
   activateSkill,
@@ -4033,6 +4037,32 @@ describe("a2a utilities", () => {
     expect(fetchMock).toHaveBeenNthCalledWith(1, "https://cache.example.com/a2a?api_key=query-secret", expect.objectContaining({ method: "GET" }));
     expect(fetchMock).toHaveBeenNthCalledWith(2, "https://cache.example.com/a2a?api_key=query-secret", expect.objectContaining({ method: "GET" }));
     fetchMock.mockRestore();
+  });
+
+  it("exposes upstream A2A task utility helpers", () => {
+    expect(_parse_redis_url("redis://:secret@redis.example.com:6380/2")).toEqual({
+      cache: "aiocache.RedisCache",
+      endpoint: "redis.example.com",
+      port: 6380,
+      db: 2,
+      password: "secret",
+    });
+    expect(_parse_redis_url("redis://redis.example.com/not-a-db")).toEqual({
+      cache: "aiocache.RedisCache",
+      endpoint: "redis.example.com",
+      port: 6379,
+    });
+    expect(_extract_response_schema([
+      { root: { kind: "text", metadata: { schema: { type: "object", properties: { answer: { type: "string" } } } } } },
+    ])).toEqual({ type: "object", properties: { answer: { type: "string" } } });
+    expect(_build_task_description("Summarize", [{ topic: "CrewAI" }])).toBe([
+      "Summarize",
+      "",
+      "Structured Data:",
+      JSON.stringify([{ topic: "CrewAI" }], null, 2),
+    ].join("\n"));
+    expect(get_timestamp({ id: "task-1", status: { state: A2ATaskState.completed, timestamp: "2026-01-02T03:04:05Z" } }).toISOString())
+      .toBe("2026-01-02T03:04:05.000Z");
   });
 
   it("wraps agent task and kickoff execution with A2A prompt augmentation", async () => {

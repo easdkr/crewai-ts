@@ -4510,6 +4510,49 @@ export function list_tasks(
   return [page, nextToken, total];
 }
 
+export function _parse_redis_url(url: string): RedisCacheConfig {
+  const parsed = new URL(url);
+  const config: RedisCacheConfig = {
+    cache: "aiocache.RedisCache",
+    endpoint: parsed.hostname || "localhost",
+    port: parsed.port ? Number(parsed.port) : 6379,
+  };
+  const db = parsed.pathname && parsed.pathname !== "/" ? Number.parseInt(parsed.pathname.replace(/^\//, ""), 10) : Number.NaN;
+  if (Number.isInteger(db)) {
+    config.db = db;
+  }
+  if (parsed.password) {
+    config.password = decodeURIComponent(parsed.password);
+  }
+  return config;
+}
+
+export function _extract_response_schema(parts: readonly unknown[]): Record<string, unknown> | null {
+  for (const part of parts) {
+    const root = recordOrNullA2A(recordOrNullA2A(part)?.root) ?? recordOrNullA2A(part);
+    if (root?.kind !== "text") {
+      continue;
+    }
+    const metadata = recordOrNullA2A(root.metadata);
+    const schema = recordOrNullA2A(metadata?.schema);
+    if (schema) {
+      return schema;
+    }
+  }
+  return null;
+}
+
+export function _build_task_description(user_message: string, structured_inputs: readonly Record<string, unknown>[]): string {
+  if (structured_inputs.length === 0) {
+    return user_message;
+  }
+  return `${user_message}\n\nStructured Data:\n${JSON.stringify(structured_inputs, null, 2)}`;
+}
+
+export function get_timestamp(task: A2ATaskLike): Date {
+  return typeof task.status?.timestamp === "string" ? new Date(task.status.timestamp) : new Date(0);
+}
+
 async function executeAgentTask(agent: unknown, context: A2AExecutionContext): Promise<unknown> {
   const agentRecord = agent as {
     aexecuteTask?: (options: Record<string, unknown>) => Promise<unknown>;
