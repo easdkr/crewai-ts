@@ -9333,6 +9333,67 @@ describe("LLM providers", () => {
     ]);
   });
 
+  it("accumulates Bedrock Converse streaming events", () => {
+    const bedrock = new BedrockCompletion({ model: "anthropic.claude-3-5-sonnet-20241022-v2:0" });
+
+    const accumulated = (bedrock as unknown as {
+      _accumulate_converse_stream_events(events: unknown[]): {
+        text: string;
+        tool_calls: Record<string, unknown>[];
+        usage: Record<string, number> | null;
+        stop_reason: string | null;
+      };
+    })._accumulate_converse_stream_events([
+      { messageStart: { role: "assistant" } },
+      { contentBlockDelta: { contentBlockIndex: 0, delta: { text: "Hel" } } },
+      { contentBlockDelta: { contentBlockIndex: 0, delta: { text: "lo" } } },
+      {
+        contentBlockStart: {
+          contentBlockIndex: 1,
+          start: { toolUse: { toolUseId: "tooluse-1", name: "search_docs" } },
+        },
+      },
+      { contentBlockDelta: { contentBlockIndex: 1, delta: { toolUse: { input: "{\"query\":" } } } },
+      { contentBlockDelta: { contentBlockIndex: 1, delta: { toolUse: { input: "\"CrewAI\"}" } } } },
+      { contentBlockStop: { contentBlockIndex: 1 } },
+      { messageStop: { stopReason: "tool_use" } },
+      {
+        metadata: {
+          usage: {
+            inputTokens: 7,
+            outputTokens: 5,
+            totalTokens: 12,
+            cacheReadInputTokenCount: 3,
+          },
+        },
+      },
+    ]);
+
+    expect(accumulated).toEqual({
+      text: "Hello",
+      tool_calls: [{
+        id: "tooluse-1",
+        type: "function",
+        function: { name: "search_docs", arguments: "{\"query\":\"CrewAI\"}" },
+        index: 1,
+      }],
+      usage: {
+        prompt_tokens: 7,
+        completion_tokens: 5,
+        total_tokens: 12,
+        cached_prompt_tokens: 3,
+      },
+      stop_reason: "tool_use",
+    });
+    expect(bedrock.get_token_usage_summary()).toMatchObject({
+      promptTokens: 7,
+      completionTokens: 5,
+      totalTokens: 12,
+      cachedPromptTokens: 3,
+      successfulRequests: 1,
+    });
+  });
+
   it("exposes Gemini completion provider parity helpers", () => {
     const gemini = new GeminiCompletion({
       model: "gemini-2.5-pro",

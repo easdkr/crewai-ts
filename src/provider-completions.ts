@@ -800,6 +800,98 @@ export class BedrockCompletion extends ConfiguredLLM {
     return BedrockCompletion.extractStructuredOutputFromResponse(response);
   }
 
+  accumulateConverseStreamEvents(events: readonly unknown[]): {
+    text: string;
+    tool_calls: Record<string, unknown>[];
+    usage: Record<string, number> | null;
+    stop_reason: string | null;
+  } {
+    let text = "";
+    let usage: Record<string, number> | null = null;
+    let stopReason: string | null = null;
+    let currentToolIndex: number | null = null;
+    const toolCallsByIndex = new Map<number, { id: string; name: string; arguments: string; index: number }>();
+
+    for (const rawEvent of events) {
+      const event = readObject(rawEvent);
+      const start = readObject(event.contentBlockStart);
+      if (Object.keys(start).length > 0) {
+        const index = numberField(start, "contentBlockIndex");
+        const toolUse = readObject(readObject(start.start).toolUse);
+        if (Object.keys(toolUse).length > 0) {
+          currentToolIndex = index;
+          toolCallsByIndex.set(index, {
+            id: scalarToString(toolUse.toolUseId) ?? "",
+            name: scalarToString(toolUse.name) ?? "",
+            arguments: "",
+            index,
+          });
+        }
+        continue;
+      }
+
+      const deltaEvent = readObject(event.contentBlockDelta);
+      if (Object.keys(deltaEvent).length > 0) {
+        const delta = readObject(deltaEvent.delta);
+        if (typeof delta.text === "string") {
+          text += delta.text;
+          continue;
+        }
+        const toolUseDelta = readObject(delta.toolUse);
+        const input = scalarToString(toolUseDelta.input) ?? "";
+        if (input) {
+          const index = typeof deltaEvent.contentBlockIndex === "number" && Number.isFinite(deltaEvent.contentBlockIndex)
+            ? deltaEvent.contentBlockIndex
+            : currentToolIndex;
+          const existing = index === null ? null : toolCallsByIndex.get(index);
+          if (existing) {
+            existing.arguments += input;
+          }
+        }
+        continue;
+      }
+
+      const stop = readObject(event.messageStop);
+      if (Object.keys(stop).length > 0) {
+        stopReason = scalarToString(stop.stopReason);
+        continue;
+      }
+
+      const metadata = readObject(event.metadata);
+      const metadataUsage = readObject(metadata.usage);
+      if (Object.keys(metadataUsage).length > 0) {
+        usage = BedrockCompletion.extractBedrockTokenUsage(metadataUsage);
+        this.trackTokenUsageInternal(metadataUsage);
+      }
+    }
+
+    return {
+      text,
+      tool_calls: [...toolCallsByIndex.values()]
+        .sort((left, right) => left.index - right.index)
+        .map((toolCall) => ({
+          id: toolCall.id,
+          type: "function",
+          function: {
+            name: toolCall.name,
+            arguments: toolCall.arguments,
+          },
+          index: toolCall.index,
+        })),
+      usage,
+      stop_reason: stopReason,
+    };
+  }
+
+  _accumulate_converse_stream_events(events: readonly unknown[]): {
+    text: string;
+    tool_calls: Record<string, unknown>[];
+    usage: Record<string, number> | null;
+    stop_reason: string | null;
+  } {
+    return this.accumulateConverseStreamEvents(events);
+  }
+
   override trackTokenUsageInternal(usageData: Record<string, unknown>): void {
     super.trackTokenUsageInternal(BedrockCompletion.extractBedrockTokenUsage(usageData));
   }
