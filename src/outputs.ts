@@ -20,7 +20,7 @@ export class TaskOutput {
   readonly description: string;
   readonly name: string | null;
   readonly expectedOutput: string | null;
-  readonly summary: string;
+  summary: string;
   readonly raw: string;
   readonly jsonDict: Record<string, unknown> | null;
   readonly json_dict: Record<string, unknown> | null;
@@ -42,7 +42,13 @@ export class TaskOutput {
     this.outputFormat = options.outputFormat ?? options.output_format ?? OutputFormat.RAW;
     this.output_format = this.outputFormat;
     this.messages = options.messages ?? [];
+    this.summary = "";
+    this.set_summary();
+  }
+
+  set_summary(): this {
     this.summary = `${this.description.split(/\s+/).slice(0, 10).join(" ")}...`;
+    return this;
   }
 
   get json(): string | null {

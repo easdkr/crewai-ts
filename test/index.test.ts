@@ -849,6 +849,9 @@ describe("serialization and project utilities", () => {
     expect(output.jsonDict).toBe(output.json_dict);
     expect(output.outputFormat).toBe(OutputFormat.JSON);
     expect(output.output_format).toBe(OutputFormat.JSON);
+    expect(Object.hasOwn(TaskOutput.prototype, "set_summary")).toBe(true);
+    expect(output.set_summary()).toBe(output);
+    expect(output.summary).toBe("Summarize field alias compatibility for CrewAI task output...");
     expect(output.json).toBe(JSON.stringify({ summary: "done" }));
     expect(output.toDict()).toEqual({ summary: "done" });
     expect(output.to_dict()).toEqual({ summary: "done" });

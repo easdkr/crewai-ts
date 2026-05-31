@@ -114,6 +114,8 @@ When more goal budget is available, continue from the behavioral parity audits b
 - Added converter compatibility behavior:
   - `asyncConvertToModel` / `asyncHandlePartialJson` now use the agent LLM fallback path for non-JSON or malformed partial JSON results, matching upstream async conversion dispatch.
   - `OutputConverter` now explicitly exposes upstream-style `to_pydantic` and `to_json` methods while preserving the shared converter implementation.
+- Added output compatibility behavior:
+  - `TaskOutput.set_summary` now exposes the upstream summary recomputation hook while preserving constructor-time summary defaults.
 - Added knowledge compatibility behavior:
   - `Knowledge` now accepts storage-backed configuration and exposes upstream-style `add_sources`, `aadd_sources`, `aquery`, and `areset` helpers while preserving the in-memory deterministic path.
   - Knowledge sources now expose upstream-style `add`, `aadd`, `validate_content`, and `get_embeddings` helpers and can save their chunks through configured storage.
