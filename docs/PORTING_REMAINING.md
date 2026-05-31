@@ -137,6 +137,8 @@ When more goal budget is available, continue from the behavioral parity audits b
 - Added LiteAgent compatibility behavior:
   - `LiteAgent` now exposes upstream-style setup/helper methods for LLM setup, tool parsing, A2A setup, guardrail validation, and memory resolution.
   - `LiteAgent` now exposes before/after LLM hook getters, an upstream-style `key` property getter, and resolves `memory: true` to a default `Memory` instance.
+- Added token usage compatibility behavior:
+  - `TokenProcess` now exposes upstream-style mutable token counters and `sum_*` helpers while preserving message-array prompt token estimation.
 
 1. Storage backends
    - `memory/storage/backend.py`

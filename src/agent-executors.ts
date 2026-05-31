@@ -950,12 +950,86 @@ export class TokenProcess {
     this.summary = summary;
   }
 
-  sumPromptTokens(messages: readonly LLMMessage[]): number {
-    return messages.reduce((sum, message) => sum + estimateTokens(message.content), 0);
+  get totalTokens(): number {
+    return this.summary.totalTokens;
   }
 
-  sum_prompt_tokens(messages: readonly LLMMessage[]): number {
-    return this.sumPromptTokens(messages);
+  get total_tokens(): number {
+    return this.summary.totalTokens;
+  }
+
+  get promptTokens(): number {
+    return this.summary.promptTokens;
+  }
+
+  get prompt_tokens(): number {
+    return this.summary.promptTokens;
+  }
+
+  get cachedPromptTokens(): number {
+    return this.summary.cachedPromptTokens;
+  }
+
+  get cached_prompt_tokens(): number {
+    return this.summary.cachedPromptTokens;
+  }
+
+  get completionTokens(): number {
+    return this.summary.completionTokens;
+  }
+
+  get completion_tokens(): number {
+    return this.summary.completionTokens;
+  }
+
+  get successfulRequests(): number {
+    return this.summary.successfulRequests;
+  }
+
+  get successful_requests(): number {
+    return this.summary.successfulRequests;
+  }
+
+  sumPromptTokens(tokensOrMessages: number | readonly LLMMessage[]): number {
+    const tokens = typeof tokensOrMessages === "number"
+      ? tokensOrMessages
+      : tokensOrMessages.reduce((sum, message) => sum + estimateTokens(message.content), 0);
+    this.summary.promptTokens += tokens;
+    this.summary.totalTokens += tokens;
+    syncUsageMetricAliases(this.summary);
+    return tokens;
+  }
+
+  sum_prompt_tokens(tokensOrMessages: number | readonly LLMMessage[]): number {
+    return this.sumPromptTokens(tokensOrMessages);
+  }
+
+  sumCompletionTokens(tokens: number): void {
+    this.summary.completionTokens += tokens;
+    this.summary.totalTokens += tokens;
+    syncUsageMetricAliases(this.summary);
+  }
+
+  sum_completion_tokens(tokens: number): void {
+    this.sumCompletionTokens(tokens);
+  }
+
+  sumCachedPromptTokens(tokens: number): void {
+    this.summary.cachedPromptTokens += tokens;
+    syncUsageMetricAliases(this.summary);
+  }
+
+  sum_cached_prompt_tokens(tokens: number): void {
+    this.sumCachedPromptTokens(tokens);
+  }
+
+  sumSuccessfulRequests(requests: number): void {
+    this.summary.successfulRequests += requests;
+    syncUsageMetricAliases(this.summary);
+  }
+
+  sum_successful_requests(requests: number): void {
+    this.sumSuccessfulRequests(requests);
   }
 
   process(text: string): UsageMetrics {
@@ -984,6 +1058,21 @@ export const parse_agent_step = parseAgentStep;
 function estimateTokens(text: string): number {
   const trimmed = text.trim();
   return trimmed ? trimmed.split(/\s+/).length : 0;
+}
+
+function syncUsageMetricAliases(metrics: UsageMetrics): void {
+  const aliases = metrics as UsageMetrics & {
+    total_tokens: number;
+    prompt_tokens: number;
+    cached_prompt_tokens: number;
+    completion_tokens: number;
+    successful_requests: number;
+  };
+  aliases.total_tokens = metrics.totalTokens;
+  aliases.prompt_tokens = metrics.promptTokens;
+  aliases.cached_prompt_tokens = metrics.cachedPromptTokens;
+  aliases.completion_tokens = metrics.completionTokens;
+  aliases.successful_requests = metrics.successfulRequests;
 }
 
 function stringifyInput(value: unknown): string {

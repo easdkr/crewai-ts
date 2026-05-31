@@ -471,6 +471,7 @@ import {
   stripNullFromTypes,
   stripUnsupportedFormats,
   TokenManager,
+  TokenProcess,
   TokenCalcHandler,
   TrainingConverter,
   WorkosProvider,
@@ -3719,6 +3720,32 @@ describe("config and token counter utilities", () => {
       cached: 3,
     });
     new TokenCalcHandler().logSuccessEvent({}, { usage: { prompt_tokens: 1 } }, 0, 1);
+  });
+
+  it("accumulates token process metrics with upstream sum helpers", () => {
+    const process = new TokenProcess();
+
+    process.sum_prompt_tokens(10);
+    process.sum_completion_tokens(4);
+    process.sum_cached_prompt_tokens(3);
+    process.sum_successful_requests(2);
+    process.sumPromptTokens(5);
+    process.sumCompletionTokens(6);
+    process.sumCachedPromptTokens(1);
+    process.sumSuccessfulRequests(1);
+
+    expect(process.total_tokens).toBe(25);
+    expect(process.prompt_tokens).toBe(15);
+    expect(process.completion_tokens).toBe(10);
+    expect(process.cached_prompt_tokens).toBe(4);
+    expect(process.successful_requests).toBe(3);
+    expect(process.get_summary()).toMatchObject({
+      total_tokens: 25,
+      prompt_tokens: 15,
+      completion_tokens: 10,
+      cached_prompt_tokens: 4,
+      successful_requests: 3,
+    });
   });
 });
 
