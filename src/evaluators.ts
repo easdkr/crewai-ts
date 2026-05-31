@@ -1,3 +1,5 @@
+import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
+
 import { Agent } from "./agent.js";
 import { Converter, type StructuredModel } from "./converter.js";
 import {
@@ -814,28 +816,121 @@ export class ExperimentResults {
   readonly results: ExperimentResult[];
   readonly metadata: Record<string, unknown>;
   readonly timestamp = new Date();
+  readonly display: ExperimentResultsDisplay;
 
   constructor(results: readonly ExperimentResult[], metadata: Record<string, unknown> = {}) {
     this.results = [...results];
     this.metadata = { ...metadata };
+    this.display = new ExperimentResultsDisplay();
   }
 
-  to_json(): Record<string, unknown> {
-    return {
+  to_json(filepath: string | null = null): Record<string, unknown> {
+    const data = {
       timestamp: this.timestamp.toISOString(),
       metadata: this.metadata,
-      results: this.results.map((result) => ({
-        identifier: result.identifier,
-        inputs: result.inputs,
-        score: result.score,
-        expected_score: result.expected_score,
-        passed: result.passed,
-      })),
+      results: this.results.map((result) => serializeExperimentResult(result)),
     };
+    if (filepath) {
+      writeFileSync(filepath, JSON.stringify(data, null, 2), "utf8");
+      this.display.console.print?.(`Results saved to ${filepath}`);
+    }
+    return data;
   }
 
-  compare_with_baseline(): Record<string, string[]> {
-    return { improved: [], regressed: [], unchanged: [], new_tests: [], missing_tests: [] };
+  compare_with_baseline(
+    baseline_filepath: string,
+    save_current = true,
+    print_summary = false,
+  ): Record<string, unknown> {
+    let baselineRuns: Record<string, unknown>[] = [];
+    if (existsSync(baseline_filepath) && statSync(baseline_filepath).size > 0) {
+      try {
+        const baselineData = JSON.parse(readFileSync(baseline_filepath, "utf8")) as unknown;
+        if (isRecord(baselineData) && "timestamp" in baselineData) {
+          baselineRuns = [baselineData];
+        } else if (Array.isArray(baselineData)) {
+          baselineRuns = baselineData.filter(isRecord);
+        }
+      } catch (error) {
+        this.display.console.print?.(`Warning: Could not load baseline file: ${String(error)}`);
+      }
+    }
+
+    if (baselineRuns.length === 0) {
+      if (save_current) {
+        writeFileSync(baseline_filepath, JSON.stringify([this.to_json()], null, 2), "utf8");
+        this.display.console.print?.(`Saved current results as new baseline to ${baseline_filepath}`);
+      }
+      return { is_baseline: true, changes: {} };
+    }
+
+    baselineRuns.sort((left, right) => stringFromJsonScalar(right.timestamp).localeCompare(stringFromJsonScalar(left.timestamp)));
+    const latestRun = baselineRuns[0] ?? {};
+    const comparison = this.compareWithRun(latestRun);
+
+    if (print_summary) {
+      this.display.comparison_summary(comparison, stringFromJsonScalar(latestRun.timestamp, "unknown"));
+    }
+    if (save_current) {
+      baselineRuns.push(this.to_json());
+      writeFileSync(baseline_filepath, JSON.stringify(baselineRuns, null, 2), "utf8");
+      this.display.console.print?.(`Added current results to baseline file ${baseline_filepath}`);
+    }
+    return comparison;
+  }
+
+  compareWithBaseline(
+    baselineFilepath: string,
+    saveCurrent = true,
+    printSummary = false,
+  ): Record<string, unknown> {
+    return this.compare_with_baseline(baselineFilepath, saveCurrent, printSummary);
+  }
+
+  private compareWithRun(baselineRun: Record<string, unknown>): Record<string, unknown> {
+    const baselineResults = Array.isArray(baselineRun.results) ? baselineRun.results.filter(isRecord) : [];
+    const baselineLookup = new Map<string, Record<string, unknown>>();
+    for (const result of baselineResults) {
+      const identifier = result.identifier;
+      const identifierText = stringFromJsonScalar(identifier);
+      if (identifierText.length > 0) {
+        baselineLookup.set(identifierText, result);
+      }
+    }
+
+    const improved: string[] = [];
+    const regressed: string[] = [];
+    const unchanged: string[] = [];
+    const newTests: string[] = [];
+
+    for (const result of this.results) {
+      const identifier = result.identifier;
+      const baselineResult = baselineLookup.get(identifier);
+      if (!baselineResult) {
+        newTests.push(identifier);
+        continue;
+      }
+      const baselinePassed = baselineResult.passed === true;
+      if (result.passed && !baselinePassed) {
+        improved.push(identifier);
+      } else if (!result.passed && baselinePassed) {
+        regressed.push(identifier);
+      } else {
+        unchanged.push(identifier);
+      }
+    }
+
+    const currentIdentifiers = new Set(this.results.map((result) => result.identifier));
+    const missingTests = [...baselineLookup.keys()].filter((identifier) => !currentIdentifiers.has(identifier));
+    return {
+      improved,
+      regressed,
+      unchanged,
+      new_tests: newTests,
+      missing_tests: missingTests,
+      total_compared: improved.length + regressed.length + unchanged.length,
+      baseline_timestamp: stringFromJsonScalar(baselineRun.timestamp, "unknown"),
+    };
   }
 }
 
@@ -905,19 +1000,22 @@ export class ExperimentResultsDisplay {
   }
 }
 
-export function assert_experiment_no_regression(comparison_result: Record<string, readonly string[]>): void {
-  const regressed = comparison_result.regressed ?? [];
+export function assert_experiment_no_regression(comparison_result: Record<string, unknown>): void {
+  const regressed = asStringArray(comparison_result.regressed);
   if (regressed.length > 0) {
-    throw new Error(`Regression detected: ${regressed.join(", ")}`);
+    throw new Error(`Regression detected! The following tests that previously passed now fail: ${regressed.join(", ")}`);
   }
 }
 
-export function assert_experiment_successfully(experiment_results: ExperimentResults): void {
+export function assert_experiment_successfully(
+  experiment_results: ExperimentResults,
+  baseline_filepath = "experiment_fallback_results.json",
+): void {
   const failed = experiment_results.results.filter((result) => !result.passed);
   if (failed.length > 0) {
-    throw new Error(`The following test cases failed:\n${failed.map((result) => `- ${result.identifier}`).join("\n")}`);
+    throw new Error(`The following test cases failed:\n${failed.map((result) => `- ${result.identifier}: expected ${stringifyEvaluationValue(result.expected_score)}, got ${stringifyEvaluationValue(result.score)}`).join("\n")}`);
   }
-  assert_experiment_no_regression(experiment_results.compare_with_baseline());
+  assert_experiment_no_regression(experiment_results.compare_with_baseline(baseline_filepath));
 }
 
 export function run_experiment(dataset: readonly Record<string, unknown>[]): ExperimentResults {
@@ -931,6 +1029,30 @@ export function run_experiment(dataset: readonly Record<string, unknown>[]): Exp
 
 function asStringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.map((item) => String(item)) : [];
+}
+
+function stringFromJsonScalar(value: unknown, fallback = ""): string {
+  if (typeof value === "string") {
+    return value;
+  }
+  if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") {
+    return value.toString();
+  }
+  return fallback;
+}
+
+function serializeExperimentResult(result: ExperimentResult): Record<string, unknown> {
+  return {
+    identifier: result.identifier,
+    inputs: result.inputs,
+    score: result.score,
+    expected_score: result.expected_score,
+    passed: result.passed,
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function summarizeExperimentIdentifiers(items: readonly string[]): string {

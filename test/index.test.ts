@@ -3224,6 +3224,55 @@ describe("evaluator utilities", () => {
     expect(printed).toEqual([summary, comparison]);
   });
 
+  it("compares experiment results with baseline files and appends current runs", () => {
+    const dir = mkdtempSync(join(tmpdir(), "crewai-ts-experiment-baseline-"));
+    const baselineFile = join(dir, "baseline.json");
+    try {
+      writeFileSync(baselineFile, JSON.stringify({
+        timestamp: "2026-05-30T00:00:00.000Z",
+        metadata: { suite: "baseline" },
+        results: [
+          { identifier: "improved", inputs: {}, score: 0, expected_score: 1, passed: false },
+          { identifier: "regressed", inputs: {}, score: 1, expected_score: 1, passed: true },
+          { identifier: "unchanged", inputs: {}, score: 1, expected_score: 1, passed: true },
+          { identifier: "missing", inputs: {}, score: 1, expected_score: 1, passed: true },
+        ],
+      }));
+      const results = new ExperimentResults([
+        new ExperimentResult({ identifier: "improved", score: 1, expected_score: 1 }),
+        new ExperimentResult({ identifier: "regressed", score: 0, expected_score: 1 }),
+        new ExperimentResult({ identifier: "unchanged", score: 1, expected_score: 1 }),
+        new ExperimentResult({ identifier: "new", score: 1, expected_score: 1 }),
+      ], { suite: "current" });
+      const jsonFile = join(dir, "current.json");
+
+      const serialized = results.to_json(jsonFile);
+      const comparison = results.compare_with_baseline(baselineFile);
+      const currentJson = JSON.parse(readFileSync(jsonFile, "utf8")) as unknown as {
+        metadata: Record<string, unknown>;
+        results: Array<Record<string, unknown>>;
+      };
+      const savedRuns = JSON.parse(readFileSync(baselineFile, "utf8")) as unknown as Array<Record<string, unknown>>;
+
+      expect(currentJson.metadata).toEqual({ suite: "current" });
+      expect(currentJson.results).toEqual(expect.arrayContaining([expect.objectContaining({ identifier: "improved", passed: true })]));
+      expect((serialized.results as Record<string, unknown>[]).every((result) => !("agent_evaluations" in result))).toBe(true);
+      expect(comparison).toMatchObject({
+        improved: ["improved"],
+        regressed: ["regressed"],
+        unchanged: ["unchanged"],
+        new_tests: ["new"],
+        missing_tests: ["missing"],
+        total_compared: 3,
+        baseline_timestamp: "2026-05-30T00:00:00.000Z",
+      });
+      expect(savedRuns).toHaveLength(2);
+      expect(savedRuns[1]).toMatchObject({ metadata: { suite: "current" } });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("emits agent evaluation lifecycle events for metric evaluators", () => {
     const events: Array<AgentEvaluationStartedEvent | AgentEvaluationCompletedEvent | AgentEvaluationFailedEvent> = [];
     const offStarted = crewaiEventBus.on("agent_evaluation_started", (_source, event) => {
