@@ -3659,9 +3659,34 @@ export class Depends<THandler extends EventHandler = EventHandler> {
     this.handler = handler;
   }
 
+  __repr__(): string {
+    return this.toString();
+  }
+
+  __eq__(other: unknown): boolean {
+    return other instanceof Depends && other.handler === this.handler;
+  }
+
+  __hash__(): number {
+    return objectIdentityHash(this.handler);
+  }
+
   toString(): string {
     return `Depends(${this.handler.name || "anonymous"})`;
   }
+}
+
+const eventHandlerIdentityHashes = new WeakMap<object, number>();
+let nextEventHandlerIdentityHash = 1;
+
+function objectIdentityHash(value: object): number {
+  const existing = eventHandlerIdentityHashes.get(value);
+  if (existing !== undefined) {
+    return existing;
+  }
+  const hash = nextEventHandlerIdentityHash++;
+  eventHandlerIdentityHashes.set(value, hash);
+  return hash;
 }
 
 export class CircularDependencyError extends Error {

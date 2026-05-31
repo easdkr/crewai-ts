@@ -100,6 +100,14 @@ export class Fingerprint {
     return other instanceof Fingerprint && other.uuidStr === this.uuidStr;
   }
 
+  __eq__(other: unknown): boolean {
+    return this.equals(other);
+  }
+
+  __hash__(): number {
+    return stringHash(this.uuidStr);
+  }
+
   toString(): string {
     return this.uuidStr;
   }
@@ -107,6 +115,15 @@ export class Fingerprint {
   __str__(): string {
     return this.toString();
   }
+}
+
+function stringHash(value: string): number {
+  let hash = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = Math.imul(31, hash) + value.charCodeAt(index);
+    hash |= 0;
+  }
+  return hash;
 }
 
 export type SecurityConfigOptions = {

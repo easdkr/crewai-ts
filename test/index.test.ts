@@ -19535,6 +19535,9 @@ describe("security fingerprints", () => {
     const restored = Fingerprint.from_dict(seeded.to_dict());
     expect(restored.uuid_str).toBe(seeded.uuid_str);
     expect(restored.metadata).toEqual({ version: "1.0" });
+    expect(restored.__eq__(seeded)).toBe(true);
+    expect(restored.__eq__(random)).toBe(false);
+    expect(restored.__hash__()).toBe(seeded.__hash__());
   });
 
   it("validates fingerprint metadata and security config coercion", () => {
@@ -20091,6 +20094,12 @@ describe("runtime state", () => {
     bus.emit("source", new FlowStartedEvent({ flowName: "DependencyFlow", inputs: {} }));
 
     expect(order).toEqual(["setup", "dependent"]);
+    const setupDependency = new Depends(setup);
+    const sameSetupDependency = new Depends(setup);
+    expect(setupDependency.__repr__()).toBe("Depends(setup)");
+    expect(setupDependency.__eq__(sameSetupDependency)).toBe(true);
+    expect(setupDependency.__eq__(new Depends(dependent))).toBe(false);
+    expect(setupDependency.__hash__()).toBe(sameSetupDependency.__hash__());
 
     const cycleBus = new EventBus();
     const first = () => {};
