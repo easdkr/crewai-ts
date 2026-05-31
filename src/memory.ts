@@ -905,25 +905,7 @@ export class Memory {
       await Promise.resolve();
       return this.remember(content, options);
     }
-    let resolvedOptions = options;
-    if (options.scope === undefined || options.categories === undefined || options.importance === undefined) {
-      const analysis = await analyzeForSave(
-        content,
-        this.listScopes(false) as readonly string[],
-        Object.keys(this.listCategories(false)),
-        this.llm,
-      );
-      resolvedOptions = {
-        ...options,
-        scope: options.scope ?? analysis.suggestedScope,
-        categories: options.categories ?? analysis.categories,
-        importance: options.importance ?? analysis.importance,
-        metadata: {
-          ...(options.metadata ?? {}),
-          ...extractedMetadataToRecord(analysis.extractedMetadata),
-        },
-      };
-    }
+    const resolvedOptions = await this.resolveSaveOptions(content, options);
     const similarRecords = this.findSimilarRecords(content, resolvedOptions.scope);
     if (similarRecords.length > 0) {
       const plan = await analyzeForConsolidation(content, similarRecords, this.llm);
@@ -933,6 +915,31 @@ export class Memory {
       }
     }
     return this.remember(content, resolvedOptions);
+  }
+
+  private async resolveSaveOptions(
+    content: string,
+    options: Parameters<Memory["remember"]>[1] = {},
+  ): Promise<NonNullable<Parameters<Memory["remember"]>[1]>> {
+    if (!this.llm || (options.scope !== undefined && options.categories !== undefined && options.importance !== undefined)) {
+      return options;
+    }
+    const analysis = await analyzeForSave(
+      content,
+      this.listScopes(false) as readonly string[],
+      Object.keys(this.listCategories(false)),
+      this.llm,
+    );
+    return {
+      ...options,
+      scope: options.scope ?? analysis.suggestedScope,
+      categories: options.categories ?? analysis.categories,
+      importance: options.importance ?? analysis.importance,
+      metadata: {
+        ...(options.metadata ?? {}),
+        ...extractedMetadataToRecord(analysis.extractedMetadata),
+      },
+    };
   }
 
   private findSimilarRecords(content: string, scope: string | null | undefined): MemoryRecord[] {
@@ -982,8 +989,16 @@ export class Memory {
   }
 
   async aremember_many(contents: readonly string[], options: Parameters<Memory["remember"]>[1] = {}): Promise<MemoryRecord[]> {
-    await Promise.resolve();
-    return this.rememberMany(contents, options);
+    if (contents.length === 0 || this.readOnly || !this.llm) {
+      await Promise.resolve();
+      return this.rememberMany(contents, options);
+    }
+    const items = await Promise.all(contents.map(async (content) => ({
+      content,
+      options: await this.resolveSaveOptions(content, options),
+    })));
+    this.pendingWrites.push(() => this.runResolvedBackgroundSave(items, options));
+    return [];
   }
 
   extractMemories(content: string): readonly string[] {
@@ -1197,35 +1212,42 @@ export class Memory {
   }
 
   private runBackgroundSave(contents: readonly string[], options: Parameters<Memory["remember"]>[1] = {}): MemoryRecord[] {
+    return this.runResolvedBackgroundSave(contents.map((content) => ({ content, options })), options);
+  }
+
+  private runResolvedBackgroundSave(
+    items: readonly { content: string; options: NonNullable<Parameters<Memory["remember"]>[1]> }[],
+    eventOptions: Parameters<Memory["remember"]>[1] = {},
+  ): MemoryRecord[] {
     crewaiEventBus.emit(this, new MemorySaveStartedEvent({
-      value: `${String(contents.length)} memories (background)`,
-      metadata: options.metadata ?? null,
-      agentRole: options.agentRole ?? null,
+      value: `${String(items.length)} memories (background)`,
+      metadata: eventOptions.metadata ?? null,
+      agentRole: eventOptions.agentRole ?? null,
     }));
     const start = performance.now();
     try {
-      const records = contents.map((content) => new MemoryRecord({
-        content,
-        scope: this.scopePath(options.scope),
-        categories: options.categories ?? [],
-        metadata: options.metadata ?? {},
-        importance: options.importance ?? 0.5,
-        source: options.source ?? null,
-        private: options.private ?? false,
+      const records = items.map((item) => new MemoryRecord({
+        content: item.content,
+        scope: this.scopePath(item.options.scope),
+        categories: item.options.categories ?? [],
+        metadata: item.options.metadata ?? {},
+        importance: item.options.importance ?? 0.5,
+        source: item.options.source ?? null,
+        private: item.options.private ?? false,
       }));
       this.records.push(...records);
       crewaiEventBus.emit(this, new MemorySaveCompletedEvent({
         value: `${String(records.length)} memories saved`,
-        metadata: options.metadata ?? {},
-        agentRole: options.agentRole ?? null,
+        metadata: eventOptions.metadata ?? {},
+        agentRole: eventOptions.agentRole ?? null,
         saveTimeMs: performance.now() - start,
       }));
       return records;
     } catch (error) {
       crewaiEventBus.emit(this, new MemorySaveFailedEvent({
         value: "background save",
-        metadata: options.metadata ?? null,
-        agentRole: options.agentRole ?? null,
+        metadata: eventOptions.metadata ?? null,
+        agentRole: eventOptions.agentRole ?? null,
         error,
       }));
       throw error;

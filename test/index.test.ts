@@ -10762,6 +10762,51 @@ describe("memory", () => {
     expect(memory.get_record("existing-memory")?.content).toBe("CrewAI memory keeps standard decorators and avoids reflect metadata");
     expect(seen).toEqual(["consolidation"]);
   });
+
+  it("uses configured memory LLM save analysis for async batch saves", async () => {
+    const seen: string[] = [];
+    const memory = new Memory({
+      rootScope: "/crew",
+      llm: (_messages, options) => {
+        seen.push(options?.responseModel === MemoryAnalysis ? "analysis" : "other");
+        return JSON.stringify({
+          suggested_scope: "/batch",
+          categories: ["batch-analysis"],
+          importance: 0.75,
+          extracted_metadata: { entities: ["Batch"], dates: [], topics: ["memory"] },
+        });
+      },
+    });
+
+    await expect(memory.aremember_many([
+      "Batch analyzed memory one",
+      "Batch analyzed memory two",
+    ], { metadata: { source: "test" } })).resolves.toEqual([]);
+    expect(memory.allRecords()).toHaveLength(0);
+
+    expect(memory.recall("Batch analyzed", { scope: "/batch", categories: ["batch-analysis"], scoreThreshold: null }))
+      .toHaveLength(2);
+    expect(memory.list_records("/batch").map((record) => ({
+      scope: record.scope,
+      categories: record.categories,
+      importance: record.importance,
+      metadata: record.metadata,
+    }))).toEqual([
+      {
+        scope: "/crew/batch",
+        categories: ["batch-analysis"],
+        importance: 0.75,
+        metadata: { source: "test", entities: ["Batch"], dates: [], topics: ["memory"] },
+      },
+      {
+        scope: "/crew/batch",
+        categories: ["batch-analysis"],
+        importance: 0.75,
+        metadata: { source: "test", entities: ["Batch"], dates: [], topics: ["memory"] },
+      },
+    ]);
+    expect(seen).toEqual(["analysis", "analysis"]);
+  });
 });
 
 describe("knowledge", () => {
