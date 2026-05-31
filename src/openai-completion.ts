@@ -935,22 +935,60 @@ export class OpenAICompatibleCompletion extends OpenAICompletion {
     if (!config) {
       throw new Error(`Unknown OpenAI-compatible provider: ${provider}. Supported providers: ${Object.keys(OPENAI_COMPATIBLE_PROVIDERS).sort().join(", ")}`);
     }
-    const baseUrlFromEnv = config.base_url_env ? process.env[config.base_url_env] : undefined;
-    const baseUrl = normalizeOpenAICompatibleBaseUrl(options.base_url ?? options.baseUrl ?? baseUrlFromEnv ?? config.base_url, provider);
-    const apiKey = options.api_key ?? options.apiKey ?? process.env[config.api_key_env] ?? config.default_api_key;
-    if (config.api_key_required && !apiKey) {
-      throw new Error(`API key required for ${provider}. Set ${config.api_key_env} environment variable or pass api_key parameter.`);
-    }
+    const apiKey = OpenAICompatibleCompletion.resolveApiKey(options.api_key ?? options.apiKey ?? null, config, provider);
+    const baseUrl = OpenAICompatibleCompletion.resolveBaseUrl(options.base_url ?? options.baseUrl ?? null, config, provider);
+    const defaultHeaders = OpenAICompatibleCompletion.resolveHeaders(options.default_headers ?? options.defaultHeaders ?? null, config);
     super({
       ...options,
       provider,
       api_key: apiKey,
       base_url: baseUrl,
-      default_headers: {
-        ...config.default_headers,
-        ...(options.default_headers ?? options.defaultHeaders ?? {}),
-      },
+      default_headers: defaultHeaders,
     });
+  }
+
+  static resolveApiKey(apiKey: string | null, config: ProviderConfig, provider: string): string | null {
+    if (apiKey) {
+      return apiKey;
+    }
+    const envKey = process.env[config.api_key_env];
+    if (envKey) {
+      return envKey;
+    }
+    if (config.api_key_required) {
+      throw new Error(`API key required for ${provider}. Set ${config.api_key_env} environment variable or pass api_key parameter.`);
+    }
+    return config.default_api_key;
+  }
+
+  static _resolve_api_key(apiKey: string | null, config: ProviderConfig, provider: string): string | null {
+    return OpenAICompatibleCompletion.resolveApiKey(apiKey, config, provider);
+  }
+
+  static resolveBaseUrl(baseUrl: string | null, config: ProviderConfig, provider: string): string {
+    const envValue = config.base_url_env ? process.env[config.base_url_env] : undefined;
+    const resolved = baseUrl || envValue || config.base_url;
+    return normalizeOpenAICompatibleBaseUrl(resolved, provider);
+  }
+
+  static _resolve_base_url(baseUrl: string | null, config: ProviderConfig, provider: string): string {
+    return OpenAICompatibleCompletion.resolveBaseUrl(baseUrl, config, provider);
+  }
+
+  static resolveHeaders(headers: Record<string, string> | null, config: ProviderConfig): Record<string, string> | null {
+    const hasDefaultHeaders = Object.keys(config.default_headers).length > 0;
+    if (!hasDefaultHeaders && !headers) {
+      return null;
+    }
+    const merged = {
+      ...config.default_headers,
+      ...(headers ?? {}),
+    };
+    return Object.keys(merged).length > 0 ? merged : null;
+  }
+
+  static _resolve_headers(headers: Record<string, string> | null, config: ProviderConfig): Record<string, string> | null {
+    return OpenAICompatibleCompletion.resolveHeaders(headers, config);
   }
 }
 

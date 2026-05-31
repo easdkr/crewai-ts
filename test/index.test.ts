@@ -384,8 +384,11 @@ import {
   OllamaProvider,
   ONNXProvider,
   OpenCLIPProvider,
+  OPENAI_COMPATIBLE_PROVIDERS,
   OpenAIProvider,
   OpenAICompletion,
+  OpenAICompatibleCompletion,
+  ProviderConfig,
   SentenceTransformerProvider,
   Text2VecProvider,
   VertexAIProvider,
@@ -9997,6 +10000,66 @@ describe("LLM providers", () => {
     expect(openai.last_reasoning_items).toEqual([]);
     expect(openai.to_config_dict()).toMatchObject({ model: "gpt-4o-mini", provider: "openai" });
     await expect(openai.acall([{ role: "user", content: "hello" }])).rejects.toThrow("No LLM provider registered");
+  });
+
+  it("resolves OpenAI-compatible provider configuration like upstream", () => {
+    const helper = OpenAICompatibleCompletion as unknown as {
+      _resolve_api_key(apiKey: string | null, config: ProviderConfig, provider: string): string | null;
+      _resolve_base_url(baseUrl: string | null, config: ProviderConfig, provider: string): string;
+      _resolve_headers(headers: Record<string, string> | null, config: ProviderConfig): Record<string, string> | null;
+    };
+    const previousDeepSeekKey = process.env.DEEPSEEK_API_KEY;
+    const previousOllamaHost = process.env.OLLAMA_HOST;
+    const providerConfig = (name: string): ProviderConfig => {
+      const config = OPENAI_COMPATIBLE_PROVIDERS[name];
+      if (!config) {
+        throw new Error(`Missing test provider config: ${name}`);
+      }
+      return config;
+    };
+    const deepseekConfig = providerConfig("deepseek");
+    const ollamaConfig = providerConfig("ollama");
+    const ollamaChatConfig = providerConfig("ollama_chat");
+    const openrouterConfig = providerConfig("openrouter");
+    try {
+      delete process.env.DEEPSEEK_API_KEY;
+      expect(() => helper._resolve_api_key(null, deepseekConfig, "deepseek"))
+        .toThrow("API key required for deepseek");
+
+      process.env.DEEPSEEK_API_KEY = "env-deepseek-key";
+      expect(helper._resolve_api_key(null, deepseekConfig, "deepseek")).toBe("env-deepseek-key");
+      expect(helper._resolve_api_key("explicit-key", deepseekConfig, "deepseek")).toBe("explicit-key");
+      expect(helper._resolve_api_key(null, ollamaConfig, "ollama")).toBe("ollama");
+
+      process.env.OLLAMA_HOST = "http://localhost:11434";
+      expect(helper._resolve_base_url(null, ollamaConfig, "ollama")).toBe("http://localhost:11434/v1");
+      expect(helper._resolve_base_url("http://custom-ollama:11434/", ollamaChatConfig, "ollama_chat"))
+        .toBe("http://custom-ollama:11434/v1");
+      expect(helper._resolve_base_url("https://deepseek.example/v1", deepseekConfig, "deepseek"))
+        .toBe("https://deepseek.example/v1");
+
+      expect(helper._resolve_headers(null, deepseekConfig)).toBeNull();
+      expect(helper._resolve_headers({ "X-App": "crewai-ts" }, openrouterConfig)).toEqual({
+        "HTTP-Referer": "https://crewai.com",
+        "X-App": "crewai-ts",
+      });
+
+      const compatible = new OpenAICompatibleCompletion({ model: "llama3", provider: "ollama" });
+      expect(compatible.api_key).toBe("ollama");
+      expect(compatible.base_url).toBe("http://localhost:11434/v1");
+      expect(compatible.supports_function_calling()).toBe(true);
+    } finally {
+      if (previousDeepSeekKey === undefined) {
+        delete process.env.DEEPSEEK_API_KEY;
+      } else {
+        process.env.DEEPSEEK_API_KEY = previousDeepSeekKey;
+      }
+      if (previousOllamaHost === undefined) {
+        delete process.env.OLLAMA_HOST;
+      } else {
+        process.env.OLLAMA_HOST = previousOllamaHost;
+      }
+    }
   });
 
   it("exposes upstream AzureCompletion aliases directly on the provider class", async () => {
