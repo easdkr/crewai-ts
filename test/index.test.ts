@@ -263,6 +263,9 @@ import {
   ExperimentRunner,
   create_evaluation_callbacks,
   ToolSelectionEvaluator,
+  ParameterExtractionEvaluator,
+  ToolInvocationEvaluator,
+  ReasoningEfficiencyEvaluator,
   run_experiment,
   __version__,
   afterLlmCall,
@@ -4314,6 +4317,121 @@ describe("evaluator utilities", () => {
     expect(messages[1]?.[0]?.content).toContain("semantic quality");
   });
 
+  it("scores tool and reasoning metric evaluators from LLM JSON responses", async () => {
+    const messages: LLMMessage[][] = [];
+    const responses = [
+      JSON.stringify({
+        scores: { relevance: 9, coverage: 7 },
+        overall_score: 8,
+        improvement_suggestions: "Use the calculator when arithmetic is required.",
+      }),
+      JSON.stringify({
+        scores: { accuracy: 6, formatting: 5, completeness: 4 },
+        overall_score: 5,
+        improvement_suggestions: "Provide all required argument values.",
+      }),
+      JSON.stringify({
+        scores: { structure: 8, error_handling: 6, invocation_patterns: 7 },
+        overall_score: 7,
+        improvement_suggestions: "Handle validation errors before retrying.",
+      }),
+      JSON.stringify({
+        scores: { focus: 9, progression: 8, decision_quality: 7, conciseness: 6, loop_avoidance: 5 },
+        overall_score: 7,
+        feedback: "Reasoning stayed on task.",
+        optimization_suggestions: "Reduce repeated thoughts.",
+      }),
+    ];
+    const llm = (input: readonly LLMMessage[]) => {
+      messages.push([...input]);
+      return responses[messages.length - 1] ?? "{}";
+    };
+    const search = new CrewStructuredTool({
+      name: "Search Tool",
+      description: "Searches public documents",
+      func: () => "found",
+    });
+    const agentInstance = new Agent({
+      role: "Researcher",
+      goal: "Find facts",
+      backstory: "Careful analyst",
+      tools: [search],
+      llm,
+    });
+    const taskInstance = new Task({
+      description: "Search CrewAI and calculate adoption",
+      expectedOutput: "A concise summary",
+      agent: agentInstance,
+    });
+    const executionTrace = {
+      tool_uses: [
+        { tool: "Search Tool", args: { query: "CrewAI" }, result: "found", success: true },
+        { tool: "Calculator", args: { expression: "2+" }, result: "invalid expression", success: false, error: true, error_type: "validation_error" },
+      ],
+      llm_calls: [
+        { response: "I should search CrewAI", total_tokens: 40 },
+        { response: "I should calculate adoption", total_tokens: 60 },
+        { response: "I can now summarize", total_tokens: 50 },
+      ],
+    };
+
+    const toolSelection = await new ToolSelectionEvaluator(llm).evaluate(agentInstance, executionTrace, "CrewAI summary", taskInstance);
+    const parameterExtraction = await new ParameterExtractionEvaluator(llm).evaluate(agentInstance, executionTrace, "CrewAI summary", taskInstance);
+    const toolInvocation = await new ToolInvocationEvaluator(llm).evaluate(agentInstance, executionTrace, "CrewAI summary", taskInstance);
+    const reasoning = await new ReasoningEfficiencyEvaluator(llm).evaluate(agentInstance, executionTrace, "CrewAI summary", taskInstance);
+
+    expect(toolSelection).toMatchObject({ score: 8, rawResponse: responses[0] });
+    expect(toolSelection.feedback).toContain("Tool Selection Evaluation");
+    expect(toolSelection.feedback).toContain("Relevance: 9/10");
+    expect(parameterExtraction).toMatchObject({ score: 5, rawResponse: responses[1] });
+    expect(parameterExtraction.feedback).toContain("Completeness: 4/10");
+    expect(toolInvocation).toMatchObject({ score: 7, rawResponse: responses[2] });
+    expect(toolInvocation.feedback).toContain("Error Handling: 6/10");
+    expect(reasoning).toMatchObject({ score: 7, rawResponse: responses[3] });
+    expect(reasoning.feedback).toContain("Loop Avoidance: 5/10");
+    expect(messages[0]?.[1]?.content).toContain("search_tool");
+    expect(messages[1]?.[1]?.content).toContain("PARAMETER VALIDATION ERROR");
+    expect(messages[2]?.[1]?.content).toContain("validation_error");
+    expect(messages[3]?.[1]?.content).toContain("Total LLM calls: 3");
+  });
+
+  it("returns upstream-style unevaluable scores for missing tool and reasoning traces", () => {
+    const agentWithoutTools = new Agent({
+      role: "Researcher",
+      goal: "Find facts",
+      backstory: "Careful analyst",
+      llm: () => "done",
+    });
+    const agentWithTools = new Agent({
+      role: "Researcher",
+      goal: "Find facts",
+      backstory: "Careful analyst",
+      tools: [new CrewStructuredTool({ name: "Search", description: "Searches", func: () => "found" })],
+      llm: () => "done",
+    });
+
+    expect(new ToolSelectionEvaluator().evaluate(agentWithoutTools, { tool_uses: [] }, "")).toMatchObject({
+      score: null,
+      feedback: "Agent had no tools available to use.",
+    });
+    expect(new ToolSelectionEvaluator().evaluate(agentWithTools, { tool_uses: [] }, "")).toMatchObject({
+      score: null,
+      feedback: "Agent had tools available but didn't use any.",
+    });
+    expect(new ParameterExtractionEvaluator().evaluate(agentWithTools, { tool_uses: [] }, "")).toMatchObject({
+      score: null,
+      feedback: "No tool usage detected. Cannot evaluate parameter extraction.",
+    });
+    expect(new ToolInvocationEvaluator().evaluate(agentWithTools, { tool_uses: [] }, "")).toMatchObject({
+      score: null,
+      feedback: "No tool usage detected. Cannot evaluate tool invocation.",
+    });
+    expect(new ReasoningEfficiencyEvaluator().evaluate(agentWithTools, { llm_calls: [{ response: "one" }] }, "")).toMatchObject({
+      score: null,
+      feedback: "Insufficient LLM calls to evaluate reasoning efficiency.",
+    });
+  });
+
   it("aggregates agent evaluation results with display formatter parity", () => {
     const formatter = new EvaluationDisplayFormatter();
     const aggregated = formatter.aggregateAgentResults({
@@ -4496,7 +4614,11 @@ describe("evaluator utilities", () => {
     });
 
     try {
-      const result = new AgentEvaluator([agentInstance], [new ToolSelectionEvaluator()]).evaluate({
+      const result = new AgentEvaluator([agentInstance], [new ToolSelectionEvaluator(() => JSON.stringify({
+        scores: { relevance: 5, coverage: 5 },
+        overall_score: 5,
+        feedback: "usable",
+      }))]).evaluate({
         agent: agentInstance,
         task: taskInstance,
         executionTrace: { tool_uses: [{ tool: "search" }] },

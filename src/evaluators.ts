@@ -331,21 +331,221 @@ export class AgentEvaluator {
   }
 }
 
-export class ToolSelectionEvaluator extends ConstantScoreEvaluator {
+export class ToolSelectionEvaluator extends BaseEvaluator {
   constructor(llm: LLM | string | null = null) {
-    super(MetricCategory.TOOL_SELECTION, "Tool selection evaluation is available as a compatibility evaluator.", llm);
+    super(llm);
+  }
+
+  get metricCategory(): MetricCategory {
+    return MetricCategory.TOOL_SELECTION;
+  }
+
+  evaluate(
+    agent: unknown,
+    executionTrace: Record<string, unknown>,
+    _finalOutput: unknown,
+    task: Task | null = null,
+  ): EvaluationScore | Promise<EvaluationScore> {
+    void _finalOutput;
+    const agentRecord = asRecord(agent);
+    const tools = getEvaluatorAgentTools(agentRecord);
+    const toolUses = getTraceArray(executionTrace.tool_uses);
+    if (toolUses.length === 0) {
+      return new EvaluationScore({
+        score: null,
+        feedback: tools.length === 0 ? "Agent had no tools available to use." : "Agent had tools available but didn't use any.",
+      });
+    }
+
+    const availableToolsInfo = tools.length > 0
+      ? tools.map((tool) => `- ${sanitizeEvaluatorToolName(tool.name)}: ${tool.description}`).join("\n")
+      : "No tools available";
+    const selectedTools = [...new Set(toolUses.map((toolUse) => stringifyEvaluationValue(asNullableRecord(toolUse)?.tool ?? "Unknown tool")))].sort();
+    const prompt: LLMMessage[] = [
+      {
+        role: "system",
+        content: `You are an expert evaluator assessing if an AI agent selected the most appropriate tools for a given task.
+
+Evaluate based only on tool selection from available tools. Return JSON with fields scores, overall_score, feedback, and improvement_suggestions.`,
+      },
+      {
+        role: "user",
+        content: `
+Agent role: ${stringifyEvaluationValue(agentRecord.role ?? "")}
+${task ? `Task description: ${task.description}` : ""}
+
+Available tools for this agent:
+${availableToolsInfo}
+
+Tools selected by the agent:
+${selectedTools.map((tool) => `- ${tool}`).join("\n")}
+
+Based only on the task description and available tools, evaluate if the agent selected the appropriate tool types.`,
+      },
+    ];
+    const response = callEvaluatorLLM(this.llm, prompt);
+    if (isPromiseLike(response)) {
+      return Promise.resolve(response).then((value) => parseDetailedEvaluatorScore(value, {
+        title: "Tool Selection Evaluation",
+        fields: [
+          ["relevance", "Relevance", "Selection of appropriate tool types for the task"],
+          ["coverage", "Coverage", "Selection of all necessary tool types"],
+        ],
+      }));
+    }
+    return parseDetailedEvaluatorScore(response, {
+      title: "Tool Selection Evaluation",
+      fields: [
+        ["relevance", "Relevance", "Selection of appropriate tool types for the task"],
+        ["coverage", "Coverage", "Selection of all necessary tool types"],
+      ],
+    });
   }
 }
 
-export class ParameterExtractionEvaluator extends ConstantScoreEvaluator {
+export class ParameterExtractionEvaluator extends BaseEvaluator {
   constructor(llm: LLM | string | null = null) {
-    super(MetricCategory.PARAMETER_EXTRACTION, "Parameter extraction evaluation is available as a compatibility evaluator.", llm);
+    super(llm);
+  }
+
+  get metricCategory(): MetricCategory {
+    return MetricCategory.PARAMETER_EXTRACTION;
+  }
+
+  evaluate(
+    agent: unknown,
+    executionTrace: Record<string, unknown>,
+    _finalOutput: unknown,
+    task: Task | null = null,
+  ): EvaluationScore | Promise<EvaluationScore> {
+    void _finalOutput;
+    const agentRecord = asRecord(agent);
+    const toolUses = getTraceArray(executionTrace.tool_uses);
+    if (toolUses.length === 0) {
+      return new EvaluationScore({ score: null, feedback: "No tool usage detected. Cannot evaluate parameter extraction." });
+    }
+    const validationErrors = toolUses
+      .map((toolUse) => asNullableRecord(toolUse) ?? {})
+      .filter((toolUse) => toolUse.success === false && toolUse.error_type === "validation_error");
+    const samples = toolUses.slice(0, 5).map((toolUse, index) => {
+      const record = asNullableRecord(toolUse) ?? {};
+      const success = record.success !== false && record.error !== true;
+      const isValidationError = !success && record.error_type === "validation_error";
+      return [
+        `Tool use #${String(index + 1)} - ${stringifyEvaluationValue(record.tool ?? "Unknown tool")}:`,
+        `- Parameters: ${formatEvaluatorJson(record.args ?? {})}`,
+        `- Success: ${success ? "Yes" : "No"}${isValidationError ? " (PARAMETER VALIDATION ERROR)" : ""}`,
+        isValidationError ? `- Error: ${stringifyEvaluationValue(record.result ?? "Unknown error")}` : "",
+      ].filter(Boolean).join("\n");
+    }).join("\n\n");
+    const validationInfo = validationErrors.length > 0
+      ? `\nParameter validation errors detected: ${String(validationErrors.length)} (${formatPercent(validationErrors.length / toolUses.length)} of tool uses)`
+      : "";
+    const prompt: LLMMessage[] = [
+      {
+        role: "system",
+        content: `You are an expert evaluator assessing how well an AI agent extracts and formats parameter values for tool calls.
+
+Return JSON with fields scores, overall_score, feedback, and improvement_suggestions.`,
+      },
+      {
+        role: "user",
+        content: `
+Agent role: ${stringifyEvaluationValue(agentRecord.role ?? "")}
+${task ? `Task description: ${task.description}` : ""}
+
+Parameter extraction examples:
+${samples}
+${validationInfo}
+
+Evaluate the quality of the agent's parameter extraction for this task.`,
+      },
+    ];
+    const response = callEvaluatorLLM(this.llm, prompt);
+    const config = {
+      title: "Parameter Extraction Evaluation",
+      fields: [
+        ["accuracy", "Accuracy", "Correctly identifying required parameters"],
+        ["formatting", "Formatting", "Properly formatting parameters for tools"],
+        ["completeness", "Completeness", "Including all necessary information"],
+      ] as const,
+    };
+    return isPromiseLike(response) ? Promise.resolve(response).then((value) => parseDetailedEvaluatorScore(value, config)) : parseDetailedEvaluatorScore(response, config);
   }
 }
 
-export class ToolInvocationEvaluator extends ConstantScoreEvaluator {
+export class ToolInvocationEvaluator extends BaseEvaluator {
   constructor(llm: LLM | string | null = null) {
-    super(MetricCategory.TOOL_INVOCATION, "Tool invocation evaluation is available as a compatibility evaluator.", llm);
+    super(llm);
+  }
+
+  get metricCategory(): MetricCategory {
+    return MetricCategory.TOOL_INVOCATION;
+  }
+
+  evaluate(
+    agent: unknown,
+    executionTrace: Record<string, unknown>,
+    _finalOutput: unknown,
+    task: Task | null = null,
+  ): EvaluationScore | Promise<EvaluationScore> {
+    void _finalOutput;
+    const agentRecord = asRecord(agent);
+    const toolUses = getTraceArray(executionTrace.tool_uses);
+    if (toolUses.length === 0) {
+      return new EvaluationScore({ score: null, feedback: "No tool usage detected. Cannot evaluate tool invocation." });
+    }
+    const toolErrors = toolUses.map((toolUse) => asNullableRecord(toolUse) ?? {}).filter((toolUse) => toolUse.success === false || toolUse.error === true);
+    const errorTypes = new Map<string, number>();
+    for (const error of toolErrors) {
+      const type = stringifyEvaluationValue(error.error_type ?? "unknown_error");
+      errorTypes.set(type, (errorTypes.get(type) ?? 0) + 1);
+    }
+    const samples = toolUses.slice(0, 5).map((toolUse, index) => {
+      const record = asNullableRecord(toolUse) ?? {};
+      const success = record.success !== false && record.error !== true;
+      return [
+        `Tool invocation #${String(index + 1)}:`,
+        `- Tool: ${stringifyEvaluationValue(record.tool ?? "Unknown tool")}`,
+        `- Parameters: ${formatEvaluatorJson(record.args ?? {})}`,
+        `- Success: ${success ? "Yes" : "No"}`,
+        success ? "" : `- Error type: ${stringifyEvaluationValue(record.error_type ?? "")}`,
+        success ? "" : `- Error: ${stringifyEvaluationValue(record.result ?? "No error")}`,
+      ].filter(Boolean).join("\n");
+    }).join("\n\n");
+    const errorSummary = [...errorTypes.entries()].map(([type, count]) => `- ${type}: ${String(count)} occurrences (${formatPercent(count / toolUses.length)})`).join("\n");
+    const prompt: LLMMessage[] = [
+      {
+        role: "system",
+        content: `You are an expert evaluator assessing how correctly an AI agent's tool invocations are structured.
+
+Return JSON with fields scores, overall_score, feedback, and improvement_suggestions.`,
+      },
+      {
+        role: "user",
+        content: `
+Agent role: ${stringifyEvaluationValue(agentRecord.role ?? "")}
+${task ? `Task description: ${task.description}` : ""}
+
+Tool invocation examples:
+${samples}
+
+Tool error rate: ${formatPercent(toolErrors.length / toolUses.length)} (${String(toolErrors.length)} errors out of ${String(toolUses.length)} invocations)
+${errorSummary ? `Error type breakdown:\n${errorSummary}` : ""}
+
+Evaluate the quality of the agent's tool invocation structure during this task.`,
+      },
+    ];
+    const response = callEvaluatorLLM(this.llm, prompt);
+    const config = {
+      title: "Tool Invocation Evaluation",
+      fields: [
+        ["structure", "Structure", "Following proper syntax and format"],
+        ["error_handling", "Error Handling", "Appropriately handling tool errors"],
+        ["invocation_patterns", "Invocation Patterns", "Proper sequencing and management of calls"],
+      ] as const,
+    };
+    return isPromiseLike(response) ? Promise.resolve(response).then((value) => parseDetailedEvaluatorScore(value, config)) : parseDetailedEvaluatorScore(response, config);
   }
 }
 
@@ -358,9 +558,71 @@ export const ReasoningPatternType = Object.freeze({
 } as const);
 export type ReasoningPatternType = typeof ReasoningPatternType[keyof typeof ReasoningPatternType];
 
-export class ReasoningEfficiencyEvaluator extends ConstantScoreEvaluator {
+export class ReasoningEfficiencyEvaluator extends BaseEvaluator {
   constructor(llm: LLM | string | null = null) {
-    super(MetricCategory.REASONING_EFFICIENCY, "Reasoning efficiency evaluation is available as a compatibility evaluator.", llm);
+    super(llm);
+  }
+
+  get metricCategory(): MetricCategory {
+    return MetricCategory.REASONING_EFFICIENCY;
+  }
+
+  evaluate(
+    agent: unknown,
+    executionTrace: Record<string, unknown>,
+    finalOutput: unknown,
+    task: Task | null = null,
+  ): EvaluationScore | Promise<EvaluationScore> {
+    const agentRecord = asRecord(agent);
+    const llmCalls = getTraceArray(executionTrace.llm_calls);
+    if (llmCalls.length < 2) {
+      return new EvaluationScore({ score: null, feedback: "Insufficient LLM calls to evaluate reasoning efficiency." });
+    }
+    const totalTokens = llmCalls.reduce<number>((total, call) => total + toNumberOrZero((asNullableRecord(call) ?? {}).total_tokens), 0);
+    const loopDetected = detectReasoningLoops(llmCalls);
+    const pattern = analyzeReasoningPattern(llmCalls);
+    const prompt: LLMMessage[] = [
+      {
+        role: "system",
+        content: `You are an expert evaluator assessing the reasoning efficiency of an AI agent's thought process.
+
+Return JSON with overall_score, scores, feedback, optimization_suggestions, and detected_patterns.`,
+      },
+      {
+        role: "user",
+        content: `
+Agent role: ${stringifyEvaluationValue(agentRecord.role ?? "")}
+${task ? `Task description: ${task.description}\nExpected output: ${task.expectedOutput}` : ""}
+
+Reasoning efficiency metrics:
+- Total LLM calls: ${String(llmCalls.length)}
+- Average tokens per call: ${(totalTokens / llmCalls.length).toFixed(1)}
+- Primary reasoning pattern: ${pattern}
+- ${loopDetected ? "Detected potential reasoning loops." : "No significant reasoning loops detected."}
+
+Sample of agent reasoning flow (chronological sequence):
+${getReasoningCallSamples(llmCalls)}
+
+Agent's final output:
+${stringifyEvaluationValue(finalOutput).slice(0, 500)}... (truncated)
+
+Evaluate the reasoning efficiency of this agent based on these interaction patterns.`,
+      },
+    ];
+    const response = callEvaluatorLLM(this.llm, prompt);
+    const config = {
+      title: "Reasoning Efficiency Evaluation",
+      fields: [
+        ["focus", "Focus", "Staying on topic without tangents"],
+        ["progression", "Progression", "Building on previous thinking"],
+        ["decision_quality", "Decision Quality", "Making appropriate decisions"],
+        ["conciseness", "Conciseness", "Communicating efficiently"],
+        ["loop_avoidance", "Loop Avoidance", "Avoiding repetitive patterns"],
+      ] as const,
+      fallbackTextKey: "optimization_suggestions",
+      feedbackPrefix: "Feedback",
+    };
+    return isPromiseLike(response) ? Promise.resolve(response).then((value) => parseDetailedEvaluatorScore(value, config)) : parseDetailedEvaluatorScore(response, config);
   }
 }
 
@@ -1696,6 +1958,45 @@ function parseEvaluatorScore(response: unknown): EvaluationScore {
   }
 }
 
+function parseDetailedEvaluatorScore(response: unknown, config: {
+  title: string;
+  fields: readonly (readonly [key: string, label: string, description: string])[];
+  fallbackTextKey?: string;
+  feedbackPrefix?: string;
+}): EvaluationScore {
+  const rawResponse = stringifyEvaluationValue(response);
+  try {
+    const record = asRecord(extractJsonFromLLMResponse(rawResponse));
+    const scores = asNullableRecord(record.scores) ?? {};
+    const feedbackLines = [`${config.title}:`];
+    for (const [key, label, description] of config.fields) {
+      const score = scores[key] ?? 5;
+      feedbackLines.push(`${label}: ${stringifyEvaluationValue(score)}/10 - ${description}`);
+    }
+    const feedback = stringifyEvaluationValue(record.feedback ?? "");
+    const fallback = stringifyEvaluationValue(record[config.fallbackTextKey ?? "improvement_suggestions"] ?? "");
+    if (config.feedbackPrefix && feedback) {
+      feedbackLines.push("", `${config.feedbackPrefix}:`, feedback);
+    }
+    if (fallback) {
+      feedbackLines.push("", config.fallbackTextKey === "optimization_suggestions" ? "Optimization Suggestions:" : "Improvement Suggestions:", fallback);
+    } else if (!config.feedbackPrefix && feedback) {
+      feedbackLines.push(feedback);
+    }
+    return new EvaluationScore({
+      score: toNumber(record.overall_score ?? record.overallScore ?? record.score ?? 5),
+      feedback: feedbackLines.join("\n"),
+      rawResponse,
+    });
+  } catch (error) {
+    return new EvaluationScore({
+      score: null,
+      feedback: `Error evaluating ${config.title.toLowerCase()}: ${stringifyEvaluationValue(error)}`,
+      rawResponse,
+    });
+  }
+}
+
 function callEvaluatorLLM(llm: LLM | string | null, messages: readonly LLMMessage[]): unknown {
   if (!llm) {
     throw new Error("Evaluator requires an LLM.");
@@ -1720,6 +2021,148 @@ function extractJsonFromLLMResponse(text: string): unknown {
     throw new Error("Failed to extract evaluation data from LLM response.");
   }
   return JSON.parse(text.slice(start, end + 1));
+}
+
+function getTraceArray(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
+}
+
+function getEvaluatorAgentTools(agentRecord: Record<string, unknown>): Array<{ name: string; description: string }> {
+  const tools = Array.isArray(agentRecord.tools) ? agentRecord.tools : [];
+  return tools.map((tool) => {
+    const record = asNullableRecord(tool) ?? {};
+    return {
+      name: stringifyEvaluationValue(record.name ?? "Unknown tool"),
+      description: stringifyEvaluationValue(record.description ?? ""),
+    };
+  });
+}
+
+function sanitizeEvaluatorToolName(name: string): string {
+  return name.trim().replace(/[^a-zA-Z0-9_-]+/g, "_").replace(/^_+|_+$/g, "") || "tool";
+}
+
+function formatEvaluatorJson(value: unknown): string {
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return stringifyEvaluationValue(value);
+  }
+}
+
+function formatPercent(value: number): string {
+  return `${(Number.isFinite(value) ? value * 100 : 0).toFixed(1)}%`;
+}
+
+function getReasoningText(call: unknown): string {
+  const content = (asNullableRecord(call) ?? {}).response ?? "";
+  if (typeof content === "string") {
+    return content;
+  }
+  if (Array.isArray(content)) {
+    return content.map((entry) => stringifyEvaluationValue((asNullableRecord(entry) ?? {}).content ?? "")).filter(Boolean).join("\n");
+  }
+  return stringifyEvaluationValue(content);
+}
+
+function detectReasoningLoops(llmCalls: readonly unknown[]): boolean {
+  const messages = llmCalls.map(getReasoningText).filter((message) => message.length > 0);
+  for (let i = 0; i < messages.length - 2; i += 1) {
+    for (let j = i + 1; j < messages.length - 1; j += 1) {
+      if (calculateTextSimilarity(messages[i] ?? "", messages[j] ?? "") > 0.7) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function calculateTextSimilarity(text1: string, text2: string): number {
+  const words1 = new Set(text1.toLowerCase().replace(/\s+/g, " ").trim().split(" ").filter(Boolean));
+  const words2 = new Set(text2.toLowerCase().replace(/\s+/g, " ").trim().split(" ").filter(Boolean));
+  const union = new Set([...words1, ...words2]);
+  if (union.size === 0) {
+    return 0;
+  }
+  let intersection = 0;
+  for (const word of words1) {
+    if (words2.has(word)) {
+      intersection += 1;
+    }
+  }
+  return intersection / union.size;
+}
+
+function analyzeReasoningPattern(llmCalls: readonly unknown[]): ReasoningPatternType {
+  const lengths = llmCalls.map((call) => getReasoningText(call).length);
+  const avgLength = average(lengths);
+  const stdLength = standardDeviation(lengths);
+  const trend = calculateTrend(lengths);
+  if (calculateLoopLikelihood(lengths) > 0.7) {
+    return ReasoningPatternType.LOOP;
+  }
+  if (avgLength > 1000 && avgLength > 0 && stdLength / avgLength < 0.3) {
+    return ReasoningPatternType.VERBOSE;
+  }
+  if (llmCalls.length > 10 && trend > 0.5) {
+    return ReasoningPatternType.INDECISIVE;
+  }
+  if (avgLength > 0 && stdLength / avgLength > 0.8) {
+    return ReasoningPatternType.SCATTERED;
+  }
+  return ReasoningPatternType.EFFICIENT;
+}
+
+function standardDeviation(values: readonly number[]): number {
+  if (values.length === 0) {
+    return 0;
+  }
+  const mean = average(values);
+  return Math.sqrt(average(values.map((value) => (value - mean) ** 2)));
+}
+
+function calculateTrend(values: readonly number[]): number {
+  if (values.length < 2) {
+    return 0;
+  }
+  const meanX = (values.length - 1) / 2;
+  const meanY = average(values);
+  let numerator = 0;
+  let denominator = 0;
+  for (let index = 0; index < values.length; index += 1) {
+    numerator += (index - meanX) * ((values[index] ?? 0) - meanY);
+    denominator += (index - meanX) ** 2;
+  }
+  const slope = denominator === 0 ? 0 : numerator / denominator;
+  const range = Math.max(...values) - Math.min(...values);
+  return range > 0 ? Math.max(-1, Math.min(1, slope / range)) : 0;
+}
+
+function calculateLoopLikelihood(lengths: readonly number[]): number {
+  if (lengths.length < 4) {
+    return 0;
+  }
+  let repeatedLengths = 0;
+  for (let index = 0; index < lengths.length - 2; index += 1) {
+    const current = lengths[index] ?? 0;
+    const next = lengths[index + 2] ?? 0;
+    const ratio = next > 0 ? current / next : 0;
+    if (ratio >= 0.85 && ratio <= 1.15) {
+      repeatedLengths += 1;
+    }
+  }
+  return repeatedLengths / (lengths.length - 2);
+}
+
+function getReasoningCallSamples(llmCalls: readonly unknown[]): string {
+  const indices = llmCalls.length <= 6
+    ? llmCalls.map((_call, index) => index)
+    : [0, 1, Math.floor(llmCalls.length / 2) - 1, Math.floor(llmCalls.length / 2), llmCalls.length - 2, llmCalls.length - 1];
+  return indices.map((index) => {
+    const sample = getReasoningText(llmCalls[index]);
+    const truncated = sample.length > 200 ? `${sample.slice(0, 200)}...` : sample;
+    return `Call ${String(index + 1)}:\n${truncated}\n`;
+  }).join("\n");
 }
 
 function parseEntity(value: unknown): Entity {
