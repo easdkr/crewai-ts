@@ -25,6 +25,7 @@ import { OutputFormat, type AgentStepCallback, type InputValues, type LLM, type 
 import type { AgentStep } from "./types.js";
 import type { InputFile, InputFiles } from "./input-files.js";
 import { storeTaskFiles } from "./file-store.js";
+import { serializeModelClass, type JsonSchema } from "./schema-utils.js";
 
 export type GuardrailResult = readonly [boolean, unknown] | { success: boolean; result: unknown };
 
@@ -33,6 +34,10 @@ export type Guardrail = (output: TaskOutput) => GuardrailResult | Promise<Guardr
 export type ConditionalTaskCondition = (output: TaskOutput) => MaybePromise<boolean>;
 
 export type TaskOutputConverter = (raw: string) => MaybePromise<unknown>;
+
+export type DeserializedModelClass = TaskOutputConverter & {
+  readonly schema: Record<string, unknown>;
+};
 
 export type TaskInputFile = InputFile;
 
@@ -67,6 +72,82 @@ type TaskAsyncFuture = {
   set_exception?: (error: unknown) => void;
   reject?: (error: unknown) => void;
 };
+
+const AUTO_INJECTED_CONTENT_TYPE_PREFIXES_BY_PROVIDER: Record<string, readonly string[]> = {
+  anthropic: ["image/", "application/pdf"],
+  claude: ["image/", "application/pdf"],
+  gemini: ["image/", "application/pdf", "audio/", "video/"],
+  google: ["image/", "application/pdf", "audio/", "video/"],
+  openai: ["image/", "application/pdf"],
+  vertex: ["image/", "application/pdf", "audio/", "video/"],
+};
+
+export function get_supported_content_types(provider: string, api: string | null = null): string[] {
+  const normalizedProvider = provider.toLowerCase();
+  const normalizedApi = api?.toLowerCase() ?? "";
+  const providerTypes = AUTO_INJECTED_CONTENT_TYPE_PREFIXES_BY_PROVIDER[normalizedProvider] ?? [];
+  if (normalizedApi.length === 0) {
+    return [...providerTypes];
+  }
+  const apiTypes = AUTO_INJECTED_CONTENT_TYPE_PREFIXES_BY_PROVIDER[normalizedApi] ?? [];
+  return [...new Set([...providerTypes, ...apiTypes])];
+}
+
+export function is_auto_injected(content_type: string, supported_types: readonly string[]): boolean {
+  return supported_types.some((supportedType) => content_type.startsWith(supportedType));
+}
+
+export function get_agent_by_role<T extends { role?: string }>(agents: readonly T[], role: string): T | null {
+  return agents.find((agent) => agent.role === role) ?? null;
+}
+
+export function _serialize_model_class(value: unknown): JsonSchema | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  if ((typeof value === "function" || isRecord(value)) && "schema" in value) {
+    const schema = (value as { schema?: unknown }).schema;
+    if (isRecord(schema)) {
+      return schema;
+    }
+  }
+  return serializeModelClass(value);
+}
+
+export function _deserialize_model_class(value: unknown): TaskOutputConverter | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  if (typeof value === "function") {
+    return value as TaskOutputConverter;
+  }
+  if (!isRecord(value)) {
+    return null;
+  }
+  const schema = { ...value };
+  const converter = ((raw: string): unknown => {
+    const parsed: unknown = JSON.parse(raw);
+    if (!isRecord(parsed)) {
+      return parsed;
+    }
+    const properties = isRecord(schema.properties) ? schema.properties : null;
+    if (!properties) {
+      return parsed;
+    }
+    const selected: Record<string, unknown> = {};
+    for (const key of Object.keys(properties)) {
+      if (key in parsed) {
+        selected[key] = parsed[key];
+      }
+    }
+    return selected;
+  }) as DeserializedModelClass;
+  Object.defineProperty(converter, "schema", {
+    value: schema,
+    enumerable: true,
+  });
+  return converter;
+}
 
 export type TaskOptions = {
   id?: string;
@@ -789,7 +870,7 @@ export class Task {
     const clonedContext = Array.isArray(this.context)
       ? this.context.map((contextTask: Task) => taskMapping[contextTask.key] ?? contextTask)
       : this.context;
-    const clonedAgent = this.agent ? agents.find((agent) => agent.role === this.agent?.role) ?? this.agent : null;
+    const clonedAgent = this.agent ? get_agent_by_role(agents, this.agent.role) ?? this.agent : null;
     return new (this.constructor as new (options: TaskOptions) => Task)({
       name: this.name,
       description: this.checkpointOriginalDescription ?? this.description,
@@ -1196,10 +1277,10 @@ export class ConditionalTask extends Task {
 
 function parseJsonObject(raw: string): Record<string, unknown> {
   const parsed: unknown = JSON.parse(raw);
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+  if (!isRecord(parsed)) {
     throw new Error("Task outputJson requires the raw output to be a JSON object.");
   }
-  return parsed as Record<string, unknown>;
+  return parsed;
 }
 
 function parseConvertedJsonObject(converted: unknown, raw: string): Record<string, unknown> {
@@ -1207,10 +1288,14 @@ function parseConvertedJsonObject(converted: unknown, raw: string): Record<strin
   if (typeof value === "string") {
     return parseJsonObject(value);
   }
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
+  if (!isRecord(value)) {
     throw new Error("Task outputJson requires the converted output to be a JSON object.");
   }
-  return value as Record<string, unknown>;
+  return value;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 function isGuardrailTuple(value: GuardrailResult): value is readonly [boolean, unknown] {

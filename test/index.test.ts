@@ -308,6 +308,11 @@ import {
   StructuredTool,
   SemanticQualityEvaluator,
   Task,
+  _serialize_model_class,
+  _deserialize_model_class,
+  get_agent_by_role,
+  get_supported_content_types,
+  is_auto_injected,
   BoundTaskMethod,
   DecoratedMethod,
   TaskMethod,
@@ -16918,6 +16923,25 @@ describe("task output files", () => {
     expect(Task._normalize_input_files({ notes: "notes.txt" })).toEqual({ notes: "notes.txt" });
     expect(() => Task._deny_user_set_id("manual-id")).toThrow("id");
     expect(Task._deny_user_set_id("restored-id", { from_checkpoint: true })).toBe("restored-id");
+    expect(get_supported_content_types("openai")).toContain("image/");
+    expect(is_auto_injected("image/png", ["image/"])).toBe(true);
+    expect(is_auto_injected("text/plain", ["image/"])).toBe(false);
+    const deserializedModel = _deserialize_model_class({
+      title: "Report",
+      type: "object",
+      properties: {
+        summary: { type: "string" },
+      },
+    });
+    expect(deserializedModel).toBeTypeOf("function");
+    expect(_serialize_model_class(deserializedModel)).toEqual({
+      title: "Report",
+      type: "object",
+      properties: {
+        summary: { type: "string" },
+      },
+    });
+    expect(await deserializedModel?.("{\"summary\":\"done\",\"extra\":true}")).toEqual({ summary: "done" });
 
     await expect(taskInstance._execute_core(null, "core context", null))
       .resolves.toMatchObject({ raw: "core done", agent: "Core Agent" });
@@ -16926,6 +16950,29 @@ describe("task output files", () => {
     expect(() => {
       taskInstance._post_agent_execution(agentInstance);
     }).not.toThrow();
+  });
+
+  it("copies tasks with the upstream-style agent role lookup helper", () => {
+    const originalAgent = new Agent({
+      role: "Researcher",
+      goal: "Research",
+      backstory: "Original",
+      llm: () => "original",
+    });
+    const clonedAgent = new Agent({
+      role: "Researcher",
+      goal: "Research clone",
+      backstory: "Clone",
+      llm: () => "clone",
+    });
+    const taskInstance = new Task({
+      description: "Copy task",
+      expectedOutput: "Done",
+      agent: originalAgent,
+    });
+
+    expect(get_agent_by_role([clonedAgent], "Researcher")).toBe(clonedAgent);
+    expect(taskInstance.copy([clonedAgent]).agent).toBe(clonedAgent);
   });
 
   it("settles upstream-compatible task async futures", async () => {
