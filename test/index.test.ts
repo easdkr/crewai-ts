@@ -456,6 +456,7 @@ import {
   getTriggeringEventId,
   fetchRequiredInputs,
   fetch_agent_card,
+  inject_a2a_server_methods,
   task_to_skill,
   tool_to_skill,
   generateCrewChatInputs,
@@ -3011,6 +3012,40 @@ describe("a2a utilities", () => {
       name: "Search Web",
       description: "Search public web sources",
       tags: ["search-web"],
+    });
+  });
+
+  it("injects A2A server agent-card methods using server config values", () => {
+    const agent = {
+      role: "Researcher",
+      goal: "Find evidence",
+      backstory: "Careful analyst",
+      tools: [{ name: "Search Web", description: "Search public sources" }],
+      a2a: new A2AServerConfig({
+        name: "Configured Agent",
+        url: "https://configured.example.com/a2a",
+        preferred_transport: A2ATransport.HTTP_JSON,
+      }),
+    };
+
+    expect(inject_a2a_server_methods(agent)).toBe(agent);
+    expect(typeof (agent as { to_agent_card?: unknown }).to_agent_card).toBe("function");
+    const card = (agent as unknown as { to_agent_card: (url: string) => Record<string, unknown> }).to_agent_card("https://runtime.example.com/a2a");
+
+    expect(card).toMatchObject({
+      name: "Configured Agent",
+      description: "Find evidence Careful analyst",
+      url: "https://configured.example.com/a2a",
+      version: "1.0.0",
+      preferred_transport: A2ATransport.HTTP_JSON,
+      protocol_version: "0.3.0",
+      capabilities: { streaming: true, push_notifications: false },
+      default_input_modes: ["text/plain", "application/json"],
+      default_output_modes: ["text/plain", "application/json"],
+      skills: [{
+        id: "search_web",
+        name: "Search Web",
+      }],
     });
   });
 

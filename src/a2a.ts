@@ -3835,7 +3835,92 @@ function recordOrNullA2A(value: unknown): Record<string, unknown> | null {
 }
 
 export function inject_a2a_server_methods(agent: unknown): unknown {
+  const serverConfig = getA2AServerConfig(agent);
+  if (!serverConfig || typeof agent !== "object" || agent === null) {
+    return agent;
+  }
+  Object.assign(agent, {
+    to_agent_card: (url: string) => agent_to_agent_card(agent, url),
+    toAgentCard: (url: string) => agent_to_agent_card(agent, url),
+  });
   return agent;
+}
+
+export function agent_to_agent_card(agent: unknown, url: string): Record<string, unknown> {
+  const agentRecord = recordOrNullA2A(agent) ?? {};
+  const serverConfig = getA2AServerConfig(agent) ?? new A2AServerConfig();
+  const role = stringFromA2A(agentRecord.role, "Agent");
+  const goal = stringFromA2A(agentRecord.goal, "");
+  const backstory = stringFromA2A(agentRecord.backstory, "");
+  const description = serverConfig.description ?? [goal, backstory].filter(Boolean).join(" ");
+  const skills = serverConfig.skills.length > 0
+    ? [...serverConfig.skills]
+    : skillsFromAgent(agentRecord, role, goal);
+  const card: Record<string, unknown> = {
+    name: serverConfig.name ?? role,
+    description,
+    url: serverConfig.url ?? url,
+    version: serverConfig.version,
+    capabilities: serverConfig.capabilities,
+    default_input_modes: serverConfig.default_input_modes,
+    default_output_modes: serverConfig.default_output_modes,
+    skills,
+    preferred_transport: serverConfig.transport.preferred,
+    protocol_version: serverConfig.protocol_version,
+    provider: serverConfig.provider,
+    documentation_url: serverConfig.documentation_url,
+    icon_url: serverConfig.icon_url,
+    additional_interfaces: serverConfig.additional_interfaces,
+    security: serverConfig.security,
+    security_schemes: serverConfig.security_schemes,
+    supports_authenticated_extended_card: serverConfig.supports_authenticated_extended_card,
+  };
+  if (serverConfig.signatures) {
+    card.signatures = serverConfig.signatures;
+  }
+  return card;
+}
+
+export const _agent_to_agent_card = agent_to_agent_card;
+
+function getA2AServerConfig(value: unknown): A2AServerConfig | null {
+  const record = recordOrNullA2A(value);
+  const a2a = record?.a2a;
+  if (a2a instanceof A2AServerConfig) {
+    return a2a;
+  }
+  if (Array.isArray(a2a)) {
+    return a2a.find((config): config is A2AServerConfig => config instanceof A2AServerConfig) ?? null;
+  }
+  return null;
+}
+
+function skillsFromAgent(agent: Record<string, unknown>, role: string, goal: string): unknown[] {
+  const tools = Array.isArray(agent.tools) ? agent.tools : [];
+  if (tools.length > 0) {
+    return tools.map((tool) => {
+      const toolRecord = recordOrNullA2A(tool) ?? {};
+      const name = stringFromA2A(toolRecord.name, constructorNameOrFallback(tool, "Tool"));
+      const description = stringFromA2A(toolRecord.description, `Tool: ${name}`);
+      return tool_to_skill(name, description);
+    });
+  }
+  return [{
+    id: skillId(role),
+    name: role,
+    description: goal,
+    tags: [skillTag(role)],
+  }];
+}
+
+function stringFromA2A(value: unknown, fallback: string): string {
+  return typeof value === "string" && value.length > 0 ? value : fallback;
+}
+
+function constructorNameOrFallback(value: unknown, fallback: string): string {
+  return typeof value === "object" && value !== null && value.constructor.name
+    ? value.constructor.name
+    : fallback;
 }
 
 export function wrap_agent_with_a2a_instance(agent: unknown, extension_registry: ExtensionRegistry | null = null): void {
