@@ -210,6 +210,23 @@ export class BaseEvent {
       startedEventId: this.startedEventId,
     };
   }
+
+  to_json(exclude: Set<string> | readonly string[] | null = null): Record<string, unknown> {
+    const excluded = new Set(exclude ?? []);
+    const json = this.toJSON();
+    const result: Record<string, unknown> = {
+      ...json,
+      event_id: this.eventId,
+      emission_sequence: this.emissionSequence,
+      source_type: this.sourceType,
+      source_fingerprint: this.sourceFingerprint,
+      parent_event_id: this.parentEventId,
+      previous_event_id: this.previousEventId,
+      triggered_by_event_id: this.triggeredByEventId,
+      started_event_id: this.startedEventId,
+    };
+    return Object.fromEntries(Object.entries(result).filter(([key]) => !excluded.has(key)));
+  }
 }
 
 export abstract class FlowEvent extends BaseEvent {}

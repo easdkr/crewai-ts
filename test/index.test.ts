@@ -13305,6 +13305,20 @@ describe("checkpoint state providers", () => {
 });
 
 describe("event record", () => {
+  it("serializes BaseEvent with upstream to_json alias and exclusions", () => {
+    const event = new BaseEvent({ type: "crew_kickoff_started", sourceType: "crew" });
+
+    expect(Object.hasOwn(BaseEvent.prototype, "to_json")).toBe(true);
+    expect(event.to_json()).toMatchObject({
+      type: "crew_kickoff_started",
+      sourceType: "crew",
+      source_type: "crew",
+      eventId: event.eventId,
+      event_id: event.eventId,
+    });
+    expect(event.to_json(new Set(["timestamp", "event_id", "eventId"]))).not.toHaveProperty("event_id");
+  });
+
   it("adds event nodes and wires parent, trigger, sequence, and started edges", () => {
     const record = new EventRecord();
     const root = new BaseEvent({ type: "crew_kickoff_started" });
