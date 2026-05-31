@@ -146,6 +146,16 @@ export abstract class StreamingOutputBase<TResult> implements AsyncIterable<Stre
     return Promise.resolve();
   }
 
+  async __aenter__(): Promise<this> {
+    await Promise.resolve();
+    return this;
+  }
+
+  async __aexit__(..._excInfo: unknown[]): Promise<void> {
+    void _excInfo;
+    await this.aclose();
+  }
+
   *[Symbol.iterator](): Iterator<StreamChunk> {
     if (!this.completed) {
       throw new Error("Streaming has not completed yet. Use async iteration before sync iteration.");

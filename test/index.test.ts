@@ -17363,6 +17363,22 @@ describe("streaming output", () => {
     expect(streaming.result).toBeNull();
     expect(streaming.is_completed).toBe(true);
   });
+
+  it("exposes upstream-style streaming async context manager aliases", async () => {
+    let runCount = 0;
+    const streaming = new FlowStreamingOutput(async () => {
+      await Promise.resolve();
+      runCount += 1;
+      return "unused";
+    });
+
+    await expect(streaming.__aenter__()).resolves.toBe(streaming);
+    await streaming.__aexit__(null, null, null);
+
+    expect(streaming.is_cancelled).toBe(true);
+    expect(streaming.is_completed).toBe(true);
+    expect(runCount).toBe(0);
+  });
 });
 
 function decorateMethod<T extends object>(
