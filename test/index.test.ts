@@ -14378,6 +14378,62 @@ describe("memory", () => {
     expect(storage.get_record("crewish")?.scope).toBe("/crewish/research");
   });
 
+  it("exposes deterministic LanceDB row conversion and compaction helpers", () => {
+    const storage = new LanceDBStorage({
+      path: "/tmp/crewai-ts-memory-lance",
+      table_name: "team_memories",
+      vector_dim: 3,
+      compact_every: 1,
+    });
+    const record = new MemoryRecord({
+      id: "lance-row",
+      content: "LanceDB row note",
+      scope: "/crew/research",
+      categories: ["storage", "lance"],
+      metadata: { owner: "team" },
+      importance: 0.8,
+      source: "test",
+      private: true,
+      createdAt: "2026-05-31T00:00:00.000Z",
+      lastAccessed: "2026-05-31T00:01:00.000Z",
+      embedding: [0.1, 0.2, 0.3],
+    });
+
+    expect(storage.table_name).toBe("team_memories");
+    expect(storage.compact_every).toBe(1);
+    expect(storage._infer_dim_from_table({ schema: [{ name: "vector", type: { list_size: 7 } }] })).toBe(7);
+    expect(storage._ensure_table(3)).toBe(storage);
+    expect(() => {
+      storage._ensure_scope_index();
+    }).not.toThrow();
+    const row = storage._record_to_row(record);
+    expect(row).toMatchObject({
+      id: "lance-row",
+      categories_str: "[\"storage\",\"lance\"]",
+      metadata_str: "{\"owner\":\"team\"}",
+      vector: [0.1, 0.2, 0.3],
+    });
+    expect(storage._row_to_record(row)).toMatchObject({
+      id: "lance-row",
+      categories: ["storage", "lance"],
+      metadata: { owner: "team" },
+      private: true,
+    });
+
+    storage.save([record]);
+
+    expect(storage._save_count).toBe(1);
+    expect(() => {
+      storage._compact_if_needed();
+    }).not.toThrow();
+    expect(() => {
+      storage._compact_async();
+    }).not.toThrow();
+    expect(() => {
+      storage._compact_safe();
+    }).not.toThrow();
+  });
+
   it("analyzes memory content, recall queries, saves, and consolidation with safe fallbacks", async () => {
     const llm = (messages: readonly LLMMessage[], options?: LLMCallOptions) => {
       if (options?.responseModel === QueryAnalysis) {

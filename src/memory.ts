@@ -1162,7 +1162,132 @@ export class QdrantEdgeStorage implements MemoryVectorStorageLike {
   }
 }
 
-export class LanceDBStorage extends QdrantEdgeStorage {}
+export type LanceDBStorageOptions = {
+  path?: string | null;
+  tableName?: string;
+  table_name?: string;
+  vectorDim?: number | null;
+  vector_dim?: number | null;
+  compactEvery?: number;
+  compact_every?: number;
+};
+
+export type LanceDBRow = {
+  id: string;
+  content: string;
+  scope: string;
+  categories_str: string;
+  metadata_str: string;
+  importance: number;
+  created_at: string;
+  last_accessed: string;
+  source: string;
+  private: boolean;
+  vector: readonly number[];
+};
+
+export class LanceDBStorage extends QdrantEdgeStorage {
+  readonly tableName: string;
+  readonly table_name: string;
+  readonly compactEvery: number;
+  readonly compact_every: number;
+  _save_count = 0;
+
+  constructor(options: string | LanceDBStorageOptions | null = null) {
+    const config = typeof options === "string" || options === null ? { path: options } : options;
+    super({
+      path: config.path ?? null,
+      vectorDim: config.vectorDim ?? config.vector_dim ?? null,
+    });
+    this.tableName = config.tableName ?? config.table_name ?? "memories";
+    this.table_name = this.tableName;
+    this.compactEvery = Math.max(0, config.compactEvery ?? config.compact_every ?? 100);
+    this.compact_every = this.compactEvery;
+  }
+
+  override save(records: MemoryRecord | MemoryRecordOptions | readonly (MemoryRecord | MemoryRecordOptions)[]): void {
+    super.save(records);
+    this._save_count += 1;
+    if (this.compactEvery > 0 && this._save_count % this.compactEvery === 0) {
+      this._compact_async();
+    }
+  }
+
+  _infer_dim_from_table(table: { schema?: Iterable<{ name?: string; type?: { list_size?: unknown; listSize?: unknown } }> }): number {
+    for (const field of table.schema ?? []) {
+      if (field.name !== "vector") {
+        continue;
+      }
+      const size = field.type?.list_size ?? field.type?.listSize;
+      if (typeof size === "number" && Number.isFinite(size) && size > 0) {
+        return size;
+      }
+      if (typeof size === "string" && Number.isFinite(Number(size)) && Number(size) > 0) {
+        return Number(size);
+      }
+    }
+    return DEFAULT_VECTOR_DIM;
+  }
+
+  _ensure_table(_vector_dim: number | null = null): this {
+    void _vector_dim;
+    return this;
+  }
+
+  _ensure_scope_index(): void {
+  }
+
+  _compact_if_needed(): void {
+    if (this.compactEvery > 0) {
+      this._compact_async();
+    }
+  }
+
+  _compact_async(): void {
+    this._compact_safe();
+  }
+
+  _compact_safe(): void {
+    this.optimize();
+    this._ensure_scope_index();
+  }
+
+  _record_to_row(record: MemoryRecord): LanceDBRow {
+    return {
+      id: record.id,
+      content: record.content,
+      scope: record.scope,
+      categories_str: JSON.stringify(record.categories),
+      metadata_str: JSON.stringify(record.metadata),
+      importance: record.importance,
+      created_at: record.createdAt.toISOString(),
+      last_accessed: (record.lastAccessed ?? record.createdAt).toISOString(),
+      source: record.source ?? "",
+      private: record.private,
+      vector: record.embedding && record.embedding.length > 0
+        ? record.embedding
+        : Array.from({ length: this.vectorDim }, () => 0),
+    };
+  }
+
+  _row_to_record(row: LanceDBRow | Record<string, unknown>): MemoryRecord {
+    const categories = parseJsonArray(row.categories_str);
+    const metadata = parseJsonRecord(row.metadata_str) ?? {};
+    return new MemoryRecord({
+      id: String(row.id),
+      content: String(row.content),
+      scope: String(row.scope),
+      categories,
+      metadata,
+      importance: typeof row.importance === "number" ? row.importance : Number(row.importance ?? 0.5),
+      createdAt: typeof row.created_at === "string" ? row.created_at : new Date(),
+      lastAccessed: typeof row.last_accessed === "string" ? row.last_accessed : new Date(),
+      embedding: Array.isArray(row.vector) ? row.vector.filter((value): value is number => typeof value === "number") : null,
+      source: typeof row.source === "string" && row.source ? row.source : null,
+      private: Boolean(row.private),
+    });
+  }
+}
 
 export class StorageBackend extends QdrantEdgeStorage {}
 
@@ -3145,6 +3270,36 @@ function coerceConsolidationPlan(value: unknown): ConsolidationPlan {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function parseJsonArray(value: unknown): readonly string[] {
+  if (Array.isArray(value)) {
+    return value.filter((item): item is string => typeof item === "string");
+  }
+  if (typeof value !== "string" || !value) {
+    return [];
+  }
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+function parseJsonRecord(value: unknown): Record<string, unknown> | null {
+  if (isRecord(value)) {
+    return value;
+  }
+  if (typeof value !== "string" || !value) {
+    return null;
+  }
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return isRecord(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
 }
 
 function stringArray(value: unknown): readonly string[] {
