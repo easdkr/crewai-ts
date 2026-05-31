@@ -532,6 +532,55 @@ export class OpenAICompletion extends ConfiguredLLM {
     return OpenAICompletion.extractOpenAITokenUsage(response);
   }
 
+  extractResponsesTokenUsage(response: unknown): Record<string, number> {
+    const usage = readObject(readObject(response).usage);
+    if (Object.keys(usage).length === 0) {
+      return { total_tokens: 0 };
+    }
+
+    const result: Record<string, number> = {
+      prompt_tokens: numberField(usage, "input_tokens"),
+      completion_tokens: numberField(usage, "output_tokens"),
+      total_tokens: numberField(usage, "total_tokens"),
+    };
+    const inputDetails = readObject(usage.input_tokens_details);
+    if (Object.keys(inputDetails).length > 0) {
+      result.cached_prompt_tokens = numberField(inputDetails, "cached_tokens");
+    }
+    const outputDetails = readObject(usage.output_tokens_details);
+    if (Object.keys(outputDetails).length > 0) {
+      result.reasoning_tokens = numberField(outputDetails, "reasoning_tokens");
+    }
+    return result;
+  }
+
+  _extract_responses_token_usage(response: unknown): Record<string, number> {
+    return this.extractResponsesTokenUsage(response);
+  }
+
+  extractFunctionCallsFromResponse(response: unknown): Record<string, unknown>[] {
+    return responseOutput(response)
+      .map((item) => readObject(item))
+      .filter((item) => item.type === "function_call")
+      .map((item) => ({
+        id: item.call_id,
+        name: item.name,
+        arguments: item.arguments,
+      }));
+  }
+
+  _extract_function_calls_from_response(response: unknown): Record<string, unknown>[] {
+    return this.extractFunctionCallsFromResponse(response);
+  }
+
+  extractReasoningItems(response: unknown): unknown[] {
+    return responseOutput(response).filter((item) => readObject(item).type === "reasoning");
+  }
+
+  _extract_reasoning_items(response: unknown): unknown[] {
+    return this.extractReasoningItems(response);
+  }
+
   override supportsFunctionCalling(): boolean {
     return !this.isO1Model;
   }
@@ -722,4 +771,9 @@ function readObject(value: unknown): Record<string, unknown> {
 
 function numberField(record: Record<string, unknown>, key: string): number {
   return typeof record[key] === "number" ? record[key] : 0;
+}
+
+function responseOutput(response: unknown): unknown[] {
+  const output = readObject(response).output;
+  return Array.isArray(output) ? output : [];
 }

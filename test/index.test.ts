@@ -8766,6 +8766,50 @@ describe("LLM providers", () => {
     })._extract_openai_token_usage({})).toEqual({ total_tokens: 0 });
   });
 
+  it("extracts OpenAI Responses API usage, function calls, and reasoning items", () => {
+    const openai = new OpenAICompletion({ model: "gpt-4.1", api: "responses" });
+    const reasoningItem = {
+      type: "reasoning",
+      id: "rs_1",
+      status: "completed",
+      summary: [{ type: "summary_text", text: "Need search" }],
+      encrypted_content: "encrypted",
+    };
+    const response = {
+      id: "resp_1",
+      output_text: "Final answer",
+      usage: {
+        input_tokens: 11,
+        output_tokens: 7,
+        total_tokens: 18,
+        input_tokens_details: { cached_tokens: 4 },
+        output_tokens_details: { reasoning_tokens: 3 },
+      },
+      output: [
+        reasoningItem,
+        { type: "function_call", call_id: "call_1", name: "search_docs", arguments: "{\"query\":\"CrewAI\"}" },
+      ],
+    };
+
+    expect((openai as unknown as {
+      _extract_responses_token_usage(response: unknown): Record<string, number>;
+    })._extract_responses_token_usage(response)).toEqual({
+      prompt_tokens: 11,
+      completion_tokens: 7,
+      total_tokens: 18,
+      cached_prompt_tokens: 4,
+      reasoning_tokens: 3,
+    });
+    expect((openai as unknown as {
+      _extract_function_calls_from_response(response: unknown): Record<string, unknown>[];
+    })._extract_function_calls_from_response(response)).toEqual([
+      { id: "call_1", name: "search_docs", arguments: "{\"query\":\"CrewAI\"}" },
+    ]);
+    expect((openai as unknown as {
+      _extract_reasoning_items(response: unknown): unknown[];
+    })._extract_reasoning_items(response)).toEqual([reasoningItem]);
+  });
+
   it("prepares Azure completion request parameters with model extras and endpoint rules", () => {
     const search = new StructuredTool({
       name: "search docs",
