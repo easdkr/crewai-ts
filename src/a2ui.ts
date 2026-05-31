@@ -478,8 +478,8 @@ export class A2UIClientExtension {
   processResponse(agentResponse: unknown, conversationState: A2UIConversationState | null = null): unknown {
     const text = typeof agentResponse === "string" ? agentResponse : String(agentResponse);
     let results = this.version === "v0.9"
-      ? extractA2UIV09JsonObjects(text).map((message) => validateA2UIMessageV09(message).modelDump())
-      : extractA2UIJsonObjects(text).map((message) => validateA2UIMessage(message).modelDump());
+      ? extractA2UIV09JsonObjects(text).map((message) => serializeA2UIDataPartPayload(validateA2UIMessageV09(message).modelDump()))
+      : extractA2UIJsonObjects(text).map((message) => serializeA2UIDataPartPayload(validateA2UIMessage(message).modelDump()));
     if (this.allowedComponents?.length) {
       const allowed = new Set(this.allowedComponents);
       results = results.map((message) => this.version === "v0.9" ? filterComponentsV09(message, allowed) : filterComponents(message, allowed));

@@ -10,6 +10,7 @@ import {
   A2AError,
   A2AErrorCode,
   A2UIClientExtension,
+  A2UIConversationState,
   A2UI_EXTENSION_URI,
   A2UI_MIME_TYPE,
   A2UI_STANDARD_CATALOG_ID,
@@ -2893,6 +2894,28 @@ describe("a2a utilities", () => {
       },
     });
     expect(parts?.[0]?.data).not.toHaveProperty("begin_rendering");
+  });
+
+  it("stores processed A2UI client messages as alias-only non-null payloads", () => {
+    const extension = new A2UIClientExtension();
+    const state = new A2UIConversationState();
+
+    const response = JSON.stringify({
+      beginRendering: {
+        surfaceId: "surface",
+        root: "root",
+        catalogId: null,
+      },
+    });
+
+    expect(extension.process_response(response, state)).toBe(response);
+    expect(state.last_a2ui_messages).toEqual([{
+      beginRendering: {
+        surfaceId: "surface",
+        root: "root",
+      },
+    }]);
+    expect(state.last_a2ui_messages[0]).not.toHaveProperty("begin_rendering");
   });
 
   it("activates A2UI server hooks only for declared client extensions", async () => {
