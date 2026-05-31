@@ -9017,6 +9017,37 @@ describe("LLM providers", () => {
     });
   });
 
+  it("extracts and tracks Bedrock token usage from Converse responses", () => {
+    const bedrock = new BedrockCompletion({ model: "anthropic.claude-3-5-sonnet-20241022-v2:0" });
+
+    expect(BedrockCompletion.extract_bedrock_token_usage({
+      inputTokens: 9,
+      outputTokens: 4,
+      totalTokens: 13,
+      cacheReadInputTokenCount: 2,
+    })).toEqual({
+      prompt_tokens: 9,
+      completion_tokens: 4,
+      total_tokens: 13,
+      cached_prompt_tokens: 2,
+    });
+
+    bedrock._track_token_usage_internal({
+      inputTokens: 9,
+      outputTokens: 4,
+      totalTokens: 13,
+      cacheReadInputTokens: 3,
+    });
+
+    expect(bedrock.get_token_usage_summary()).toMatchObject({
+      promptTokens: 9,
+      completionTokens: 4,
+      totalTokens: 13,
+      cachedPromptTokens: 3,
+      successfulRequests: 1,
+    });
+  });
+
   it("exposes Gemini completion provider parity helpers", () => {
     const gemini = new GeminiCompletion({
       model: "gemini-2.5-pro",

@@ -609,6 +609,40 @@ export class BedrockCompletion extends ConfiguredLLM {
     return this.prepareConverseStreamRequestBody(messages, tools);
   }
 
+  extractBedrockTokenUsage(usage: unknown): Record<string, number> {
+    return BedrockCompletion.extractBedrockTokenUsage(usage);
+  }
+
+  _extract_bedrock_token_usage(usage: unknown): Record<string, number> {
+    return this.extractBedrockTokenUsage(usage);
+  }
+
+  static extractBedrockTokenUsage(usage: unknown): Record<string, number> {
+    const record = readObject(usage);
+    const inputTokens = numberField(record, "inputTokens");
+    const outputTokens = numberField(record, "outputTokens");
+    const explicitTotal = numberField(record, "totalTokens");
+    const cachedTokens = numberField(record, "cacheReadInputTokenCount") || numberField(record, "cacheReadInputTokens");
+    return {
+      prompt_tokens: inputTokens,
+      completion_tokens: outputTokens,
+      total_tokens: explicitTotal || inputTokens + outputTokens,
+      cached_prompt_tokens: cachedTokens,
+    };
+  }
+
+  static extract_bedrock_token_usage(usage: unknown): Record<string, number> {
+    return BedrockCompletion.extractBedrockTokenUsage(usage);
+  }
+
+  override trackTokenUsageInternal(usageData: Record<string, unknown>): void {
+    super.trackTokenUsageInternal(BedrockCompletion.extractBedrockTokenUsage(usageData));
+  }
+
+  override _track_token_usage_internal(usageData: Record<string, unknown>): void {
+    this.trackTokenUsageInternal(usageData);
+  }
+
   private isClaudeModel(): boolean {
     const model = this.model.toLowerCase();
     return model.includes("anthropic") || model.includes("claude");
