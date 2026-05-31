@@ -51,8 +51,11 @@ import {
   _create_file_parts,
   _create_result_artifact,
   _extract_response_schema,
+  _find_compatible_modes,
   _inject_metadata,
   _merge_metadata,
+  _mime_types_compatible,
+  _normalize_mime_type,
   _normalize_grpc_metadata,
   _parse_redis_url,
   Agent,
@@ -3952,6 +3955,14 @@ describe("a2a utilities", () => {
       negotiated_input_modes: ["image/png"],
       negotiation_success: true,
     });
+  });
+
+  it("exposes upstream-compatible A2A content type matching helpers", () => {
+    expect(_normalize_mime_type(" Image/PNG ")).toBe("image/png");
+    expect(_mime_types_compatible("image/*", "image/png")).toBe(true);
+    expect(_mime_types_compatible("application/json", "text/plain")).toBe(false);
+    expect(_find_compatible_modes(["image/*", "application/json"], ["image/png", "text/plain"]))
+      .toEqual(["image/png"]);
   });
 
   it("falls back to agent-card defaults for skills with empty content modes", () => {

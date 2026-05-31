@@ -2807,11 +2807,13 @@ export function validateMessageParts(parts: readonly Parameters<typeof getPartCo
 
 export const validate_message_parts = validateMessageParts;
 
-function normalizeMimeType(mimeType: string): string {
+export function normalizeMimeType(mimeType: string): string {
   return mimeType.toLowerCase().trim();
 }
 
-function mimeTypesCompatible(clientType: string, serverType: string): boolean {
+export const _normalize_mime_type = normalizeMimeType;
+
+export function mimeTypesCompatible(clientType: string, serverType: string): boolean {
   const clientNormalized = normalizeMimeType(clientType);
   const serverNormalized = normalizeMimeType(serverType);
   if (clientNormalized === serverNormalized) {
@@ -2828,7 +2830,9 @@ function mimeTypesCompatible(clientType: string, serverType: string): boolean {
     && (clientParts[1] === serverParts[1] || clientParts[1] === "*" || serverParts[1] === "*");
 }
 
-function findCompatibleModes(clientModes: readonly string[], serverModes: readonly string[]): string[] {
+export const _mime_types_compatible = mimeTypesCompatible;
+
+export function findCompatibleModes(clientModes: readonly string[], serverModes: readonly string[]): string[] {
   const compatible: string[] = [];
   for (const clientMode of clientModes) {
     const serverMode = serverModes.find((mode) => mimeTypesCompatible(clientMode, mode));
@@ -2842,6 +2846,8 @@ function findCompatibleModes(clientModes: readonly string[], serverModes: readon
   }
   return compatible;
 }
+
+export const _find_compatible_modes = findCompatibleModes;
 
 function contentNegotiationMessage(direction: string, clientInputModes: readonly string[], clientOutputModes: readonly string[], serverInputModes: readonly string[], serverOutputModes: readonly string[]): string {
   if (direction === "input") {
