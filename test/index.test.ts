@@ -9240,6 +9240,43 @@ describe("LLM providers", () => {
     expect(config).not.toHaveProperty("response_json_schema");
   });
 
+  it("extracts Gemini function calls from response candidates", () => {
+    const response = {
+      candidates: [{
+        content: {
+          parts: [
+            { text: "Need search" },
+            { functionCall: { name: "search_docs", args: { query: "CrewAI" } } },
+            { function_call: { name: "lookup_docs", args: { id: "intro" } } },
+          ],
+        },
+      }],
+    };
+
+    expect(GeminiCompletion.extract_function_calls_from_response(response)).toEqual([
+      {
+        id: "call_0",
+        type: "function",
+        function: {
+          name: "search_docs",
+          arguments: "{\"query\":\"CrewAI\"}",
+        },
+        args: { query: "CrewAI" },
+        index: 0,
+      },
+      {
+        id: "call_1",
+        type: "function",
+        function: {
+          name: "lookup_docs",
+          arguments: "{\"id\":\"intro\"}",
+        },
+        args: { id: "intro" },
+        index: 1,
+      },
+    ]);
+  });
+
   it("creates configured LLM clients from strings, objects, clients, and environment fallback", async () => {
     const existing = {
       call: () => "existing",

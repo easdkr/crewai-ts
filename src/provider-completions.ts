@@ -986,6 +986,42 @@ export class GeminiCompletion extends ConfiguredLLM {
     return GeminiCompletion.extractTextFromResponse(response);
   }
 
+  static extractFunctionCallsFromResponse(response: unknown): Record<string, unknown>[] {
+    const candidates = readObject(response).candidates;
+    if (!Array.isArray(candidates)) {
+      return [];
+    }
+    const first = readObject(candidates[0]);
+    const rawParts = Array.isArray(readObject(first.content).parts)
+      ? readObject(first.content).parts as unknown[]
+      : [];
+    const calls: Record<string, unknown>[] = [];
+    for (const part of rawParts) {
+      const partRecord = readObject(part);
+      const functionCall = readObject(partRecord.functionCall ?? partRecord.function_call);
+      if (Object.keys(functionCall).length === 0) {
+        continue;
+      }
+      const index = calls.length;
+      const args = readObject(functionCall.args);
+      calls.push({
+        id: `call_${index.toString()}`,
+        type: "function",
+        function: {
+          name: scalarToString(functionCall.name) ?? "",
+          arguments: JSON.stringify(args),
+        },
+        args,
+        index,
+      });
+    }
+    return calls;
+  }
+
+  static extract_function_calls_from_response(response: unknown): Record<string, unknown>[] {
+    return GeminiCompletion.extractFunctionCallsFromResponse(response);
+  }
+
   static addPropertyOrdering<T extends Record<string, unknown>>(schema: T): T {
     addGeminiPropertyOrdering(schema);
     return schema;
