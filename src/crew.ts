@@ -1355,6 +1355,78 @@ export class Crew {
     this.resetKnowledge(knowledges);
   }
 
+  getAgentToUse(task: Task): Agent | null {
+    return this.process === Process.hierarchical
+      ? this.getManagerAgent()
+      : task.agent;
+  }
+
+  _get_agent_to_use(task: Task): Agent | null {
+    return this.getAgentToUse(task);
+  }
+
+  static mergeTools(existingTools: readonly Tool[], newTools: readonly Tool[]): Tool[] {
+    return mergeTools(existingTools, newTools);
+  }
+
+  static _merge_tools(existing_tools: readonly Tool[], new_tools: readonly Tool[]): Tool[] {
+    return Crew.mergeTools(existing_tools, new_tools);
+  }
+
+  getContext(task: Task, taskOutputs: readonly TaskOutput[]): string {
+    return this.contextForTask(task, taskOutputs) ?? "";
+  }
+
+  _get_context(task: Task, task_outputs: readonly TaskOutput[]): string {
+    return this.getContext(task, task_outputs);
+  }
+
+  async processTaskResult(task: Task, output: TaskOutput): Promise<void> {
+    await this.logTaskResult(task, output);
+  }
+
+  async _process_task_result(task: Task, output: TaskOutput): Promise<void> {
+    await this.processTaskResult(task, output);
+  }
+
+  createCrewOutput(taskOutputs: readonly TaskOutput[]): CrewOutput {
+    if (taskOutputs.length === 0) {
+      throw new Error("No task outputs available to create crew output.");
+    }
+    const finalTaskOutput = [...taskOutputs].reverse().find((output) => output.raw.length > 0);
+    if (!finalTaskOutput) {
+      throw new Error("No valid task outputs available to create crew output.");
+    }
+    return new CrewOutput({
+      raw: finalTaskOutput.raw,
+      pydantic: finalTaskOutput.pydantic,
+      jsonDict: finalTaskOutput.jsonDict,
+      tasksOutput: taskOutputs,
+      tokenUsage: this.calculateUsageMetrics(),
+    });
+  }
+
+  _create_crew_output(task_outputs: readonly TaskOutput[]): CrewOutput {
+    return this.createCrewOutput(task_outputs);
+  }
+
+  static findTaskIndex(taskId: string, storedOutputs: readonly unknown[]): number | null {
+    const index = storedOutputs.findIndex((storedOutput) => {
+      if (!storedOutput || typeof storedOutput !== "object") {
+        return false;
+      }
+      const record = storedOutput as { task_id?: unknown; taskId?: unknown; task?: { id?: unknown } };
+      return record.task_id === taskId
+        || record.taskId === taskId
+        || record.task?.id === taskId;
+    });
+    return index === -1 ? null : index;
+  }
+
+  static _find_task_index(task_id: string, stored_outputs: readonly unknown[]): number | null {
+    return Crew.findTaskIndex(task_id, stored_outputs);
+  }
+
   private toolsForTask(task: Task, agent: Agent | null): readonly Tool[] | undefined {
     const baseTools = task.tools.length > 0 ? [...task.tools] : [...(agent?.tools ?? [])];
     const withDelegation = agent?.allowDelegation
@@ -1499,11 +1571,12 @@ export class Crew {
 function mergeTools(baseTools: readonly Tool[], additionalTools: readonly Tool[]): Tool[] {
   const byName = new Map<string, Tool>();
   for (const tool of baseTools) {
-    byName.set(tool.name, tool);
+    byName.set(sanitizeToolName(tool.name), tool);
   }
   for (const tool of additionalTools) {
-    if (!byName.has(tool.name)) {
-      byName.set(tool.name, tool);
+    const normalizedName = sanitizeToolName(tool.name);
+    if (!byName.has(normalizedName)) {
+      byName.set(normalizedName, tool);
     }
   }
   return [...byName.values()];

@@ -7611,6 +7611,68 @@ describe("core crew runtime", () => {
     ]));
   });
 
+  it("exposes upstream Crew task execution helper methods", async () => {
+    const researcher = new Agent({
+      role: "Researcher",
+      goal: "Find facts",
+      backstory: "Careful analyst",
+    });
+    const previousOutput = new TaskOutput({
+      description: "Previous",
+      expectedOutput: "A previous answer",
+      raw: "prior context",
+      agent: "Researcher",
+    });
+    const taskInstance = new Task({
+      id: "task-1",
+      description: "Research CrewAI",
+      expectedOutput: "Brief",
+      agent: researcher,
+    });
+    const crewInstance = new Crew({
+      agents: [researcher],
+      tasks: [taskInstance],
+    });
+    const searchTool = new StructuredTool({
+      name: "search tool",
+      description: "Search",
+      func: () => "old",
+    });
+    const duplicateSearchTool = new StructuredTool({
+      name: "search_tool",
+      description: "Search duplicate",
+      func: () => "new",
+    });
+    const summarizeTool = new StructuredTool({
+      name: "summarize",
+      description: "Summarize",
+      func: () => "summary",
+    });
+
+    expect(crewInstance._get_agent_to_use(taskInstance)).toBe(researcher);
+    expect(crewInstance._get_context(taskInstance, [previousOutput])).toBe("prior context");
+    expect(Crew._merge_tools([searchTool], [duplicateSearchTool, summarizeTool]))
+      .toEqual([searchTool, summarizeTool]);
+    expect(Crew._find_task_index("task-1", [{ task_id: "task-0" }, { task: { id: "task-1" } }]))
+      .toBe(1);
+    expect(Crew._find_task_index("missing", [{ task_id: "task-0" }])).toBeNull();
+
+    const crewOutput = crewInstance._create_crew_output([
+      new TaskOutput({
+        description: "Empty",
+        expectedOutput: "Empty",
+        raw: "",
+        agent: "Researcher",
+      }),
+      previousOutput,
+    ]);
+    expect(crewOutput.raw).toBe("prior context");
+    expect(crewOutput.tasks_output).toHaveLength(2);
+
+    await expect(crewInstance._process_task_result(taskInstance, previousOutput))
+      .resolves.toBeUndefined();
+  });
+
   it("accepts upstream snake_case Crew runtime fields", () => {
     const context = captureExecutionContext({ source: "checkpoint" });
     context.currentTaskId = "task-1";
