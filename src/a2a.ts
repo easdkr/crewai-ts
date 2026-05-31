@@ -427,6 +427,7 @@ export type A2AMessageLike = {
   context_id?: string | null;
   taskId?: string | null;
   task_id?: string | null;
+  metadata?: Record<string, unknown> | null;
 };
 export type A2AArtifactLike = {
   parts?: readonly A2ATextPartLike[];
@@ -3975,8 +3976,170 @@ export function execute_a2a_delegation(options: Record<string, unknown> | string
 }
 
 export async function aexecute_a2a_delegation(options: Record<string, unknown> | string, ...args: unknown[]): Promise<A2ATaskStateResult> {
+  if (typeof options === "string") {
+    return execute_a2a_delegation(options, ...args);
+  }
+  return await _aexecute_a2a_delegation_impl(options);
+}
+
+export async function _aexecute_a2a_delegation_impl(options: Record<string, unknown>): Promise<A2ATaskStateResult> {
+  const endpoint = stringFromUnknown(options.endpoint);
+  if (!endpoint) {
+    throw new Error("endpoint is required for A2A delegation");
+  }
+  const timeout = typeof options.timeout === "number" ? options.timeout : 30;
+  const auth = options.auth ?? null;
+  const authHash = stableA2AHash(auth ? stringifyA2AValue(auth) : endpoint);
+  const agentCard = recordOrNullA2A(options.agent_card)
+    ?? recordOrNullA2A(options.agentCard)
+    ?? await _afetch_agent_card_cached(endpoint, authHash, timeout, auth);
+  const transport = options.transport instanceof ClientTransportConfig
+    ? options.transport
+    : new ClientTransportConfig(recordOrNullA2A(options.transport) ?? {});
+  const negotiated = negotiateTransport(agentCard as A2AAgentCard, {
+    clientSupportedTransports: transport.supported,
+    clientPreferredTransport: transport.preferred,
+    endpoint,
+    a2aAgentName: stringOrNull(agentCard.name),
+  });
+  const content = negotiateContentTypes(
+    agentCard,
+    DEFAULT_CLIENT_INPUT_MODES,
+    Array.isArray(options.accepted_output_modes) ? options.accepted_output_modes.map(String) : DEFAULT_CLIENT_OUTPUT_MODES,
+    stringOrNull(options.skill_id),
+    true,
+    endpoint,
+    stringOrNull(agentCard.name),
+  );
+  const [headers] = await _prepare_auth_headers(auth, timeout);
+  const context = typeof options.context === "string" && options.context
+    ? `Context:\n${options.context}\n\n`
+    : "";
+  const taskDescription = stringFromUnknown(options.task_description ?? options.taskDescription);
+  const messageText = `${context}${taskDescription}`;
+  const metadata = recordOrNullA2A(options.metadata);
+  const skillId = stringOrNull(options.skill_id ?? options.skillId);
+  const messageMetadata = {
+    ...(metadata ?? {}),
+    ...(skillId ? { skill_id: skillId } : {}),
+  };
+  const responseModel = recordOrNullA2A(options.response_model) ?? recordOrNullA2A(options.responseModel);
+  const textPart: Record<string, unknown> = { text: messageText };
+  if (responseModel) {
+    textPart.metadata = {
+      mimeType: APPLICATION_JSON,
+      schema: recordOrNullA2A(responseModel.schema) ?? recordOrNullA2A(responseModel),
+    };
+  }
+  const inputFiles = recordOrNullA2A(options.input_files ?? options.inputFiles) as Parameters<typeof _create_file_parts>[0];
+  const messageId = randomId();
+  const message: A2AMessageLike = {
+    role: "user",
+    messageId,
+    message_id: messageId,
+    parts: [
+      { root: { kind: "text", ...textPart } },
+      ..._create_file_parts(inputFiles),
+    ],
+    contextId: stringOrNull(options.context_id ?? options.contextId),
+    context_id: stringOrNull(options.context_id ?? options.contextId),
+    taskId: stringOrNull(options.task_id ?? options.taskId),
+    task_id: stringOrNull(options.task_id ?? options.taskId),
+    metadata: Object.keys(messageMetadata).length > 0 ? messageMetadata : null,
+  };
+  const history = Array.isArray(options.conversation_history)
+    ? options.conversation_history as A2AMessageLike[]
+    : Array.isArray(options.conversationHistory)
+      ? options.conversationHistory as A2AMessageLike[]
+      : [];
+  const updates = options.updates ?? null;
+  const handler = get_handler(updates) as { execute?: (...args: unknown[]) => Promise<A2ATaskStateResult> };
+  const client = await _create_a2a_client({
+    agent_card: { ...agentCard, url: negotiated.url },
+    transport_protocol: negotiated.transport,
+    timeout,
+    headers,
+    streaming: !(updates instanceof PollingConfig) && !(updates instanceof PushNotificationConfig),
+    auth,
+    use_polling: updates instanceof PollingConfig,
+    push_notification_config: updates instanceof PushNotificationConfig ? updates : null,
+    client_extensions: Array.isArray(options.client_extensions) ? options.client_extensions.map(String) : null,
+    accepted_output_modes: content.outputModes.length > 0 ? content.outputModes : DEFAULT_CLIENT_OUTPUT_MODES,
+    grpc_config: transport.grpc,
+    client: options.client,
+  });
+  if (!handler.execute) {
+    throw new Error("A2A update handler does not provide execute.");
+  }
+  const result = await handler.execute(client, message, [...history, message], agentCard, {
+    turn_number: typeof options.turn_number === "number" ? options.turn_number : 0,
+    is_multiturn: Boolean(options.is_multiturn ?? options.isMultiturn),
+    agent_role: stringOrNull(options.agent_role ?? options.agentRole),
+    context_id: message.context_id,
+    task_id: message.task_id,
+    endpoint,
+    a2a_agent_name: stringOrNull(agentCard.name),
+    polling_interval: updates instanceof PollingConfig ? updates.interval : undefined,
+    polling_timeout: timeout,
+  });
+  return {
+    ...result,
+    a2a_agent_name: stringOrNull(agentCard.name) ?? undefined,
+    agent_card: agentCard,
+  } as A2ATaskStateResult;
+}
+
+export async function _create_a2a_client(options: {
+  agent_card?: Record<string, unknown>;
+  agentCard?: Record<string, unknown>;
+  transport_protocol?: string;
+  transportProtocol?: string;
+  timeout?: number;
+  headers?: Record<string, string>;
+  streaming?: boolean;
+  auth?: unknown;
+  use_polling?: boolean;
+  usePolling?: boolean;
+  push_notification_config?: PushNotificationConfig | null;
+  pushNotificationConfig?: PushNotificationConfig | null;
+  client_extensions?: readonly string[] | null;
+  clientExtensions?: readonly string[] | null;
+  accepted_output_modes?: readonly string[] | null;
+  acceptedOutputModes?: readonly string[] | null;
+  grpc_config?: GRPCClientConfig | null;
+  grpcConfig?: GRPCClientConfig | null;
+  client?: unknown;
+}): Promise<Record<string, unknown>> {
   await Promise.resolve();
-  return execute_a2a_delegation(options, ...args);
+  const provided = recordOrNullA2A(options.client);
+  if (provided) {
+    return provided;
+  }
+  const agentCard = options.agent_card ?? options.agentCard ?? {};
+  const acceptedOutputModes = options.accepted_output_modes ?? options.acceptedOutputModes ?? DEFAULT_CLIENT_OUTPUT_MODES;
+  return {
+    agent_card: agentCard,
+    agentCard,
+    transport_protocol: options.transport_protocol ?? options.transportProtocol ?? JSONRPC_TRANSPORT,
+    timeout: options.timeout ?? 30,
+    headers: { ...(options.headers ?? {}) },
+    streaming: options.streaming ?? true,
+    auth: options.auth ?? null,
+    use_polling: options.use_polling ?? options.usePolling ?? false,
+    push_notification_config: options.push_notification_config ?? options.pushNotificationConfig ?? null,
+    client_extensions: [...(options.client_extensions ?? options.clientExtensions ?? [])],
+    accepted_output_modes: [...acceptedOutputModes],
+    grpc_config: options.grpc_config ?? options.grpcConfig ?? null,
+    async *send_message(message: A2AMessageLike) {
+      await Promise.resolve();
+      yield [{
+        id: message.task_id ?? randomId(),
+        context_id: message.context_id ?? null,
+        status: { state: A2ATaskState.completed },
+        artifacts: [{ parts: [{ root: { kind: "text", text: stringFromUnknown(agentCard.url) || stringFromUnknown(agentCard.name) } }] }],
+      }, null] as const;
+    },
+  };
 }
 
 const agentCardCache = new Map<string, { expiresAt: number; value: Record<string, unknown> }>();
@@ -5027,6 +5190,14 @@ function delayA2A(intervalMs: number, signal?: AbortSignal): Promise<void> {
 
 function cancelKeyTaskId(key: string): string {
   return key.startsWith("cancel:") ? key.slice("cancel:".length) : key;
+}
+
+function stableA2AHash(value: string): string {
+  let hash = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = (hash * 31 + value.charCodeAt(index)) >>> 0;
+  }
+  return hash.toString(16);
 }
 
 function isA2AExtension(value: unknown): value is A2AExtension {

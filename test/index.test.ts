@@ -709,7 +709,9 @@ import {
   StaticToolFilter,
   StdioTransport,
   TransportType,
+  _aexecute_a2a_delegation_impl,
   _afetch_agent_card_impl,
+  _create_a2a_client,
   _convert_a2a_files_to_file_inputs,
   _get_effective_modes,
   _get_tls_verify,
@@ -4180,6 +4182,69 @@ describe("a2a utilities", () => {
       context_id: "ctx-a2a",
       status: { state: A2ATaskState.completed },
       artifacts: [{ name: "result_task-a2a" }],
+    });
+  });
+
+  it("exposes A2A delegation implementation and client factory helpers", async () => {
+    const sentMessages: unknown[] = [];
+    const client = {
+      send_message: async function* sendMessage(message: unknown) {
+        await Promise.resolve();
+        sentMessages.push(message);
+        yield [{
+          id: "remote-task",
+          context_id: "ctx-delegation",
+          status: { state: A2ATaskState.completed },
+          artifacts: [{ parts: [{ root: { kind: "text", text: "remote result" } }] }],
+        }, null] as const;
+      },
+    };
+    const result = await _aexecute_a2a_delegation_impl({
+      endpoint: "https://remote.example.com/a2a",
+      agent_card: {
+        name: "Remote",
+        url: "https://remote.example.com/a2a",
+        preferred_transport: "JSONRPC",
+        default_input_modes: ["text/plain"],
+        default_output_modes: ["text/plain"],
+      },
+      client,
+      task_description: "Research CrewAI",
+      context: "Use public docs",
+      context_id: "ctx-delegation",
+      task_id: "remote-task",
+      metadata: { trace: "yes" },
+      input_files: {
+        notes: {
+          read: () => "notes",
+          filename: "notes.txt",
+        },
+      },
+    });
+
+    expect(result).toMatchObject({
+      status: A2ATaskState.completed,
+      result: "remote result",
+      a2a_agent_name: "Remote",
+      agent_card: { name: "Remote" },
+    });
+    const message = sentMessages[0] as { parts?: Array<{ root?: { kind?: string; text?: string; file?: { name?: string } } }>; metadata?: Record<string, unknown> };
+    expect(message.parts?.[0]?.root?.text).toContain("Context:\nUse public docs");
+    expect(message.parts?.[0]?.root?.text).toContain("Research CrewAI");
+    expect(message.parts?.[1]?.root?.file?.name).toBe("notes.txt");
+
+    await expect(_create_a2a_client({
+      agent_card: { name: "Remote", url: "https://remote.example.com/a2a" },
+      transport_protocol: "JSONRPC",
+      timeout: 5,
+      headers: { authorization: "Bearer token" },
+      client_extensions: ["urn:example"],
+    })).resolves.toMatchObject({
+      agent_card: { name: "Remote" },
+      transport_protocol: "JSONRPC",
+      timeout: 5,
+      headers: { authorization: "Bearer token" },
+      client_extensions: ["urn:example"],
     });
   });
 
