@@ -11,7 +11,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `npm run lint`
   - `npm run smoke:pack`
   - `python3 scripts/check-export-parity.py`
-- Test suite: 451 passing tests.
+- Test suite: 452 passing tests.
 - Root export parity against upstream clone `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `5cdc420`: `total_missing=0`.
 - Public method parity has been tightened for core runtime classes:
   - `ConsoleFormatter`: `missing=0`
@@ -46,6 +46,7 @@ When more goal budget is available, continue from the behavioral parity audits b
 - Added embedding provider config-field compatibility for OpenAI, Azure, SentenceTransformer, VoyageAI, VertexAI, HuggingFace, Instructor, Jina, Ollama, OpenCLIP, Text2Vec, Google Generative AI, Bedrock, Cohere, ONNX, Roboflow, and WatsonX defaults plus direct provider attribute access.
 - Added upstream-style embedding factory fallback so built-in provider specs instantiate their provider classes when no custom builder is registered.
 - Added VoyageAI and WatsonX embedding function `name()` helpers plus WatsonX `validate_space_or_project` parity.
+- `BaseRAGStorage` now exposes upstream-style `_initialize_agents` and `_sanitize_role` helpers alongside the TypeScript camelCase internals.
 
 ## Completed In Current Flow/Persistence Pass
 
@@ -161,6 +162,7 @@ When more goal budget is available, continue from the behavioral parity audits b
   - Knowledge sources now expose upstream-style `add`, `aadd`, `validate_content`, and `get_embeddings` helpers and can save their chunks through configured storage.
   - `BaseKnowledgeSource` now replaces the root placeholder with chunking, embedding-list, and sync/async storage save helpers.
   - `BaseFileKnowledgeSource` now replaces the root placeholder with upstream-style `file_path` / `file_paths`, `safe_file_paths`, `content`, `convert_to_path`, `load_content`, and validation helpers shared by file-backed sources.
+  - `StringKnowledgeSource` and file-backed text sources now expose upstream-style `source_type`, `model_post_init`, and `_chunk_text` helpers where applicable.
 - Added tool compatibility behavior:
   - `BaseTool` / `StructuredTool` now expose upstream-style `tool_type`, `model_post_init`, `validate_max_usage_count`, and `from_langchain` helpers.
   - `ToolUsage` now exposes upstream-style `on_tool_error` and `on_tool_use_finished` event helpers, including snake_case event payload aliases and fingerprint metadata passthrough.

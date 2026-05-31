@@ -209,6 +209,7 @@ export type KnowledgeStorageOptions = {
 
 export class StringKnowledgeSource implements KnowledgeSource {
   readonly sourceType = "string";
+  readonly source_type = "string";
   readonly content: string;
   readonly chunkSize: number;
   readonly chunkOverlap: number;
@@ -235,6 +236,11 @@ export class StringKnowledgeSource implements KnowledgeSource {
     this.validate_content();
   }
 
+  model_post_init(_context: unknown = null): void {
+    void _context;
+    this.validateContent();
+  }
+
   validateContent(): void {
     if (typeof this.content !== "string") {
       throw new Error("StringKnowledgeSource only accepts string content");
@@ -246,15 +252,11 @@ export class StringKnowledgeSource implements KnowledgeSource {
   }
 
   chunks(): readonly string[] {
-    const step = this.chunkSize - this.chunkOverlap;
-    const chunks: string[] = [];
-    for (let index = 0; index < this.content.length; index += step) {
-      const chunk = this.content.slice(index, index + this.chunkSize).trim();
-      if (chunk) {
-        chunks.push(chunk);
-      }
-    }
-    return chunks;
+    return this._chunk_text(this.content);
+  }
+
+  _chunk_text(text: string): string[] {
+    return [...chunkText(text, this.chunkSize, this.chunkOverlap)];
   }
 
   add(): void {
@@ -314,6 +316,10 @@ abstract class BaseTextKnowledgeSource implements KnowledgeSource {
 
   chunks(): readonly string[] {
     return chunkText(this.loadText(), this.chunkSize, this.chunkOverlap);
+  }
+
+  _chunk_text(text: string): string[] {
+    return [...chunkText(text, this.chunkSize, this.chunkOverlap)];
   }
 
   validateContent(): void {

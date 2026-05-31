@@ -1550,7 +1550,15 @@ export abstract class BaseRAGStorage {
     return this.crew.agents.map((agent) => this.sanitizeRole(agent.role)).join("_");
   }
 
+  _initialize_agents(): string {
+    return this.initializeAgents();
+  }
+
   protected abstract sanitizeRole(role: string): string;
+
+  _sanitize_role(role: string): string {
+    return this.sanitizeRole(role);
+  }
 
   abstract save(value: unknown, metadata: Record<string, unknown>): unknown;
 

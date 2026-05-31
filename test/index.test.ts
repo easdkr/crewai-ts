@@ -5516,6 +5516,8 @@ describe("RAG configuration and factories", () => {
 
     expect(storage.allowReset).toBe(false);
     expect(storage.agents).toBe("lead_researcher_fact_checker");
+    expect(storage._initialize_agents()).toBe("lead_researcher_fact_checker");
+    expect(storage._sanitize_role("QA Lead")).toBe("qa_lead");
   });
 
   it("wraps ChromaDB clients with collection lifecycle, upsert/search filters, and async aliases", async () => {
@@ -15449,9 +15451,19 @@ describe("knowledge", () => {
       expect(source.validate_file_path(null, { field_name: "file_paths", data: {} })).toBeNull();
       expect(source.convert_to_path("relative.txt")).toBe(join("knowledge", "relative.txt"));
       expect(source.chunks()).toEqual(["File knowled", "ge source co", "ntent."]);
+      expect(source._chunk_text("abcdefghijkl")).toEqual(["abcdefghijkl"]);
     } finally {
       rmSync(baseDirectory, { recursive: true, force: true });
     }
+  });
+
+  it("exposes upstream string knowledge source post-init and chunk helpers", () => {
+    const source = new StringKnowledgeSource({ content: "abcdef", chunkSize: 3, chunkOverlap: 1 });
+
+    expect(source.source_type).toBe("string");
+    expect(source._chunk_text("abcdef")).toEqual(["abc", "cde", "ef"]);
+    expect(source.chunks()).toEqual(["abc", "cde", "ef"]);
+    source.model_post_init();
   });
 
   it("selects PDF and Excel knowledge sources with optional host extractors", () => {
