@@ -225,6 +225,10 @@ export class LLMGuardrail {
     }
   }
 
+  __call__(taskOutput: TaskOutput | LiteAgentOutput): Promise<readonly [boolean, unknown]> {
+    return this.call(taskOutput);
+  }
+
   asGuardrail(): AsyncGuardrailCallable {
     return this.call.bind(this);
   }
@@ -290,6 +294,10 @@ export class HallucinationGuardrail {
       return hallucinationGuardrailHook(this, taskOutput);
     }
     return [true, taskOutput.raw];
+  }
+
+  __call__(taskOutput: TaskOutput | LiteAgentOutput): readonly [boolean, unknown] {
+    return this.call(taskOutput);
   }
 
   asGuardrail(): GuardrailCallable {

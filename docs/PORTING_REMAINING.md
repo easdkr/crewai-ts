@@ -227,6 +227,7 @@ When more goal budget is available, continue from the behavioral parity audits b
   - `SecurityConfig.validate_fingerprint` now exposes upstream-style fingerprint coercion for null, seed strings, dicts, and `Fingerprint` instances.
 - Added guardrail compatibility behavior:
   - `GuardrailResult.validate_result_error_exclusivity` now exposes the upstream validator helper for result/error mutual exclusivity.
+  - `LLMGuardrail.__call__` and `HallucinationGuardrail.__call__` now mirror upstream direct guardrail invocation while preserving the existing `call`/`asGuardrail` helpers.
 - Added skills compatibility behavior:
   - `SkillFrontmatter.parse_allowed_tools` now exposes the upstream frontmatter pre-parse helper for space-delimited allowed tool lists.
   - `SkillCacheManager.store` now unpacks registry tar.gz and zip archive bytes into the local cache with upstream-style metadata and path traversal protection.

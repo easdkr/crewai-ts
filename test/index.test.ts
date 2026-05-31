@@ -1292,6 +1292,7 @@ describe("formatter and guardrail utilities", () => {
 
     await expect(guardrail.validateOutput(output)).resolves.toBeInstanceOf(LLMGuardrailResult);
     await expect(guardrail.call(output)).resolves.toEqual([false, "Missing citations"]);
+    await expect(guardrail.__call__(output)).resolves.toEqual([false, "Missing citations"]);
     await expect(guardrail.asGuardrail()(output)).resolves.toEqual([false, "Missing citations"]);
     expect(prompts[0]).toContain("Must mention citations");
     expect(prompts[0]).toContain("answer");
@@ -1313,6 +1314,7 @@ describe("formatter and guardrail utilities", () => {
 
     expect(guardrail.description).toBe("HallucinationGuardrail (no-op)");
     expect(guardrail.call(output)).toEqual([true, "grounded answer"]);
+    expect(guardrail.__call__(output)).toEqual([true, "grounded answer"]);
     setHallucinationGuardrailHook((instance, taskOutput) => [
       false,
       `${instance.description}: ${taskOutput.raw}`,
