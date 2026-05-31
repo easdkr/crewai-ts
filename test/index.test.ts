@@ -7404,6 +7404,19 @@ describe("core crew runtime", () => {
       warningSpy.mockRestore();
     }
     expect(agentInstance.get_output_converter()).toBeNull();
+    const converter = agentInstance.get_output_converter(
+      { call: () => "converted" },
+      "raw",
+      { name: "Output" },
+      "Convert",
+    );
+    expect(converter).toBeInstanceOf(Converter);
+    expect(converter).toMatchObject({
+      text: "raw",
+      instructions: "Convert",
+    });
+    expect(Agent.get_output_converter({ call: () => "converted" }, "raw", { name: "Output" }, "Convert"))
+      .toBeInstanceOf(Converter);
 
     const output = await agentInstance.execute_task("Summarize CrewAI");
     expect(output).toContain("Summarize CrewAI");

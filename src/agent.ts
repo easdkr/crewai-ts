@@ -55,6 +55,7 @@ import {
   LLMGuardrailStartedEvent,
   crewaiEventBus,
 } from "./events.js";
+import { Converter, type StructuredModel } from "./converter.js";
 import { Knowledge, extractKnowledgeContext, type KnowledgeSource } from "./knowledge.js";
 import { coerceSecurityConfig, type Fingerprint, type SecurityConfig } from "./security.js";
 import { coerceCheckpointConfig, RuntimeState, type CheckpointConfig, type CheckpointOption } from "./state.js";
@@ -666,12 +667,65 @@ export class Agent {
     return this.getCodeExecutionTools();
   }
 
-  getOutputConverter(): null {
-    return null;
+  static getOutputConverter(
+    llm: unknown,
+    text: string,
+    model: unknown,
+    instructions: string,
+  ): Converter {
+    return new Converter({
+      llm: llm as LLMClient,
+      text,
+      model: model as StructuredModel,
+      instructions,
+    });
   }
 
-  get_output_converter(): null {
-    return this.getOutputConverter();
+  static get_output_converter(
+    llm: unknown,
+    text: string,
+    model: unknown,
+    instructions: string,
+  ): Converter {
+    return Agent.getOutputConverter(llm, text, model, instructions);
+  }
+
+  getOutputConverter(): null;
+  getOutputConverter(
+    llm: unknown,
+    text: string,
+    model: unknown,
+    instructions: string,
+  ): Converter;
+  getOutputConverter(
+    llm?: unknown,
+    text?: string,
+    model?: unknown,
+    instructions?: string,
+  ): Converter | null {
+    if (llm === undefined || text === undefined || model === undefined || instructions === undefined) {
+      return null;
+    }
+    return Agent.getOutputConverter(llm, text, model, instructions);
+  }
+
+  get_output_converter(): null;
+  get_output_converter(
+    llm: unknown,
+    text: string,
+    model: unknown,
+    instructions: string,
+  ): Converter;
+  get_output_converter(
+    llm?: unknown,
+    text?: string,
+    model?: unknown,
+    instructions?: string,
+  ): Converter | null {
+    if (llm === undefined || text === undefined || model === undefined || instructions === undefined) {
+      return null;
+    }
+    return this.getOutputConverter(llm, text, model, instructions);
   }
 
   createAgentExecutor(): unknown {
