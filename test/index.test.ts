@@ -146,6 +146,7 @@ import {
   MCPConnectionStartedEvent,
   MCPConfigFetchFailedEvent,
   MCPClient,
+  MCPToolWrapper,
   MCPToolExecutionFailedEvent,
   Telemetry,
   AgentLogsExecutionEvent,
@@ -2070,6 +2071,19 @@ describe("mcp configuration", () => {
       name: "brief",
       arguments: { topic: "CrewAI" },
     });
+  });
+
+  it("returns classified MCP wrapper execution errors from async runs", async () => {
+    const wrapper = new MCPToolWrapper({
+      mcpServerParams: {},
+      toolName: "search",
+      toolSchema: { description: "Search docs" },
+      serverName: "docs",
+    });
+
+    await expect(wrapper._run_async({ query: "CrewAI" })).resolves.toBe(
+      "MCP execution error: MCPToolWrapper requires an mcpServerParams.url string.",
+    );
   });
 });
 

@@ -1039,6 +1039,8 @@ export type MCPToolWrapperOptions = {
   server_name?: string;
 };
 
+const MCP_WRAPPER_MAX_RETRIES = 3;
+
 export class MCPToolWrapper extends BaseTool {
   private readonly mcpServerParamsValue: Record<string, unknown>;
   private readonly originalToolNameValue: string;
@@ -1107,9 +1109,7 @@ export class MCPToolWrapper extends BaseTool {
   }
 
   protected _run(args: Record<string, unknown>): Promise<string> {
-    return this.runAsync(args).catch((error: unknown) =>
-      `Error executing MCP tool ${this.originalToolName}: ${error instanceof Error ? error.message : stringifyToolOutput(error)}`,
-    );
+    return this._run_async(args);
   }
 
   async runAsync(args: Record<string, unknown> = {}): Promise<string> {
@@ -1133,8 +1133,47 @@ export class MCPToolWrapper extends BaseTool {
   }
 
   async _run_async(args: Record<string, unknown> = {}): Promise<string> {
-    return await this.runAsync(args);
+    let lastError = "";
+    for (let attempt = 0; attempt < MCP_WRAPPER_MAX_RETRIES; attempt += 1) {
+      try {
+        return await this.runAsync(args);
+      } catch (error) {
+        const classified = classifyMCPWrapperError(error, this.originalToolName);
+        if (!classified.retryable) {
+          return classified.message;
+        }
+        lastError = classified.message;
+        if (attempt < MCP_WRAPPER_MAX_RETRIES - 1) {
+          await waitForMCPWrapperRetry(2 ** attempt);
+        }
+      }
+    }
+    return `MCP tool execution failed after ${String(MCP_WRAPPER_MAX_RETRIES)} attempts: ${lastError}`;
   }
+}
+
+function classifyMCPWrapperError(error: unknown, toolName: string): { message: string; retryable: boolean } {
+  const message = error instanceof Error ? error.message : stringifyToolOutput(error);
+  const lower = message.toLowerCase();
+  if (lower.includes("authentication") || lower.includes("unauthorized")) {
+    return { message: `Authentication failed for MCP server: ${message}`, retryable: false };
+  }
+  if (lower.includes("not found")) {
+    return { message: `Tool '${toolName}' not found on MCP server`, retryable: false };
+  }
+  if (lower.includes("connection") || lower.includes("network")) {
+    return { message: `Network connection failed: ${message}`, retryable: true };
+  }
+  if (lower.includes("json") || lower.includes("parsing")) {
+    return { message: `Server response parsing error: ${message}`, retryable: true };
+  }
+  return { message: `MCP execution error: ${message}`, retryable: false };
+}
+
+async function waitForMCPWrapperRetry(seconds: number): Promise<void> {
+  await new Promise((resolve) => {
+    setTimeout(resolve, seconds * 1000);
+  });
 }
 
 export class ToolUsageError extends Error {
