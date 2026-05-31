@@ -2405,6 +2405,9 @@ describe("agent and knowledge events", () => {
     });
     expect(completed).toMatchObject({ type: "agent_execution_completed", output: "done" });
     expect(failed).toMatchObject({ type: "agent_execution_error", error: "execution failed" });
+    expect(started.set_fingerprint_data()).toBe(started);
+    expect(completed.setFingerprintData()).toBe(completed);
+    expect(failed.set_fingerprint_data()).toBe(failed);
     expect(evalStarted).toMatchObject({
       type: "agent_evaluation_started",
       agent_id: "agent-1",

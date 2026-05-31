@@ -497,6 +497,19 @@ export class CrewTestResultEvent extends BaseEvent {
   }
 }
 
+type AgentFingerprintAssignable = {
+  sourceFingerprint: string | null;
+  fingerprintMetadata?: Record<string, unknown> | null;
+  fingerprint_metadata?: Record<string, unknown> | null;
+};
+
+function setAgentExecutionFingerprintData<TEvent extends AgentFingerprintAssignable & { agent: unknown }>(event: TEvent): TEvent {
+  event.sourceFingerprint = getAgentSourceFingerprint(event.agent);
+  event.fingerprintMetadata = getAgentFingerprintMetadata(event.agent);
+  event.fingerprint_metadata = event.fingerprintMetadata;
+  return event;
+}
+
 export class AgentExecutionStartedEvent extends BaseEvent {
   readonly agent: unknown;
   readonly task: unknown;
@@ -520,6 +533,14 @@ export class AgentExecutionStartedEvent extends BaseEvent {
     this.fingerprintMetadata = getAgentFingerprintMetadata(options.agent);
     this.fingerprint_metadata = this.fingerprintMetadata;
   }
+
+  setFingerprintData(): this {
+    return setAgentExecutionFingerprintData(this);
+  }
+
+  set_fingerprint_data(): this {
+    return this.setFingerprintData();
+  }
 }
 
 export class AgentExecutionCompletedEvent extends BaseEvent {
@@ -541,6 +562,14 @@ export class AgentExecutionCompletedEvent extends BaseEvent {
     this.fingerprintMetadata = getAgentFingerprintMetadata(options.agent);
     this.fingerprint_metadata = this.fingerprintMetadata;
   }
+
+  setFingerprintData(): this {
+    return setAgentExecutionFingerprintData(this);
+  }
+
+  set_fingerprint_data(): this {
+    return this.setFingerprintData();
+  }
 }
 
 export class AgentExecutionErrorEvent extends BaseEvent {
@@ -561,6 +590,14 @@ export class AgentExecutionErrorEvent extends BaseEvent {
     this.error = formatError(options.error);
     this.fingerprintMetadata = getAgentFingerprintMetadata(options.agent);
     this.fingerprint_metadata = this.fingerprintMetadata;
+  }
+
+  setFingerprintData(): this {
+    return setAgentExecutionFingerprintData(this);
+  }
+
+  set_fingerprint_data(): this {
+    return this.setFingerprintData();
   }
 }
 
