@@ -2540,21 +2540,21 @@ export class MemorySlice {
     return this.readOnly;
   }
 
-  remember(content: string, options: Omit<MemoryRememberOptions, "scope"> = {}): MemoryRecord | null {
+  remember(content: string, options: MemoryRememberOptions = {}): MemoryRecord | null {
     if (this.readOnly) {
       return null;
     }
-    return this.memory.remember(content, { ...options, scope: this.scopes[0] ?? "/" });
+    return this.memory.remember(content, { ...options, scope: options.scope ?? this.scopes[0] ?? "/" });
   }
 
-  rememberMany(contents: readonly string[], options: Omit<MemoryRememberOptions, "scope"> = {}): MemoryRecord[] {
+  rememberMany(contents: readonly string[], options: MemoryRememberOptions = {}): MemoryRecord[] {
     if (this.readOnly) {
       return [];
     }
-    return this.memory.rememberMany(contents, { ...options, scope: this.scopes[0] ?? "/" });
+    return this.memory.rememberMany(contents, { ...options, scope: options.scope ?? this.scopes[0] ?? "/" });
   }
 
-  remember_many(contents: readonly string[], options: Omit<MemoryRememberOptions, "scope"> = {}): MemoryRecord[] {
+  remember_many(contents: readonly string[], options: MemoryRememberOptions = {}): MemoryRecord[] {
     return this.rememberMany(contents, options);
   }
 

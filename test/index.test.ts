@@ -13706,6 +13706,20 @@ describe("memory", () => {
     expect(writableSlice.list_categories()).toEqual({ notes: 1, planning: 1, slice: 1 });
   });
 
+  it("stores writable memory slice records in the explicit requested scope", () => {
+    const memory = new Memory();
+    const slice = memory.slice(["/projects/alpha", "/projects/beta"], { readOnly: false });
+
+    const record = slice.remember("Writable beta slice memory", {
+      scope: "/projects/beta",
+      categories: ["slice"],
+    });
+
+    expect(record?.scope).toBe("/projects/beta");
+    expect(memory.recall("beta slice", { scope: "/projects/beta", scoreThreshold: null })).toHaveLength(1);
+    expect(memory.recall("beta slice", { scope: "/projects/alpha", scoreThreshold: null })).toHaveLength(0);
+  });
+
   it("queues remember_many writes until recall or drain_writes applies the read barrier", () => {
     const memory = new Memory();
     const seen: string[] = [];
