@@ -81,6 +81,8 @@ import {
   EventBus,
   EventListener,
   FirstTimeTraceHandler,
+  CircularDependencyError,
+  Depends,
   Fingerprint,
   Flow,
   FlowCreatedEvent,
@@ -17061,6 +17063,34 @@ describe("runtime state", () => {
     expect(crewaiEventBus.runtime_state).toBe(state);
     expect(seen).toEqual([state]);
     expect(state.event_record.get(event.eventId)?.event).toBe(event);
+  });
+
+  it("runs event handlers in dependency order and validates cycles", () => {
+    const bus = new EventBus();
+    const order: string[] = [];
+    const setup = () => {
+      order.push("setup");
+    };
+    const dependent = () => {
+      order.push("dependent");
+    };
+
+    bus.on("flow_started", dependent, new Depends(setup));
+    bus.on("flow_started", setup);
+    bus.validate_dependencies();
+    bus.emit("source", new FlowStartedEvent({ flowName: "DependencyFlow", inputs: {} }));
+
+    expect(order).toEqual(["setup", "dependent"]);
+
+    const cycleBus = new EventBus();
+    const first = () => {};
+    const second = () => {};
+    cycleBus.on("flow_started", first, new Depends(second));
+    cycleBus.on("flow_started", second, new Depends(first));
+
+    expect(() => {
+      cycleBus.validate_dependencies();
+    }).toThrow(CircularDependencyError);
   });
 });
 

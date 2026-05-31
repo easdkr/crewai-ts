@@ -3993,6 +3993,7 @@ export abstract class BaseEventListener {
 
 export class EventBus {
   private readonly handlers = new Map<EventType, Set<EventHandler>>();
+  private readonly handlerDependencies = new Map<EventType, Map<EventHandler, readonly Depends[]>>();
   private currentRuntimeState: RuntimeState | null = null;
   private registeredEntityIds = new WeakSet<object>();
 
@@ -4003,7 +4004,6 @@ export class EventBus {
     handler?: EventHandler<EventMap[TEventType]>,
     dependsOn?: Depends | readonly Depends[] | null,
   ): (() => void) | ((registeredHandler: EventHandler<EventMap[TEventType]>) => EventHandler<EventMap[TEventType]>) {
-    void dependsOn;
     if (!handler) {
       return (registeredHandler: EventHandler<EventMap[TEventType]>) => {
         this.on(eventType, registeredHandler);
@@ -4013,6 +4013,12 @@ export class EventBus {
     const handlers = this.handlers.get(eventType) ?? new Set<EventHandler>();
     handlers.add(handler as EventHandler);
     this.handlers.set(eventType, handlers);
+    const dependencies = normalizeDepends(dependsOn);
+    if (dependencies.length > 0) {
+      const dependencyMap = this.handlerDependencies.get(eventType) ?? new Map<EventHandler, readonly Depends[]>();
+      dependencyMap.set(handler as EventHandler, dependencies);
+      this.handlerDependencies.set(eventType, dependencyMap);
+    }
     return () => {
       this.off(eventType, handler as EventHandler);
     };
@@ -4024,6 +4030,21 @@ export class EventBus {
       return;
     }
     handlers.delete(handler);
+    const dependencyMap = this.handlerDependencies.get(eventType);
+    if (dependencyMap) {
+      dependencyMap.delete(handler);
+      for (const [registeredHandler, dependencies] of dependencyMap.entries()) {
+        const filtered = dependencies.filter((dependency) => dependency.handler !== handler);
+        if (filtered.length === 0) {
+          dependencyMap.delete(registeredHandler);
+        } else if (filtered.length !== dependencies.length) {
+          dependencyMap.set(registeredHandler, filtered);
+        }
+      }
+      if (dependencyMap.size === 0) {
+        this.handlerDependencies.delete(eventType);
+      }
+    }
     if (handlers.size === 0) {
       this.handlers.delete(eventType);
     }
@@ -4044,26 +4065,93 @@ export class EventBus {
     if (!handlers) {
       return;
     }
+    const dependencyMap = this.handlerDependencies.get(event.type);
+    if (dependencyMap && dependencyMap.size > 0) {
+      this.emitWithDependencies(source, event, [...handlers], dependencyMap);
+      return;
+    }
     for (const handler of handlers) {
-      try {
-        const result = handler(source, event, this.currentRuntimeState);
-        if (result && typeof result === "object" && "catch" in result && typeof result.catch === "function") {
-          result.catch((error: unknown) => {
-            queueMicrotask(() => {
-              throw error;
-            });
-          });
-        }
-      } catch (error) {
+      void this.callHandler(handler, source, event);
+    }
+  }
+
+  private emitWithDependencies(
+    source: unknown,
+    event: CrewAIEvent,
+    handlers: readonly EventHandler[],
+    dependencies: Map<EventHandler, readonly Depends[]>,
+  ): void {
+    const plan = build_execution_plan(handlers as Handler[], dependencies as Map<Handler, readonly Depends[]>);
+    const continuation = this.runDependencyPlan(plan, source, event);
+    if (continuation) {
+      continuation.catch((error: unknown) => {
         queueMicrotask(() => {
           throw error;
         });
+      });
+    }
+  }
+
+  private runDependencyPlan(plan: ExecutionPlan, source: unknown, event: CrewAIEvent): Promise<void> | null {
+    for (let levelIndex = 0; levelIndex < plan.length; levelIndex += 1) {
+      const pending: Array<Promise<unknown>> = [];
+      for (const handler of plan[levelIndex] ?? []) {
+        const result = this.callHandler(handler as EventHandler, source, event);
+        if (isPromiseLike(result)) {
+          pending.push(result);
+        }
       }
+      if (pending.length > 0) {
+        return this.runRemainingDependencyPlan(plan, levelIndex + 1, source, event, pending);
+      }
+    }
+    return null;
+  }
+
+  private async runRemainingDependencyPlan(
+    plan: ExecutionPlan,
+    startLevel: number,
+    source: unknown,
+    event: CrewAIEvent,
+    pending: Array<Promise<unknown>>,
+  ): Promise<void> {
+    await Promise.all(pending);
+    for (let levelIndex = startLevel; levelIndex < plan.length; levelIndex += 1) {
+      const levelPromises: Array<Promise<unknown>> = [];
+      for (const handler of plan[levelIndex] ?? []) {
+        const result = this.callHandler(handler as EventHandler, source, event);
+        if (isPromiseLike(result)) {
+          levelPromises.push(result);
+        }
+      }
+      if (levelPromises.length > 0) {
+        await Promise.all(levelPromises);
+      }
+    }
+  }
+
+  private callHandler(handler: EventHandler, source: unknown, event: CrewAIEvent): void | Promise<void> {
+    try {
+      const result = handler(source, event, this.currentRuntimeState);
+      if (isPromiseLike(result)) {
+        return result.catch((error: unknown) => {
+          queueMicrotask(() => {
+            throw error;
+          });
+        });
+      }
+      return undefined;
+    } catch (error) {
+      queueMicrotask(() => {
+        throw error;
+      });
+      return undefined;
     }
   }
 
   clear(): void {
     this.handlers.clear();
+    this.handlerDependencies.clear();
     this.currentRuntimeState = null;
     this.registeredEntityIds = new WeakSet<object>();
   }
@@ -4108,12 +4196,26 @@ export class EventBus {
   }
 
   validateDependencies(): void {
-    // Dependency scheduling is a no-op in the synchronous TypeScript event bus.
+    for (const [eventType, handlers] of this.handlers.entries()) {
+      const dependencyMap = this.handlerDependencies.get(eventType) ?? new Map<EventHandler, readonly Depends[]>();
+      build_execution_plan([...handlers] as Handler[], dependencyMap as Map<Handler, readonly Depends[]>);
+    }
   }
 
   validate_dependencies(): void {
     this.validateDependencies();
   }
+}
+
+function normalizeDepends(dependsOn: Depends | readonly Depends[] | null | undefined): readonly Depends[] {
+  if (!dependsOn) {
+    return [];
+  }
+  return dependsOn instanceof Depends ? [dependsOn] : [...dependsOn];
+}
+
+function isPromiseLike(value: unknown): value is Promise<unknown> {
+  return Boolean(value && typeof value === "object" && "then" in value && typeof (value as { then?: unknown }).then === "function");
 }
 
 export const crewaiEventBus = new EventBus();

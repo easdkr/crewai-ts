@@ -11,7 +11,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `npm run lint`
   - `npm run smoke:pack`
   - `python3 scripts/check-export-parity.py`
-- Test suite: 478 passing tests.
+- Test suite: 479 passing tests.
 - Root export parity against upstream clone `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `5cdc420`: `total_missing=0`.
 - Public method parity has been tightened for core runtime classes:
   - `ConsoleFormatter`: `missing=0`
@@ -100,6 +100,7 @@ When more goal budget is available, continue from the behavioral parity audits b
   - `Flow.fork`
   - kickoff-time `fromCheckpoint` / `from_checkpoint` resume without replaying completed methods
   - EventBus `runtimeState` / `runtime_state`, `setRuntimeState` / `set_runtime_state`, and third-argument runtime state delivery to handlers
+  - EventBus now honors upstream-style `Depends` handler ordering and validates circular handler dependencies.
   - runtime checkpoint serialization of completed methods, method outputs/counts, and flow state
   - `LockedListProxy`, `LockedDictProxy`, and `StateProxy` mutation helpers backed by the original state values
   - `LockedListProxy` / `LockedDictProxy` now expose upstream-style collection helpers such as `append`, `insert`, `remove`, `count`, `sort`, `reverse`, `copy`, `pop`, `setdefault`, and `items`
