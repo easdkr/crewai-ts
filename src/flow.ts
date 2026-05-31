@@ -153,6 +153,33 @@ export class LockedDictProxy<TValue extends Record<string, unknown> = Record<str
     return Object.entries(this.value)[Symbol.iterator]();
   }
 
+  items(): IterableIterator<[string, unknown]> {
+    return this.entries();
+  }
+
+  pop(key: string, defaultValue?: unknown): unknown {
+    if (!Object.hasOwn(this.value, key)) {
+      if (arguments.length >= 2) {
+        return defaultValue;
+      }
+      throw new Error(`Key not found: ${key}`);
+    }
+    const current = this.value[key];
+    Reflect.deleteProperty(this.value, key);
+    return current;
+  }
+
+  setdefault(key: string, defaultValue: unknown): unknown {
+    if (!Object.hasOwn(this.value, key)) {
+      this.value[key as keyof TValue] = defaultValue as TValue[keyof TValue];
+    }
+    return this.value[key];
+  }
+
+  copy(): TValue {
+    return { ...this.value };
+  }
+
   [Symbol.iterator](): IterableIterator<[string, unknown]> {
     return this.entries();
   }
@@ -208,12 +235,32 @@ export class LockedListProxy<TValue = unknown> {
     return this.value.push(...items);
   }
 
-  pop(): TValue | undefined {
-    return this.value.pop();
+  append(item: TValue): void {
+    this.value.push(item);
+  }
+
+  pop(index = -1): TValue | undefined {
+    const normalized = index < 0 ? this.value.length + index : index;
+    if (normalized < 0 || normalized >= this.value.length) {
+      return undefined;
+    }
+    return this.value.splice(normalized, 1)[0];
   }
 
   extend(items: Iterable<TValue>): void {
     this.value.push(...items);
+  }
+
+  insert(index: number, item: TValue): void {
+    this.value.splice(index, 0, item);
+  }
+
+  remove(item: TValue): void {
+    const index = this.value.indexOf(item);
+    if (index < 0) {
+      throw new Error(`Item not found: ${String(item)}`);
+    }
+    this.value.splice(index, 1);
   }
 
   splice(start: number, deleteCount?: number, ...items: TValue[]): TValue[] {
@@ -228,6 +275,36 @@ export class LockedListProxy<TValue = unknown> {
 
   indexOf(item: TValue): number {
     return this.value.indexOf(item);
+  }
+
+  index(item: TValue, start = 0, stop?: number): number {
+    const end = stop ?? this.value.length;
+    for (let index = Math.max(0, start); index < Math.min(end, this.value.length); index += 1) {
+      if (Object.is(this.value[index], item)) {
+        return index;
+      }
+    }
+    throw new Error(`Item not found: ${String(item)}`);
+  }
+
+  count(item: TValue): number {
+    return this.value.filter((value) => Object.is(value, item)).length;
+  }
+
+  sort(options: { key?: ((value: TValue) => unknown) | null; reverse?: boolean } = {}): void {
+    const key = options.key ?? null;
+    this.value.sort((left, right) => compareSortValues(key ? key(left) : left, key ? key(right) : right));
+    if (options.reverse) {
+      this.value.reverse();
+    }
+  }
+
+  reverse(): void {
+    this.value.reverse();
+  }
+
+  copy(): TValue[] {
+    return [...this.value];
   }
 
   clear(): void {
@@ -288,6 +365,13 @@ export class StateProxy<TState extends object = Record<string, unknown>> {
   toJSON(): TState {
     return this.state;
   }
+}
+
+function compareSortValues(left: unknown, right: unknown): number {
+  if (typeof left === "number" && typeof right === "number") {
+    return left - right;
+  }
+  return String(left).localeCompare(String(right));
 }
 
 export type FlowAskOptions = {

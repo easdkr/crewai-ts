@@ -7401,6 +7401,46 @@ describe("flow runtime", () => {
     expect(state).toEqual({ items: [1, 2], meta: { a: 1, b: 2 }, done: true });
   });
 
+  it("mirrors upstream collection helpers on locked flow proxies", () => {
+    const listSource = ["b", "a", "b"];
+    const list = new LockedListProxy(listSource) as LockedListProxy<string> & {
+      append(item: string): void;
+      insert(index: number, item: string): void;
+      remove(item: string): void;
+      index(value: string, start?: number, stop?: number): number;
+      count(value: string): number;
+      sort(options?: { reverse?: boolean }): void;
+      reverse(): void;
+      copy(): string[];
+    };
+
+    list.append("c");
+    list.insert(1, "x");
+    list.remove("b");
+    expect(list.index("b")).toBe(2);
+    expect(list.count("b")).toBe(1);
+    list.sort();
+    expect(list.copy()).toEqual(["a", "b", "c", "x"]);
+    list.reverse();
+    expect(listSource).toEqual(["x", "c", "b", "a"]);
+
+    const dictSource = { a: 1, b: 2 };
+    const dict = new LockedDictProxy(dictSource) as LockedDictProxy<Record<string, number>> & {
+      pop(key: string, defaultValue?: number): number | undefined;
+      setdefault(key: string, defaultValue: number): number;
+      items(): IterableIterator<[string, number]>;
+      copy(): Record<string, number>;
+    };
+
+    expect(dict.setdefault("c", 3)).toBe(3);
+    expect(dict.setdefault("a", 9)).toBe(1);
+    expect(dict.pop("b")).toBe(2);
+    expect(dict.pop("missing", 4)).toBe(4);
+    expect([...dict.items()]).toEqual([["a", 1], ["c", 3]]);
+    expect(dict.copy()).toEqual({ a: 1, c: 3 });
+    expect(dictSource).toEqual({ a: 1, c: 3 });
+  });
+
   it("emits flow and method execution lifecycle events", async () => {
     class EventFlow extends Flow<{ value?: string }> {
       begin() {
