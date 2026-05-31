@@ -1902,6 +1902,14 @@ export class Memory {
     this.modelPostInit(_context);
   }
 
+  get _llm(): LLM | null {
+    return this.llm;
+  }
+
+  get _embedder(): unknown {
+    return this.embedder;
+  }
+
   remember(
     content: string,
     options: {

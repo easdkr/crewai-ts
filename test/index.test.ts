@@ -18412,9 +18412,13 @@ describe("memory", () => {
   });
 
   it("exposes upstream memory model_post_init runtime initialization", () => {
+    const llm = () => "ok";
+    const embedder = () => [[0.1, 0.2]];
     const memory = new Memory({
       root_scope: "/crew",
       read_only: false,
+      llm,
+      embedder,
       recency_weight: 0.1,
       semantic_weight: 0.7,
       importance_weight: 0.2,
@@ -18424,6 +18428,8 @@ describe("memory", () => {
     expect(memory.memory_kind).toBe("memory");
     expect(memory.root_scope).toBe("/crew");
     expect(memory.read_only).toBe(false);
+    expect(memory._llm).toBe(llm);
+    expect(memory._embedder).toBe(embedder);
     memory.model_post_init();
 
     const record = memory.remember("Post init preserves runtime config", {
