@@ -1149,6 +1149,8 @@ export type MCPToolWrapperOptions = {
 };
 
 const MCP_WRAPPER_MAX_RETRIES = 3;
+const MCP_TOOL_EXECUTION_TIMEOUT_SECONDS = 60;
+type MCPWrapperOperation = (args?: Record<string, unknown>) => Promise<string>;
 
 export class MCPToolWrapper extends BaseTool {
   private readonly mcpServerParamsValue: Record<string, unknown>;
@@ -1222,6 +1224,51 @@ export class MCPToolWrapper extends BaseTool {
   }
 
   async runAsync(args: Record<string, unknown> = {}): Promise<string> {
+    return await this._execute_tool(args);
+  }
+
+  async _run_async(args: Record<string, unknown> = {}): Promise<string> {
+    return await this._retry_with_exponential_backoff(this._execute_tool_with_timeout.bind(this), args);
+  }
+
+  async _retry_with_exponential_backoff(
+    operationFunc: MCPWrapperOperation,
+    args: Record<string, unknown> = {},
+  ): Promise<string> {
+    let lastError = "";
+    for (let attempt = 0; attempt < MCP_WRAPPER_MAX_RETRIES; attempt += 1) {
+      const [result, error, shouldRetry] = await this._execute_single_attempt(operationFunc, args);
+      if (result !== null) {
+        return result;
+      }
+      if (!shouldRetry) {
+        return error;
+      }
+      lastError = error;
+      if (attempt < MCP_WRAPPER_MAX_RETRIES - 1) {
+        await waitForMCPWrapperRetry(2 ** attempt);
+      }
+    }
+    return `MCP tool execution failed after ${String(MCP_WRAPPER_MAX_RETRIES)} attempts: ${lastError}`;
+  }
+
+  async _execute_single_attempt(
+    operationFunc: MCPWrapperOperation,
+    args: Record<string, unknown> = {},
+  ): Promise<[string | null, string, boolean]> {
+    try {
+      return [await operationFunc(args), "", false];
+    } catch (error) {
+      const classified = classifyMCPWrapperError(error, this.originalToolName);
+      return [null, classified.message, classified.retryable];
+    }
+  }
+
+  async _execute_tool_with_timeout(args: Record<string, unknown> = {}): Promise<string> {
+    return await withMCPWrapperTimeout(this._execute_tool(args));
+  }
+
+  async _execute_tool(args: Record<string, unknown> = {}): Promise<string> {
     const { MCPClient, HTTPTransport } = await import("./mcp.js");
     const url = this.mcpServerParamsValue.url;
     if (typeof url !== "string") {
@@ -1239,25 +1286,6 @@ export class MCPToolWrapper extends BaseTool {
     } finally {
       await client.disconnect();
     }
-  }
-
-  async _run_async(args: Record<string, unknown> = {}): Promise<string> {
-    let lastError = "";
-    for (let attempt = 0; attempt < MCP_WRAPPER_MAX_RETRIES; attempt += 1) {
-      try {
-        return await this.runAsync(args);
-      } catch (error) {
-        const classified = classifyMCPWrapperError(error, this.originalToolName);
-        if (!classified.retryable) {
-          return classified.message;
-        }
-        lastError = classified.message;
-        if (attempt < MCP_WRAPPER_MAX_RETRIES - 1) {
-          await waitForMCPWrapperRetry(2 ** attempt);
-        }
-      }
-    }
-    return `MCP tool execution failed after ${String(MCP_WRAPPER_MAX_RETRIES)} attempts: ${lastError}`;
   }
 }
 
@@ -1283,6 +1311,22 @@ async function waitForMCPWrapperRetry(seconds: number): Promise<void> {
   await new Promise((resolve) => {
     setTimeout(resolve, seconds * 1000);
   });
+}
+
+async function withMCPWrapperTimeout(operation: Promise<string>): Promise<string> {
+  let timeout!: ReturnType<typeof setTimeout>;
+  try {
+    return await Promise.race([
+      operation,
+      new Promise<string>((_, reject) => {
+        timeout = setTimeout(() => {
+          reject(new Error(`Connection timed out after ${String(MCP_TOOL_EXECUTION_TIMEOUT_SECONDS)} seconds`));
+        }, MCP_TOOL_EXECUTION_TIMEOUT_SECONDS * 1000);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 export class ToolUsageError extends Error {

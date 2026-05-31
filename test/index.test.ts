@@ -2541,6 +2541,42 @@ describe("mcp configuration", () => {
       "MCP execution error: MCPToolWrapper requires an mcpServerParams.url string.",
     );
   });
+
+  it("exposes MCP wrapper retry and execution helper methods", async () => {
+    class TestMCPToolWrapper extends MCPToolWrapper {
+      override async _execute_tool(args: Record<string, unknown> = {}): Promise<string> {
+        await Promise.resolve();
+        const query = typeof args.query === "string" ? args.query : "";
+        return `Echo ${query}`;
+      }
+    }
+    const wrapper = new TestMCPToolWrapper({
+      mcpServerParams: { url: "https://mcp.example.com" },
+      toolName: "search",
+      toolSchema: { description: "Search docs" },
+      serverName: "docs",
+    });
+
+    await expect(wrapper._execute_single_attempt(async () => {
+      await Promise.resolve();
+      return "ok";
+    }, { query: "CrewAI" }))
+      .resolves.toEqual(["ok", "", false]);
+    await expect(wrapper._execute_single_attempt(async () => {
+      await Promise.resolve();
+      throw new Error("Unauthorized");
+    })).resolves.toEqual([null, "Authentication failed for MCP server: Unauthorized", false]);
+    await expect(wrapper._execute_single_attempt(async () => {
+      await Promise.resolve();
+      throw new Error("network unavailable");
+    })).resolves.toEqual([null, "Network connection failed: network unavailable", true]);
+    await expect(wrapper._retry_with_exponential_backoff(async () => {
+      await Promise.resolve();
+      return "retried";
+    }, { query: "CrewAI" }))
+      .resolves.toBe("retried");
+    await expect(wrapper._execute_tool_with_timeout({ query: "CrewAI" })).resolves.toContain("Echo");
+  });
 });
 
 describe("orchestration lifecycle events", () => {
