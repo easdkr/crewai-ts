@@ -1415,15 +1415,90 @@ export class OpenCLIPProvider extends BaseEmbeddingsProvider {
   }
 }
 
+export class RoboflowEmbeddingFunction {
+  readonly api_key: string | null;
+  readonly api_url: string;
+
+  constructor(options: RoboflowProviderConfig = {}) {
+    this.api_key = options.api_key ?? null;
+    this.api_url = options.api_url ?? "https://infer.roboflow.com";
+  }
+
+  static name(): string {
+    return "roboflow";
+  }
+
+  async call(input: Embeddable): Promise<Embeddings> {
+    const values = Array.isArray(input) ? input.map((value) => String(value)) : [String(input)];
+    const response = await fetch(this.endpointUrl(), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ text: values.length === 1 ? values[0] : values }),
+    });
+    if (!response.ok) {
+      throw new Error(`Roboflow CLIP text embedding request failed with status ${String(response.status)}`);
+    }
+    return extractRoboflowEmbeddings(await response.json());
+  }
+
+  async __call__(input: Embeddable): Promise<Embeddings> {
+    return this.call(input);
+  }
+
+  asCallable(): TypedEmbeddingFunction {
+    const callable: TypedEmbeddingFunction = (input: Embeddable) => this.call(input);
+    callable.embedQuery = callable;
+    callable.embed_query = callable;
+    return callable;
+  }
+
+  private endpointUrl(): string {
+    const base = `${trimTrailingSlash(this.api_url)}/clip/embed_text`;
+    if (!this.api_key) {
+      return base;
+    }
+    return `${base}?api_key=${encodeURIComponent(this.api_key)}`;
+  }
+}
+
+function extractRoboflowEmbeddings(payload: unknown): Embeddings {
+  const value = isRecord(payload) && "embeddings" in payload ? payload.embeddings : payload;
+  if (isNumberArray(value)) {
+    return [value];
+  }
+  if (Array.isArray(value) && value.every(isNumberArray)) {
+    return value;
+  }
+  if (isRecord(payload) && isNumberArray(payload.embedding)) {
+    return [payload.embedding];
+  }
+  if (isRecord(payload) && isNumberArray(payload.vector)) {
+    return [payload.vector];
+  }
+  if (isRecord(payload) && Array.isArray(payload.data)) {
+    const embeddings = payload.data
+      .filter(isRecord)
+      .map((item) => item.embedding)
+      .filter(isNumberArray);
+    if (embeddings.length > 0) {
+      return embeddings;
+    }
+  }
+  throw new Error("Roboflow CLIP text embedding response did not include embeddings.");
+}
+
 export class RoboflowProvider extends BaseEmbeddingsProvider {
   readonly provider = "roboflow";
 
   constructor(options: RoboflowProviderConfig = {}) {
-    super({
-      embeddingCallable: defaultEmbeddingCallable,
+    const config = {
       api_key: "",
       api_url: "https://infer.roboflow.com",
       ...options,
+    };
+    super({
+      embeddingCallable: new RoboflowEmbeddingFunction(config).asCallable(),
+      ...config,
     });
   }
 }

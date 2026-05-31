@@ -465,6 +465,7 @@ import {
   OpenAICompletion,
   OpenAICompatibleCompletion,
   ProviderConfig,
+  RoboflowEmbeddingFunction,
   SentenceTransformerProvider,
   Text2VecProvider,
   VertexAIProvider,
@@ -7284,6 +7285,7 @@ describe("RAG configuration and factories", () => {
       api_key: "",
       api_url: "https://infer.roboflow.com",
     });
+    expect(RoboflowEmbeddingFunction.name()).toBe("roboflow");
     expect(watsonx).toMatchObject({
       provider: "watsonx",
       api_key: "watson-test",
@@ -7625,6 +7627,27 @@ describe("RAG configuration and factories", () => {
       output_dtype: "float",
       output_dimension: 1024,
     }));
+    fetchMock.mockRestore();
+  });
+
+  it("calls Roboflow's CLIP text embedding API for Roboflow providers", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ embeddings: [[0.12, 0.34], [0.56, 0.78]] }),
+    } as Response);
+
+    const roboflowEmbedder = new RoboflowEmbeddingFunction({
+      api_key: "rf-test",
+      api_url: "https://infer.example/",
+    }).asCallable();
+
+    await expect(roboflowEmbedder(["first", "second"])).resolves.toEqual([[0.12, 0.34], [0.56, 0.78]]);
+
+    const fetchCall = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(fetchCall[0]).toBe("https://infer.example/clip/embed_text?api_key=rf-test");
+    expect(fetchCall[1].method).toBe("POST");
+    expect(fetchCall[1].headers).toMatchObject({ "content-type": "application/json" });
+    expect(fetchCall[1].body).toBe(JSON.stringify({ text: ["first", "second"] }));
     fetchMock.mockRestore();
   });
 

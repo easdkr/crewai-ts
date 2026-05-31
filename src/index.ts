@@ -1947,6 +1947,7 @@ export {
   PROVIDER_PATHS,
   RagConfigType,
   RagError,
+  RoboflowEmbeddingFunction,
   RoboflowProvider,
   RoboflowProviderConfig,
   RoboflowProviderSpec,
