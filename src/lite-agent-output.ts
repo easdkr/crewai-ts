@@ -95,8 +95,9 @@ export class LiteAgentOutput {
   }
 
   toDict(): Record<string, unknown> {
-    if (this.pydantic && typeof this.pydantic === "object") {
-      return { ...(this.pydantic as Record<string, unknown>) };
+    const dumped = dumpPydanticLike(this.pydantic);
+    if (dumped) {
+      return dumped;
     }
     return {};
   }
@@ -136,4 +137,31 @@ export class LiteAgentOutput {
   __str__(): string {
     return this.toString();
   }
+
+  __repr__(): string {
+    const parts = [`LiteAgentOutput(role='${this.agentRole}'`];
+    if (this.todos.length > 0) {
+      parts.push(`, todos=${String(this.completedTodos.length)}/${String(this.todos.length)} completed`);
+    }
+    if (this.replanCount > 0) {
+      parts.push(`, replans=${String(this.replanCount)}`);
+    }
+    parts.push(")");
+    return parts.join("");
+  }
+}
+
+function dumpPydanticLike(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const record = value as Record<string, unknown>;
+  const dump = record.model_dump ?? record.modelDump;
+  if (typeof dump === "function") {
+    const dumped = (dump as (this: unknown) => unknown).call(value);
+    return dumped && typeof dumped === "object"
+      ? { ...(dumped as Record<string, unknown>) }
+      : {};
+  }
+  return { ...record };
 }

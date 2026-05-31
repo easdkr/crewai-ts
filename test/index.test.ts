@@ -20326,9 +20326,14 @@ describe("lite agent", () => {
   });
 
   it("summarizes LiteAgentOutput todos with CrewAI-compatible aliases", () => {
+    const pydanticLike = {
+      summary: "attribute should not win",
+      model_dump: () => ({ summary: "dumped", confidence: 0.9 }),
+    };
     const output = new LiteAgentOutput({
       raw: "done",
       agent_role: "Planner",
+      pydantic: pydanticLike,
       todos: [
         { step_number: 1, description: "Research", status: "completed", result: "ok" },
         { stepNumber: 2, description: "Write", status: "failed", result: "missing" },
@@ -20342,6 +20347,8 @@ describe("lite agent", () => {
     expect(output.failedTodos).toHaveLength(1);
     expect(output.replanCount).toBe(1);
     expect(output.lastReplanReason).toBe("failed step");
+    expect(output.to_dict()).toEqual({ summary: "dumped", confidence: 0.9 });
+    expect(output.__repr__()).toBe("LiteAgentOutput(role='Planner', todos=1/2 completed, replans=1)");
   });
 });
 
