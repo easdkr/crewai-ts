@@ -10763,6 +10763,78 @@ describe("memory", () => {
     expect(seen).toEqual(["consolidation"]);
   });
 
+  it("deduplicates consolidation actions so the first action for each record wins", async () => {
+    const memory = new Memory({
+      rootScope: "/crew",
+      llm: (_messages, options) => {
+        if (options?.responseModel === ConsolidationPlan) {
+          return JSON.stringify({
+            actions: [
+              {
+                action: "update",
+                record_id: "record-a",
+                new_content: "CrewAI memory action A first update",
+                reason: "first action should win",
+              },
+              {
+                action: "update",
+                record_id: "record-a",
+                new_content: "CrewAI memory action A second update",
+                reason: "duplicate should be ignored",
+              },
+              {
+                action: "delete",
+                record_id: "record-b",
+                reason: "first delete should win",
+              },
+              {
+                action: "update",
+                record_id: "record-b",
+                new_content: "CrewAI memory action B resurrected",
+                reason: "duplicate after delete should be ignored",
+              },
+            ],
+            insert_new: false,
+          });
+        }
+        return JSON.stringify({
+          suggested_scope: "/research",
+          categories: ["architecture"],
+          importance: 0.9,
+          extracted_metadata: { entities: [], dates: [], topics: [] },
+        });
+      },
+    });
+    memory.update(new MemoryRecord({
+      id: "record-a",
+      content: "CrewAI memory action shared facts",
+      scope: "/crew/research",
+      categories: ["architecture"],
+      importance: 0.7,
+    }));
+    memory.update(new MemoryRecord({
+      id: "record-b",
+      content: "CrewAI memory action shared facts",
+      scope: "/crew/research",
+      categories: ["architecture"],
+      importance: 0.7,
+    }));
+
+    const record = await memory.aremember("CrewAI memory action shared facts", {
+      scope: "/research",
+      categories: ["architecture"],
+      importance: 0.8,
+    });
+
+    expect(record).toMatchObject({
+      id: "record-a",
+      content: "CrewAI memory action A first update",
+    });
+    expect(memory.get_record("record-a")?.content).toBe("CrewAI memory action A first update");
+    expect(memory.get_record("record-b")).toBeNull();
+    expect(memory.allRecords()).toHaveLength(1);
+  });
+
   it("uses configured memory LLM save analysis for async batch saves", async () => {
     const seen: string[] = [];
     const memory = new Memory({

@@ -956,22 +956,33 @@ export class Memory {
   }
 
   private applyConsolidationPlan(plan: ConsolidationPlan, similarRecords: readonly MemoryRecord[]): MemoryRecord | null {
-    let result: MemoryRecord | null = null;
+    const deletes = new Set<string>();
+    const updates = new Map<string, string>();
     for (const action of plan.actions) {
-      if (action.action === "delete") {
-        this.forget({ recordIds: [action.recordId] });
-        continue;
+      if (action.action === "delete" && !deletes.has(action.recordId) && !updates.has(action.recordId)) {
+        deletes.add(action.recordId);
+      } else if (
+        action.action === "update"
+        && action.newContent
+        && !deletes.has(action.recordId)
+        && !updates.has(action.recordId)
+      ) {
+        updates.set(action.recordId, action.newContent);
       }
-      if (action.action !== "update" || !action.newContent) {
-        continue;
-      }
-      const existing = this.get_record(action.recordId);
+    }
+
+    const updatedRecords = new Map<string, MemoryRecord>();
+    if (deletes.size > 0) {
+      this.forget({ recordIds: [...deletes] });
+    }
+    for (const [recordId, newContent] of updates) {
+      const existing = this.get_record(recordId);
       if (!existing) {
         continue;
       }
       const updated = new MemoryRecord({
         id: existing.id,
-        content: action.newContent,
+        content: newContent,
         scope: existing.scope,
         categories: existing.categories,
         metadata: existing.metadata,
@@ -983,9 +994,14 @@ export class Memory {
         ...(existing.embedding === undefined ? {} : { embedding: existing.embedding }),
       });
       this.update(updated);
-      result = updated;
+      updatedRecords.set(recordId, updated);
     }
-    return result ?? similarRecords[0] ?? null;
+
+    return plan.actions
+      .map((action) => updatedRecords.get(action.recordId))
+      .find((record): record is MemoryRecord => record !== undefined)
+      ?? similarRecords[0]
+      ?? null;
   }
 
   async aremember_many(contents: readonly string[], options: Parameters<Memory["remember"]>[1] = {}): Promise<MemoryRecord[]> {
