@@ -10,7 +10,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `npm run build`
   - `npm run lint`
   - `npm run smoke:pack`
-- Test suite: 319 passing tests.
+- Test suite: 320 passing tests.
 - Root export parity against upstream clone `/tmp/crewai-upstream.lPeuQi/crewAI` at commit `2148c7e`: `total_missing=0`.
 - Public method parity has been tightened for core runtime classes:
   - `ConsoleFormatter`: `missing=0`
@@ -56,6 +56,7 @@ When more goal budget is available, continue from the behavioral parity audits b
   - `Memory.remember_many`, `extract_memories`, `update`, `drain_writes`, `close`
   - `Memory.list_records` / `listRecords` plus `aremember`, `aremember_many`, `arecall`, and `aextract_memories`
   - `Memory.aextract_memories` now routes through the configured LLM-backed extraction helper with safe fallback
+  - `Memory.aremember` now uses configured LLM save analysis to infer missing scope, categories, importance, and extracted metadata
   - upstream-style `remember_many` background write semantics with `recall`/`drain_writes` read barriers and batch `RememberTool` responses
   - `MemoryScope` / `MemorySlice` `remember_many`, `extract_memories`, and `bind`
   - `MemoryScope` relative sub-scope writes/recalls plus `read_only`, `tree`, and `list_categories`
@@ -108,7 +109,7 @@ When more goal budget is available, continue from the behavioral parity audits b
    - Async aliases and record/scope/category listing.
    - `remember_many`, `extract_memories`, `update`, `drain_writes`, `close`.
    - `MemoryScope` / `MemorySlice` scoped writes/recalls, `bind`, `read_only`, `tree`, and `list_categories`.
-   - These compatibility helpers are now present in the deterministic TS memory shim; remaining work is deeper executor-backed async writes and broader LLM-powered save analysis/consolidation parity.
+   - These compatibility helpers are now present in the deterministic TS memory shim; remaining work is deeper executor-backed async writes and broader LLM-powered consolidation parity.
 
 5. RAG clients
    - ChromaDB/Qdrant client method parity.

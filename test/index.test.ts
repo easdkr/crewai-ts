@@ -10662,6 +10662,52 @@ describe("memory", () => {
     await expect(fallback.aextract_memories("  fallback fact  ")).resolves.toEqual(["fallback fact"]);
     expect(fallback.extract_memories("  sync fallback fact  ")).toEqual(["sync fallback fact"]);
   });
+
+  it("uses configured memory LLM to analyze async saves when fields are missing", async () => {
+    const seen: string[] = [];
+    const memory = new Memory({
+      rootScope: "/crew",
+      llm: (messages, options) => {
+        seen.push(`${options?.responseModel === MemoryAnalysis ? "analysis" : "other"}:${messages.at(-1)?.content ?? ""}`);
+        return JSON.stringify({
+          suggested_scope: "/research",
+          categories: ["architecture", "memory"],
+          importance: 0.85,
+          extracted_metadata: { entities: ["CrewAI"], dates: ["2026-05-31"], topics: ["save analysis"] },
+        });
+      },
+    });
+
+    const record = await memory.aremember("Infer this memory metadata", {
+      metadata: { source: "test" },
+    });
+
+    expect(record).toMatchObject({
+      content: "Infer this memory metadata",
+      scope: "/crew/research",
+      categories: ["architecture", "memory"],
+      importance: 0.85,
+      metadata: {
+        source: "test",
+        entities: ["CrewAI"],
+        dates: ["2026-05-31"],
+        topics: ["save analysis"],
+      },
+    });
+    expect(seen[0]).toContain("analysis:Analyze this memory before saving.");
+
+    const explicit = await memory.aremember("Keep explicit fields", {
+      scope: "/explicit",
+      categories: ["manual"],
+      importance: 0.4,
+    });
+    expect(explicit).toMatchObject({
+      scope: "/crew/explicit",
+      categories: ["manual"],
+      importance: 0.4,
+    });
+    expect(seen).toHaveLength(1);
+  });
 });
 
 describe("knowledge", () => {

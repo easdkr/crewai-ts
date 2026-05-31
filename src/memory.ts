@@ -901,8 +901,26 @@ export class Memory {
   }
 
   async aremember(content: string, options: Parameters<Memory["remember"]>[1] = {}): Promise<MemoryRecord | null> {
-    await Promise.resolve();
-    return this.remember(content, options);
+    if (!this.llm || (options.scope !== undefined && options.categories !== undefined && options.importance !== undefined)) {
+      await Promise.resolve();
+      return this.remember(content, options);
+    }
+    const analysis = await analyzeForSave(
+      content,
+      this.listScopes(false) as readonly string[],
+      Object.keys(this.listCategories(false)),
+      this.llm,
+    );
+    return this.remember(content, {
+      ...options,
+      scope: options.scope ?? analysis.suggestedScope,
+      categories: options.categories ?? analysis.categories,
+      importance: options.importance ?? analysis.importance,
+      metadata: {
+        ...(options.metadata ?? {}),
+        ...extractedMetadataToRecord(analysis.extractedMetadata),
+      },
+    });
   }
 
   async aremember_many(contents: readonly string[], options: Parameters<Memory["remember"]>[1] = {}): Promise<MemoryRecord[]> {
@@ -1794,6 +1812,14 @@ function coerceExtractedMetadata(value: unknown): ExtractedMetadata {
     dates: stringArray(record.dates),
     topics: stringArray(record.topics),
   });
+}
+
+function extractedMetadataToRecord(metadata: ExtractedMetadata): Record<string, readonly string[]> {
+  return {
+    entities: metadata.entities,
+    dates: metadata.dates,
+    topics: metadata.topics,
+  };
 }
 
 function coerceMemoryAnalysis(value: unknown): MemoryAnalysis {
