@@ -17452,6 +17452,49 @@ describe("runtime state", () => {
 
     expect(seen).toEqual(["AsyncFlow"]);
   });
+
+  it("scopes temporary event handlers and restores existing dependencies", async () => {
+    const bus = new EventBus();
+    const order: string[] = [];
+    const setup = () => {
+      order.push("setup");
+    };
+    const dependent = () => {
+      order.push("dependent");
+    };
+    const temporary = () => {
+      order.push("temporary");
+    };
+    bus.on("flow_started", dependent, new Depends(setup));
+    bus.on("flow_started", setup);
+
+    await bus.scoped_handlers(async () => {
+      bus.on("flow_started", temporary);
+      bus.emit("source", new FlowStartedEvent({ flowName: "ScopedFlow", inputs: {} }));
+      await bus.flush();
+    });
+
+    bus.emit("source", new FlowStartedEvent({ flowName: "RestoredFlow", inputs: {} }));
+    await bus.flush();
+
+    expect(order).toEqual(["temporary", "setup", "dependent"]);
+  });
+
+  it("shutdown clears event handlers after pending async handlers flush", async () => {
+    const bus = new EventBus();
+    const seen: string[] = [];
+    bus.on("flow_started", async () => {
+      await Promise.resolve();
+      seen.push("handled");
+    });
+
+    bus.emit("source", new FlowStartedEvent({ flowName: "ShutdownFlow", inputs: {} }));
+    await bus.shutdown();
+    bus.emit("source", new FlowStartedEvent({ flowName: "AfterShutdown", inputs: {} }));
+    await bus.flush();
+
+    expect(seen).toEqual(["handled"]);
+  });
 });
 
 describe("global hooks", () => {

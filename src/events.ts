@@ -24,7 +24,7 @@ import {
   promptUserForTraceViewing,
   shouldAutoCollectFirstTimeTraces,
 } from "./tracing-utils.js";
-import type { InputValues } from "./types.js";
+import type { InputValues, MaybePromise } from "./types.js";
 import { __version__ } from "./version.js";
 
 export type EventType =
@@ -4124,6 +4124,31 @@ export class EventBus {
     ]);
   }
 
+  scopedHandlers<T>(callback: () => MaybePromise<T>): MaybePromise<T> {
+    const savedHandlers = cloneHandlerMap(this.handlers);
+    const savedDependencies = cloneDependencyMap(this.handlerDependencies);
+    this.handlers.clear();
+    this.handlerDependencies.clear();
+    let result: MaybePromise<T>;
+    try {
+      result = callback();
+    } catch (error) {
+      this.restoreHandlers(savedHandlers, savedDependencies);
+      throw error;
+    }
+    if (isPromiseLike(result)) {
+      return result.finally(() => {
+        this.restoreHandlers(savedHandlers, savedDependencies);
+      });
+    }
+    this.restoreHandlers(savedHandlers, savedDependencies);
+    return result;
+  }
+
+  scoped_handlers<T>(callback: () => MaybePromise<T>): MaybePromise<T> {
+    return this.scopedHandlers(callback);
+  }
+
   private dispatchPrepared(source: unknown, event: CrewAIEvent): void {
     const handlers = this.handlers.get(event.type);
     if (!handlers) {
@@ -4301,6 +4326,36 @@ export class EventBus {
   validate_dependencies(): void {
     this.validateDependencies();
   }
+
+  shutdown(wait = true): MaybePromise<void> {
+    const finish = () => {
+      this.handlers.clear();
+      this.handlerDependencies.clear();
+      this.pendingHandlers.clear();
+    };
+    if (!wait) {
+      finish();
+      return;
+    }
+    const flushed = this.flush();
+    return flushed.then(() => {
+      finish();
+    });
+  }
+
+  private restoreHandlers(
+    handlers: Map<EventType, Set<EventHandler>>,
+    dependencies: Map<EventType, Map<EventHandler, readonly Depends[]>>,
+  ): void {
+    this.handlers.clear();
+    this.handlerDependencies.clear();
+    for (const [eventType, eventHandlers] of handlers.entries()) {
+      this.handlers.set(eventType, new Set(eventHandlers));
+    }
+    for (const [eventType, dependencyMap] of dependencies.entries()) {
+      this.handlerDependencies.set(eventType, new Map(dependencyMap));
+    }
+  }
 }
 
 function normalizeDepends(dependsOn: Depends | readonly Depends[] | null | undefined): readonly Depends[] {
@@ -4312,6 +4367,16 @@ function normalizeDepends(dependsOn: Depends | readonly Depends[] | null | undef
 
 function isPromiseLike(value: unknown): value is Promise<unknown> {
   return Boolean(value && typeof value === "object" && "then" in value && typeof (value as { then?: unknown }).then === "function");
+}
+
+function cloneHandlerMap(source: Map<EventType, Set<EventHandler>>): Map<EventType, Set<EventHandler>> {
+  return new Map([...source.entries()].map(([eventType, handlers]) => [eventType, new Set(handlers)]));
+}
+
+function cloneDependencyMap(
+  source: Map<EventType, Map<EventHandler, readonly Depends[]>>,
+): Map<EventType, Map<EventHandler, readonly Depends[]>> {
+  return new Map([...source.entries()].map(([eventType, dependencies]) => [eventType, new Map(dependencies)]));
 }
 
 export const crewaiEventBus = new EventBus();
