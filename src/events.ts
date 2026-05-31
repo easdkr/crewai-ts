@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { AsyncLocalStorage } from "node:async_hooks";
 
 import {
   SCOPE_ENDING_EVENTS,
@@ -3640,13 +3641,14 @@ export const Handler = Object.freeze({ kind: "Handler" });
 export const ExecutionPlan = Object.freeze({ kind: "ExecutionPlan" });
 export const EventT_co = Object.freeze({ kind: "EventT_co" });
 export const EventTypes = Object.freeze({ kind: "EventTypes" });
+const replayingContext = new AsyncLocalStorage<boolean>();
 
 export function get_next_emission_sequence(): number {
   return getNextEmissionSequence();
 }
 
 export function is_replaying(): boolean {
-  return false;
+  return replayingContext.getStore() === true;
 }
 
 export class Depends<THandler extends EventHandler = EventHandler> {
@@ -4013,6 +4015,7 @@ export abstract class BaseEventListener {
 export class EventBus {
   private readonly handlers = new Map<EventType, Set<EventHandler>>();
   private readonly handlerDependencies = new Map<EventType, Map<EventHandler, readonly Depends[]>>();
+  private readonly pendingHandlers = new Set<Promise<unknown>>();
   private currentRuntimeState: RuntimeState | null = null;
   private registeredEntityIds = new WeakSet<object>();
 
@@ -4080,6 +4083,48 @@ export class EventBus {
   emit(source: unknown, event: CrewAIEvent): void {
     applyEventContext(event);
     this.recordEvent(event);
+    this.dispatchPrepared(source, event);
+  }
+
+  replay(source: unknown, event: CrewAIEvent): void {
+    replayingContext.run(true, () => {
+      this.dispatchPrepared(source, event);
+    });
+  }
+
+  async aemit(source: unknown, event: CrewAIEvent): Promise<void> {
+    applyEventContext(event);
+    this.recordEvent(event);
+    await this.dispatchPreparedAndWait(source, event);
+  }
+
+  registerHandler<TEventType extends EventType>(eventType: TEventType, handler: EventHandler<EventMap[TEventType]>): void {
+    this.on(eventType, handler);
+  }
+
+  register_handler<TEventType extends EventType>(eventType: TEventType, handler: EventHandler<EventMap[TEventType]>): void {
+    this.registerHandler(eventType, handler);
+  }
+
+  async flush(timeout: number | null = 30): Promise<boolean> {
+    if (this.pendingHandlers.size === 0) {
+      return true;
+    }
+    const waitForHandlers = Promise.allSettled([...this.pendingHandlers]).then(() => true);
+    if (timeout === null || !Number.isFinite(timeout)) {
+      return await waitForHandlers;
+    }
+    return await Promise.race([
+      waitForHandlers,
+      new Promise<boolean>((resolve) => {
+        setTimeout(() => {
+          resolve(false);
+        }, timeout * 1000);
+      }),
+    ]);
+  }
+
+  private dispatchPrepared(source: unknown, event: CrewAIEvent): void {
     const handlers = this.handlers.get(event.type);
     if (!handlers) {
       return;
@@ -4092,6 +4137,22 @@ export class EventBus {
     for (const handler of handlers) {
       void this.callHandler(handler, source, event);
     }
+  }
+
+  private async dispatchPreparedAndWait(source: unknown, event: CrewAIEvent): Promise<void> {
+    const handlers = this.handlers.get(event.type);
+    if (!handlers) {
+      return;
+    }
+    const dependencyMap = this.handlerDependencies.get(event.type);
+    if (dependencyMap && dependencyMap.size > 0) {
+      const plan = build_execution_plan([...handlers] as Handler[], dependencyMap as Map<Handler, readonly Depends[]>);
+      await this.runDependencyPlanAndWait(plan, source, event);
+      return;
+    }
+    await Promise.all([...handlers].map(async (handler) => {
+      await this.callHandler(handler, source, event);
+    }));
   }
 
   private emitWithDependencies(
@@ -4149,15 +4210,23 @@ export class EventBus {
     }
   }
 
+  private async runDependencyPlanAndWait(plan: ExecutionPlan, source: unknown, event: CrewAIEvent): Promise<void> {
+    for (const level of plan) {
+      await Promise.all([...level].map(async (handler) => {
+        await this.callHandler(handler as EventHandler, source, event);
+      }));
+    }
+  }
+
   private callHandler(handler: EventHandler, source: unknown, event: CrewAIEvent): void | Promise<void> {
     try {
       const result = handler(source, event, this.currentRuntimeState);
       if (isPromiseLike(result)) {
-        return result.catch((error: unknown) => {
+        return this.trackPendingHandler(result.catch((error: unknown) => {
           queueMicrotask(() => {
             throw error;
           });
-        });
+        }));
       }
       return undefined;
     } catch (error) {
@@ -4168,9 +4237,17 @@ export class EventBus {
     }
   }
 
+  private trackPendingHandler(promise: Promise<unknown>): Promise<void> {
+    this.pendingHandlers.add(promise);
+    return promise.finally(() => {
+      this.pendingHandlers.delete(promise);
+    }).then(() => undefined);
+  }
+
   clear(): void {
     this.handlers.clear();
     this.handlerDependencies.clear();
+    this.pendingHandlers.clear();
     this.currentRuntimeState = null;
     this.registeredEntityIds = new WeakSet<object>();
   }

@@ -544,6 +544,7 @@ import {
   updateUserData,
   hasUserDeclinedTracing,
   isTracingEnabled,
+  is_replaying,
   loadUserData,
   crewJsonStringify,
   getProjectDescription,
@@ -17408,6 +17409,48 @@ describe("runtime state", () => {
     expect(() => {
       cycleBus.validate_dependencies();
     }).toThrow(CircularDependencyError);
+  });
+
+  it("replays event bus events without re-recording and exposes replay context", async () => {
+    const bus = new EventBus();
+    const state = new RuntimeState();
+    const seen: boolean[] = [];
+    bus.set_runtime_state(state);
+    bus.on("flow_started", async () => {
+      seen.push(is_replaying());
+      await Promise.resolve();
+      seen.push(is_replaying());
+    });
+
+    const emitted = new FlowStartedEvent({ flowName: "EmitFlow", inputs: {} });
+    bus.emit("source", emitted);
+    expect(await bus.flush()).toBe(true);
+
+    const replayed = new FlowStartedEvent({ flowName: "ReplayFlow", inputs: {} });
+    const originalEventId = replayed.eventId;
+    const originalSequence = replayed.emissionSequence;
+    bus.replay("source", replayed);
+    expect(await bus.flush()).toBe(true);
+
+    expect(seen).toEqual([false, false, true, true]);
+    expect(replayed.eventId).toBe(originalEventId);
+    expect(replayed.emissionSequence).toBe(originalSequence);
+    expect(state.event_record.get(emitted.eventId)?.event).toBe(emitted);
+    expect(state.event_record.get(replayed.eventId)).toBeNull();
+  });
+
+  it("supports async event emission and register_handler aliases", async () => {
+    const bus = new EventBus();
+    const seen: string[] = [];
+    bus.register_handler("flow_started", async (_source: unknown, event: FlowStartedEvent) => {
+      void _source;
+      await Promise.resolve();
+      seen.push(event.flowName);
+    });
+
+    await bus.aemit("source", new FlowStartedEvent({ flowName: "AsyncFlow", inputs: {} }));
+
+    expect(seen).toEqual(["AsyncFlow"]);
   });
 });
 
