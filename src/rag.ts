@@ -400,6 +400,7 @@ export class BaseEmbeddingsProvider<TEmbeddingFunction extends TypedEmbeddingFun
   readonly embeddingCallable: TEmbeddingFunction;
   readonly embedding_callable: TEmbeddingFunction;
   readonly config: Record<string, unknown>;
+  [key: string]: unknown;
 
   constructor(options: { embeddingCallable?: TEmbeddingFunction; embedding_callable?: TEmbeddingFunction } & Record<string, unknown>) {
     const embeddingCallable = options.embeddingCallable ?? options.embedding_callable;
@@ -412,6 +413,7 @@ export class BaseEmbeddingsProvider<TEmbeddingFunction extends TypedEmbeddingFun
     void _embeddingCallable;
     void _embedding_callable;
     this.config = config;
+    Object.assign(this, config);
   }
 
   build(): TEmbeddingFunction {
@@ -431,7 +433,13 @@ export class AzureProvider extends BaseEmbeddingsProvider {
   readonly provider = "azure";
 
   constructor(options: AzureProviderConfig = { deployment_id: "" }) {
-    super({ embeddingCallable: defaultEmbeddingCallable, ...options });
+    super({
+      embeddingCallable: defaultEmbeddingCallable,
+      api_type: "azure",
+      api_version: "2024-02-01",
+      model_name: "text-embedding-ada-002",
+      ...options,
+    });
   }
 }
 
@@ -540,7 +548,11 @@ export class OpenAIProvider extends BaseEmbeddingsProvider {
   readonly provider = "openai";
 
   constructor(options: OpenAIProviderConfig = {}) {
-    super({ embeddingCallable: defaultEmbeddingCallable, ...options });
+    super({
+      embeddingCallable: defaultEmbeddingCallable,
+      model_name: "text-embedding-ada-002",
+      ...options,
+    });
   }
 }
 

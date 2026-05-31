@@ -342,6 +342,7 @@ import {
   buildRichFieldDescription,
   buildSystemMessage,
   BaseEmbeddingsProvider,
+  AzureProvider,
   BaseKnowledgeStorage,
   BaseRAGStorage,
   ChromaDBClient,
@@ -350,6 +351,7 @@ import {
   AzureCompletion,
   BedrockCompletion,
   GeminiCompletion,
+  OpenAIProvider,
   OpenAICompletion,
   ResponsesAPIResult,
   EntraIdProvider,
@@ -4604,6 +4606,40 @@ describe("RAG configuration and factories", () => {
     expect(await registered(["CrewAI"])).toEqual([[6, 3]]);
     expect(() => buildEmbedderFromDict({ provider: "custom", config: {} })).toThrow("embedding_callable");
     expect(() => buildEmbedderFromDict({ provider: "ollama", config: { model_name: "nomic-embed-text" } })).toThrow("No embedding provider builder registered");
+  });
+
+  it("exposes upstream embedding provider config fields and defaults", () => {
+    const openai = new OpenAIProvider({
+      api_key: "sk-test",
+      dimensions: 1536,
+      organization_id: "org-test",
+    });
+    const azure = new AzureProvider({
+      api_key: "az-test",
+      deployment_id: "embed-deployment",
+    });
+
+    expect(openai).toMatchObject({
+      provider: "openai",
+      api_key: "sk-test",
+      model_name: "text-embedding-ada-002",
+      dimensions: 1536,
+      organization_id: "org-test",
+    });
+    expect(openai.config).toMatchObject({
+      api_key: "sk-test",
+      model_name: "text-embedding-ada-002",
+      dimensions: 1536,
+      organization_id: "org-test",
+    });
+    expect(azure).toMatchObject({
+      provider: "azure",
+      api_key: "az-test",
+      api_type: "azure",
+      api_version: "2024-02-01",
+      model_name: "text-embedding-ada-002",
+      deployment_id: "embed-deployment",
+    });
   });
 });
 
