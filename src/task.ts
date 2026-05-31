@@ -1,4 +1,5 @@
 import { mkdir, writeFile } from "node:fs/promises";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { createHash, randomUUID } from "node:crypto";
 import { dirname, resolve } from "node:path";
 
@@ -55,6 +56,8 @@ type RenderedTask = {
   prompt: string;
   inputFiles: TaskInputFiles;
 };
+
+type ExportedTaskOutput = readonly [unknown, Record<string, unknown> | null];
 
 export type TaskOptions = {
   id?: string;
@@ -515,6 +518,91 @@ export class Task {
 
   _store_input_files(): void {
     this.storeInputFiles();
+  }
+
+  async exportOutput(result: unknown): Promise<ExportedTaskOutput> {
+    if (!this.outputPydantic && !this.outputJson) {
+      return [null, null];
+    }
+    const raw = stringifyGuardrailValue(result);
+    const converted = this.outputConverter ? await this.outputConverter(raw) : undefined;
+    if (this.outputPydantic) {
+      return [converted ?? this.outputPydantic(raw), null];
+    }
+    return [null, parseConvertedJsonObject(converted, raw)];
+  }
+
+  _export_output(result: unknown): ExportedTaskOutput | Promise<ExportedTaskOutput> {
+    const raw = stringifyGuardrailValue(result);
+    if (!this.outputPydantic && !this.outputJson) {
+      return [null, null];
+    }
+    if (!this.outputConverter) {
+      if (this.outputPydantic) {
+        return [this.outputPydantic(raw), null];
+      }
+      return [null, parseConvertedJsonObject(undefined, raw)];
+    }
+    return this.exportOutput(raw);
+  }
+
+  async aexportOutput(result: unknown): Promise<ExportedTaskOutput> {
+    return await this.exportOutput(result);
+  }
+
+  async _aexport_output(result: unknown): Promise<ExportedTaskOutput> {
+    return await this.aexportOutput(result);
+  }
+
+  static unpackModelOutput(modelOutput: unknown): ExportedTaskOutput {
+    if (typeof modelOutput === "string") {
+      try {
+        return [null, parseJsonObject(modelOutput)];
+      } catch {
+        return [null, null];
+      }
+    }
+    if (modelOutput && typeof modelOutput === "object" && !Array.isArray(modelOutput)) {
+      return [null, modelOutput as Record<string, unknown>];
+    }
+    return [null, null];
+  }
+
+  static _unpack_model_output(modelOutput: unknown): ExportedTaskOutput {
+    return Task.unpackModelOutput(modelOutput);
+  }
+
+  getOutputFormat(): OutputFormat {
+    if (this.outputJson) {
+      return OutputFormat.JSON;
+    }
+    if (this.outputPydantic) {
+      return OutputFormat.PYDANTIC;
+    }
+    return OutputFormat.RAW;
+  }
+
+  _get_output_format(): OutputFormat {
+    return this.getOutputFormat();
+  }
+
+  saveFile(result: unknown): void {
+    if (this.outputFile === null) {
+      throw new Error("output_file is not set.");
+    }
+    const outputPath = resolve(this.outputFile);
+    const directory = dirname(outputPath);
+    if (this.createDirectory) {
+      mkdirSync(directory, { recursive: true });
+    }
+    const content = result && typeof result === "object" && !Array.isArray(result)
+      ? JSON.stringify(result, null, 2)
+      : String(result);
+    writeFileSync(outputPath, content, "utf8");
+  }
+
+  _save_file(result: unknown): void {
+    this.saveFile(result);
   }
 
   copy(agents: readonly Agent[] = [], taskMapping: Record<string, Task> = {}): Task {
@@ -1026,7 +1114,7 @@ function validateOutputFile(value: string | null): string | null {
       throw new Error(`Invalid template variable name: ${key}`);
     }
   }
-  return value.startsWith("/") && !value.includes("{") ? value.slice(1) : value;
+  return value;
 }
 
 function stringifyOutputForFile(value: unknown): string {

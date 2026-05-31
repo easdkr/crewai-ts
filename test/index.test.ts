@@ -14489,6 +14489,41 @@ describe("task output files", () => {
     expect(readFileSync(join(baseDirectory, "result.json"), "utf8")).toBe("{\n  \"summary\": \"done\"\n}");
   });
 
+  it("exports structured output through upstream-compatible task helpers", async () => {
+    const pydanticTask = new Task({
+      description: "Score",
+      expectedOutput: "A score",
+      output_pydantic: (raw) => ({ raw }),
+      converter_cls: (raw) => ({ score: Number(raw.split("=")[1]) }),
+    });
+    const jsonTask = new Task({
+      description: "Summarize",
+      expectedOutput: "A JSON summary",
+      output_json: true,
+    });
+
+    expect(await pydanticTask._aexport_output("score=7")).toEqual([{ score: 7 }, null]);
+    expect(pydanticTask._get_output_format()).toBe(OutputFormat.PYDANTIC);
+    expect(jsonTask._export_output("{\"summary\":\"done\"}")).toEqual([null, { summary: "done" }]);
+    expect(jsonTask._get_output_format()).toBe(OutputFormat.JSON);
+    expect(Task._unpack_model_output("{\"value\":1}")).toEqual([null, { value: 1 }]);
+    expect(Task._unpack_model_output("not json")).toEqual([null, null]);
+  });
+
+  it("saves output through the upstream-compatible task file helper", () => {
+    const baseDirectory = mkdtempSync(join(tmpdir(), "crewai-ts-save-file-"));
+    const outputFile = join(baseDirectory, "result.json");
+    const taskInstance = new Task({
+      description: "Save",
+      expectedOutput: "A saved file",
+      output_file: outputFile,
+    });
+
+    taskInstance._save_file({ summary: "done" });
+
+    expect(readFileSync(outputFile, "utf8")).toBe("{\n  \"summary\": \"done\"\n}");
+  });
+
   it("rejects unsafe output file paths", () => {
     const agentInstance = new Agent({
       role: "Writer",
