@@ -11748,6 +11748,37 @@ describe("memory", () => {
     await expect(memory.aextract_memories("  Async extracted memory  ")).resolves.toEqual(["Async extracted memory"]);
   });
 
+  it("updates memory records by id with upstream partial fields", () => {
+    const memory = new Memory({ rootScope: "/root" });
+    const record = memory.remember("Original memory", {
+      scope: "/alpha",
+      categories: ["old"],
+      metadata: { source: "draft" },
+      importance: 0.3,
+    });
+
+    const updated = memory.update(record?.id ?? "", {
+      content: "Updated memory",
+      scope: "/beta",
+      categories: ["new"],
+      metadata: { source: "final" },
+      importance: 0.9,
+    });
+
+    expect(updated).toMatchObject({
+      id: record?.id,
+      content: "Updated memory",
+      scope: "/root/beta",
+      categories: ["new"],
+      metadata: { source: "final" },
+      importance: 0.9,
+    });
+    expect(updated?.createdAt).toEqual(record?.createdAt);
+    expect(updated?.lastAccessed?.getTime()).toBeGreaterThanOrEqual(record?.lastAccessed?.getTime() ?? 0);
+    expect(memory.get_record(record?.id ?? "")?.content).toBe("Updated memory");
+    expect(() => memory.update("missing-record", { content: "Nope" })).toThrow("Record not found: missing-record");
+  });
+
   it("uses configured memory LLM for async extraction and falls back safely", async () => {
     const seen: string[] = [];
     const memory = new Memory({

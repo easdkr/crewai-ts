@@ -110,6 +110,14 @@ export type MemoryOptions = {
   llm?: LLM | null;
 } & ConstructorParameters<typeof MemoryConfig>[0];
 
+export type MemoryUpdateOptions = {
+  content?: string | null;
+  scope?: string | null;
+  categories?: readonly string[] | null;
+  metadata?: Record<string, unknown> | null;
+  importance?: number | null;
+};
+
 export class ExtractedMetadata {
   readonly entities: readonly string[];
   readonly dates: readonly string[];
@@ -1114,11 +1122,35 @@ export class Memory {
     return this.get_record(recordId);
   }
 
-  update(record: MemoryRecord | MemoryRecordOptions): MemoryRecord | null {
+  update(record: MemoryRecord | MemoryRecordOptions): MemoryRecord | null;
+  update(recordId: string, updates: MemoryUpdateOptions): MemoryRecord | null;
+  update(recordOrId: MemoryRecord | MemoryRecordOptions | string, updates: MemoryUpdateOptions = {}): MemoryRecord | null {
     if (this.readOnly) {
       return null;
     }
-    const memoryRecord = record instanceof MemoryRecord ? record : new MemoryRecord(record);
+    if (typeof recordOrId === "string") {
+      const existing = this.get_record(recordOrId);
+      if (!existing) {
+        throw new Error(`Record not found: ${recordOrId}`);
+      }
+      const memoryRecord = new MemoryRecord({
+        id: existing.id,
+        content: updates.content ?? existing.content,
+        scope: updates.scope === undefined || updates.scope === null ? existing.scope : this.scopePath(updates.scope),
+        categories: updates.categories ?? existing.categories,
+        metadata: updates.metadata ?? existing.metadata,
+        importance: updates.importance ?? existing.importance,
+        source: existing.source,
+        private: existing.private,
+        createdAt: existing.createdAt,
+        lastAccessed: new Date(),
+        ...(existing.embedding === undefined ? {} : { embedding: existing.embedding }),
+      });
+      const index = this.records.findIndex((candidate) => candidate.id === memoryRecord.id);
+      this.records[index] = memoryRecord;
+      return memoryRecord;
+    }
+    const memoryRecord = recordOrId instanceof MemoryRecord ? recordOrId : new MemoryRecord(recordOrId);
     const index = this.records.findIndex((candidate) => candidate.id === memoryRecord.id);
     if (index >= 0) {
       this.records[index] = memoryRecord;
