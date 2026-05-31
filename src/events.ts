@@ -186,6 +186,16 @@ export class BaseEvent {
   readonly emissionSequence: number;
   sourceType: string | null;
   sourceFingerprint: string | null;
+  fingerprintMetadata: Record<string, unknown> | null;
+  fingerprint_metadata: Record<string, unknown> | null;
+  taskId: string | null;
+  task_id: string | null;
+  taskName: string | null;
+  task_name: string | null;
+  agentId: string | null;
+  agent_id: string | null;
+  agentRole: string | null;
+  agent_role: string | null;
   parentEventId: string | null;
   previousEventId: string | null;
   triggeredByEventId: string | null;
@@ -198,6 +208,16 @@ export class BaseEvent {
     this.emissionSequence = getNextEmissionSequence();
     this.sourceType = options.sourceType ?? null;
     this.sourceFingerprint = options.sourceFingerprint ?? null;
+    this.fingerprintMetadata = null;
+    this.fingerprint_metadata = null;
+    this.taskId = null;
+    this.task_id = null;
+    this.taskName = null;
+    this.task_name = null;
+    this.agentId = null;
+    this.agent_id = null;
+    this.agentRole = null;
+    this.agent_role = null;
     this.parentEventId = options.parentEventId ?? null;
     this.previousEventId = options.previousEventId ?? null;
     this.triggeredByEventId = options.triggeredByEventId ?? null;
@@ -212,6 +232,11 @@ export class BaseEvent {
       emissionSequence: this.emissionSequence,
       sourceType: this.sourceType,
       sourceFingerprint: this.sourceFingerprint,
+      fingerprintMetadata: this.fingerprintMetadata,
+      taskId: this.taskId,
+      taskName: this.taskName,
+      agentId: this.agentId,
+      agentRole: this.agentRole,
       parentEventId: this.parentEventId,
       previousEventId: this.previousEventId,
       triggeredByEventId: this.triggeredByEventId,
@@ -228,12 +253,44 @@ export class BaseEvent {
       emission_sequence: this.emissionSequence,
       source_type: this.sourceType,
       source_fingerprint: this.sourceFingerprint,
+      fingerprint_metadata: this.fingerprintMetadata,
+      task_id: this.taskId,
+      task_name: this.taskName,
+      agent_id: this.agentId,
+      agent_role: this.agentRole,
       parent_event_id: this.parentEventId,
       previous_event_id: this.previousEventId,
       triggered_by_event_id: this.triggeredByEventId,
       started_event_id: this.startedEventId,
     };
     return Object.fromEntries(Object.entries(result).filter(([key]) => !excluded.has(key)));
+  }
+
+  _set_task_params(data: Record<string, unknown>): void {
+    const task = data.from_task ?? data.fromTask;
+    if (!task) {
+      return;
+    }
+    this.taskId = getStringProperty(task, "id");
+    this.task_id = this.taskId;
+    this.taskName = getNonEmptyStringProperty(task, "name") ?? getStringProperty(task, "description");
+    this.task_name = this.taskName;
+    (this as unknown as { from_task?: unknown; fromTask?: unknown }).from_task = null;
+    (this as unknown as { from_task?: unknown; fromTask?: unknown }).fromTask = null;
+  }
+
+  _set_agent_params(data: Record<string, unknown>): void {
+    const task = data.from_task ?? data.fromTask;
+    const agent = getObjectProperty(task, "agent") ?? data.from_agent ?? data.fromAgent;
+    if (!agent) {
+      return;
+    }
+    this.agentId = getStringProperty(agent, "id");
+    this.agent_id = this.agentId;
+    this.agentRole = getStringProperty(agent, "role");
+    this.agent_role = this.agentRole;
+    (this as unknown as { from_agent?: unknown; fromAgent?: unknown }).from_agent = null;
+    (this as unknown as { from_agent?: unknown; fromAgent?: unknown }).fromAgent = null;
   }
 }
 

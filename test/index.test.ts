@@ -19851,14 +19851,25 @@ describe("checkpoint state providers", () => {
 describe("event record", () => {
   it("serializes BaseEvent with upstream to_json alias and exclusions", () => {
     const event = new BaseEvent({ type: "crew_kickoff_started", sourceType: "crew" });
+    const agent = { id: "agent-1", role: "Researcher" };
+    const task = { id: "task-1", name: "", description: "Summarize", agent };
+
+    event._set_task_params({ from_task: task });
+    event._set_agent_params({ from_task: task });
 
     expect(Object.hasOwn(BaseEvent.prototype, "to_json")).toBe(true);
+    expect(Object.hasOwn(BaseEvent.prototype, "_set_task_params")).toBe(true);
+    expect(Object.hasOwn(BaseEvent.prototype, "_set_agent_params")).toBe(true);
     expect(event.to_json()).toMatchObject({
       type: "crew_kickoff_started",
       sourceType: "crew",
       source_type: "crew",
       eventId: event.eventId,
       event_id: event.eventId,
+      task_id: "task-1",
+      task_name: "Summarize",
+      agent_id: "agent-1",
+      agent_role: "Researcher",
     });
     expect(event.to_json(new Set(["timestamp", "event_id", "eventId"]))).not.toHaveProperty("event_id");
   });
