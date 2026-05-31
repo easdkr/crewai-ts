@@ -1200,16 +1200,30 @@ export class Memory {
     return new MemorySlice(this, typeof scopes === "string" ? [scopes] : scopes, options);
   }
 
-  listScopes(full = false): readonly string[] | readonly ScopeInfo[] {
+  listScopes(full?: boolean): readonly string[] | readonly ScopeInfo[];
+  listScopes(path: string | null): readonly string[];
+  listScopes(pathOrFull: string | null | boolean = false): readonly string[] | readonly ScopeInfo[] {
+    if (typeof pathOrFull === "string" || pathOrFull === null) {
+      return this.immediateChildScopes(this.effectivePath(pathOrFull));
+    }
+    const full = pathOrFull;
     const infos = this.scopeInfos();
     return full ? infos : infos.map((info) => info.path);
   }
 
-  list_scopes(full = false): readonly string[] | readonly ScopeInfo[] {
-    return this.listScopes(full);
+  list_scopes(full?: boolean): readonly string[] | readonly ScopeInfo[];
+  list_scopes(path: string | null): readonly string[];
+  list_scopes(pathOrFull: string | null | boolean = false): readonly string[] | readonly ScopeInfo[] {
+    return this.listScopes(pathOrFull as boolean);
   }
 
-  listCategories(full = false): Record<string, number> | Record<string, { count: number; scopes: readonly string[] }> {
+  listCategories(full?: boolean): Record<string, number> | Record<string, { count: number; scopes: readonly string[] }>;
+  listCategories(path: string | null): Record<string, number>;
+  listCategories(pathOrFull: string | null | boolean = false): Record<string, number> | Record<string, { count: number; scopes: readonly string[] }> {
+    if (typeof pathOrFull === "string" || pathOrFull === null) {
+      return categoriesForRecords(this.recordsForScope(this.effectivePath(pathOrFull)), false);
+    }
+    const full = pathOrFull;
     const categories = new Map<string, { count: number; scopes: Set<string> }>();
     for (const record of this.records) {
       for (const category of record.categories) {
@@ -1228,8 +1242,10 @@ export class Memory {
     ]));
   }
 
-  list_categories(full = false): Record<string, number> | Record<string, { count: number; scopes: readonly string[] }> {
-    return this.listCategories(full);
+  list_categories(full?: boolean): Record<string, number> | Record<string, { count: number; scopes: readonly string[] }>;
+  list_categories(path: string | null): Record<string, number>;
+  list_categories(pathOrFull: string | null | boolean = false): Record<string, number> | Record<string, { count: number; scopes: readonly string[] }> {
+    return this.listCategories(pathOrFull as boolean);
   }
 
   listRecords(scope: string | null = null, limit = 200, offset = 0): MemoryRecord[] {
@@ -1246,7 +1262,13 @@ export class Memory {
     return this.listRecords(scope, limit, offset);
   }
 
-  info(full = false): MemoryInfo {
+  info(full?: boolean): MemoryInfo;
+  info(path: string | null): ScopeInfo;
+  info(pathOrFull: string | null | boolean = false): MemoryInfo | ScopeInfo {
+    if (typeof pathOrFull === "string" || pathOrFull === null) {
+      return this.scopeInfoForPath(this.effectivePath(pathOrFull));
+    }
+    const full = pathOrFull;
     const scopes = this.listScopes(full);
     const categories = this.listCategories(full);
     return {
@@ -1317,6 +1339,62 @@ export class Memory {
 
   private scopePath(scope: string | null | undefined): string {
     return joinScopePaths(this.rootScope, scope ?? "/");
+  }
+
+  private effectivePath(path: string | null): string {
+    if (path === null) {
+      return this.rootScope ? normalize_scope_path(this.rootScope) : "/";
+    }
+    return this.scopePath(path);
+  }
+
+  private recordsForScope(scopePrefix: string): MemoryRecord[] {
+    return this.records.filter((record) => record.scope.startsWith(scopePrefix));
+  }
+
+  private immediateChildScopes(scopePrefix: string): string[] {
+    const normalized = normalize_scope_path(scopePrefix);
+    const childPrefix = normalized === "/" ? "/" : `${normalized}/`;
+    const children = new Set<string>();
+    for (const record of this.recordsForScope(normalized)) {
+      if (!record.scope.startsWith(childPrefix) || record.scope === normalized) {
+        continue;
+      }
+      const rest = record.scope.slice(childPrefix.length);
+      const firstComponent = rest.split("/", 1)[0];
+      if (firstComponent) {
+        children.add(`${childPrefix}${firstComponent}`);
+      }
+    }
+    return [...children].sort();
+  }
+
+  private scopeInfoForPath(scopePrefix: string): ScopeInfo {
+    const normalized = normalize_scope_path(scopePrefix);
+    const records = this.recordsForScope(normalized);
+    const categories = new Set<string>();
+    let oldestRecord: Date | null = null;
+    let newestRecord: Date | null = null;
+    for (const record of records) {
+      for (const category of record.categories) {
+        categories.add(category);
+      }
+      if (!oldestRecord || record.createdAt < oldestRecord) {
+        oldestRecord = record.createdAt;
+      }
+      if (!newestRecord || record.createdAt > newestRecord) {
+        newestRecord = record.createdAt;
+      }
+    }
+    return new ScopeInfo({
+      path: normalized,
+      recordCount: records.length,
+      categories: [...categories].sort(),
+      oldestRecord,
+      newestRecord,
+      lastUpdated: newestRecord,
+      childScopes: this.immediateChildScopes(normalized),
+    });
   }
 
   private scopeInfos(scopePrefix: string | null = null): ScopeInfo[] {

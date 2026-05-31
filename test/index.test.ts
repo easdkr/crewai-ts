@@ -11795,6 +11795,25 @@ describe("memory", () => {
     expect(memory.list_records("/external")).toEqual([]);
   });
 
+  it("accepts upstream path arguments for root-scoped memory listing helpers", () => {
+    const memory = new Memory({ rootScope: "/root" });
+    memory.remember("Alpha parent", { scope: "/projects/alpha", categories: ["planning"] });
+    memory.remember("Alpha child", { scope: "/projects/alpha/notes", categories: ["notes"] });
+    memory.remember("Beta parent", { scope: "/projects/beta", categories: ["planning"] });
+
+    expect(memory.list_scopes("/projects")).toEqual([
+      "/root/projects/alpha",
+      "/root/projects/beta",
+    ]);
+    expect(memory.list_categories("/projects/alpha")).toEqual({ notes: 1, planning: 1 });
+    expect(memory.info("/projects/alpha")).toMatchObject({
+      path: "/root/projects/alpha",
+      recordCount: 2,
+      categories: ["notes", "planning"],
+      childScopes: ["/root/projects/alpha/notes"],
+    });
+  });
+
   it("uses configured memory LLM for async extraction and falls back safely", async () => {
     const seen: string[] = [];
     const memory = new Memory({
