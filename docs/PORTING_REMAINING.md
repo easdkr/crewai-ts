@@ -11,7 +11,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `npm run lint`
   - `npm run smoke:pack`
   - `python3 scripts/check-export-parity.py`
-- Test suite: 359 passing tests.
+- Test suite: 360 passing tests.
 - Root export parity against upstream clone `/tmp/crewai-upstream.lPeuQi/crewAI` at commit `2148c7e`: `total_missing=0`.
 - Public method parity has been tightened for core runtime classes:
   - `ConsoleFormatter`: `missing=0`
@@ -105,6 +105,7 @@ When more goal budget is available, continue from the behavioral parity audits b
   - `handleUserInput` now forwards the generated crew function schema and available function map to the chat LLM call so upstream-style conversational crew function calling can execute.
 - Added converter compatibility behavior:
   - `asyncConvertToModel` / `asyncHandlePartialJson` now use the agent LLM fallback path for non-JSON or malformed partial JSON results, matching upstream async conversion dispatch.
+  - `OutputConverter` now explicitly exposes upstream-style `to_pydantic` and `to_json` methods while preserving the shared converter implementation.
 - Added knowledge compatibility behavior:
   - `Knowledge` now accepts storage-backed configuration and exposes upstream-style `add_sources`, `aadd_sources`, `aquery`, and `areset` helpers while preserving the in-memory deterministic path.
   - Knowledge sources now expose upstream-style `add`, `aadd`, `validate_content`, and `get_embeddings` helpers and can save their chunks through configured storage.

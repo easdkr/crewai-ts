@@ -933,7 +933,15 @@ export class PlannerObserver {
   }
 }
 
-export class OutputConverter<T = unknown> extends Converter<T> {}
+export class OutputConverter<T = unknown> extends Converter<T> {
+  override to_pydantic(currentAttempt = 1): Promise<T> {
+    return super.to_pydantic(currentAttempt);
+  }
+
+  override to_json(currentAttempt = 1): Promise<string | import("./converter.js").ConverterError> {
+    return super.to_json(currentAttempt);
+  }
+}
 
 export class TokenProcess {
   readonly summary: UsageMetrics;

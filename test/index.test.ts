@@ -315,6 +315,7 @@ import {
   CrewTestResultEvent,
   Converter,
   ConverterError,
+  OutputConverter,
   asyncConvertToModel,
   EvaluationScore,
   Logger,
@@ -3640,6 +3641,24 @@ describe("converter utilities", () => {
       maxAttempts: 1,
     });
     await expect(failing.toPydantic()).rejects.toThrow(ConverterError);
+  });
+
+  it("exposes OutputConverter structured conversion methods directly", async () => {
+    const converter = new OutputConverter({
+      text: "summarize",
+      model: summaryModel,
+      instructions: "Return JSON",
+      llm: {
+        call() {
+          return "{\"summary\":\"converted\"}";
+        },
+      },
+    });
+
+    expect(Object.hasOwn(OutputConverter.prototype, "to_pydantic")).toBe(true);
+    expect(Object.hasOwn(OutputConverter.prototype, "to_json")).toBe(true);
+    await expect(converter.to_pydantic()).resolves.toEqual({ summary: "converted" });
+    await expect(converter.to_json()).resolves.toBe("{\"summary\":\"converted\"}");
   });
 
   it("falls back to agent LLM instructions for async partial JSON conversion", async () => {
