@@ -1,3 +1,5 @@
+import { BaseKnowledgeSource as KnowledgeBaseSource } from "./knowledge.js";
+
 export {
   A2AConfig,
   A2AConfigTypes,
@@ -1470,6 +1472,7 @@ export {
   CrewDoclingSource,
   ExcelKnowledgeSource,
   JSONKnowledgeSource,
+  BaseKnowledgeSource,
   Knowledge,
   KnowledgeStorage,
   BaseKnowledgeStorage,
@@ -1488,6 +1491,7 @@ export {
   type KnowledgeSearchResult,
   type KnowledgeSource,
   type KnowledgeStorageOptions,
+  type BaseKnowledgeSourceOptions,
   type PDFKnowledgeSourceOptions,
   type PDFTextExtractor,
   type StringKnowledgeSourceOptions,
@@ -2500,11 +2504,7 @@ export function extract_knowledge_context(items: readonly unknown[] = []): strin
   return items.map((item) => String(item)).join("\n");
 }
 
-export class BaseKnowledgeSource {
-  readonly kind = "BaseKnowledgeSource";
-}
-
-export class BaseFileKnowledgeSource extends BaseKnowledgeSource {
+export class BaseFileKnowledgeSource extends KnowledgeBaseSource {
   readonly filePaths: readonly string[];
 
   constructor(filePaths: readonly string[] = []) {

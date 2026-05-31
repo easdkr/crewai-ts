@@ -92,6 +92,7 @@ import {
   LockedListProxy,
   JSONKnowledgeSource,
   ExcelKnowledgeSource,
+  BaseKnowledgeSource,
   KnowledgeStorage,
   KnowledgeQueryCompletedEvent,
   KnowledgeQueryFailedEvent,
@@ -333,6 +334,7 @@ import {
   buildRichFieldDescription,
   buildSystemMessage,
   BaseEmbeddingsProvider,
+  BaseKnowledgeStorage,
   BaseRAGStorage,
   ChromaDBClient,
   ChromaDBConfig,
@@ -4299,6 +4301,39 @@ describe("RAG configuration and factories", () => {
     await source.aadd();
     expect(await storage.asearch(["CrewAI"], 5, {}, 0.1)).toHaveLength(1);
     expect(source.get_embeddings()).toEqual([]);
+  });
+
+  it("provides upstream BaseKnowledgeSource chunking and storage helpers", async () => {
+    const saved: string[][] = [];
+    const storage = {
+      save(documents: readonly string[]) {
+        saved.push([...documents]);
+      },
+      asave(documents: readonly string[]) {
+        saved.push([...documents]);
+        return Promise.resolve();
+      },
+    };
+    const source = new BaseKnowledgeSource({
+      chunk_size: 5,
+      chunk_overlap: 2,
+      storage: storage as BaseKnowledgeStorage,
+    });
+
+    source.chunks = source._chunk_text("abcdefghij");
+    source.chunk_embeddings = [[1, 2, 3]];
+    expect(source.chunks).toEqual(["abcde", "defgh", "ghij", "j"]);
+    expect(source.get_embeddings()).toEqual([[1, 2, 3]]);
+    source._save_documents();
+    await source._asave_documents();
+    expect(saved).toEqual([
+      ["abcde", "defgh", "ghij", "j"],
+      ["abcde", "defgh", "ghij", "j"],
+    ]);
+    expect(() => {
+      new BaseKnowledgeSource()._save_documents();
+    }).toThrow("No storage found to save documents.");
+    await expect(new BaseKnowledgeSource()._asave_documents()).rejects.toThrow("No storage found to save documents.");
   });
 
   it("normalizes and validates embedding vectors", () => {

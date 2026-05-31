@@ -52,6 +52,20 @@ export type FileKnowledgeSourceOptions = {
   collection_name?: string | null;
 };
 
+export type BaseKnowledgeSourceOptions = {
+  chunkSize?: number;
+  chunk_size?: number;
+  chunkOverlap?: number;
+  chunk_overlap?: number;
+  chunks?: readonly string[];
+  chunkEmbeddings?: readonly unknown[];
+  chunk_embeddings?: readonly unknown[];
+  metadata?: Record<string, unknown>;
+  storage?: BaseKnowledgeStorage | null;
+  collectionName?: string | null;
+  collection_name?: string | null;
+};
+
 export type PDFTextExtractor = (filePath: string, bytes: Buffer) => string;
 
 export type PDFKnowledgeSourceOptions = FileKnowledgeSourceOptions & {
@@ -71,6 +85,113 @@ type KnowledgeEntry = {
   source: string | null;
   metadata: Record<string, unknown>;
 };
+
+export class BaseKnowledgeSource {
+  readonly chunkSize: number;
+  readonly chunk_size: number;
+  readonly chunkOverlap: number;
+  readonly chunk_overlap: number;
+  readonly metadata: Record<string, unknown>;
+  readonly collectionName: string | null;
+  readonly collection_name: string | null;
+  storage: BaseKnowledgeStorage | null;
+  chunks: string[];
+  private chunkEmbeddingsValue: unknown[];
+
+  constructor(options: BaseKnowledgeSourceOptions = {}) {
+    this.chunkSize = options.chunkSize ?? options.chunk_size ?? 4000;
+    this.chunk_size = this.chunkSize;
+    this.chunkOverlap = options.chunkOverlap ?? options.chunk_overlap ?? 200;
+    this.chunk_overlap = this.chunkOverlap;
+    this.chunks = [...(options.chunks ?? [])];
+    this.chunkEmbeddingsValue = [...(options.chunkEmbeddings ?? options.chunk_embeddings ?? [])];
+    this.metadata = options.metadata ?? {};
+    this.storage = options.storage ?? null;
+    this.collectionName = options.collectionName ?? options.collection_name ?? null;
+    this.collection_name = this.collectionName;
+    if (this.chunkSize <= 0) {
+      throw new Error("BaseKnowledgeSource chunk_size must be a positive number.");
+    }
+    if (this.chunkOverlap < 0 || this.chunkOverlap >= this.chunkSize) {
+      throw new Error("BaseKnowledgeSource chunk_overlap must be smaller than chunk_size.");
+    }
+  }
+
+  get chunkEmbeddings(): unknown[] {
+    return this.chunkEmbeddingsValue;
+  }
+
+  set chunkEmbeddings(value: readonly unknown[]) {
+    this.chunkEmbeddingsValue = [...value];
+  }
+
+  get chunk_embeddings(): unknown[] {
+    return this.chunkEmbeddingsValue;
+  }
+
+  set chunk_embeddings(value: readonly unknown[]) {
+    this.chunkEmbeddingsValue = [...value];
+  }
+
+  validateContent(): unknown {
+    return null;
+  }
+
+  validate_content(): unknown {
+    return this.validateContent();
+  }
+
+  add(): void {
+    this._save_documents();
+  }
+
+  async aadd(): Promise<void> {
+    await this._asave_documents();
+  }
+
+  getEmbeddings(): readonly unknown[] {
+    return this.chunkEmbeddings;
+  }
+
+  get_embeddings(): readonly unknown[] {
+    return this.getEmbeddings();
+  }
+
+  chunkText(text: string): string[] {
+    const chunks: string[] = [];
+    const step = this.chunkSize - this.chunkOverlap;
+    for (let index = 0; index < text.length; index += step) {
+      chunks.push(text.slice(index, index + this.chunkSize));
+    }
+    return chunks;
+  }
+
+  _chunk_text(text: string): string[] {
+    return this.chunkText(text);
+  }
+
+  saveDocuments(): void {
+    if (!this.storage) {
+      throw new Error("No storage found to save documents.");
+    }
+    this.storage.save(this.chunks);
+  }
+
+  _save_documents(): void {
+    this.saveDocuments();
+  }
+
+  async asaveDocuments(): Promise<void> {
+    if (!this.storage) {
+      throw new Error("No storage found to save documents.");
+    }
+    await this.storage.asave(this.chunks);
+  }
+
+  async _asave_documents(): Promise<void> {
+    await this.asaveDocuments();
+  }
+}
 
 export type KnowledgeOptions = {
   sources?: readonly KnowledgeSource[];
