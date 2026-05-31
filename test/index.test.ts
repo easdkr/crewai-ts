@@ -10883,6 +10883,34 @@ describe("LLM providers", () => {
     })._get_video_format("video/unknown")).toBeNull();
   });
 
+  it("classifies Bedrock client errors with upstream messages", () => {
+    const bedrock = new BedrockCompletion({ model: "anthropic.claude-3-5-sonnet-20241022-v2:0" });
+
+    expect((bedrock as unknown as {
+      _handle_client_error(error: unknown): string;
+    })._handle_client_error({
+      response: {
+        Error: {
+          Code: "AccessDeniedException",
+          Message: "missing permission",
+        },
+      },
+    })).toBe("Access denied to model anthropic.claude-3-5-sonnet-20241022-v2:0: missing permission");
+    expect((bedrock as unknown as {
+      _handle_client_error(error: unknown): string;
+    })._handle_client_error({
+      response: {
+        Error: {
+          Code: "ValidationException",
+          Message: "bad payload",
+        },
+      },
+    })).toBe("Invalid request: bad payload");
+    expect((bedrock as unknown as {
+      _handle_client_error(error: unknown): string;
+    })._handle_client_error(new Error("network down"))).toBe("Bedrock API error: network down");
+  });
+
   it("extracts Bedrock tool uses and structured output from Converse responses", () => {
     const response = {
       output: {

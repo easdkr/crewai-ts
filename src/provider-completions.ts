@@ -673,6 +673,28 @@ export class BedrockCompletion extends ConfiguredLLM {
     return this.getVideoFormat(contentType);
   }
 
+  handleClientError(error: unknown): string {
+    const record = readObject(error);
+    const errorRecord = readObject(readObject(record.response).Error);
+    const errorCode = scalarToString(errorRecord.Code) ?? "Unknown";
+    const errorMessage = scalarToString(errorRecord.Message) ?? (error instanceof Error ? error.message : String(error));
+    const errorMapping: Record<string, string> = {
+      AccessDeniedException: `Access denied to model ${this.model}: ${errorMessage}`,
+      ResourceNotFoundException: `Model ${this.model} not found: ${errorMessage}`,
+      ThrottlingException: `API throttled, please retry later: ${errorMessage}`,
+      ValidationException: `Invalid request: ${errorMessage}`,
+      ModelTimeoutException: `Model request timed out: ${errorMessage}`,
+      ServiceQuotaExceededException: `Service quota exceeded: ${errorMessage}`,
+      ModelNotReadyException: `Model ${this.model} not ready: ${errorMessage}`,
+      ModelErrorException: `Model error: ${errorMessage}`,
+    };
+    return errorMapping[errorCode] ?? `Bedrock API error: ${errorMessage}`;
+  }
+
+  _handle_client_error(error: unknown): string {
+    return this.handleClientError(error);
+  }
+
   override getFileUploader(): LocalFileUploader {
     return new LocalFileUploader("bedrock", { llm: this, region_name: this.regionName });
   }
