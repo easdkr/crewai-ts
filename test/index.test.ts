@@ -70,6 +70,8 @@ import {
   CrewKickoffStartedEvent,
   CrewProject,
   CrewStreamingOutput,
+  StreamingContext,
+  ForEachStreamingContext,
   CrewTestCompletedEvent,
   CrewTestFailedEvent,
   CrewTestStartedEvent,
@@ -5542,6 +5544,65 @@ describe("config and token counter utilities", () => {
 });
 
 describe("crew execution utilities", () => {
+  it("creates upstream-style streaming contexts with state holders", async () => {
+    const ctx = new StreamingContext(true);
+    ctx.currentTaskInfo.index = 2;
+    ctx.currentTaskInfo.name = "Streaming task";
+    ctx.currentTaskInfo.id = "task-1";
+    ctx.currentTaskInfo.agent_role = "Researcher";
+    ctx.currentTaskInfo.agent_id = "agent-1";
+    try {
+      expect(ctx.result_holder).toBe(ctx.resultHolder);
+      expect(ctx.current_task_info).toBe(ctx.currentTaskInfo);
+      expect(ctx.output_holder).toBe(ctx.outputHolder);
+      expect(ctx.resultHolder).toEqual([]);
+      expect(ctx.outputHolder).toEqual([]);
+      expect(ctx.state.result_holder).toBe(ctx.resultHolder);
+      expect(ctx.state.current_task_info).toBe(ctx.currentTaskInfo);
+      expect(ctx.state.async_queue).not.toBeNull();
+
+      crewaiEventBus.emit(null, new LLMStreamChunkEvent({
+        call_id: "call-stream",
+        chunk: "partial",
+        from_agent: { id: "agent-event", role: "Writer" },
+        call_type: LLMCallType.LLM_CALL,
+      }));
+      const queued = await (ctx.state.async_queue as unknown as { wait(): Promise<unknown> }).wait();
+
+      expect(queued).toBeInstanceOf(StreamChunk);
+      expect(queued).toMatchObject({
+        content: "partial",
+        taskIndex: 2,
+        taskName: "Streaming task",
+        taskId: "task-1",
+        agentRole: "Writer",
+        agentId: "agent-event",
+      });
+    } finally {
+      crewaiEventBus.off("llm_stream_chunk", ctx.state.handler);
+    }
+  });
+
+  it("creates for-each streaming contexts with nested result holders", () => {
+    const ctx = new ForEachStreamingContext();
+    try {
+      expect(ctx.resultHolder).toEqual([[]]);
+      expect(ctx.result_holder).toBe(ctx.resultHolder);
+      expect(ctx.currentTaskInfo).toEqual({
+        index: 0,
+        name: "",
+        id: "",
+        agent_role: "",
+        agent_id: "",
+      });
+      expect(ctx.state.result_holder).toBe(ctx.resultHolder);
+      expect(ctx.state.async_queue).not.toBeNull();
+      expect(ctx.output_holder).toBe(ctx.outputHolder);
+    } finally {
+      crewaiEventBus.off("llm_stream_chunk", ctx.state.handler);
+    }
+  });
+
   it("sets up agents with crew defaults, skills, knowledge, and executors", () => {
     const crewSkill = { name: "crew-skill" };
     const crewKnowledge = { source: "crew-knowledge" };

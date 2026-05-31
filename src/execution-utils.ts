@@ -1,7 +1,13 @@
 import { CrewKickoffStartedEvent, crewaiEventBus } from "./events.js";
 import { storeFiles, type FileInputMap } from "./file-store.js";
 import { extractInputFilesFromInputs, type InputFiles } from "./input-files.js";
-import { FlowStreamingOutput, CrewStreamingOutput } from "./streaming.js";
+import {
+  FlowStreamingOutput,
+  CrewStreamingOutput,
+  createStreamingState,
+  type StreamingState,
+  type TaskInfo,
+} from "./streaming.js";
 import type { LLMMessage, Tool } from "./types.js";
 
 export function handleReasoning(agent: Record<string, unknown>, task: Record<string, unknown>): void {
@@ -326,10 +332,46 @@ export async function runForEachAsync<TInput, TResult>(items: readonly TInput[],
 export const run_for_each_async = runForEachAsync;
 
 export class StreamingContext {
-  constructor(readonly output: CrewStreamingOutput | FlowStreamingOutput | null = null) {}
+  readonly resultHolder: unknown[];
+  readonly result_holder: unknown[];
+  readonly currentTaskInfo: TaskInfo;
+  readonly current_task_info: TaskInfo;
+  readonly state: StreamingState;
+  readonly outputHolder: Array<CrewStreamingOutput | FlowStreamingOutput>;
+  readonly output_holder: Array<CrewStreamingOutput | FlowStreamingOutput>;
+  readonly output: CrewStreamingOutput | FlowStreamingOutput | null;
+
+  constructor(useAsync = false, output: CrewStreamingOutput | FlowStreamingOutput | null = null) {
+    this.resultHolder = [];
+    this.result_holder = this.resultHolder;
+    this.currentTaskInfo = emptyTaskInfo();
+    this.current_task_info = this.currentTaskInfo;
+    this.state = createStreamingState(this.currentTaskInfo, this.resultHolder, useAsync);
+    this.outputHolder = output ? [output] : [];
+    this.output_holder = this.outputHolder;
+    this.output = output;
+  }
 }
 
-export class ForEachStreamingContext extends StreamingContext {}
+export class ForEachStreamingContext {
+  readonly resultHolder: unknown[][];
+  readonly result_holder: unknown[][];
+  readonly currentTaskInfo: TaskInfo;
+  readonly current_task_info: TaskInfo;
+  readonly state: StreamingState;
+  readonly outputHolder: Array<CrewStreamingOutput | FlowStreamingOutput>;
+  readonly output_holder: Array<CrewStreamingOutput | FlowStreamingOutput>;
+
+  constructor() {
+    this.resultHolder = [[]];
+    this.result_holder = this.resultHolder;
+    this.currentTaskInfo = emptyTaskInfo();
+    this.current_task_info = this.currentTaskInfo;
+    this.state = createStreamingState(this.currentTaskInfo, this.resultHolder, true);
+    this.outputHolder = [];
+    this.output_holder = this.outputHolder;
+  }
+}
 
 function isLlmMessage(value: unknown): value is LLMMessage {
   return value !== null && typeof value === "object" && "role" in value && "content" in value;
@@ -421,4 +463,14 @@ function dedupeByIdentity(values: readonly unknown[]): unknown[] {
     }
   }
   return deduped;
+}
+
+function emptyTaskInfo(): TaskInfo {
+  return {
+    index: 0,
+    name: "",
+    id: "",
+    agent_role: "",
+    agent_id: "",
+  };
 }
