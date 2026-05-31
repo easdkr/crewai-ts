@@ -108,6 +108,7 @@ export type MemoryOptions = {
   rootScope?: string | null;
   root_scope?: string | null;
   llm?: LLM | null;
+  embedder?: unknown;
 } & ConstructorParameters<typeof MemoryConfig>[0];
 
 export type MemoryUpdateOptions = {
@@ -1499,8 +1500,7 @@ export class RecallFlow {
     return this.synthesize_results();
   }
 
-  async kickoff(options: { inputs?: Partial<RecallState> } = {}): Promise<MemoryMatch[]> {
-    await Promise.resolve();
+  kickoff(options: { inputs?: Partial<RecallState> } = {}): MemoryMatch[] {
     Object.assign(this.state, options.inputs ?? {});
     this.analyze_query_step();
     this.filter_and_chunk();
@@ -1543,6 +1543,7 @@ export class Memory {
   readonly rootScope: string | null;
   readonly root_scope: string | null;
   readonly llm: LLM | null;
+  readonly embedder: unknown;
   private config: MemoryConfig;
   private readonly configOptions: ConstructorParameters<typeof MemoryConfig>[0];
   private readonly records: MemoryRecord[] = [];
@@ -1554,6 +1555,7 @@ export class Memory {
     this.rootScope = options.rootScope ?? options.root_scope ?? null;
     this.root_scope = this.rootScope;
     this.llm = options.llm ?? null;
+    this.embedder = options.embedder ?? null;
     this.configOptions = { ...options };
     this.config = new MemoryConfig(this.configOptions);
   }
@@ -1597,6 +1599,7 @@ export class Memory {
         importance: options.importance ?? this.config.defaultImportance,
         source: options.source ?? null,
         private: options.private ?? false,
+        embedding: this.embeddingForText(content),
       });
       this.records.push(record);
       crewaiEventBus.emit(this, new MemorySaveCompletedEvent({
@@ -1775,6 +1778,7 @@ export class Memory {
       scoreThreshold?: number | null;
       source?: string | null;
       includePrivate?: boolean;
+      depth?: "shallow" | "deep";
     } = {},
   ): MemoryMatch[] {
     const limit = options.limit ?? 10;
@@ -1784,16 +1788,23 @@ export class Memory {
     const start = performance.now();
     try {
       const scope = options.scope ? this.scopePath(options.scope) : this.rootScope;
-      const queryTerms = tokenize(query);
-      const matches = this.records
-        .filter((record) => !scope || record.scope.startsWith(scope))
-        .filter((record) => options.includePrivate || !record.private || record.source === options.source)
-        .filter((record) => !options.categories || options.categories.some((category) => record.categories.includes(category)))
-        .map((record) => ({ record, score: scoreRecord(record, queryTerms) }))
-        .filter((match) => scoreThreshold === null || match.score >= scoreThreshold)
-        .sort((a, b) => b.score - a.score || b.record.createdAt.getTime() - a.record.createdAt.getTime())
-        .slice(0, limit)
-        .map((match) => new MemoryMatch(match));
+      const depth = options.depth ?? (isEmbeddingCallable(this.embedder) ? "deep" : "shallow");
+      const matches = depth === "deep" && isEmbeddingCallable(this.embedder)
+        ? this.deepRecall(query, {
+          scope,
+          categories: options.categories ?? null,
+          limit,
+          source: options.source ?? null,
+          includePrivate: options.includePrivate ?? false,
+        })
+        : this.shallowRecall(query, {
+          scope,
+          categories: options.categories ?? null,
+          limit,
+          scoreThreshold,
+          source: options.source ?? null,
+          includePrivate: options.includePrivate ?? false,
+        });
       crewaiEventBus.emit(this, new MemoryQueryCompletedEvent({
         query,
         results: matches,
@@ -1811,6 +1822,66 @@ export class Memory {
   async arecall(query: string, options: Parameters<Memory["recall"]>[1] = {}): Promise<MemoryMatch[]> {
     await Promise.resolve();
     return this.recall(query, options);
+  }
+
+  private shallowRecall(query: string, options: {
+    scope: string | null;
+    categories: readonly string[] | null;
+    limit: number;
+    scoreThreshold: number | null;
+    source: string | null;
+    includePrivate: boolean;
+  }): MemoryMatch[] {
+    if (isEmbeddingCallable(this.embedder)) {
+      const embedding = embed_text(this.embedder, query);
+      if (embedding.length > 0) {
+        return this.memoryVectorStorage().search(embedding, {
+          scope_prefix: options.scope,
+          categories: options.categories,
+          limit: options.limit,
+          min_score: 0,
+        })
+          .filter(([record]) => options.includePrivate || !record.private || record.source === options.source)
+          .map(([record, semanticScore]) => {
+            const [score, reasons] = compute_composite_score(record, semanticScore, this.config);
+            return new MemoryMatch({ record, score, matchReasons: reasons });
+          })
+          .filter((match) => options.scoreThreshold === null || match.score >= options.scoreThreshold)
+          .sort((left, right) => right.score - left.score)
+          .slice(0, options.limit);
+      }
+    }
+    const queryTerms = tokenize(query);
+    return this.records
+      .filter((record) => !options.scope || record.scope.startsWith(options.scope))
+      .filter((record) => options.includePrivate || !record.private || record.source === options.source)
+      .filter((record) => !options.categories || options.categories.some((category) => record.categories.includes(category)))
+      .map((record) => ({ record, score: scoreRecord(record, queryTerms) }))
+      .filter((match) => options.scoreThreshold === null || match.score >= options.scoreThreshold)
+      .sort((a, b) => b.score - a.score || b.record.createdAt.getTime() - a.record.createdAt.getTime())
+      .slice(0, options.limit)
+      .map((match) => new MemoryMatch(match));
+  }
+
+  private deepRecall(query: string, options: {
+    scope: string | null;
+    categories: readonly string[] | null;
+    limit: number;
+    source: string | null;
+    includePrivate: boolean;
+  }): MemoryMatch[] {
+    const flow = new RecallFlow(this.memoryVectorStorage(), this.llm, this.embedder, this.config);
+    void flow.kickoff({
+      inputs: {
+        query,
+        scope: options.scope,
+        categories: options.categories,
+        limit: options.limit,
+        source: options.source,
+        includePrivate: options.includePrivate,
+      },
+    });
+    return flow.state.final_results;
   }
 
   forget(options: { scope?: string | null; categories?: readonly string[] | null; recordIds?: readonly string[] | null } = {}): number {
@@ -2041,6 +2112,7 @@ export class Memory {
         importance: item.options.importance ?? this.config.defaultImportance,
         source: item.options.source ?? null,
         private: item.options.private ?? false,
+        embedding: this.embeddingForText(item.content),
       }));
       this.records.push(...records);
       crewaiEventBus.emit(this, new MemorySaveCompletedEvent({
@@ -2059,6 +2131,60 @@ export class Memory {
       }));
       throw error;
     }
+  }
+
+  private embeddingForText(content: string): readonly number[] | null {
+    const embedding = embed_text(this.embedder, content);
+    return embedding.length > 0 ? embedding : null;
+  }
+
+  private memoryVectorStorage(): MemoryVectorStorageLike & {
+    list_scopes(scopePrefix?: string | null): string[];
+    get_scope_info(scope: string): ScopeInfo;
+    touch_records(recordIds: readonly string[]): void;
+  } {
+    return {
+      search: (embedding, options = {}) => {
+        const scopePrefix = options.scopePrefix ?? options.scope_prefix ?? null;
+        const categories = options.categories ?? null;
+        const limit = options.limit ?? 10;
+        const minScore = options.minScore ?? options.min_score ?? Number.NEGATIVE_INFINITY;
+        return this.records
+          .filter((record) => is_scope_within_prefix(record.scope, scopePrefix))
+          .filter((record) => !categories || categories.some((category) => record.categories.includes(category)))
+          .map((record) => [record, cosineSimilarity(embedding, record.embedding ?? [])] as const)
+          .filter(([, score]) => score >= minScore)
+          .sort((left, right) => right[1] - left[1])
+          .slice(0, limit);
+      },
+      list_scopes: (scopePrefix = "/") => this.immediateChildScopes(scopePrefix ?? "/"),
+      get_scope_info: (scope) => this.scopeInfoForPath(scope),
+      touch_records: (recordIds) => {
+        const ids = new Set(recordIds);
+        if (ids.size === 0) {
+          return;
+        }
+        const now = new Date();
+        this.records.forEach((record, index) => {
+          if (!ids.has(record.id)) {
+            return;
+          }
+          this.records[index] = new MemoryRecord({
+            id: record.id,
+            content: record.content,
+            scope: record.scope,
+            categories: record.categories,
+            metadata: record.metadata,
+            importance: record.importance,
+            source: record.source,
+            private: record.private,
+            createdAt: record.createdAt,
+            lastAccessed: now,
+            embedding: record.embedding ?? null,
+          });
+        });
+      },
+    };
   }
 
   private scopePath(scope: string | null | undefined): string {

@@ -13315,7 +13315,7 @@ describe("memory", () => {
     expect(flow.re_decide_depth()).toBe("synthesize");
   });
 
-  it("orchestrates RecallFlow kickoff through analysis filtering search and synthesis", async () => {
+  it("orchestrates RecallFlow kickoff through analysis filtering search and synthesis", () => {
     const record = new MemoryRecord({
       id: "deep",
       content: "deep recall result",
@@ -13337,7 +13337,7 @@ describe("memory", () => {
     };
     const flow = new RecallFlow(storage, llm, embedder, new MemoryConfig({ query_analysis_threshold: 1 }));
 
-    const results = await flow.kickoff({
+    const results = flow.kickoff({
       inputs: {
         query: "Explain deep CrewAI recall",
         scope: "/crew",
@@ -13356,6 +13356,53 @@ describe("memory", () => {
     });
     expect(results.map((match) => match.record.id)).toEqual(["deep"]);
     expect(flow.state.final_results).toBe(results);
+  });
+
+  it("routes Memory deep recall through RecallFlow with configured embedder", () => {
+    const llm = vi.fn(() => JSON.stringify({
+      suggested_scopes: ["/crew/history"],
+      recall_queries: ["deep recall"],
+      complexity: "simple",
+    }));
+    const embedder = vi.fn((texts: readonly string[]) => texts.map(() => [1, 0, 0]));
+    const memory = new Memory({
+      llm,
+      embedder,
+      query_analysis_threshold: 1,
+    });
+    memory.remember("deep recall result", {
+      scope: "/crew/history",
+      categories: ["memory"],
+      importance: 0.9,
+    });
+
+    const results = memory.recall("Explain deep CrewAI recall", {
+      scope: "/crew",
+      categories: ["memory"],
+      limit: 1,
+      depth: "deep",
+    });
+
+    expect(llm).toHaveBeenCalled();
+    expect(results.map((match) => match.record.content)).toEqual(["deep recall result"]);
+  });
+
+  it("runs Memory shallow recall with vector search without LLM analysis", () => {
+    const llm = vi.fn(() => JSON.stringify({ recall_queries: ["wrong"] }));
+    const embedder = vi.fn((texts: readonly string[]) =>
+      texts.map((text) => text.includes("other") ? [0, 1, 0] : [1, 0, 0]));
+    const memory = new Memory({ llm, embedder });
+    memory.remember("target memory", { categories: ["memory"], importance: 0.8 });
+    memory.remember("other memory", { categories: ["memory"], importance: 0.8 });
+
+    const results = memory.recall("target", {
+      categories: ["memory"],
+      limit: 1,
+      depth: "shallow",
+    });
+
+    expect(llm).not.toHaveBeenCalled();
+    expect(results.map((match) => match.record.content)).toEqual(["target memory"]);
   });
 
   it("automatically appends relevant crew memories to task prompts", async () => {
