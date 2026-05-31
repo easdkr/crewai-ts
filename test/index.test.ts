@@ -14524,6 +14524,16 @@ describe("task output files", () => {
     expect(readFileSync(outputFile, "utf8")).toBe("{\n  \"summary\": \"done\"\n}");
   });
 
+  it("exposes the upstream-style task representation", () => {
+    const taskInstance = new Task({
+      description: "Write report",
+      expected_output: "A concise report",
+    });
+
+    expect(taskInstance.__repr__()).toBe("Task(description=Write report, expected_output=A concise report)");
+    expect(taskInstance.toString()).toBe("Task(description=Write report, expected_output=A concise report)");
+  });
+
   it("rejects unsafe output file paths", () => {
     const agentInstance = new Agent({
       role: "Writer",
@@ -14900,6 +14910,54 @@ describe("task interpolation", () => {
 });
 
 describe("task guardrails", () => {
+  it("invokes guardrails through the upstream-compatible helper", async () => {
+    const prompts: string[] = [];
+    let attempts = 0;
+    const agentInstance = new Agent({
+      role: "Writer",
+      goal: "Write reports",
+      backstory: "Careful writer",
+      llm: (messages) => {
+        const prompt = messages.at(-1)?.content ?? "";
+        prompts.push(prompt);
+        return "fixed";
+      },
+    });
+    const taskInstance = new Task({
+      description: "Write",
+      expectedOutput: "A report",
+      output_json: true,
+      outputConverter: (raw) => ({ summary: raw }),
+      guardrailMaxRetries: 1,
+    });
+    const output = new TaskOutput({
+      description: "Write",
+      expectedOutput: "A report",
+      raw: "draft",
+      agent: "Writer",
+      outputFormat: OutputFormat.RAW,
+    });
+
+    const guarded = await taskInstance._invoke_guardrail_function(
+      output,
+      agentInstance,
+      [],
+      (currentOutput) => {
+        attempts += 1;
+        return attempts === 1
+          ? [false, "needs revision"]
+          : [true, currentOutput.raw];
+      },
+      0,
+    );
+
+    expect(guarded.raw).toBe("fixed");
+    expect(guarded.json_dict).toEqual({ summary: "fixed" });
+    expect(prompts[0]).toContain("Validation error: needs revision");
+    expect(prompts[0]).toContain("Task output: draft");
+    expect(attempts).toBe(2);
+  });
+
   it("runs multiple guardrails in order and uses their transformed output", async () => {
     const seen: string[] = [];
     const agentInstance = new Agent({

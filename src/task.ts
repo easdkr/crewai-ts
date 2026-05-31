@@ -605,6 +605,103 @@ export class Task {
     this.saveFile(result);
   }
 
+  toString(): string {
+    return `Task(description=${this.description}, expected_output=${this.expectedOutput})`;
+  }
+
+  __repr__(): string {
+    return this.toString();
+  }
+
+  async invokeGuardrailFunction(
+    taskOutput: TaskOutput,
+    agent: Agent,
+    tools: readonly Tool[],
+    guardrail: Guardrail | null,
+    guardrailIndex?: number | null,
+  ): Promise<TaskOutput> {
+    if (!guardrail) {
+      return taskOutput;
+    }
+    let output = taskOutput;
+    for (let attempt = 0; attempt <= this.guardrailMaxRetries; attempt += 1) {
+      this.retryCount = attempt;
+      this.retry_count = this.retryCount;
+      crewaiEventBus.emit(this, new LLMGuardrailStartedEvent({
+        guardrail,
+        retry_count: attempt,
+        from_task: this,
+        from_agent: agent,
+      }));
+      const result = await guardrail(output);
+      const [success, nextValue] = isGuardrailTuple(result)
+        ? result
+        : [result.success, result.result];
+      crewaiEventBus.emit(this, new LLMGuardrailCompletedEvent({
+        success,
+        result: nextValue,
+        ...(success ? {} : { error: nextValue }),
+        retry_count: attempt,
+        from_task: this,
+        from_agent: agent,
+      }));
+      if (success) {
+        if (nextValue === null || nextValue === undefined) {
+          throw new Error("Task guardrail returned None as result. This is not allowed.");
+        }
+        return await this.normalizeGuardrailOutput(nextValue, output, agent);
+      }
+      if (attempt >= this.guardrailMaxRetries) {
+        const guardrailName = guardrailIndex === undefined || guardrailIndex === null
+          ? "guardrail"
+          : `guardrail ${String(guardrailIndex)}`;
+        throw new Error(`Task failed ${guardrailName} validation after ${String(this.guardrailMaxRetries)} retries. Last error: ${String(nextValue)}`);
+      }
+      const context = [
+        `Validation error: ${String(nextValue)}`,
+        `Task output: ${output.raw}`,
+      ].join("\n");
+      const raw = await agent.executeTask(context, {}, tools, { task: this });
+      output = await this.createOutput(raw, agent, {
+        description: output.description,
+        expectedOutput: output.expectedOutput ?? this.expectedOutput,
+        prompt: "",
+        inputFiles: {},
+      });
+    }
+    return output;
+  }
+
+  async _invoke_guardrail_function(
+    task_output: TaskOutput,
+    agent: Agent,
+    tools: readonly Tool[],
+    guardrail: Guardrail | null,
+    guardrail_index?: number | null,
+  ): Promise<TaskOutput> {
+    return await this.invokeGuardrailFunction(task_output, agent, tools, guardrail, guardrail_index);
+  }
+
+  async ainvokeGuardrailFunction(
+    taskOutput: TaskOutput,
+    agent: Agent,
+    tools: readonly Tool[],
+    guardrail: Guardrail | null,
+    guardrailIndex?: number | null,
+  ): Promise<TaskOutput> {
+    return await this.invokeGuardrailFunction(taskOutput, agent, tools, guardrail, guardrailIndex);
+  }
+
+  async _ainvoke_guardrail_function(
+    task_output: TaskOutput,
+    agent: Agent,
+    tools: readonly Tool[],
+    guardrail: Guardrail | null,
+    guardrail_index?: number | null,
+  ): Promise<TaskOutput> {
+    return await this.ainvokeGuardrailFunction(task_output, agent, tools, guardrail, guardrail_index);
+  }
+
   copy(agents: readonly Agent[] = [], taskMapping: Record<string, Task> = {}): Task {
     const clonedContext = Array.isArray(this.context)
       ? this.context.map((contextTask: Task) => taskMapping[contextTask.key] ?? contextTask)
