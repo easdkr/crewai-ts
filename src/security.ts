@@ -116,6 +116,14 @@ export class SecurityConfig {
     this.fingerprint = coerceFingerprint(options.fingerprint);
   }
 
+  static validateFingerprint(value?: Fingerprint | FingerprintDict | string | null): Fingerprint {
+    return coerceFingerprint(value);
+  }
+
+  static validate_fingerprint(value?: Fingerprint | FingerprintDict | string | null): Fingerprint {
+    return SecurityConfig.validateFingerprint(value);
+  }
+
   static fromDict(data: { fingerprint?: FingerprintDict | null } | null | undefined): SecurityConfig {
     return new SecurityConfig({ fingerprint: data?.fingerprint ?? null });
   }

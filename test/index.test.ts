@@ -13143,6 +13143,11 @@ describe("security fingerprints", () => {
     const fromSeed = new SecurityConfig({ fingerprint: "agent-seed" });
     const fromDict = SecurityConfig.from_dict(fromSeed.to_dict());
 
+    expect(Object.hasOwn(SecurityConfig, "validate_fingerprint")).toBe(true);
+    expect(SecurityConfig.validate_fingerprint(null)).toBeInstanceOf(Fingerprint);
+    expect(SecurityConfig.validate_fingerprint("agent-seed").uuid_str).toBe(fromSeed.fingerprint.uuid_str);
+    expect(SecurityConfig.validate_fingerprint(fromSeed.to_dict().fingerprint).uuid_str).toBe(fromSeed.fingerprint.uuid_str);
+    expect(() => SecurityConfig.validate_fingerprint("   ")).toThrow("Fingerprint seed cannot be empty");
     expect(fromDict.fingerprint.uuid_str).toBe(fromSeed.fingerprint.uuid_str);
     expect(new SecurityConfig({ fingerprint: null }).fingerprint).toBeInstanceOf(Fingerprint);
   });
