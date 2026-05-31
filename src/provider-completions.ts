@@ -1,5 +1,6 @@
 import { ConfiguredLLM, CONTEXT_WINDOW_USAGE_RATIO, LocalFileUploader, type BaseLLMOptions, type LLMCallOptions, type LLMResponse } from "./llm.js";
-import type { LLMMessage } from "./types.js";
+import { convertToolsToOpenAISchema } from "./agent-utils.js";
+import type { LLMMessage, Tool } from "./types.js";
 
 export const TOOL_SEARCH_TOOL_TYPES = Object.freeze([
   "tool_search_tool_regex_20251119",
@@ -209,6 +210,8 @@ export class BedrockCompletion extends ConfiguredLLM {
       stop: options.stop,
       stopSequences: options.stopSequences,
       stop_sequences: options.stop_sequences,
+      additionalParams: options.additionalParams,
+      additional_params: options.additional_params,
       maxTokens: options.maxTokens ?? options.max_tokens ?? null,
       timeout: options.timeout ?? null,
     }) as BaseLLMOptions & { maxTokens?: number | null; timeout?: number | null });
@@ -543,6 +546,8 @@ export class AzureCompletion extends ConfiguredLLM {
       stop: options.stop,
       stopSequences: options.stopSequences,
       stop_sequences: options.stop_sequences,
+      additionalParams: options.additionalParams,
+      additional_params: options.additional_params,
       maxTokens: options.maxTokens ?? options.max_tokens ?? null,
       timeout: options.timeout ?? null,
     }) as BaseLLMOptions & { maxTokens?: number | null; timeout?: number | null });
@@ -601,6 +606,75 @@ export class AzureCompletion extends ConfiguredLLM {
 
   override resetReasoningChain(): void {
     this.reasoningChainItems = [];
+  }
+
+  prepareCompletionParams(messages: readonly LLMMessage[], tools: readonly Tool[] | null = null): AzureCompletionParams {
+    const params: AzureCompletionParams = {
+      messages: [...messages],
+      stream: this.stream,
+    };
+    const modelExtras: Record<string, unknown> = {};
+    if (this.stream) {
+      modelExtras.stream_options = { include_usage: true };
+    }
+    if (!this.isAzureOpenAIEndpoint) {
+      params.model = this.model;
+    }
+    if (this.temperature !== null) {
+      params.temperature = this.temperature;
+    }
+    if (this.topP !== null) {
+      params.top_p = this.topP;
+    }
+    if (this.frequencyPenalty !== null) {
+      params.frequency_penalty = this.frequencyPenalty;
+    }
+    if (this.presencePenalty !== null) {
+      params.presence_penalty = this.presencePenalty;
+    }
+    if (this.maxTokens !== null) {
+      params.max_tokens = this.maxTokens;
+    }
+    if (this.stop.length > 0 && this.supportsStopWords()) {
+      params.stop = [...this.stop];
+    }
+    if (tools && tools.length > 0 && this.isOpenAIModel) {
+      params.tools = this.convertToolsForInterference(tools);
+      params.tool_choice = "auto";
+    }
+    const promptCacheKey = this.additionalParams.prompt_cache_key;
+    if (promptCacheKey) {
+      modelExtras.prompt_cache_key = promptCacheKey;
+    }
+    if (Object.keys(modelExtras).length > 0) {
+      params.model_extras = modelExtras;
+    }
+    const dropParams = this.additionalParams.drop_params;
+    const additionalDropParams = this.additionalParams.additional_drop_params;
+    if (dropParams && Array.isArray(additionalDropParams)) {
+      const dropped = new Set(additionalDropParams.filter((dropParam): dropParam is string => typeof dropParam === "string"));
+      return Object.fromEntries(Object.entries(params).filter(([key]) => !dropped.has(key)));
+    }
+    return params;
+  }
+
+  _prepare_completion_params(messages: readonly LLMMessage[], tools: readonly Tool[] | null = null): AzureCompletionParams {
+    return this.prepareCompletionParams(messages, tools);
+  }
+
+  convertToolsForInterference(tools: readonly Tool[]): Record<string, unknown>[] {
+    return convertToolsToOpenAISchema(tools)[0].map((tool) => ({
+      type: "function",
+      function: {
+        name: tool.function.name,
+        description: tool.function.description,
+        parameters: tool.function.parameters,
+      },
+    }));
+  }
+
+  _convert_tools_for_interference(tools: readonly Tool[]): Record<string, unknown>[] {
+    return this.convertToolsForInterference(tools);
   }
 
   override getFileUploader(): LocalFileUploader {

@@ -8740,6 +8740,80 @@ describe("LLM providers", () => {
     });
   });
 
+  it("prepares Azure completion request parameters with model extras and endpoint rules", () => {
+    const search = new StructuredTool({
+      name: "search docs",
+      description: "Search documentation",
+      argsSchema: {
+        query: { type: "string", description: "Search query" },
+      },
+      func: () => "result",
+    });
+    const azureOpenAI = new AzureCompletion({
+      model: "gpt-4o",
+      endpoint: "https://example.openai.azure.com/openai/deployments/gpt-4o",
+      temperature: 0.2,
+      top_p: 0.8,
+      frequency_penalty: 0.1,
+      presence_penalty: 0.2,
+      max_tokens: 300,
+      stop: ["STOP"],
+      stream: true,
+      additional_params: {
+        prompt_cache_key: "cache-key",
+        drop_params: true,
+        additional_drop_params: ["frequency_penalty"],
+      },
+    });
+
+    const params = (azureOpenAI as unknown as {
+      _prepare_completion_params(messages: LLMMessage[], tools?: StructuredTool[]): Record<string, unknown>;
+    })._prepare_completion_params([{ role: "user", content: "Find CrewAI" }], [search]);
+
+    expect(params).toMatchObject({
+      messages: [{ role: "user", content: "Find CrewAI" }],
+      stream: true,
+      temperature: 0.2,
+      top_p: 0.8,
+      presence_penalty: 0.2,
+      max_tokens: 300,
+      stop: ["STOP"],
+      model_extras: {
+        stream_options: { include_usage: true },
+        prompt_cache_key: "cache-key",
+      },
+      tools: [{
+        type: "function",
+        function: {
+          name: "search_docs",
+          description: "Search documentation",
+          parameters: {
+            type: "object",
+            properties: {
+              query: { type: "string", description: "Search query" },
+            },
+          },
+        },
+      }],
+      tool_choice: "auto",
+    });
+    expect(params).not.toHaveProperty("model");
+    expect(params).not.toHaveProperty("frequency_penalty");
+
+    const external = new AzureCompletion({
+      model: "mistral-large",
+      endpoint: "https://models.inference.ai.azure.com",
+      max_tokens: 100,
+    });
+    expect((external as unknown as {
+      _prepare_completion_params(messages: LLMMessage[], tools?: StructuredTool[]): Record<string, unknown>;
+    })._prepare_completion_params([{ role: "user", content: "Find CrewAI" }], [search])).toMatchObject({
+      model: "mistral-large",
+      messages: [{ role: "user", content: "Find CrewAI" }],
+      max_tokens: 100,
+    });
+  });
+
   it("exposes Gemini completion provider parity helpers", () => {
     const gemini = new GeminiCompletion({
       model: "gemini-2.5-pro",
