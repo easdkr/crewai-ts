@@ -262,6 +262,7 @@ import {
   CacheHandler,
   CacheTools,
   AddImageTool,
+  BaseAgentTool,
   CrewStructuredTool,
   EnvVar,
   SourceHelper,
@@ -9239,6 +9240,15 @@ describe("core crew runtime", () => {
       "ask_question_to_coworker",
     ]));
     expect(output.raw).toContain("writer got: Draft summary");
+  });
+
+  it("exposes upstream coworker extraction helpers on BaseAgentTool", () => {
+    const tool = new BaseAgentTool();
+
+    expect(BaseAgentTool._get_coworker(null, { co_worker: "Writer" })).toBe("Writer");
+    expect(BaseAgentTool._getCoworker("[Researcher, Writer]")).toBe("Researcher");
+    expect(tool._get_coworker(undefined, { coworker: "Analyst" })).toBe("Analyst");
+    expect(tool.sanitize_agent_name("  \"Lead   Researcher\"  ")).toBe("lead researcher");
   });
 
   it("preserves task tool override while adding delegation tools", async () => {

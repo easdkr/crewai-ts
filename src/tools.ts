@@ -783,14 +783,14 @@ export class BaseAgentTool extends BaseTool {
   }
 
   sanitizeAgentName(name: string): string {
-    return name ? name.split(/\s+/).join(" ").replaceAll("\"", "").toLocaleLowerCase() : "";
+    return name ? name.trim().split(/\s+/).join(" ").replaceAll("\"", "").toLocaleLowerCase() : "";
   }
 
   sanitize_agent_name(name: string): string {
     return this.sanitizeAgentName(name);
   }
 
-  protected _getCoworker(coworker: unknown, args: Record<string, unknown>): string | null {
+  static _getCoworker(coworker: unknown, args: Record<string, unknown> = {}): string | null {
     const raw = coworker ?? args.co_worker ?? args.coworker;
     if (typeof raw !== "string") {
       return null;
@@ -799,6 +799,18 @@ export class BaseAgentTool extends BaseTool {
       return raw.slice(1, -1).split(",")[0]?.trim() ?? "";
     }
     return raw;
+  }
+
+  static _get_coworker(coworker: unknown, args: Record<string, unknown> = {}): string | null {
+    return this._getCoworker(coworker, args);
+  }
+
+  _getCoworker(coworker: unknown, args: Record<string, unknown> = {}): string | null {
+    return BaseAgentTool._getCoworker(coworker, args);
+  }
+
+  _get_coworker(coworker: unknown, args: Record<string, unknown> = {}): string | null {
+    return this._getCoworker(coworker, args);
   }
 
   protected _execute(agentName: string | null, task: string, context: string | null = null): MaybePromise<string> {
