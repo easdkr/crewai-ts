@@ -13002,6 +13002,33 @@ describe("memory", () => {
     expect(item.top_similarity).toBe(0.91);
   });
 
+  it("applies EncodingFlow analysis defaults without LLM when fields are provided and no similar records match", async () => {
+    const llm = vi.fn();
+    const flow = new EncodingFlow(null, llm, null, new MemoryConfig({ consolidation_threshold: 0.85 }));
+    const item = new ItemState("CrewAI resolved memory", {
+      scope: "/project",
+      root_scope: "/crew",
+      categories: ["memory"],
+      metadata: { source: "test" },
+      importance: 0.8,
+      source: "unit",
+      private: true,
+      top_similarity: 0.2,
+    });
+    flow.state.items.push(item);
+
+    await flow.parallel_analyze();
+
+    expect(llm).not.toHaveBeenCalled();
+    expect(item.resolved_scope).toBe("/crew/project");
+    expect(item.resolved_categories).toEqual(["memory"]);
+    expect(item.resolved_metadata).toEqual({ source: "test" });
+    expect(item.resolved_importance).toBe(0.8);
+    expect(item.resolved_source).toBe("unit");
+    expect(item.resolved_private).toBe(true);
+    expect(item.plan).toEqual(new ConsolidationPlan({ actions: [], insert_new: true }));
+  });
+
   it("automatically appends relevant crew memories to task prompts", async () => {
     const memory = new Memory();
     memory.remember("Nest should consume crewai-ts as a normal TypeScript library", {

@@ -571,6 +571,98 @@ export class EncodingFlow {
   parallelFindSimilar(): void {
     this.parallel_find_similar();
   }
+
+  async parallel_analyze(): Promise<void> {
+    const items = this.state.items;
+    const threshold = this.config.consolidationThreshold;
+    const activeItems = items.filter((item) => !item.dropped);
+    const anyNeedsFields = activeItems.some((item) =>
+      item.scope === null || item.categories === null || item.importance === null,
+    );
+    const existingScopes = anyNeedsFields ? this.listStorageScopes(activeItems) : [];
+    const existingCategories = anyNeedsFields ? this.listStorageCategories(activeItems) : [];
+
+    await Promise.all(items.map(async (item) => {
+      if (item.dropped) {
+        return;
+      }
+      const fieldsProvided = item.scope !== null && item.categories !== null && item.importance !== null;
+      const hasSimilar = item.topSimilarity >= threshold;
+      if (fieldsProvided) {
+        this.applyEncodingDefaults(item);
+      } else {
+        const analysis = await analyzeForSave(item.content, existingScopes, existingCategories, this.llm as LLM);
+        this.applyEncodingAnalysis(item, analysis);
+      }
+      if (hasSimilar) {
+        item.plan = await analyzeForConsolidation(item.content, item.similar_records, this.llm as LLM);
+        return;
+      }
+      item.plan = new ConsolidationPlan({ actions: [], insertNew: true });
+    }));
+  }
+
+  parallelAnalyze(): Promise<void> {
+    return this.parallel_analyze();
+  }
+
+  private applyEncodingDefaults(item: ItemState): void {
+    const innerScope = item.scope ?? "/";
+    item.resolvedScope = item.root_scope ? joinScopePaths(item.root_scope, innerScope) : innerScope;
+    item.resolved_scope = item.resolvedScope;
+    item.resolvedCategories = [...(item.categories ?? [])];
+    item.resolved_categories = item.resolvedCategories;
+    item.resolvedMetadata = { ...(item.metadata ?? {}) };
+    item.resolved_metadata = item.resolvedMetadata;
+    item.resolvedImportance = item.importance ?? this.config.defaultImportance;
+    item.resolved_importance = item.resolvedImportance;
+    item.resolvedSource = item.source;
+    item.resolved_source = item.resolvedSource;
+    item.resolvedPrivate = item.private;
+    item.resolved_private = item.resolvedPrivate;
+  }
+
+  private applyEncodingAnalysis(item: ItemState, analysis: MemoryAnalysis): void {
+    const innerScope = item.scope ?? analysis.suggested_scope;
+    item.resolvedScope = item.root_scope ? joinScopePaths(item.root_scope, innerScope) : innerScope;
+    item.resolved_scope = item.resolvedScope;
+    item.resolvedCategories = [...(item.categories ?? analysis.categories)];
+    item.resolved_categories = item.resolvedCategories;
+    item.resolvedMetadata = {
+      ...(item.metadata ?? {}),
+      entities: analysis.extracted_metadata.entities,
+      dates: analysis.extracted_metadata.dates,
+      topics: analysis.extracted_metadata.topics,
+    };
+    item.resolved_metadata = item.resolvedMetadata;
+    item.resolvedImportance = item.importance ?? analysis.importance;
+    item.resolved_importance = item.resolvedImportance;
+    item.resolvedSource = item.source;
+    item.resolved_source = item.resolvedSource;
+    item.resolvedPrivate = item.private;
+    item.resolved_private = item.resolvedPrivate;
+  }
+
+  private listStorageScopes(activeItems: readonly ItemState[]): readonly string[] {
+    const storage = this.storage as { list_scopes?: (scope?: string | null) => readonly string[]; listScopes?: (scope?: string | null) => readonly string[] } | null;
+    const activeRoot = activeItems.find((item) => item.root_scope)?.root_scope ?? "/";
+    try {
+      return storage?.list_scopes?.(activeRoot) ?? storage?.listScopes?.(activeRoot) ?? ["/"];
+    } catch {
+      return ["/"];
+    }
+  }
+
+  private listStorageCategories(activeItems: readonly ItemState[]): readonly string[] {
+    const storage = this.storage as { list_categories?: (scope?: string | null) => Record<string, unknown>; listCategories?: (scope?: string | null) => Record<string, unknown> } | null;
+    const activeRoot = activeItems.find((item) => item.root_scope)?.root_scope ?? null;
+    try {
+      const categories = storage?.list_categories?.(activeRoot) ?? storage?.listCategories?.(activeRoot) ?? {};
+      return Object.keys(categories);
+    } catch {
+      return [];
+    }
+  }
 }
 
 export class RecallState {
