@@ -114,6 +114,75 @@ export class SyncHumanInputProvider implements HumanInputProvider {
   async handle_feedback_async(formatted_answer: unknown, context: AsyncExecutorContext): Promise<unknown> {
     return await this.handleFeedbackAsync(formatted_answer, context);
   }
+
+  static _get_output_string(answer: unknown): string {
+    const record = asRecord(answer);
+    const output = record?.output ?? record?.raw ?? answer;
+    const outputRecord = asRecord(output);
+    const modelDumpJson = outputRecord?.model_dump_json ?? outputRecord?.modelDumpJson;
+    if (typeof modelDumpJson === "function") {
+      return String((modelDumpJson as () => unknown).call(output));
+    }
+    return typeof output === "string" ? output : JSON.stringify(output);
+  }
+
+  static _handle_training_feedback(initialAnswer: unknown, feedback: string, context: ExecutorContext): unknown {
+    handleTrainingOutput(context, initialAnswer, feedback);
+    appendFeedback(context, feedback);
+    const improvedAnswer = invokeLoop(context);
+    handleTrainingOutput(context, improvedAnswer, null);
+    setAskForHumanInput(context, false);
+    return improvedAnswer;
+  }
+
+  _handle_training_feedback(initialAnswer: unknown, feedback: string, context: ExecutorContext): unknown {
+    return SyncHumanInputProvider._handle_training_feedback(initialAnswer, feedback, context);
+  }
+
+  _handle_regular_feedback(currentAnswer: unknown, initialFeedback: string, context: ExecutorContext): unknown {
+    return handleHumanFeedbackLoop(currentAnswer, initialFeedback, context, () => this._prompt_input(context.crew));
+  }
+
+  static async _handle_training_feedback_async(initialAnswer: unknown, feedback: string, context: AsyncExecutorContext): Promise<unknown> {
+    handleTrainingOutput(context, initialAnswer, feedback);
+    appendFeedback(context, feedback);
+    const improvedAnswer = await ainvokeLoop(context);
+    handleTrainingOutput(context, improvedAnswer, null);
+    setAskForHumanInput(context, false);
+    return improvedAnswer;
+  }
+
+  async _handle_training_feedback_async(initialAnswer: unknown, feedback: string, context: AsyncExecutorContext): Promise<unknown> {
+    return await SyncHumanInputProvider._handle_training_feedback_async(initialAnswer, feedback, context);
+  }
+
+  async _handle_regular_feedback_async(currentAnswer: unknown, initialFeedback: string, context: AsyncExecutorContext): Promise<unknown> {
+    return await handleHumanFeedbackLoopAsync(currentAnswer, initialFeedback, context, async () => await this._prompt_input_async(context.crew));
+  }
+
+  _prompt_input(crew: unknown = null): string {
+    const feedback = this.requestFeedback(createPromptOnlyHumanInputRequest(crew));
+    if (isPromiseLike(feedback)) {
+      throw new Error("Synchronous human input prompt received an asynchronous feedback provider.");
+    }
+    return feedback;
+  }
+
+  async _prompt_input_async(crew: unknown = null): Promise<string> {
+    return await this.requestFeedback(createPromptOnlyHumanInputRequest(crew));
+  }
+}
+
+export async function _async_readline(): Promise<string> {
+  if (!input.isTTY) {
+    return "";
+  }
+  const rl = createInterface({ input, output });
+  try {
+    return (await rl.question("")).replace(/\n$/, "");
+  } finally {
+    rl.close();
+  }
 }
 
 let currentProvider: HumanInputProvider | null = null;
@@ -253,6 +322,16 @@ function createHumanInputRequest(answer: unknown, context: ExecutorContext): Hum
     taskDescription: getString(task, "description") ?? "",
     expectedOutput: getString(task, "expectedOutput") ?? getString(task, "expected_output") ?? "",
     output: answerToTaskOutput(answer),
+  };
+}
+
+function createPromptOnlyHumanInputRequest(crew: unknown): HumanInputRequest {
+  const crewRecord = asRecord(crew);
+  return {
+    taskName: null,
+    taskDescription: getString(crewRecord, "name") ?? "",
+    expectedOutput: "",
+    output: { raw: "" } as TaskOutput,
   };
 }
 

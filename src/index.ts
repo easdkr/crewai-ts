@@ -1394,6 +1394,7 @@ export {
   type LLMGuardrailOptions,
 } from "./guardrail.js";
 export {
+  _async_readline,
   SyncHumanInputProvider,
   AsyncExecutorContext,
   ExecutorContext,
