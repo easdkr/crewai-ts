@@ -906,7 +906,17 @@ export function sanitize_function_name(name: string): string {
 }
 
 export function extract_tool_info(tool: Record<string, unknown>): [string, string, Record<string, unknown>] {
-  const source = recordOrNull(tool.function) ?? tool;
+  if (!recordOrNull(tool)) {
+    throw new Error("Tool must be a dictionary");
+  }
+  let source = tool;
+  if ("function" in tool) {
+    const functionInfo = recordOrNull(tool.function);
+    if (!functionInfo) {
+      throw new Error("Tool function must be a dictionary");
+    }
+    source = functionInfo;
+  }
   const name = stringOrEmpty(source.name);
   const description = stringOrEmpty(source.description);
   const parameters = recordOrNull(source.parameters) ?? argsSchemaParameters(source.args_schema) ?? {};

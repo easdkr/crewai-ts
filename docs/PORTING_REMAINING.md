@@ -11,7 +11,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `npm run lint`
   - `npm run smoke:pack`
   - `python3 scripts/check-export-parity.py`
-- Test suite: 427 passing tests.
+- Test suite: 428 passing tests.
 - Root export parity against upstream clone `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `5cdc420`: `total_missing=0`.
 - Public method parity has been tightened for core runtime classes:
   - `ConsoleFormatter`: `missing=0`
@@ -131,6 +131,7 @@ When more goal budget is available, continue from the behavioral parity audits b
   - Gemini token usage extraction and streaming accumulation now handle SDK-like `usage_metadata` getter objects.
   - Multimodal LLM message file handling now converts `files` into deterministic inline/upload content blocks, and native OpenAI/Azure/Anthropic/Bedrock/Gemini shims expose local provider file uploaders
   - Streaming tool-call argument accumulation now preserves id/name/index and concatenates function argument deltas into upstream-style tool call payloads
+  - Provider tool conversion helpers now reject non-dictionary tools and invalid `function` payloads with upstream-style errors while preserving OpenAI/direct schema extraction.
 - Added evaluation compatibility behavior:
   - LLM-backed `GoalAlignmentEvaluator` and `SemanticQualityEvaluator` with upstream-style prompts and JSON score parsing
   - `EvaluationDisplayFormatter` aggregation helpers for per-agent metric averages, feedback summaries, and iteration display text

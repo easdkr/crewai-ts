@@ -274,6 +274,7 @@ import {
   create_llm,
   detectProvider,
   extract_provider,
+  extract_tool_info,
   extractInputFilesFromInputs,
   flowConfig,
   getCurrentFlowId,
@@ -307,6 +308,7 @@ import {
   clearLLMProviders,
   registerLLMProvider,
   sanitizeToolName,
+  safe_tool_conversion,
   slugify,
   start,
   taskOptionsFromConfig,
@@ -12310,6 +12312,24 @@ describe("task interpolation", () => {
     expect(sanitizeToolName("검색 Tool!")).toBe("tool");
     expect(sanitizeToolName("x".repeat(80))).toMatch(/^x{55}_[a-f0-9]{8}$/);
     expect(slugify("CrewAI: Hello World!", "-")).toBe("crewai-hello-world");
+  });
+
+  it("extracts and validates provider tool schemas like upstream", () => {
+    expect(extract_tool_info({
+      type: "function",
+      function: {
+        name: "Read File",
+        description: "Read a file",
+        parameters: { type: "object" },
+      },
+    })).toEqual(["Read File", "Read a file", { type: "object" }]);
+    expect(safe_tool_conversion({
+      name: "Read File",
+      description: "Read a file",
+      parameters: { type: "object" },
+    }, "OpenAI")).toEqual(["read_file", "Read a file", { type: "object" }]);
+    expect(() => extract_tool_info(null as unknown as Record<string, unknown>)).toThrow("Tool must be a dictionary");
+    expect(() => extract_tool_info({ function: "bad" })).toThrow("Tool function must be a dictionary");
   });
 });
 
