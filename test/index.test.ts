@@ -13315,6 +13315,49 @@ describe("memory", () => {
     expect(flow.re_decide_depth()).toBe("synthesize");
   });
 
+  it("orchestrates RecallFlow kickoff through analysis filtering search and synthesis", async () => {
+    const record = new MemoryRecord({
+      id: "deep",
+      content: "deep recall result",
+      scope: "/crew/history",
+      categories: ["memory"],
+      importance: 0.9,
+      embedding: [1, 0, 0],
+    });
+    const llm = vi.fn(() => JSON.stringify({
+      suggested_scopes: ["/crew/history"],
+      recall_queries: ["deep recall"],
+      complexity: "simple",
+    }));
+    const embedder = vi.fn((texts: readonly string[]) => texts.map(() => [1, 0, 0]));
+    const storage = {
+      search: vi.fn((): Array<readonly [MemoryRecord, number]> => [[record, 0.88]]),
+      list_scopes: vi.fn(() => ["/crew/history"]),
+      get_scope_info: vi.fn(() => new ScopeInfo({ path: "/crew", count: 1, categories: ["memory"] })),
+    };
+    const flow = new RecallFlow(storage, llm, embedder, new MemoryConfig({ query_analysis_threshold: 1 }));
+
+    const results = await flow.kickoff({
+      inputs: {
+        query: "Explain deep CrewAI recall",
+        scope: "/crew",
+        categories: ["memory"],
+        limit: 1,
+      },
+    });
+
+    expect(llm).toHaveBeenCalled();
+    expect(storage.list_scopes).toHaveBeenCalledWith("/crew");
+    expect(storage.search).toHaveBeenCalledWith([1, 0, 0], {
+      scope_prefix: "/crew/history",
+      categories: ["memory"],
+      limit: 2,
+      min_score: 0,
+    });
+    expect(results.map((match) => match.record.id)).toEqual(["deep"]);
+    expect(flow.state.final_results).toBe(results);
+  });
+
   it("automatically appends relevant crew memories to task prompts", async () => {
     const memory = new Memory();
     memory.remember("Nest should consume crewai-ts as a normal TypeScript library", {

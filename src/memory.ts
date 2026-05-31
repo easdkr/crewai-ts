@@ -1502,34 +1502,20 @@ export class RecallFlow {
   async kickoff(options: { inputs?: Partial<RecallState> } = {}): Promise<MemoryMatch[]> {
     await Promise.resolve();
     Object.assign(this.state, options.inputs ?? {});
-    const embeddings = embed_texts(this.embedder, [this.state.query]);
-    const scopes = this.state.candidateScopes.length > 0 ? this.state.candidateScopes : [this.state.scope ?? "/"];
-    const matches: MemoryMatch[] = [];
-    for (const embedding of embeddings) {
-      for (const scope of scopes) {
-        for (const [record, semanticScore] of this.storage.search(embedding, {
-          scope_prefix: scope,
-          categories: this.state.categories,
-          limit: this.state.limit * this.config.recallOversampleFactor,
-          min_score: 0,
-        })) {
-          if (this.state.timeCutoff && record.createdAt < this.state.timeCutoff) {
-            continue;
-          }
-          if (!this.state.includePrivate && record.private && record.source !== this.state.source) {
-            continue;
-          }
-          const [score, reasons] = compute_composite_score(record, semanticScore, this.config);
-          matches.push(new MemoryMatch({ record, score, matchReasons: reasons }));
-        }
+    this.analyze_query_step();
+    this.filter_and_chunk();
+    this.search_chunks();
+    if (this.decide_depth() === "explore_deeper") {
+      this.recursive_exploration();
+      this.re_search();
+      if (this.re_decide_depth() === "explore_deeper") {
+        this.recursive_exploration();
+        this.re_search();
       }
     }
-    this.state.finalResults = matches
-      .sort((left, right) => right.score - left.score)
-      .slice(0, this.state.limit);
-    this.state.final_results = this.state.finalResults;
+    const results = this.synthesize_results();
     this.state.confidence = this.state.finalResults[0]?.score ?? 0;
-    return this.state.finalResults;
+    return results;
   }
 }
 
