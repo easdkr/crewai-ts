@@ -1242,7 +1242,8 @@ export class Memory {
     }));
     const start = performance.now();
     try {
-      const records = items.map((item) => new MemoryRecord({
+      const activeItems = deduplicateMemoryBatch(items);
+      const records = activeItems.map((item) => new MemoryRecord({
         content: item.content,
         scope: this.scopePath(item.options.scope),
         categories: item.options.categories ?? [],
@@ -1829,6 +1830,35 @@ function scoreRecord(record: MemoryRecord, queryTerms: Set<string>): number {
     }
   }
   return overlap / queryTerms.size + record.importance * 0.01;
+}
+
+function deduplicateMemoryBatch<T extends { content: string }>(items: readonly T[]): T[] {
+  const active: T[] = [];
+  const config = new MemoryConfig();
+  for (const item of items) {
+    const duplicate = active.some((existing) =>
+      tokenCosineSimilarity(existing.content, item.content) >= config.batchDedupThreshold,
+    );
+    if (!duplicate) {
+      active.push(item);
+    }
+  }
+  return active;
+}
+
+function tokenCosineSimilarity(left: string, right: string): number {
+  const leftTerms = tokenize(left);
+  const rightTerms = tokenize(right);
+  if (leftTerms.size === 0 || rightTerms.size === 0) {
+    return 0;
+  }
+  let overlap = 0;
+  for (const term of leftTerms) {
+    if (rightTerms.has(term)) {
+      overlap += 1;
+    }
+  }
+  return overlap / Math.sqrt(leftTerms.size * rightTerms.size);
 }
 
 function categoriesForRecords(

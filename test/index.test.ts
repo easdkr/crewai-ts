@@ -10594,6 +10594,27 @@ describe("memory", () => {
     expect(memory.allRecords().map((record) => record.content)).toContain("Queued gamma memory");
   });
 
+  it("deduplicates duplicate items inside a background memory batch", () => {
+    const memory = new Memory();
+    const seen: string[] = [];
+    crewaiEventBus.on("memory_save_completed", (_source, event) => {
+      seen.push(event.value);
+    });
+
+    expect(memory.remember_many([
+      "CrewAI batch dedup memory",
+      "CrewAI batch dedup memory",
+      "CrewAI distinct batch memory",
+    ], { categories: ["batch"] })).toEqual([]);
+    memory.drain_writes();
+
+    expect(memory.allRecords().map((record) => record.content)).toEqual([
+      "CrewAI batch dedup memory",
+      "CrewAI distinct batch memory",
+    ]);
+    expect(seen).toEqual(["2 memories saved"]);
+  });
+
   it("uses upstream remember tool responses for single and background batch saves", () => {
     const memory = new Memory();
     const toolInstance = new RememberTool({ memory });

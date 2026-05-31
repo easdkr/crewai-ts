@@ -10,7 +10,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `npm run build`
   - `npm run lint`
   - `npm run smoke:pack`
-- Test suite: 323 passing tests.
+- Test suite: 324 passing tests.
 - Root export parity against upstream clone `/tmp/crewai-upstream.lPeuQi/crewAI` at commit `2148c7e`: `total_missing=0`.
 - Public method parity has been tightened for core runtime classes:
   - `ConsoleFormatter`: `missing=0`
@@ -59,6 +59,7 @@ When more goal budget is available, continue from the behavioral parity audits b
   - `Memory.aremember` now uses configured LLM save analysis to infer missing scope, categories, importance, and extracted metadata
   - `Memory.aremember` now applies configured LLM consolidation plans for similar-record updates
   - consolidation plan execution now deduplicates actions by record so the first update/delete wins, matching upstream batch execution semantics
+  - background batch memory writes now perform deterministic intra-batch duplicate dropping before persistence
   - `Memory.aremember_many` now applies configured LLM save analysis per batch item before pending background writes
   - upstream-style `remember_many` background write semantics with `recall`/`drain_writes` read barriers and batch `RememberTool` responses
   - `MemoryScope` / `MemorySlice` `remember_many`, `extract_memories`, and `bind`
@@ -112,7 +113,7 @@ When more goal budget is available, continue from the behavioral parity audits b
    - Async aliases and record/scope/category listing.
    - `remember_many`, `extract_memories`, `update`, `drain_writes`, `close`.
    - `MemoryScope` / `MemorySlice` scoped writes/recalls, `bind`, `read_only`, `tree`, and `list_categories`.
-   - These compatibility helpers are now present in the deterministic TS memory shim; remaining work is deeper executor-backed async scheduling and batch-level multi-item consolidation parity.
+   - These compatibility helpers are now present in the deterministic TS memory shim; remaining work is deeper executor-backed async scheduling and batch-level cross-item consolidation parity.
 
 5. RAG clients
    - ChromaDB/Qdrant client method parity.
