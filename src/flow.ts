@@ -814,6 +814,8 @@ export class Flow<TState extends object = Record<string, unknown>> {
   private currentFlowRequestId: string | null = null;
   private checkpointRestoreActive = false;
   private flowPostInitDone = false;
+  private readonly firedOrListeners = new Set<string>();
+  private racingGroupsCache: Map<ReadonlySet<string>, string> | null = null;
   private readonly autoMemoryDisabled: boolean;
 
   constructor(options: FlowOptions<TState> = {}) {
@@ -890,6 +892,145 @@ export class Flow<TState extends object = Record<string, unknown>> {
 
   _apply_state_updates(updates: Record<string, unknown>): void {
     this._applyStateUpdates(updates);
+  }
+
+  _markOrListenerFired(listenerName: string): boolean {
+    if (this.firedOrListeners.has(listenerName)) {
+      return false;
+    }
+    this.firedOrListeners.add(listenerName);
+    return true;
+  }
+
+  _mark_or_listener_fired(listenerName: string): boolean {
+    return this._markOrListenerFired(listenerName);
+  }
+
+  _clearOrListeners(): void {
+    this.firedOrListeners.clear();
+  }
+
+  _clear_or_listeners(): void {
+    this._clearOrListeners();
+  }
+
+  _discardOrListener(listenerName: string): void {
+    this.firedOrListeners.delete(listenerName);
+  }
+
+  _discard_or_listener(listenerName: string): void {
+    this._discardOrListener(listenerName);
+  }
+
+  _buildRacingGroups(): Map<ReadonlySet<string>, string> {
+    const entries = getFlowMetadata(this);
+    const methodToListeners = new Map<string, Set<string>>();
+    const racingGroups = new Map<ReadonlySet<string>, string>();
+
+    for (const entry of entries) {
+      if (!entry.condition) {
+        continue;
+      }
+      for (const method of extractAllTriggerNames(entry.condition)) {
+        const listeners = methodToListeners.get(method) ?? new Set<string>();
+        listeners.add(String(entry.name));
+        methodToListeners.set(method, listeners);
+      }
+    }
+
+    for (const entry of entries) {
+      if (entry.kind === "router" || !entry.condition || entry.condition.type !== "OR") {
+        continue;
+      }
+      const listenerName = String(entry.name);
+      const triggerMethods = [...new Set(extractAllTriggerNames(entry.condition))];
+      if (triggerMethods.length <= 1) {
+        continue;
+      }
+      const exclusiveMethods = triggerMethods.filter((method) => {
+        const listeners = methodToListeners.get(method);
+        return listeners?.size === 1 && listeners.has(listenerName);
+      });
+      if (exclusiveMethods.length > 1) {
+        racingGroups.set(new Set(exclusiveMethods), listenerName);
+      }
+    }
+
+    return racingGroups;
+  }
+
+  _build_racing_groups(): Map<ReadonlySet<string>, string> {
+    return this._buildRacingGroups();
+  }
+
+  _getRacingGroupForListeners(listenerNames: readonly string[]): [ReadonlySet<string>, string] | null {
+    this.racingGroupsCache ??= this._buildRacingGroups();
+    const listenerSet = new Set(listenerNames);
+
+    for (const [racingMembers, orListener] of this.racingGroupsCache) {
+      const racingSubset = [...racingMembers].filter((member) => listenerSet.has(member));
+      if (racingSubset.length > 1) {
+        return [new Set(racingSubset), orListener];
+      }
+    }
+
+    return null;
+  }
+
+  _get_racing_group_for_listeners(listenerNames: readonly string[]): [ReadonlySet<string>, string] | null {
+    return this._getRacingGroupForListeners(listenerNames);
+  }
+
+  async _executeSingleListener(name: string, result: unknown, triggeringEventId: string | null = null): Promise<unknown> {
+    void triggeringEventId;
+    return await this.callFlowMethod(name, result, this.flowName());
+  }
+
+  async _execute_single_listener(name: string, result: unknown, triggeringEventId: string | null = null): Promise<unknown> {
+    return await this._executeSingleListener(name, result, triggeringEventId);
+  }
+
+  async _executeRacingListeners(
+    racingListeners: Iterable<string>,
+    otherListeners: readonly string[],
+    result: unknown,
+    triggeringEventId: string | null = null,
+  ): Promise<void> {
+    const racingTasks = [...racingListeners].map((name) =>
+      this._executeSingleListener(name, result, triggeringEventId).then(
+        () => ({ ok: true as const }),
+        (error: unknown) => ({ ok: false as const, error }),
+      ),
+    );
+    const otherTasks = otherListeners.map((name) =>
+      this._executeSingleListener(name, result, triggeringEventId).catch(() => undefined),
+    );
+
+    if (racingTasks.length > 0) {
+      const pending = new Set(racingTasks);
+      while (pending.size > 0) {
+        const settled = await Promise.race(
+          [...pending].map(async (task) => ({ task, value: await task })),
+        );
+        pending.delete(settled.task);
+        if (settled.value.ok) {
+          break;
+        }
+      }
+    }
+
+    if (otherTasks.length > 0) {
+      await Promise.all(otherTasks);
+    }
+  }
+
+  async _execute_racing_listeners(
+    racingListeners: Iterable<string>,
+    otherListeners: readonly string[],
+    result: unknown,
+    triggeringEventId: string | null = null,
+  ): Promise<void> {
+    await this._executeRacingListeners(racingListeners, otherListeners, result, triggeringEventId);
   }
 
   private flowPostInit(): void {

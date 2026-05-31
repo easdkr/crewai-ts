@@ -10682,6 +10682,61 @@ describe("flow runtime", () => {
     expect(Object.hasOwn(Flow.prototype, "_flow_post_init")).toBe(true);
   });
 
+  it("exposes upstream Flow OR listener and racing group helpers", () => {
+    class RacingFlow extends Flow<{ events: string[] }> {
+      constructor() {
+        super({ initialState: { events: [] } });
+      }
+
+      a() {
+        return "a";
+      }
+
+      b() {
+        return "b";
+      }
+
+      c() {
+        return "c";
+      }
+
+      handler() {
+        return "handled";
+      }
+
+      afterC() {
+        return "after-c";
+      }
+    }
+
+    const initializers = [
+      decorateMethod(RacingFlow, "a", start() as unknown as Decorator),
+      decorateMethod(RacingFlow, "b", start() as unknown as Decorator),
+      decorateMethod(RacingFlow, "c", start() as unknown as Decorator),
+      decorateMethod(RacingFlow, "handler", listen(or_("a", "b", "c")) as unknown as Decorator),
+      decorateMethod(RacingFlow, "afterC", listen("c") as unknown as Decorator),
+    ];
+    const flow = new RacingFlow();
+    initializers.forEach((initializer) => {
+      initializer.call(flow);
+    });
+
+    expect(flow._mark_or_listener_fired("handler")).toBe(true);
+    expect(flow._mark_or_listener_fired("handler")).toBe(false);
+    flow._discard_or_listener("handler");
+    expect(flow._mark_or_listener_fired("handler")).toBe(true);
+    flow._clear_or_listeners();
+    expect(flow._mark_or_listener_fired("handler")).toBe(true);
+
+    const groups = flow._build_racing_groups();
+    const entries = [...groups.entries()].map(([members, listener]) => [[...members].sort(), listener]);
+    expect(entries).toEqual([[["a", "b"], "handler"]]);
+    const racingGroup = flow._get_racing_group_for_listeners(["a", "b", "afterC"]);
+    expect(racingGroup?.[1]).toBe("handler");
+    expect([...(racingGroup?.[0] ?? [])].sort()).toEqual(["a", "b"]);
+    expect(flow._get_racing_group_for_listeners(["a", "afterC"])).toBeNull();
+  });
+
   it("supports routers plus and/or flow conditions", async () => {
     class RoutingFlow extends Flow<{ events: string[] }> {
       constructor() {
