@@ -4410,6 +4410,9 @@ describe("RAG configuration and factories", () => {
     const client = new ChromaDBClient(fake, (texts: readonly string[]) => texts.map((text) => [text.length]));
     const storage = new KnowledgeStorage({ client, collectionName: "docs" });
 
+    expect(storage._get_client()).toBe(client);
+    expect(storage.collection_name).toBe("docs");
+    expect(storage.rag_collection_name()).toBe("knowledge_docs");
     storage.save(["CrewAI knowledge storage document"]);
     expect(storage.search(["knowledge"], 5, {}, 0.1)).toEqual([
       {

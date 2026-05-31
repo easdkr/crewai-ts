@@ -753,11 +753,11 @@ export class KnowledgeStorage extends BaseKnowledgeStorage {
       return [];
     }
     try {
-      const client = this.getClient() as RagClient & {
+      const client = this._get_client() as RagClient & {
         search?: (params: Record<string, unknown>) => unknown;
       };
       const result = client.search?.({
-        collection_name: this.ragCollectionName(),
+        collection_name: this.rag_collection_name(),
         query: query.length > 1 ? query.join(" ") : query[0] ?? "",
         limit,
         metadata_filter: metadataFilter,
@@ -778,12 +778,12 @@ export class KnowledgeStorage extends BaseKnowledgeStorage {
     if (query.length === 0) {
       return [];
     }
-    const client = this.getClient() as RagClient & {
+    const client = this._get_client() as RagClient & {
       asearch?: (params: Record<string, unknown>) => Promise<SearchResult[]>;
     };
     try {
       const params = {
-        collection_name: this.ragCollectionName(),
+        collection_name: this.rag_collection_name(),
         query: query.length > 1 ? query.join(" ") : query[0] ?? "",
         limit,
         metadata_filter: metadataFilter,
@@ -804,17 +804,17 @@ export class KnowledgeStorage extends BaseKnowledgeStorage {
       return;
     }
     try {
-      const client = this.getClient() as RagClient & {
+      const client = this._get_client() as RagClient & {
         get_or_create_collection?: (params: Record<string, unknown>) => unknown;
         add_documents?: (params: { collection_name: string; documents: BaseRecord[] }) => unknown;
       };
-      client.get_or_create_collection?.({ collection_name: this.ragCollectionName() });
+      client.get_or_create_collection?.({ collection_name: this.rag_collection_name() });
       const ragDocuments = documents.map((content) => ({ content }));
       if (client.add_documents) {
-        client.add_documents({ collection_name: this.ragCollectionName(), documents: ragDocuments });
+        client.add_documents({ collection_name: this.rag_collection_name(), documents: ragDocuments });
         return;
       }
-      client.add?.(this.ragCollectionName(), ragDocuments);
+      client.add?.(this.rag_collection_name(), ragDocuments);
     } catch (error) {
       throw normalizeKnowledgeStorageSaveError(error);
     }
@@ -825,14 +825,14 @@ export class KnowledgeStorage extends BaseKnowledgeStorage {
       return;
     }
     try {
-      const client = this.getClient() as RagClient & {
+      const client = this._get_client() as RagClient & {
         aget_or_create_collection?: (params: Record<string, unknown>) => Promise<unknown>;
         aadd_documents?: (params: { collection_name: string; documents: BaseRecord[] }) => Promise<unknown>;
       };
-      await client.aget_or_create_collection?.({ collection_name: this.ragCollectionName() });
+      await client.aget_or_create_collection?.({ collection_name: this.rag_collection_name() });
       const ragDocuments = documents.map((content) => ({ content }));
       if (client.aadd_documents) {
-        await client.aadd_documents({ collection_name: this.ragCollectionName(), documents: ragDocuments });
+        await client.aadd_documents({ collection_name: this.rag_collection_name(), documents: ragDocuments });
         return;
       }
       this.save(documents);
@@ -842,34 +842,38 @@ export class KnowledgeStorage extends BaseKnowledgeStorage {
   }
 
   reset(): void {
-    const client = this.getClient() as RagClient & {
+    const client = this._get_client() as RagClient & {
       delete_collection?: (params: Record<string, unknown>) => unknown;
     };
     if (client.delete_collection) {
-      client.delete_collection({ collection_name: this.ragCollectionName() });
+      client.delete_collection({ collection_name: this.rag_collection_name() });
       return;
     }
     const deleteCollection = client.deleteCollection as ((collectionName: string) => unknown) | undefined;
-    deleteCollection?.(this.ragCollectionName());
+    deleteCollection?.(this.rag_collection_name());
   }
 
   async areset(): Promise<void> {
-    const client = this.getClient() as RagClient & {
+    const client = this._get_client() as RagClient & {
       adelete_collection?: (params: Record<string, unknown>) => Promise<unknown>;
     };
     if (client.adelete_collection) {
-      await client.adelete_collection({ collection_name: this.ragCollectionName() });
+      await client.adelete_collection({ collection_name: this.rag_collection_name() });
       return;
     }
     this.reset();
   }
 
-  private getClient(): RagClient {
+  _get_client(): RagClient {
     return this.client ?? getRagClient();
   }
 
-  private ragCollectionName(): string {
+  ragCollectionName(): string {
     return this.collectionName ? `knowledge_${this.collectionName}` : "knowledge";
+  }
+
+  rag_collection_name(): string {
+    return this.ragCollectionName();
   }
 }
 

@@ -41,6 +41,7 @@ When more goal budget is available, continue from the behavioral parity audits b
 - Added fake-client-backed RAG tests for ChromaDB and Qdrant collection create/delete/reset, upsert overwrite behavior, search, metadata filters, and async aliases.
 - Added `KnowledgeStorage` tests for collection naming, save/search, async aliases, and reset through the RAG client wrapper.
 - Added upstream-style `KnowledgeStorage` save/asave error conversion for embedding dimension mismatches.
+- Added upstream-style `KnowledgeStorage._get_client` plus collection-name helper aliases for storage extension compatibility.
 
 ## Completed In Current Flow/Persistence Pass
 
