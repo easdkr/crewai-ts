@@ -442,6 +442,7 @@ import {
   AzureCompletion,
   BedrockProvider,
   BedrockCompletion,
+  CohereEmbeddingFunction,
   CohereProvider,
   CustomEmbeddingFunction,
   GeminiCompletion,
@@ -7353,6 +7354,33 @@ describe("RAG configuration and factories", () => {
     expect(secondFetchCall[1].body).toBe(JSON.stringify({
       input: ["azure"],
       model: "text-embedding-3-large",
+    }));
+    fetchMock.mockRestore();
+  });
+
+  it("calls Cohere's embeddings API for Cohere providers", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ embeddings: [[0.11, 0.12], [0.21, 0.22]] }),
+    } as Response);
+
+    const cohereEmbedder = new CohereEmbeddingFunction({
+      api_key: "cohere-test",
+      model_name: "embed-english-v3.0",
+      api_url: "https://cohere.example/v1/embed",
+    }).asCallable();
+    await expect(cohereEmbedder(["first", "second"])).resolves.toEqual([[0.11, 0.12], [0.21, 0.22]]);
+
+    const fetchCall = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(fetchCall[0]).toBe("https://cohere.example/v1/embed");
+    expect(fetchCall[1].method).toBe("POST");
+    expect(fetchCall[1].headers).toMatchObject({
+      authorization: "Bearer cohere-test",
+      "content-type": "application/json",
+    });
+    expect(fetchCall[1].body).toBe(JSON.stringify({
+      texts: ["first", "second"],
+      model: "embed-english-v3.0",
     }));
     fetchMock.mockRestore();
   });

@@ -1892,6 +1892,7 @@ export {
   AzureProvider,
   AzureProviderConfig,
   BedrockProviderConfig,
+  CohereEmbeddingFunction,
   GenerativeAiProvider,
   GenerativeAiProviderSpec,
   GenerativeAiProviderConfig,

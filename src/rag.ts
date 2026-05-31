@@ -582,14 +582,76 @@ export class AzureProvider extends BaseEmbeddingsProvider {
   }
 }
 
+export class CohereEmbeddingFunction {
+  readonly api_key: string | null;
+  readonly model_name: string;
+  readonly api_url: string;
+
+  constructor(options: CohereProviderConfig & { api_url?: string } = {}) {
+    this.api_key = options.api_key ?? null;
+    this.model_name = options.model_name ?? "large";
+    this.api_url = options.api_url ?? "https://api.cohere.ai/v1/embed";
+  }
+
+  async call(input: Embeddable): Promise<Embeddings> {
+    const values = Array.isArray(input) ? input.map((value) => String(value)) : [String(input)];
+    const response = await fetch(this.api_url, {
+      method: "POST",
+      headers: this.requestHeaders(),
+      body: JSON.stringify({
+        texts: values,
+        model: this.model_name,
+      }),
+    });
+    if (!response.ok) {
+      throw new Error(`Cohere embeddings request failed with status ${String(response.status)}`);
+    }
+    return extractCohereEmbeddings(await response.json());
+  }
+
+  async __call__(input: Embeddable): Promise<Embeddings> {
+    return this.call(input);
+  }
+
+  asCallable(): TypedEmbeddingFunction {
+    const callable: TypedEmbeddingFunction = (input: Embeddable) => this.call(input);
+    callable.embedQuery = callable;
+    callable.embed_query = callable;
+    return callable;
+  }
+
+  private requestHeaders(): Record<string, string> {
+    const headers: Record<string, string> = {
+      "content-type": "application/json",
+    };
+    if (this.api_key) {
+      headers.authorization = `Bearer ${this.api_key}`;
+    }
+    return headers;
+  }
+}
+
+function extractCohereEmbeddings(payload: unknown): Embeddings {
+  if (!isRecord(payload) || !Array.isArray(payload.embeddings)) {
+    throw new Error("Cohere embeddings response did not include embeddings.");
+  }
+  if (!payload.embeddings.every(isNumberArray)) {
+    throw new Error("Cohere embeddings response did not include numeric embeddings.");
+  }
+  return payload.embeddings;
+}
+
 export class CohereProvider extends BaseEmbeddingsProvider {
   readonly provider = "cohere";
 
   constructor(options: CohereProviderConfig = {}) {
-    super({
-      embeddingCallable: defaultEmbeddingCallable,
+    const config = {
       model_name: "large",
       ...options,
+    };
+    super({
+      embeddingCallable: new CohereEmbeddingFunction(config).asCallable(),
+      ...config,
     });
   }
 }
