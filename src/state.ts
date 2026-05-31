@@ -4,7 +4,19 @@ import { join, resolve, sep, basename, extname } from "node:path";
 import { randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
 
-import type { BaseEvent, EventType } from "./events.js";
+import {
+  CheckpointCompletedEvent,
+  CheckpointFailedEvent,
+  CheckpointForkCompletedEvent,
+  CheckpointForkStartedEvent,
+  CheckpointRestoreCompletedEvent,
+  CheckpointRestoreFailedEvent,
+  CheckpointRestoreStartedEvent,
+  CheckpointStartedEvent,
+  crewaiEventBus,
+  type BaseEvent,
+  type EventType,
+} from "./events.js";
 import { __version__ } from "./version.js";
 
 const requireNodeBuiltin = createRequire(import.meta.url);
@@ -231,31 +243,58 @@ export class RuntimeState {
   }
 
   checkpoint(location: string): string {
-    const result = this.provider.checkpoint(this.toJSONText(), location, {
-      parentId: this.parentId,
-      branch: this.branch,
-    });
-    if (typeof result !== "string") {
-      throw new Error("Provider returned a Promise from synchronous checkpoint(). Use acheckpoint() instead.");
+    const { providerName, parentId, branch, startedAt } = this.beginCheckpoint(location);
+    try {
+      const result = this.provider.checkpoint(this.toJSONText(), location, {
+        parentId,
+        branch,
+      });
+      if (typeof result !== "string") {
+        throw new Error("Provider returned a Promise from synchronous checkpoint(). Use acheckpoint() instead.");
+      }
+      this.chainLineage(result);
+      this.emitCheckpointCompleted(result, providerName, parentId, branch, startedAt);
+      return result;
+    } catch (error) {
+      this.emitCheckpointFailed(location, providerName, parentId, branch, error);
+      throw error;
     }
-    this.chainLineage(result);
-    return result;
   }
 
   async acheckpoint(location: string): Promise<string> {
-    const result = await this.provider.acheckpoint(this.toJSONText(), location, {
-      parentId: this.parentId,
-      branch: this.branch,
-    });
-    this.chainLineage(result);
-    return result;
+    const { providerName, parentId, branch, startedAt } = this.beginCheckpoint(location);
+    try {
+      const result = await this.provider.acheckpoint(this.toJSONText(), location, {
+        parentId,
+        branch,
+      });
+      this.chainLineage(result);
+      this.emitCheckpointCompleted(result, providerName, parentId, branch, startedAt);
+      return result;
+    } catch (error) {
+      this.emitCheckpointFailed(location, providerName, parentId, branch, error);
+      throw error;
+    }
   }
 
   fork(branch?: string): string {
+    const parentBranch = this.branch;
+    const parentCheckpointId = this.checkpointId;
     const suffix = randomUUID().replaceAll("-", "").slice(0, this.checkpointId ? 6 : 8);
-    this.branch = branch ?? (this.checkpointId
+    const newBranch = branch ?? (this.checkpointId
       ? `fork/${this.checkpointId}_${suffix}`
       : `fork/${suffix}`);
+    crewaiEventBus.emit(this, new CheckpointForkStartedEvent({
+      branch: newBranch,
+      parent_branch: parentBranch,
+      parent_checkpoint_id: parentCheckpointId,
+    }));
+    this.branch = newBranch;
+    crewaiEventBus.emit(this, new CheckpointForkCompletedEvent({
+      branch: newBranch,
+      parent_branch: parentBranch,
+      parent_checkpoint_id: parentCheckpointId,
+    }));
     return this.branch;
   }
 
@@ -292,29 +331,51 @@ export class RuntimeState {
     return RuntimeState.fromJSONText(raw, provider);
   }
 
-  static async fromCheckpoint(config: CheckpointConfig, provider: BaseProvider = config.provider): Promise<RuntimeState> {
+  static async fromCheckpoint(config: CheckpointConfig, provider?: BaseProvider): Promise<RuntimeState> {
     if (!config.restoreFrom) {
       throw new Error("CheckpointConfig.restoreFrom is required to restore RuntimeState.");
     }
-    const raw = await provider.afromCheckpoint(config.restoreFrom);
-    const state = RuntimeState.fromJSONText(raw, provider);
-    const checkpointId = provider.extractId(config.restoreFrom);
-    state.checkpointId = checkpointId;
-    state.checkpoint_id = checkpointId;
-    state.parentId = checkpointId;
-    state.parent_id = checkpointId;
-    return state;
+    const location = config.restoreFrom;
+    crewaiEventBus.emit(config, new CheckpointRestoreStartedEvent({ location }));
+    const startedAt = Date.now();
+    let effectiveProvider: BaseProvider | null = null;
+    try {
+      effectiveProvider = provider ?? detectProvider(location);
+      const raw = await effectiveProvider.afromCheckpoint(location);
+      const state = RuntimeState.fromJSONText(raw, effectiveProvider);
+      const checkpointId = effectiveProvider.extractId(location);
+      state.checkpointId = checkpointId;
+      state.checkpoint_id = checkpointId;
+      state.parentId = checkpointId;
+      state.parent_id = checkpointId;
+      crewaiEventBus.emit(config, new CheckpointRestoreCompletedEvent({
+        location,
+        provider: effectiveProvider.constructor.name,
+        checkpoint_id: checkpointId,
+        branch: state.branch,
+        parent_id: state.parentId,
+        duration_ms: Date.now() - startedAt,
+      }));
+      return state;
+    } catch (error) {
+      crewaiEventBus.emit(config, new CheckpointRestoreFailedEvent({
+        location,
+        provider: effectiveProvider?.constructor.name ?? null,
+        error,
+      }));
+      throw error;
+    }
   }
 
-  static async from_checkpoint(config: CheckpointConfig, provider: BaseProvider = config.provider): Promise<RuntimeState> {
+  static async from_checkpoint(config: CheckpointConfig, provider?: BaseProvider): Promise<RuntimeState> {
     return await RuntimeState.fromCheckpoint(config, provider);
   }
 
-  static async afromCheckpoint(config: CheckpointConfig, provider: BaseProvider = config.provider): Promise<RuntimeState> {
+  static async afromCheckpoint(config: CheckpointConfig, provider?: BaseProvider): Promise<RuntimeState> {
     return await RuntimeState.fromCheckpoint(config, provider);
   }
 
-  static async afrom_checkpoint(config: CheckpointConfig, provider: BaseProvider = config.provider): Promise<RuntimeState> {
+  static async afrom_checkpoint(config: CheckpointConfig, provider?: BaseProvider): Promise<RuntimeState> {
     return await RuntimeState.afromCheckpoint(config, provider);
   }
 
@@ -324,6 +385,52 @@ export class RuntimeState {
     this.checkpoint_id = checkpointId;
     this.parentId = checkpointId;
     this.parent_id = checkpointId;
+  }
+
+  private beginCheckpoint(location: string): { providerName: string; parentId: string | null; branch: string; startedAt: number } {
+    const providerName = this.provider.constructor.name;
+    const parentId = this.parentId;
+    const branch = this.branch;
+    crewaiEventBus.emit(this, new CheckpointStartedEvent({
+      location,
+      provider: providerName,
+      branch,
+      parent_id: parentId,
+    }));
+    return { providerName, parentId, branch, startedAt: Date.now() };
+  }
+
+  private emitCheckpointCompleted(
+    location: string,
+    providerName: string,
+    parentId: string | null,
+    branch: string,
+    startedAt: number,
+  ): void {
+    crewaiEventBus.emit(this, new CheckpointCompletedEvent({
+      location,
+      provider: providerName,
+      checkpoint_id: this.provider.extractId(location),
+      duration_ms: Date.now() - startedAt,
+      branch,
+      parent_id: parentId,
+    }));
+  }
+
+  private emitCheckpointFailed(
+    location: string,
+    providerName: string,
+    parentId: string | null,
+    branch: string,
+    error: unknown,
+  ): void {
+    crewaiEventBus.emit(this, new CheckpointFailedEvent({
+      location,
+      provider: providerName,
+      error,
+      branch,
+      parent_id: parentId,
+    }));
   }
 }
 

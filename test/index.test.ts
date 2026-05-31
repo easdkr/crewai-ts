@@ -79,7 +79,10 @@ import {
   CheckpointCompletedEvent,
   CheckpointFailedEvent,
   CheckpointForkCompletedEvent,
+  CheckpointForkStartedEvent,
   CheckpointRestoreCompletedEvent,
+  CheckpointRestoreFailedEvent,
+  CheckpointRestoreStartedEvent,
   CheckpointStartedEvent,
   EventNode,
   EventRecord,
@@ -17505,6 +17508,127 @@ describe("runtime state", () => {
     expect(restored.parent_id).toBe(secondId);
     expect(asyncRestored.checkpoint_id).toBe(secondId);
     expect(asyncRestored.parent_id).toBe(secondId);
+  });
+
+  it("emits upstream runtime checkpoint lifecycle events", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "crewai-ts-runtime-events-"));
+    const provider = new JsonProvider();
+    const state = new RuntimeState({
+      root: [{ type: "mock" }],
+      provider,
+      parentId: "parent-1",
+      branch: "experiment",
+    });
+    const events: unknown[] = [];
+    crewaiEventBus.on("checkpoint_started", (_source, event) => {
+      events.push(event);
+    });
+    crewaiEventBus.on("checkpoint_completed", (_source, event) => {
+      events.push(event);
+    });
+    crewaiEventBus.on("checkpoint_restore_started", (_source, event) => {
+      events.push(event);
+    });
+    crewaiEventBus.on("checkpoint_restore_completed", (_source, event) => {
+      events.push(event);
+    });
+    crewaiEventBus.on("checkpoint_fork_started", (_source, event) => {
+      events.push(event);
+    });
+    crewaiEventBus.on("checkpoint_fork_completed", (_source, event) => {
+      events.push(event);
+    });
+
+    const first = state.checkpoint(directory);
+    const restored = await RuntimeState.from_checkpoint(new CheckpointConfig({ restore_from: first }));
+    restored.fork("fork/manual");
+
+    expect(events[0]).toBeInstanceOf(CheckpointStartedEvent);
+    expect(events[0]).toMatchObject({
+      type: "checkpoint_started",
+      location: directory,
+      provider: "JsonProvider",
+      branch: "experiment",
+      parent_id: "parent-1",
+    });
+    expect(events[1]).toBeInstanceOf(CheckpointCompletedEvent);
+    expect(events[1]).toMatchObject({
+      type: "checkpoint_completed",
+      location: first,
+      provider: "JsonProvider",
+      checkpoint_id: provider.extract_id(first),
+      branch: "experiment",
+      parent_id: "parent-1",
+    });
+    expect(events[2]).toBeInstanceOf(CheckpointRestoreStartedEvent);
+    expect(events[2]).toMatchObject({
+      type: "checkpoint_restore_started",
+      location: first,
+    });
+    expect(events[3]).toBeInstanceOf(CheckpointRestoreCompletedEvent);
+    expect(events[3]).toMatchObject({
+      type: "checkpoint_restore_completed",
+      location: first,
+      provider: "JsonProvider",
+      checkpoint_id: provider.extract_id(first),
+      branch: "experiment",
+      parent_id: provider.extract_id(first),
+    });
+    expect(events[4]).toBeInstanceOf(CheckpointForkStartedEvent);
+    expect(events[4]).toMatchObject({
+      type: "checkpoint_fork_started",
+      branch: "fork/manual",
+      parent_branch: "experiment",
+      parent_checkpoint_id: provider.extract_id(first),
+    });
+    expect(events[5]).toBeInstanceOf(CheckpointForkCompletedEvent);
+    expect(events[5]).toMatchObject({
+      type: "checkpoint_fork_completed",
+      branch: "fork/manual",
+      parent_branch: "experiment",
+      parent_checkpoint_id: provider.extract_id(first),
+    });
+  });
+
+  it("emits checkpoint failure events before rethrowing provider errors", async () => {
+    class FailingJsonProvider extends JsonProvider {
+      override checkpoint(): string {
+        throw new Error("write failed");
+      }
+
+      override afromCheckpoint(): Promise<string> {
+        return Promise.reject(new Error("restore failed"));
+      }
+    }
+    const provider = new FailingJsonProvider();
+    const state = new RuntimeState({ provider });
+    const events: unknown[] = [];
+    crewaiEventBus.on("checkpoint_failed", (_source, event) => {
+      events.push(event);
+    });
+    crewaiEventBus.on("checkpoint_restore_failed", (_source, event) => {
+      events.push(event);
+    });
+
+    expect(() => state.checkpoint("/tmp/missing")).toThrow("write failed");
+    await expect(RuntimeState.from_checkpoint(new CheckpointConfig({
+      restore_from: "/tmp/missing.json",
+    }), provider)).rejects.toThrow("restore failed");
+
+    expect(events[0]).toBeInstanceOf(CheckpointFailedEvent);
+    expect(events[0]).toMatchObject({
+      type: "checkpoint_failed",
+      location: "/tmp/missing",
+      provider: "FailingJsonProvider",
+      error: "write failed",
+    });
+    expect(events[1]).toBeInstanceOf(CheckpointRestoreFailedEvent);
+    expect(events[1]).toMatchObject({
+      type: "checkpoint_restore_failed",
+      location: "/tmp/missing.json",
+      provider: "FailingJsonProvider",
+      error: "restore failed",
+    });
   });
 
   it("forks runtime state branches with explicit and generated names", () => {
