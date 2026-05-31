@@ -1399,6 +1399,61 @@ export class GeminiCompletion extends ConfiguredLLM {
     return GeminiCompletion.extractStructuredOutputFromResponse(response);
   }
 
+  async processResponseWithTools(
+    response: unknown,
+    contents: readonly unknown[] = [],
+    availableFunctions: Record<string, LLMAvailableFunction> | null = null,
+  ): Promise<unknown> {
+    void contents;
+    const candidates = readObject(response).candidates;
+    if (!Array.isArray(candidates)) {
+      return GeminiCompletion.extractTextFromResponse(response);
+    }
+    const first = readObject(candidates[0]);
+    const rawParts = Array.isArray(readObject(first.content).parts)
+      ? readObject(first.content).parts as unknown[]
+      : [];
+    const functionCallParts = rawParts.filter((part) => Object.keys(readObject(readObject(part).functionCall ?? readObject(part).function_call)).length > 0);
+    const nonStructuredParts = functionCallParts.filter((part) => {
+      const partRecord = readObject(part);
+      const functionCall = readObject(partRecord.functionCall ?? partRecord.function_call);
+      return (scalarToString(functionCall.name) ?? "") !== STRUCTURED_OUTPUT_TOOL_NAME;
+    });
+
+    if (nonStructuredParts.length > 0 && !availableFunctions) {
+      return nonStructuredParts;
+    }
+
+    if (nonStructuredParts.length > 0 && availableFunctions) {
+      for (const part of nonStructuredParts) {
+        const partRecord = readObject(part);
+        const functionCall = readObject(partRecord.functionCall ?? partRecord.function_call);
+        const functionName = scalarToString(functionCall.name);
+        if (!functionName) {
+          continue;
+        }
+        const result = await this.handleToolExecution({
+          functionName,
+          functionArgs: readObject(functionCall.args),
+          availableFunctions,
+        });
+        if (result !== null) {
+          return result;
+        }
+      }
+    }
+
+    return GeminiCompletion.extractTextFromResponse(response);
+  }
+
+  async _process_response_with_tools(
+    response: unknown,
+    contents: readonly unknown[] = [],
+    availableFunctions: Record<string, LLMAvailableFunction> | null = null,
+  ): Promise<unknown> {
+    return await this.processResponseWithTools(response, contents, availableFunctions);
+  }
+
   static addPropertyOrdering<T extends Record<string, unknown>>(schema: T): T {
     addGeminiPropertyOrdering(schema);
     return schema;

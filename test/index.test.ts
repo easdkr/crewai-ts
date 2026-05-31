@@ -9755,6 +9755,39 @@ describe("LLM providers", () => {
     ]);
   });
 
+  it("processes Gemini response function calls with optional direct execution", async () => {
+    const gemini = new GeminiCompletion({ model: "gemini-2.5-pro" });
+    const response = {
+      candidates: [{
+        content: {
+          parts: [
+            { text: "Need search" },
+            { functionCall: { name: "search_docs", args: { query: "CrewAI" } } },
+          ],
+        },
+      }],
+    };
+
+    await expect((gemini as unknown as {
+      _process_response_with_tools(
+        response: unknown,
+        contents: unknown[],
+        availableFunctions?: Record<string, unknown> | null,
+      ): Promise<unknown>;
+    })._process_response_with_tools(response, [])).resolves.toEqual([
+      { functionCall: { name: "search_docs", args: { query: "CrewAI" } } },
+    ]);
+    await expect((gemini as unknown as {
+      _process_response_with_tools(
+        response: unknown,
+        contents: unknown[],
+        availableFunctions?: Record<string, unknown> | null,
+      ): Promise<unknown>;
+    })._process_response_with_tools(response, [], {
+      search_docs: ({ query }: { query: string }) => ({ result: `found ${query}` }),
+    })).resolves.toBe("{\"result\":\"found CrewAI\"}");
+  });
+
   it("extracts Gemini structured output pseudo-tool responses", () => {
     const response = {
       candidates: [{
