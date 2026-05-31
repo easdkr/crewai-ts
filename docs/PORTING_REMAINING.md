@@ -11,7 +11,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `npm run lint`
   - `npm run smoke:pack`
   - `python3 scripts/check-export-parity.py`
-- Test suite: 404 passing tests.
+- Test suite: 406 passing tests.
 - Root export parity against upstream clone `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `5cdc420`: `total_missing=0`.
 - Public method parity has been tightened for core runtime classes:
   - `ConsoleFormatter`: `missing=0`
@@ -76,7 +76,7 @@ When more goal budget is available, continue from the behavioral parity audits b
   - `EncodingFlow.batch_embed`, `intra_batch_dedup`, and `parallel_find_similar` now expose upstream-style batch embedding, vector-similarity duplicate marking, effective-scope similar-record lookup, and result scoring for exported memory flow compatibility.
   - `EncodingFlow.parallel_analyze` now applies upstream-style fast-path field defaults, root-scope resolution, no-LLM insert plans, and async save/consolidation analysis wiring for exported memory flow compatibility.
   - `EncodingFlow.execute_plans` now applies upstream-style consolidation updates, update re-embedding, bulk inserts, write counters, and per-item result records for exported memory flow compatibility.
-  - `RecallFlow` now exposes upstream-style query-analysis fast path, candidate-scope filtering, chunk search, depth routing, and result synthesis helpers for exported memory flow compatibility.
+  - `RecallFlow` now exposes upstream-style query-analysis fast path, long-query LLM analysis with time filters, candidate-scope filtering, chunk search, recursive exploration/re-search, depth routing, and result synthesis helpers for exported memory flow compatibility.
   - `Memory.aremember_many` now applies configured LLM save analysis per batch item before pending background writes
   - upstream-style `remember_many` background write semantics with `recall`/`drain_writes` read barriers and batch `RememberTool` responses
   - `MemoryScope` / `MemorySlice` `remember_many`, `extract_memories`, and `bind`

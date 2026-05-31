@@ -164,6 +164,7 @@ import {
   MemoryConfig,
   MemoryRecord,
   MemorySlice,
+  ScopeInfo,
   EncodingFlow,
   RecallFlow,
   ItemState,
@@ -13118,6 +13119,44 @@ describe("memory", () => {
     expect(flow.state.exploration_budget).toBe(2);
   });
 
+  it("runs RecallFlow query analysis through LLM for long queries and applies time filters", () => {
+    const longQuery = "CrewAI memory retrieval ".repeat(8);
+    const llm = vi.fn(() => JSON.stringify({
+      keywords: ["retrieval"],
+      suggested_scopes: ["/crew/history"],
+      complexity: "complex",
+      recall_queries: ["CrewAI retrieval", "memory history"],
+      time_filter: "2026-05-20T00:00:00.000Z",
+    }));
+    const embedder = vi.fn((texts: readonly string[]) => texts.map((_, index) => [index + 1, 0, 0]));
+    const storage = {
+      search: vi.fn(),
+      list_scopes: vi.fn(() => ["/crew/history", "/crew/other"]),
+      get_scope_info: vi.fn(() => new ScopeInfo({ path: "/crew", count: 2, categories: ["memory"] })),
+    };
+    const flow = new RecallFlow(storage, llm, embedder, new MemoryConfig({ query_analysis_threshold: 10 }));
+    flow.state.query = longQuery;
+    flow.state.scope = "/crew";
+
+    const analysis = flow.analyze_query_step();
+
+    expect(storage.list_scopes).toHaveBeenCalledWith("/crew");
+    expect(storage.get_scope_info).toHaveBeenCalledWith("/crew");
+    expect(llm).toHaveBeenCalled();
+    expect(analysis).toMatchObject({
+      keywords: ["retrieval"],
+      suggested_scopes: ["/crew/history"],
+      complexity: "complex",
+      recall_queries: ["CrewAI retrieval", "memory history"],
+    });
+    expect(flow.state.time_cutoff?.toISOString()).toBe("2026-05-20T00:00:00.000Z");
+    expect(embedder).toHaveBeenCalledWith(["CrewAI retrieval", "memory history"]);
+    expect(flow.state.query_embeddings).toEqual([
+      ["CrewAI retrieval", [1, 0, 0]],
+      ["memory history", [2, 0, 0]],
+    ]);
+  });
+
   it("selects RecallFlow candidate scopes from query analysis before storage fallback", () => {
     const storage = {
       search: vi.fn(),
@@ -13246,6 +13285,34 @@ describe("memory", () => {
 
     flow.state.exploration_budget = 0;
     expect(flow.decide_depth()).toBe("synthesize");
+  });
+
+  it("runs RecallFlow recursive exploration and re-searches", () => {
+    const record = new MemoryRecord({
+      id: "r1",
+      content: "CrewAI memory excerpt",
+      embedding: [1, 0, 0],
+    });
+    const llm = { call: vi.fn(() => "missing deployment evidence") };
+    const search = vi.fn((): Array<readonly [MemoryRecord, number]> => [[record, 0.8]]);
+    const flow = new RecallFlow({ search }, llm, null);
+    flow.state.query = "CrewAI deployment";
+    flow.state.query_embeddings = [["CrewAI deployment", [1, 0, 0]]];
+    flow.state.candidate_scopes = ["/"];
+    flow.state.chunk_findings = [{ scope: "/", results: [[record, 0.8]] }];
+    flow.state.exploration_budget = 1;
+
+    const enhanced = flow.recursive_exploration();
+
+    expect(flow.state.exploration_budget).toBe(0);
+    expect(llm.call).toHaveBeenCalled();
+    expect(flow.state.evidence_gaps).toEqual(["missing deployment evidence"]);
+    expect(enhanced).toEqual([{ scope: "/", extraction: "missing deployment evidence", results: [[record, 0.8]] }]);
+    const reSearchFindings = flow.re_search();
+    expect(reSearchFindings[0]?.scope).toBe("/");
+    expect(reSearchFindings[0]?.results).toEqual([[record, 0.8]]);
+    expect(typeof reSearchFindings[0]?.top_score).toBe("number");
+    expect(flow.re_decide_depth()).toBe("synthesize");
   });
 
   it("automatically appends relevant crew memories to task prompts", async () => {

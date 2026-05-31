@@ -1163,6 +1163,17 @@ export class LanceDBStorage extends QdrantEdgeStorage {}
 
 export class StorageBackend extends QdrantEdgeStorage {}
 
+type RecallLLMCallable = (messages: readonly LLMMessage[], options?: { responseModel?: unknown }) => unknown;
+type RecallLLMClient = { call(messages: readonly LLMMessage[], options?: { responseModel?: unknown }): unknown };
+
+function isRecallLLMCallable(value: unknown): value is RecallLLMCallable {
+  return typeof value === "function";
+}
+
+function isRecallLLMClient(value: unknown): value is RecallLLMClient {
+  return isRecord(value) && typeof value.call === "function";
+}
+
 export class RecallFlow {
   readonly _skip_auto_memory = true;
   readonly state = new RecallState();
@@ -1175,19 +1186,24 @@ export class RecallFlow {
     this.state.explorationBudget = this.config.explorationBudget;
     this.state.exploration_budget = this.state.explorationBudget;
     const skipLlm = this.state.query.length < this.config.queryAnalysisThreshold;
-    const analysis = skipLlm
-      ? new QueryAnalysis({
-        keywords: [],
-        suggestedScopes: [],
-        complexity: "simple",
-        recallQueries: [this.state.query],
-      })
-      : new QueryAnalysis({
+    let analysis: QueryAnalysis;
+    if (skipLlm) {
+      analysis = new QueryAnalysis({
         keywords: [],
         suggestedScopes: [],
         complexity: "simple",
         recallQueries: [this.state.query],
       });
+    } else {
+      const availableScopes = this.recallStorageListScopes(this.state.scope ?? "/");
+      const scopeInfo = this.state.scope ? this.recallStorageScopeInfo(this.state.scope) : null;
+      analysis = this.analyzeRecallQuerySync(this.state.query, availableScopes, scopeInfo);
+      const timeCutoff = coerceDate(analysis.time_filter);
+      if (timeCutoff) {
+        this.state.timeCutoff = timeCutoff;
+        this.state.time_cutoff = timeCutoff;
+      }
+    }
     this.state.queryAnalysis = analysis;
     this.state.query_analysis = analysis;
     const queries = (analysis.recall_queries.length > 0 ? analysis.recall_queries : [this.state.query]).slice(0, 3);
@@ -1208,6 +1224,70 @@ export class RecallFlow {
 
   analyzeQueryStep(): QueryAnalysis {
     return this.analyze_query_step();
+  }
+
+  private recallStorageListScopes(scope: string): readonly string[] {
+    const storage = this.storage as MemoryVectorStorageLike & {
+      list_scopes?: (scopePrefix?: string | null) => readonly string[];
+      listScopes?: (scopePrefix?: string | null) => readonly string[];
+    };
+    try {
+      const scopes = storage.list_scopes?.(scope) ?? storage.listScopes?.(scope) ?? [];
+      return scopes.length > 0 ? scopes : ["/"];
+    } catch {
+      return ["/"];
+    }
+  }
+
+  private recallStorageScopeInfo(scope: string): ScopeInfo | null {
+    const storage = this.storage as MemoryVectorStorageLike & {
+      get_scope_info?: (scope: string) => ScopeInfo;
+      getScopeInfo?: (scope: string) => ScopeInfo;
+    };
+    try {
+      return storage.get_scope_info?.(scope) ?? storage.getScopeInfo?.(scope) ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  private analyzeRecallQuerySync(query: string, availableScopes: readonly string[], scopeInfo: ScopeInfo | null): QueryAnalysis {
+    const scopeDescription = scopeInfo
+      ? `Current scope has ${String(scopeInfo.count)} records, categories: ${scopeInfo.categories.join(", ")}`
+      : "";
+    const messages: readonly LLMMessage[] = [
+      { role: "system", content: memoryPrompt("query_system") },
+      {
+        role: "user",
+        content: memoryPrompt("query_user")
+          .replace("{query}", query)
+          .replace("{available_scopes}", JSON.stringify(availableScopes.length > 0 ? availableScopes : ["/"]))
+          .replace("{scope_desc}", scopeDescription),
+      },
+    ];
+    try {
+      const raw = this.callRecallLLMSync(messages, { responseModel: QueryAnalysis });
+      if (raw && typeof (raw as { then?: unknown }).then === "function") {
+        throw new Error("Async LLM response is not supported by synchronous RecallFlow.analyze_query_step");
+      }
+      return coerceQueryAnalysis(raw, query, availableScopes);
+    } catch {
+      return new QueryAnalysis({
+        suggestedScopes: (availableScopes.length > 0 ? availableScopes : ["/"]).slice(0, 5),
+        complexity: "simple",
+        recallQueries: [query],
+      });
+    }
+  }
+
+  private callRecallLLMSync(messages: readonly LLMMessage[], options?: { responseModel?: unknown }): unknown {
+    if (isRecallLLMCallable(this.llm)) {
+      return this.llm(messages, options);
+    }
+    if (isRecallLLMClient(this.llm)) {
+      return this.llm.call(messages, options);
+    }
+    return undefined;
   }
 
   filter_and_chunk(): string[] {
@@ -1308,6 +1388,70 @@ export class RecallFlow {
 
   decideDepth(): "explore_deeper" | "synthesize" {
     return this.decide_depth();
+  }
+
+  recursive_exploration(): Array<{ scope: string; extraction: unknown; results: unknown }> {
+    this.state.explorationBudget = Math.max(0, this.state.exploration_budget - 1);
+    this.state.exploration_budget = this.state.explorationBudget;
+    const enhanced: Array<{ scope: string; extraction: unknown; results: unknown }> = [];
+    for (const finding of this.state.chunk_findings) {
+      if (!finding || typeof finding !== "object" || !("results" in finding)) {
+        continue;
+      }
+      const scope = "scope" in finding && typeof (finding as { scope?: unknown }).scope === "string"
+        ? (finding as { scope: string }).scope
+        : "/";
+      const results = (finding as { results?: unknown }).results;
+      const resultItems = Array.isArray(results) ? results : [];
+      if (resultItems.length === 0) {
+        continue;
+      }
+      const contentParts = resultItems
+        .slice(0, 5)
+        .map((item) => Array.isArray(item) && item[0] instanceof MemoryRecord ? item[0].content : "")
+        .filter((content) => content.length > 0);
+      const prompt = [
+        `Query: ${this.state.query}`,
+        "",
+        `Relevant memory excerpts:\n${contentParts.join("\n---\n")}`,
+        "",
+        "Extract the most relevant information for the query. If something is missing, say what's missing in one short line.",
+      ].join("\n");
+      let extraction: unknown;
+      try {
+        extraction = this.callRecallLLMSync([{ role: "user", content: prompt }]) ?? "";
+        if (typeof extraction === "string" && extraction.toLowerCase().includes("missing")) {
+          this.state.evidenceGaps = [...this.state.evidence_gaps, extraction.slice(0, 200)];
+          this.state.evidence_gaps = this.state.evidenceGaps;
+        }
+      } catch {
+        extraction = "";
+      }
+      enhanced.push({ scope, extraction, results });
+    }
+    this.state.chunkFindings = enhanced;
+    this.state.chunk_findings = enhanced;
+    return enhanced;
+  }
+
+  recursiveExploration(): Array<{ scope: string; extraction: unknown; results: unknown }> {
+    return this.recursive_exploration();
+  }
+
+  re_search(): Array<{ scope: string; results: Array<readonly [MemoryRecord, number]>; top_score: number }> {
+    return this.doSearch();
+  }
+
+  reSearch(): Array<{ scope: string; results: Array<readonly [MemoryRecord, number]>; top_score: number }> {
+    return this.re_search();
+  }
+
+  re_decide_depth(): "explore_deeper" | "synthesize" {
+    return this.decide_depth();
+  }
+
+  reDecideDepth(): "explore_deeper" | "synthesize" {
+    return this.re_decide_depth();
   }
 
   synthesize_results(): MemoryMatch[] {
