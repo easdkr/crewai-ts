@@ -130,6 +130,10 @@ export class AnthropicCompletion extends ConfiguredLLM {
     return super.call(messages, options);
   }
 
+  override async acall(messages: LLMMessageInput, options?: LLMCallOptions): Promise<LLMResponse> {
+    return await super.acall(messages, options);
+  }
+
   prepareCompletionParams(
     messages: readonly LLMMessage[],
     systemMessage: string | readonly Record<string, unknown>[] | null = null,
@@ -443,8 +447,16 @@ export class AnthropicCompletion extends ConfiguredLLM {
     return true;
   }
 
+  override supports_function_calling(): boolean {
+    return this.supportsFunctionCalling();
+  }
+
   override supportsStopWords(): boolean {
     return false;
+  }
+
+  override supports_stop_words(): boolean {
+    return this.supportsStopWords();
   }
 
   override supportsMultimodal(): boolean {
@@ -453,8 +465,32 @@ export class AnthropicCompletion extends ConfiguredLLM {
       .some((prefix) => model.startsWith(prefix));
   }
 
+  override supports_multimodal(): boolean {
+    return this.supportsMultimodal();
+  }
+
   override getFileUploader(): LocalFileUploader {
     return new LocalFileUploader("anthropic", { llm: this });
+  }
+
+  override get_file_uploader(): LocalFileUploader {
+    return this.getFileUploader();
+  }
+
+  override getContextWindowSize(): number {
+    return super.getContextWindowSize();
+  }
+
+  override get_context_window_size(): number {
+    return this.getContextWindowSize();
+  }
+
+  override toConfigDict(): Record<string, unknown> {
+    return super.toConfigDict();
+  }
+
+  override to_config_dict(): Record<string, unknown> {
+    return this.toConfigDict();
   }
 }
 
@@ -552,6 +588,66 @@ export class BedrockCompletion extends ConfiguredLLM {
 
   override call(messages: readonly LLMMessage[], options?: LLMCallOptions): Promise<LLMResponse> {
     return super.call(messages, options);
+  }
+
+  override async acall(messages: LLMMessageInput, options?: LLMCallOptions): Promise<LLMResponse> {
+    return await super.acall(messages, options);
+  }
+
+  override supportsFunctionCalling(): boolean {
+    return true;
+  }
+
+  override supports_function_calling(): boolean {
+    return this.supportsFunctionCalling();
+  }
+
+  override supportsStopWords(): boolean {
+    return true;
+  }
+
+  override supports_stop_words(): boolean {
+    return this.supportsStopWords();
+  }
+
+  override supportsMultimodal(): boolean {
+    return super.supportsMultimodal();
+  }
+
+  override supports_multimodal(): boolean {
+    return this.supportsMultimodal();
+  }
+
+  override getContextWindowSize(): number {
+    return super.getContextWindowSize();
+  }
+
+  override get_context_window_size(): number {
+    return this.getContextWindowSize();
+  }
+
+  override formatTextContent(text: string): Record<string, string> {
+    return super.formatTextContent(text);
+  }
+
+  override format_text_content(text: string): Record<string, string> {
+    return this.formatTextContent(text);
+  }
+
+  override getFileUploader(): LocalFileUploader {
+    return new LocalFileUploader("bedrock", { llm: this, region_name: this.regionName });
+  }
+
+  override get_file_uploader(): LocalFileUploader {
+    return this.getFileUploader();
+  }
+
+  override toConfigDict(): Record<string, unknown> {
+    return super.toConfigDict();
+  }
+
+  override to_config_dict(): Record<string, unknown> {
+    return this.toConfigDict();
   }
 
   formatMessagesForConverse(messages: string | readonly (Partial<LLMMessage> & Record<string, unknown>)[]): {
@@ -999,17 +1095,6 @@ export class BedrockCompletion extends ConfiguredLLM {
     return model.includes("anthropic") || model.includes("claude");
   }
 
-  override supportsFunctionCalling(): boolean {
-    return true;
-  }
-
-  override supportsStopWords(): boolean {
-    return true;
-  }
-
-  override getFileUploader(): LocalFileUploader {
-    return new LocalFileUploader("bedrock", { llm: this, region_name: this.regionName });
-  }
 }
 
 export type GeminiCompletionOptions = BaseLLMOptions & {
@@ -1111,28 +1196,56 @@ export class GeminiCompletion extends ConfiguredLLM {
     return super.call(messages, options);
   }
 
+  override async acall(messages: LLMMessageInput, options?: LLMCallOptions): Promise<LLMResponse> {
+    return await super.acall(messages, options);
+  }
+
   override supportsFunctionCalling(): boolean {
     return true;
+  }
+
+  override supports_function_calling(): boolean {
+    return this.supportsFunctionCalling();
   }
 
   override supportsStopWords(): boolean {
     return true;
   }
 
+  override supports_stop_words(): boolean {
+    return this.supportsStopWords();
+  }
+
   override supportsMultimodal(): boolean {
     return true;
+  }
+
+  override supports_multimodal(): boolean {
+    return this.supportsMultimodal();
   }
 
   override getContextWindowSize(): number {
     return geminiContextWindowSize(this.model);
   }
 
+  override get_context_window_size(): number {
+    return this.getContextWindowSize();
+  }
+
   override formatTextContent(text: string): { text: string } {
     return { text };
   }
 
+  override format_text_content(text: string): { text: string } {
+    return this.formatTextContent(text);
+  }
+
   override getFileUploader(): LocalFileUploader {
     return new LocalFileUploader("gemini", { llm: this, project: this.project, location: this.location });
+  }
+
+  override get_file_uploader(): LocalFileUploader {
+    return this.getFileUploader();
   }
 
   prepareGenerationConfig(
@@ -1293,6 +1406,10 @@ export class GeminiCompletion extends ConfiguredLLM {
       ...(this.maxOutputTokens === null ? {} : { max_output_tokens: this.maxOutputTokens }),
       ...(this.safetySettings ? { safety_settings: [...this.safetySettings] } : {}),
     };
+  }
+
+  override to_config_dict(): Record<string, unknown> {
+    return this.toConfigDict();
   }
 
   static extractTokenUsage(response: unknown): Record<string, number> {

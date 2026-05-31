@@ -8976,6 +8976,53 @@ describe("LLM providers", () => {
     await expect(azure.acall([{ role: "user", content: "hello" }])).rejects.toThrow("No LLM provider registered");
   });
 
+  it("exposes upstream AnthropicCompletion aliases directly on the provider class", async () => {
+    const anthropic = new AnthropicCompletion({ model: "claude-3-5-sonnet-20241022" });
+    for (const methodName of [
+      "acall",
+      "get_context_window_size",
+      "get_file_uploader",
+      "supports_function_calling",
+      "supports_multimodal",
+      "supports_stop_words",
+      "to_config_dict",
+    ]) {
+      expect(Object.hasOwn(AnthropicCompletion.prototype, methodName)).toBe(true);
+    }
+    expect(anthropic.supports_function_calling()).toBe(true);
+    expect(anthropic.supports_stop_words()).toBe(false);
+    expect(anthropic.get_file_uploader()).toMatchObject({ provider: "anthropic" });
+    expect(anthropic.to_config_dict()).toMatchObject({ model: "claude-3-5-sonnet-20241022", provider: "anthropic" });
+    await expect(anthropic.acall([{ role: "user", content: "hello" }])).rejects.toThrow("No LLM provider registered");
+  });
+
+  it("exposes upstream Bedrock and Gemini provider aliases directly on provider classes", async () => {
+    const bedrock = new BedrockCompletion({ model: "anthropic.claude-3-5-sonnet-20241022-v2:0" });
+    const gemini = new GeminiCompletion({ model: "gemini-2.5-flash" });
+
+    for (const methodName of [
+      "acall",
+      "format_text_content",
+      "get_context_window_size",
+      "get_file_uploader",
+      "supports_function_calling",
+      "supports_multimodal",
+      "supports_stop_words",
+      "to_config_dict",
+    ]) {
+      expect(Object.hasOwn(BedrockCompletion.prototype, methodName)).toBe(true);
+      expect(Object.hasOwn(GeminiCompletion.prototype, methodName)).toBe(true);
+    }
+    expect(bedrock.get_file_uploader()).toMatchObject({ provider: "bedrock" });
+    expect(bedrock.format_text_content("hello")).toEqual({ type: "text", text: "hello" });
+    expect(bedrock.to_config_dict()).toMatchObject({ model: "anthropic.claude-3-5-sonnet-20241022-v2:0", provider: "bedrock" });
+    expect(gemini.get_file_uploader()).toMatchObject({ provider: "gemini" });
+    expect(gemini.format_text_content("hello")).toEqual({ text: "hello" });
+    expect(gemini.to_config_dict()).toMatchObject({ model: "gemini-2.5-flash", provider: "gemini" });
+    await expect(bedrock.acall([{ role: "user", content: "hello" }])).rejects.toThrow("No LLM provider registered");
+    await expect(gemini.acall([{ role: "user", content: "hello" }])).rejects.toThrow("No LLM provider registered");
+  });
+
   it("prepares OpenAI chat and responses request parameters without SDK side effects", () => {
     const search = new StructuredTool({
       name: "search docs",
