@@ -35,7 +35,7 @@ import { TaskOutputStorageHandler, type StoredTaskOutput } from "./task-output-s
 import { BaseTool, CacheHandler, StructuredTool, sanitizeToolName } from "./tools.js";
 import { Process, type AgentStepCallback, type CrewKickoffCallback, type InputValues, type TaskCallback, type Tool } from "./types.js";
 import type { LLM } from "./types.js";
-import { extractInputFilesFromInputs } from "./input-files.js";
+import { createReadFileTool, extractInputFilesFromInputs } from "./input-files.js";
 import type { EmbedderConfig } from "./rag.js";
 
 export type KickoffOptions = {
@@ -1563,6 +1563,166 @@ export class Crew {
     return Crew.mergeTools(existing_tools, new_tools);
   }
 
+  prepareTools(agent: Agent | null, task: Task, tools: readonly Tool[]): Tool[] {
+    let preparedTools = [...tools];
+    if (agent?.allowDelegation) {
+      if (this.process === Process.hierarchical) {
+        if (!this.managerAgent) {
+          throw new Error("Manager agent is required for hierarchical process.");
+        }
+        preparedTools = this.updateManagerTools(task, preparedTools);
+      } else {
+        preparedTools = this.addDelegationTools(task, preparedTools);
+      }
+    }
+    if (agent?.allow_code_execution) {
+      preparedTools = this.addCodeExecutionTools(agent, preparedTools);
+    }
+    if (agent?.multimodal && !agentSupportsMultimodal(agent)) {
+      preparedTools = this.addMultimodalTools(agent, preparedTools);
+    }
+    if (agent?.apps && agent.apps.length > 0) {
+      preparedTools = this.addPlatformTools(task, preparedTools);
+    }
+    if (agent?.mcps && agent.mcps.length > 0) {
+      preparedTools = this.addMcpTools(task, preparedTools);
+    }
+    const resolvedMemory = agent?.memory ?? this.resolvedMemory;
+    if (resolvedMemory) {
+      preparedTools = this.addMemoryTools(preparedTools, resolvedMemory);
+    }
+    if (Object.keys(task.inputFiles).length > 0) {
+      preparedTools = this.addFileTools(preparedTools, task.inputFiles);
+    }
+    return preparedTools;
+  }
+
+  _prepare_tools(agent: Agent | null, task: Task, tools: readonly Tool[]): Tool[] {
+    return this.prepareTools(agent, task, tools);
+  }
+
+  injectDelegationTools(tools: readonly Tool[], taskAgent: Agent, agents: readonly Agent[]): Tool[] {
+    const getDelegationTools = Reflect.get(taskAgent, "get_delegation_tools") as
+      ((agents: readonly Agent[]) => readonly Tool[]) | undefined;
+    const delegationToolsFromAgent = typeof getDelegationTools === "function"
+      ? getDelegationTools.call(taskAgent, agents)
+      : taskAgent.getDelegationTools();
+    const delegationTools = delegationToolsFromAgent.length > 0
+      ? delegationToolsFromAgent
+      : createDelegationTools(agents);
+    return Crew.mergeTools(tools, delegationTools);
+  }
+
+  _inject_delegation_tools(tools: readonly Tool[], task_agent: Agent, agents: readonly Agent[]): Tool[] {
+    return this.injectDelegationTools(tools, task_agent, agents);
+  }
+
+  injectPlatformTools(tools: readonly Tool[], taskAgent: Agent): Tool[] {
+    if (!taskAgent.apps || taskAgent.apps.length === 0) {
+      return [...tools];
+    }
+    const getPlatformTools = Reflect.get(taskAgent, "get_platform_tools") as
+      ((options?: { apps?: readonly unknown[] }) => readonly Tool[]) | undefined;
+    const platformTools = typeof getPlatformTools === "function"
+      ? getPlatformTools.call(taskAgent, { apps: taskAgent.apps })
+      : taskAgent.getPlatformTools();
+    return Crew.mergeTools(tools, platformTools);
+  }
+
+  _inject_platform_tools(tools: readonly Tool[], task_agent: Agent): Tool[] {
+    return this.injectPlatformTools(tools, task_agent);
+  }
+
+  injectMcpTools(tools: readonly Tool[], taskAgent: Agent): Tool[] {
+    if (!taskAgent.mcps || taskAgent.mcps.length === 0) {
+      return [...tools];
+    }
+    const getMcpTools = Reflect.get(taskAgent, "get_mcp_tools") as
+      ((options?: { mcps?: readonly unknown[] }) => readonly Tool[]) | undefined;
+    const mcpTools = typeof getMcpTools === "function"
+      ? getMcpTools.call(taskAgent, { mcps: taskAgent.mcps })
+      : taskAgent.getMcpTools();
+    return Crew.mergeTools(tools, mcpTools);
+  }
+
+  _inject_mcp_tools(tools: readonly Tool[], task_agent: Agent): Tool[] {
+    return this.injectMcpTools(tools, task_agent);
+  }
+
+  addMultimodalTools(agent: Agent, tools: readonly Tool[]): Tool[] {
+    return Crew.mergeTools(tools, agent.get_multimodal_tools());
+  }
+
+  _add_multimodal_tools(agent: Agent, tools: readonly Tool[]): Tool[] {
+    return this.addMultimodalTools(agent, tools);
+  }
+
+  addCodeExecutionTools(agent: Agent, tools: readonly Tool[]): Tool[] {
+    return Crew.mergeTools(tools, agent.get_code_execution_tools());
+  }
+
+  _add_code_execution_tools(agent: Agent, tools: readonly Tool[]): Tool[] {
+    return this.addCodeExecutionTools(agent, tools);
+  }
+
+  addMemoryTools(tools: readonly Tool[], memory: Memory | MemoryScope): Tool[] {
+    return Crew.mergeTools(tools, createMemoryTools(memory));
+  }
+
+  _add_memory_tools(tools: readonly Tool[], memory: Memory | MemoryScope): Tool[] {
+    return this.addMemoryTools(tools, memory);
+  }
+
+  addFileTools(tools: readonly Tool[], files: TaskInputFiles): Tool[] {
+    return Crew.mergeTools(tools, [createReadFileTool(files)]);
+  }
+
+  _add_file_tools(tools: readonly Tool[], files: TaskInputFiles): Tool[] {
+    return this.addFileTools(tools, files);
+  }
+
+  addDelegationTools(task: Task, tools: readonly Tool[]): Tool[] {
+    const agentsForDelegation = this.agents.filter((agent) => agent !== task.agent);
+    if (this.agents.length > 1 && agentsForDelegation.length > 0 && task.agent) {
+      return this.injectDelegationTools(tools, task.agent, agentsForDelegation);
+    }
+    return [...tools];
+  }
+
+  _add_delegation_tools(task: Task, tools: readonly Tool[]): Tool[] {
+    return this.addDelegationTools(task, tools);
+  }
+
+  addPlatformTools(task: Task, tools: readonly Tool[]): Tool[] {
+    return task.agent ? this.injectPlatformTools(tools, task.agent) : [...tools];
+  }
+
+  _add_platform_tools(task: Task, tools: readonly Tool[]): Tool[] {
+    return this.addPlatformTools(task, tools);
+  }
+
+  addMcpTools(task: Task, tools: readonly Tool[]): Tool[] {
+    return task.agent ? this.injectMcpTools(tools, task.agent) : [...tools];
+  }
+
+  _add_mcp_tools(task: Task, tools: readonly Tool[]): Tool[] {
+    return this.addMcpTools(task, tools);
+  }
+
+  updateManagerTools(task: Task, tools: readonly Tool[]): Tool[] {
+    if (!this.managerAgent) {
+      return [...tools];
+    }
+    if (task.agent) {
+      return this.injectDelegationTools(tools, task.agent, [task.agent]);
+    }
+    return this.injectDelegationTools(tools, this.managerAgent, this.agents);
+  }
+
+  _update_manager_tools(task: Task, tools: readonly Tool[]): Tool[] {
+    return this.updateManagerTools(task, tools);
+  }
+
   getContext(task: Task, taskOutputs: readonly TaskOutput[]): string {
     return this.contextForTask(task, taskOutputs) ?? "";
   }
@@ -1647,23 +1807,14 @@ export class Crew {
 
   private toolsForTask(task: Task, agent: Agent | null): readonly Tool[] | undefined {
     const baseTools = task.tools.length > 0 ? [...task.tools] : [...(agent?.tools ?? [])];
-    const withDelegation = agent?.allowDelegation
-      ? mergeTools(baseTools, createDelegationTools(this.coworkersFor(agent)))
-      : baseTools;
-    const tools = this.resolvedMemory
-      ? mergeTools(withDelegation, createMemoryTools(this.resolvedMemory))
-      : withDelegation;
+    const tools = this.prepareTools(agent, task, baseTools);
     return tools.length > 0 ? this.applyCrewCache(tools) : undefined;
   }
 
   private toolsForHierarchicalTask(task: Task): readonly Tool[] {
     const baseTools = task.tools.length > 0 ? [...task.tools] : [];
-    const coworkers = task.agent ? [task.agent] : this.agents;
-    const delegationTools = createDelegationTools(coworkers);
-    const withDelegation = mergeTools(baseTools, delegationTools);
-    const tools = this.resolvedMemory
-      ? mergeTools(withDelegation, createMemoryTools(this.resolvedMemory))
-      : withDelegation;
+    const manager = this.getManagerAgent();
+    const tools = this.prepareTools(manager, task, baseTools);
     return this.applyCrewCache(tools);
   }
 
@@ -1794,6 +1945,17 @@ function mergeTools(baseTools: readonly Tool[], additionalTools: readonly Tool[]
     }
   }
   return [...byName.values()];
+}
+
+function agentSupportsMultimodal(agent: Agent): boolean {
+  const llm = agent.llm;
+  if (!llm || typeof llm !== "object") {
+    return false;
+  }
+  const supportsMultimodal = (llm as { supports_multimodal?: unknown }).supports_multimodal
+    ?? (llm as { supportsMultimodal?: unknown }).supportsMultimodal;
+  return typeof supportsMultimodal === "function"
+    && Boolean((supportsMultimodal as () => unknown).call(llm));
 }
 
 function isPendingTaskTuple(value: PendingTaskExecution | PendingTaskTuple): value is PendingTaskTuple {

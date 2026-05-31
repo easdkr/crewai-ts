@@ -8652,6 +8652,90 @@ describe("core crew runtime", () => {
     expect(analyst.tools).toEqual([agentTool]);
   });
 
+  it("exposes upstream Crew tool preparation helpers", () => {
+    const baseTool = new StructuredTool({
+      name: "base tool",
+      description: "Base tool",
+      func: () => "base",
+    });
+    const analyst = new Agent({
+      role: "Analyst",
+      goal: "Coordinate research",
+      backstory: "Delegates work",
+      allowDelegation: true,
+      multimodal: true,
+      llm: { supports_multimodal: () => false } as never,
+    });
+    const writer = new Agent({
+      role: "Writer",
+      goal: "Write clearly",
+      backstory: "Writes summaries",
+    });
+    const task = new Task({
+      description: "Coordinate",
+      expectedOutput: "Delegated output",
+      agent: analyst,
+      inputFiles: { brief: { content: "Use CrewAI", filename: "brief.txt" } },
+    });
+    const crewInstance = new Crew({
+      agents: [analyst, writer],
+      tasks: [task],
+      memory: new Memory(),
+    });
+
+    const tools = crewInstance._prepare_tools(analyst, task, [baseTool])
+      .map((toolInstance) => toolInstance.name);
+
+    expect(tools).toEqual(expect.arrayContaining([
+      "base_tool",
+      "delegate_work_to_coworker",
+      "ask_question_to_coworker",
+      "search_memory",
+      "save_to_memory",
+      "read_file",
+      "add_image_to_content",
+    ]));
+  });
+
+  it("exposes upstream Crew platform, MCP, and manager tool helpers", () => {
+    const platformTool = new StructuredTool({ name: "platform search", description: "Platform search", func: () => "platform" });
+    const mcpTool = new StructuredTool({ name: "mcp search", description: "MCP search", func: () => "mcp" });
+    const analyst = new Agent({
+      role: "Analyst",
+      goal: "Use integrations",
+      backstory: "Calls tools",
+      apps: ["github"],
+      mcps: ["notion#search"],
+    });
+    const manager = new Agent({
+      role: "Manager",
+      goal: "Coordinate",
+      backstory: "Delegates",
+      allowDelegation: true,
+    });
+    (analyst as unknown as {
+      get_platform_tools: (options?: { apps?: readonly unknown[] }) => readonly typeof platformTool[];
+      get_mcp_tools: (options?: { mcps?: readonly unknown[] }) => readonly typeof mcpTool[];
+    }).get_platform_tools = (options) => options?.apps?.includes("github") ? [platformTool] : [];
+    (analyst as unknown as {
+      get_mcp_tools: (options?: { mcps?: readonly unknown[] }) => readonly typeof mcpTool[];
+    }).get_mcp_tools = (options) => options?.mcps?.includes("notion#search") ? [mcpTool] : [];
+    const task = new Task({ description: "Search", expectedOutput: "Result", agent: analyst });
+    const crewInstance = new Crew({
+      agents: [analyst],
+      tasks: [task],
+      process: Process.hierarchical,
+      managerAgent: manager,
+    });
+
+    expect(crewInstance._add_platform_tools(task, []).map((toolInstance) => toolInstance.name))
+      .toEqual(["platform_search"]);
+    expect(crewInstance._add_mcp_tools(task, []).map((toolInstance) => toolInstance.name))
+      .toEqual(["mcp_search"]);
+    expect(crewInstance._update_manager_tools(task, []).map((toolInstance) => toolInstance.name))
+      .toEqual(expect.arrayContaining(["delegate_work_to_coworker", "ask_question_to_coworker"]));
+  });
+
   it("shares crew maxRpm across agent LLM calls", async () => {
     const callTimes: number[] = [];
     const firstAgent = new Agent({
