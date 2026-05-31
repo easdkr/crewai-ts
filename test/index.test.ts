@@ -385,7 +385,7 @@ import {
   type LLMCallOptions,
   type LLMMessage,
   type RagClient,
-  type UsageMetrics,
+  UsageMetrics,
   version,
   BaseEvent,
   Auth0Provider,
@@ -549,6 +549,8 @@ import {
   prepareKickoff,
   prepare_task_execution,
   prepare_kickoff,
+  runForEachAsync,
+  run_for_each_async,
   setupAgents,
   setup_agents,
   setCrewChatLoader,
@@ -5601,6 +5603,90 @@ describe("crew execution utilities", () => {
     } finally {
       crewaiEventBus.off("llm_stream_chunk", ctx.state.handler);
     }
+  });
+
+  it("keeps generic runForEachAsync behavior for array runners", async () => {
+    await expect(runForEachAsync(["slow", "fast"], (item, index) => Promise.resolve(`${index.toString()}:${item}`)))
+      .resolves.toEqual(["0:slow", "1:fast"]);
+  });
+
+  it("runs upstream-style async for-each on crew copies and aggregates usage", async () => {
+    const reset = vi.fn();
+    const copyCalls: string[] = [];
+    const crew = {
+      _task_output_handler: { reset },
+      copy() {
+        const copyId = `copy-${copyCalls.length.toString()}`;
+        copyCalls.push(copyId);
+        return {
+          id: copyId,
+          usageMetrics: new UsageMetrics({ totalTokens: 0, promptTokens: 0, completionTokens: 0, successfulRequests: 0 }),
+        };
+      },
+    };
+
+    const outputs = await run_for_each_async(
+      crew,
+      [{ topic: "CrewAI" }, { topic: "TypeScript" }],
+      (crewCopy: Record<string, unknown>, input: Record<string, unknown>) => {
+        crewCopy.usageMetrics = new UsageMetrics({
+          totalTokens: String(input.topic).length,
+          promptTokens: 1,
+          completionTokens: 2,
+          successfulRequests: 1,
+        });
+        return Promise.resolve(new CrewOutput({
+          raw: `done:${String(crewCopy.id)}:${String(input.topic)}`,
+          tokenUsage: crewCopy.usageMetrics as UsageMetrics,
+        }));
+      },
+    );
+
+    expect(outputs).toHaveLength(2);
+    expect((outputs as CrewOutput[]).map((output) => output.raw)).toEqual([
+      "done:copy-0:CrewAI",
+      "done:copy-1:TypeScript",
+    ]);
+    expect(copyCalls).toEqual(["copy-0", "copy-1"]);
+    expect(reset).toHaveBeenCalledOnce();
+    expect(crew).toMatchObject({
+      usageMetrics: {
+        totalTokens: "CrewAI".length + "TypeScript".length,
+        promptTokens: 2,
+        completionTokens: 4,
+        successfulRequests: 2,
+      },
+      tokenUsage: {
+        successfulRequests: 2,
+      },
+    });
+  });
+
+  it("returns a streaming output for upstream-style async for-each streaming crews", async () => {
+    const crew = {
+      stream: true,
+      copy: vi.fn(() => ({ usageMetrics: new UsageMetrics({ totalTokens: 1, successfulRequests: 1 }) })),
+    };
+
+    const streaming = await runForEachAsync(
+      crew,
+      [{ topic: "CrewAI" }],
+      (_crewCopy, input) => Promise.resolve(new CrewOutput({ raw: `stream:${input.topic}` })),
+    );
+
+    expect(streaming).toBeInstanceOf(CrewStreamingOutput);
+    const chunks: StreamChunk[] = [];
+    for await (const chunk of streaming as CrewStreamingOutput) {
+      chunks.push(chunk);
+    }
+    expect(chunks.map((chunk) => chunk.content)).toEqual(["stream:CrewAI"]);
+    expect((streaming as CrewStreamingOutput).result.raw).toBe("stream:CrewAI");
+    expect(crew).toMatchObject({
+      usageMetrics: {
+        totalTokens: 1,
+        successfulRequests: 1,
+      },
+    });
   });
 
   it("sets up agents with crew defaults, skills, knowledge, and executors", () => {

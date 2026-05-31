@@ -1,6 +1,8 @@
 import { CrewKickoffStartedEvent, crewaiEventBus } from "./events.js";
 import { storeFiles, type FileInputMap } from "./file-store.js";
 import { extractInputFilesFromInputs, type InputFiles } from "./input-files.js";
+import { addUsageMetrics, emptyUsageMetrics, type UsageMetrics } from "./llm.js";
+import { CrewOutput } from "./outputs.js";
 import {
   FlowStreamingOutput,
   CrewStreamingOutput,
@@ -325,8 +327,38 @@ export function prepareKickoff(
 
 export const prepare_kickoff = prepareKickoff;
 
-export async function runForEachAsync<TInput, TResult>(items: readonly TInput[], runner: (item: TInput, index: number) => Promise<TResult>): Promise<TResult[]> {
-  return await Promise.all(items.map((item, index) => runner(item, index)));
+export function runForEachAsync<TInput, TResult>(
+  items: readonly TInput[],
+  runner: (item: TInput, index: number) => Promise<TResult>,
+): Promise<TResult[]>;
+export function runForEachAsync<TCrew extends Record<string, unknown>, TInput extends Record<string, unknown>, TResult>(
+  crew: TCrew,
+  inputs: readonly TInput[],
+  kickoffFn: (crew: TCrew, input: TInput) => Promise<TResult>,
+): Promise<TResult[] | CrewStreamingOutput>;
+export async function runForEachAsync(
+  first: readonly unknown[] | Record<string, unknown>,
+  second: ((item: unknown, index: number) => Promise<unknown>) | readonly Record<string, unknown>[],
+  third?: (crew: Record<string, unknown>, input: Record<string, unknown>) => Promise<unknown>,
+): Promise<unknown[] | CrewStreamingOutput> {
+  if (Array.isArray(first) && typeof second === "function") {
+    return await Promise.all(first.map((item, index) => second(item, index)));
+  }
+  if (!isPlainRecord(first) || !Array.isArray(second) || typeof third !== "function") {
+    throw new TypeError("runForEachAsync expects either (items, runner) or (crew, inputs, kickoffFn).");
+  }
+
+  const crew = first;
+  const inputs = second;
+  const crewCopies = inputs.map(() => copyCrewRecord(crew));
+  if (crew.stream) {
+    return new CrewStreamingOutput(async () => {
+      const results = await runCrewCopiesForEach(crew, crewCopies, inputs, third);
+      return crewOutputResult(results.at(-1));
+    });
+  }
+
+  return await runCrewCopiesForEach(crew, crewCopies, inputs, third);
 }
 
 export const run_for_each_async = runForEachAsync;
@@ -453,6 +485,82 @@ function kickoffAgents(crew: Record<string, unknown>): Record<string, unknown>[]
     agents.push(task.agent);
   }
   return agents;
+}
+
+async function runCrewCopiesForEach<TResult>(
+  crew: Record<string, unknown>,
+  crewCopies: Record<string, unknown>[],
+  inputs: readonly Record<string, unknown>[],
+  kickoffFn: (crew: Record<string, unknown>, input: Record<string, unknown>) => Promise<TResult>,
+): Promise<TResult[]> {
+  const results = await Promise.all(crewCopies.map(async (crewCopy, index) => await kickoffFn(crewCopy, inputs[index] ?? {})));
+  setCrewUsageMetrics(crew, aggregateCrewUsageMetrics(crewCopies, results));
+  const taskOutputHandler = crew._task_output_handler ?? crew.taskOutputStorageHandler ?? crew.task_output_storage_handler;
+  callNamed(taskOutputHandler, ["reset"], taskOutputHandler);
+  return results;
+}
+
+function copyCrewRecord(crew: Record<string, unknown>): Record<string, unknown> {
+  const copy = crew.copy;
+  if (typeof copy === "function") {
+    const copied = callUnknown(copy, crew);
+    return isPlainRecord(copied) ? copied : { ...crew };
+  }
+  return { ...crew };
+}
+
+function aggregateCrewUsageMetrics(crewCopies: readonly Record<string, unknown>[], results: readonly unknown[]): UsageMetrics {
+  let total = emptyUsageMetrics();
+  for (let index = 0; index < crewCopies.length; index += 1) {
+    const usage = readUsageMetrics(crewCopies[index]) ?? readUsageMetrics(results[index]);
+    if (usage) {
+      total = addUsageMetrics(total, usage);
+    }
+  }
+  return total;
+}
+
+function readUsageMetrics(value: unknown): UsageMetrics | null {
+  if (!isPlainRecord(value)) {
+    return null;
+  }
+  const usage = value.usageMetrics ?? value.usage_metrics ?? value.tokenUsage ?? value.token_usage;
+  return isUsageMetrics(usage) ? usage : null;
+}
+
+function setCrewUsageMetrics(crew: Record<string, unknown>, usage: UsageMetrics): void {
+  if (callNamed(crew, ["setUsageMetrics", "set_usage_metrics"], crew, usage) !== undefined) {
+    return;
+  }
+  crew.usageMetrics = usage;
+  crew.usage_metrics = usage;
+  crew.tokenUsage = usage;
+  crew.token_usage = usage;
+}
+
+function crewOutputResult(value: unknown): CrewOutput {
+  if (value instanceof CrewOutput) {
+    return value;
+  }
+  if (value instanceof CrewStreamingOutput) {
+    return value.result;
+  }
+  if (isPlainRecord(value) && typeof value.raw === "string") {
+    return new CrewOutput({
+      raw: value.raw,
+      tasksOutput: Array.isArray(value.tasksOutput) ? value.tasksOutput as never[] : [],
+      tokenUsage: readUsageMetrics(value) ?? emptyUsageMetrics(),
+    });
+  }
+  return new CrewOutput({ raw: "", tasksOutput: [], tokenUsage: emptyUsageMetrics() });
+}
+
+function isUsageMetrics(value: unknown): value is UsageMetrics {
+  return isPlainRecord(value)
+    && typeof value.totalTokens === "number"
+    && typeof value.promptTokens === "number"
+    && typeof value.completionTokens === "number"
+    && typeof value.successfulRequests === "number";
 }
 
 function dedupeByIdentity(values: readonly unknown[]): unknown[] {
