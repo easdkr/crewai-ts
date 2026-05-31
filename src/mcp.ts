@@ -263,11 +263,19 @@ export abstract class BaseTransport {
     return await this.connect();
   }
 
+  async __aenter__(): Promise<this> {
+    return await this.aenter();
+  }
+
   async aexit(_excType: unknown = null, _excVal: unknown = null, _excTb: unknown = null): Promise<void> {
     void _excType;
     void _excVal;
     void _excTb;
     await this.disconnect();
+  }
+
+  async __aexit__(excType: unknown = null, excVal: unknown = null, excTb: unknown = null): Promise<void> {
+    await this.aexit(excType, excVal, excTb);
   }
 
   protected setStreams(read: unknown, write: unknown): void {
@@ -528,11 +536,19 @@ export class MCPClient {
     return await this.connect();
   }
 
+  async __aenter__(): Promise<this> {
+    return await this.aenter();
+  }
+
   async aexit(_excType: unknown = null, _excVal: unknown = null, _excTb: unknown = null): Promise<void> {
     void _excType;
     void _excVal;
     void _excTb;
     await this.disconnect();
+  }
+
+  async __aexit__(excType: unknown = null, excVal: unknown = null, excTb: unknown = null): Promise<void> {
+    await this.aexit(excType, excVal, excTb);
   }
 
   async listTools(useCache: boolean | null = null): Promise<MCPToolDefinition[]> {

@@ -2121,6 +2121,59 @@ describe("mcp configuration", () => {
     expect(mockTransport.connected).toBe(false);
   });
 
+  it("exposes upstream-style MCP async context manager aliases", async () => {
+    class MockTransport extends BaseTransport {
+      readonly calls: string[] = [];
+
+      get transportType(): typeof TransportType.STDIO {
+        return TransportType.STDIO;
+      }
+
+      protected createSdkTransport(): ReturnType<BaseTransport["getSdkTransport"]> {
+        const transport = {
+          start: () => {
+            this.calls.push("transport:start");
+            return Promise.resolve();
+          },
+          send: () => Promise.resolve(),
+          close: () => {
+            this.calls.push("transport:close");
+            return Promise.resolve();
+          },
+        };
+        return transport;
+      }
+    }
+
+    const transport = new MockTransport();
+    await expect(transport.__aenter__()).resolves.toBe(transport);
+    expect(transport.connected).toBe(true);
+    await transport.__aexit__(null, null, null);
+    expect(transport.connected).toBe(false);
+
+    const client = new MCPClient(transport);
+    client.connect = async () => {
+      await Promise.resolve();
+      transport.markConnectedForClient();
+      transport.calls.push("client:connect");
+      return client;
+    };
+    client.disconnect = async () => {
+      await Promise.resolve();
+      transport.calls.push("client:disconnect");
+      transport.clearConnectedForClient();
+    };
+
+    await expect(client.__aenter__()).resolves.toBe(client);
+    await client.__aexit__(null, null, null);
+    expect(transport.calls).toEqual([
+      "transport:start",
+      "transport:close",
+      "client:connect",
+      "client:disconnect",
+    ]);
+  });
+
   it("emits MCP client connection lifecycle events on SDK connection failure", async () => {
     class HangingTransport extends BaseTransport {
       get transportType(): typeof TransportType.STDIO {

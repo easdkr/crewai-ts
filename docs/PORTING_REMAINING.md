@@ -11,7 +11,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `npm run lint`
   - `npm run smoke:pack`
   - `python3 scripts/check-export-parity.py`
-- Test suite: 472 passing tests.
+- Test suite: 473 passing tests.
 - Root export parity against upstream clone `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `5cdc420`: `total_missing=0`.
 - Public method parity has been tightened for core runtime classes:
   - `ConsoleFormatter`: `missing=0`
@@ -180,6 +180,7 @@ When more goal budget is available, continue from the behavioral parity audits b
   - `ToolUsage` now exposes upstream-style `on_tool_error` and `on_tool_use_finished` event helpers, including snake_case event payload aliases and fingerprint metadata passthrough.
   - `CacheTools.hit_cache` now exposes the upstream direct cache lookup helper used by the generated cache tool.
 - Added MCP compatibility behavior:
+  - `BaseTransport` and `MCPClient` now expose upstream-style `__aenter__` / `__aexit__` async context-manager aliases.
   - `MCPClient.list_prompts` and `get_prompt` now normalize SDK prompt responses into upstream-style prompt definition and prompt-content shapes.
   - `MCPToolWrapper._run_async` now returns upstream-style classified execution error strings instead of leaking wrapper execution exceptions.
   - `StaticToolFilter.__call__` now mirrors upstream callable filter semantics while preserving the existing `filter`/`call` helpers.
