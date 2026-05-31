@@ -1,4 +1,4 @@
-import { ConfiguredLLM, CONTEXT_WINDOW_USAGE_RATIO, type BaseLLMOptions, type LLMCallOptions, type LLMResponse } from "./llm.js";
+import { ConfiguredLLM, CONTEXT_WINDOW_USAGE_RATIO, LocalFileUploader, type BaseLLMOptions, type LLMCallOptions, type LLMResponse } from "./llm.js";
 import type { LLMMessage } from "./types.js";
 
 export const TOOL_SEARCH_TOOL_TYPES = Object.freeze([
@@ -138,6 +138,10 @@ export class AnthropicCompletion extends ConfiguredLLM {
     return ["claude-3", "claude-sonnet-4", "claude-opus-4", "claude-haiku-4"]
       .some((prefix) => model.startsWith(prefix));
   }
+
+  override getFileUploader(): LocalFileUploader {
+    return new LocalFileUploader("anthropic", { llm: this });
+  }
 }
 
 export const STRUCTURED_OUTPUT_TOOL_NAME = "structured_output";
@@ -241,6 +245,10 @@ export class BedrockCompletion extends ConfiguredLLM {
   override supportsStopWords(): boolean {
     return true;
   }
+
+  override getFileUploader(): LocalFileUploader {
+    return new LocalFileUploader("bedrock", { llm: this, region_name: this.regionName });
+  }
 }
 
 export type GeminiCompletionOptions = BaseLLMOptions & {
@@ -343,6 +351,10 @@ export class GeminiCompletion extends ConfiguredLLM {
 
   override formatTextContent(text: string): { text: string } {
     return { text };
+  }
+
+  override getFileUploader(): LocalFileUploader {
+    return new LocalFileUploader("gemini", { llm: this, project: this.project, location: this.location });
   }
 
   override toConfigDict(): Record<string, unknown> {
@@ -589,6 +601,10 @@ export class AzureCompletion extends ConfiguredLLM {
 
   override resetReasoningChain(): void {
     this.reasoningChainItems = [];
+  }
+
+  override getFileUploader(): LocalFileUploader {
+    return new LocalFileUploader("azure", { llm: this, endpoint: this.endpoint, api_version: this.apiVersion });
   }
 }
 

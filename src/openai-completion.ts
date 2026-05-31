@@ -1,4 +1,4 @@
-import { ConfiguredLLM, type BaseLLMOptions, type LLMCallOptions, type LLMResponse } from "./llm.js";
+import { ConfiguredLLM, LocalFileUploader, type BaseLLMOptions, type LLMCallOptions, type LLMResponse } from "./llm.js";
 import type { LLMMessage } from "./types.js";
 
 export const WebSearchResult = Object.freeze({ kind: "WebSearchResult" });
@@ -344,6 +344,10 @@ export class OpenAICompletion extends ConfiguredLLM {
     const model = this.model.toLowerCase();
     return ["gpt-4o", "gpt-4.1", "gpt-4-turbo", "gpt-4-vision", "gpt-5", "o1", "o3", "o4"]
       .some((prefix) => model.startsWith(prefix));
+  }
+
+  override getFileUploader(): LocalFileUploader {
+    return new LocalFileUploader("openai", { llm: this });
   }
 
   override get lastResponseId(): string | null {

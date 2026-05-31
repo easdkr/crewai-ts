@@ -8428,6 +8428,65 @@ describe("LLM providers", () => {
       .toThrow("does not support multimodal input");
   });
 
+  it("formats multimodal message files and exposes provider file uploaders", () => {
+    class VisionLLM extends BaseLLM {
+      call(): string {
+        return "done";
+      }
+
+      override supportsMultimodal(): boolean {
+        return true;
+      }
+    }
+    const inline = new VisionLLM({ model: "demo/vision" })._format_messages([{
+      role: "user",
+      content: "Inspect this file",
+      files: {
+        notes: { filename: "notes.txt", content: "CrewAI notes", contentType: "text/plain" },
+      },
+    }]);
+
+    expect(inline[0]?.files).toBeUndefined();
+    expect(inline[0]?.content).toEqual([
+      { type: "text", text: "Inspect this file" },
+      {
+        type: "file",
+        source: "inline",
+        name: "notes",
+        filename: "notes.txt",
+        content_type: "text/plain",
+        content: "CrewAI notes",
+      },
+    ]);
+
+    const openai = new OpenAICompletion({ model: "gpt-4o", prefer_upload: true });
+    const uploader = openai.get_file_uploader();
+    const uploaded = openai._format_messages([{
+      role: "user",
+      content: "Inspect uploaded file",
+      files: {
+        notes: { filename: "notes.txt", content: "CrewAI notes", contentType: "text/plain" },
+      },
+    }]);
+
+    expect(uploader).toMatchObject({ provider: "openai" });
+    expect(uploaded[0]?.content).toEqual([
+      { type: "text", text: "Inspect uploaded file" },
+      {
+        type: "file",
+        source: "upload",
+        name: "notes",
+        filename: "notes.txt",
+        file_id: "openai-file-1",
+        content_type: "text/plain",
+      },
+    ]);
+    expect(openai.get_file_uploader()?.uploads).toEqual([]);
+    expect(new AnthropicCompletion({ model: "claude-3-5-sonnet-20241022" }).get_file_uploader()).toMatchObject({ provider: "anthropic" });
+    expect(new GeminiCompletion({ model: "gemini-2.5-flash" }).get_file_uploader()).toMatchObject({ provider: "gemini" });
+    expect(new BedrockCompletion({ model: "amazon.nova-pro-v1:0" }).get_file_uploader()).toMatchObject({ provider: "bedrock" });
+  });
+
   it("uses upstream-style context window sizing and stop-word support rules", () => {
     class WindowLLM extends BaseLLM {
       call(): string {

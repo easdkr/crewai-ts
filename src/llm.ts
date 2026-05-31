@@ -1,7 +1,10 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { basename } from "node:path";
 
 import type { ToolCalling } from "./tools.js";
+import type { InputFile } from "./input-files.js";
 import type { LLMMessage, MaybePromise, Tool } from "./types.js";
 import {
   LLMCallCompletedEvent,
@@ -238,6 +241,46 @@ export type LLMClient = {
 };
 
 export type LLM = LLMFunction | LLMClient;
+
+export type LocalFileUpload = {
+  id: string;
+  provider: string;
+  name: string;
+  filename: string;
+  contentType: string | null;
+  content: string;
+  size: number;
+};
+
+export class LocalFileUploader {
+  readonly provider: string;
+  readonly options: Record<string, unknown>;
+  readonly uploads: LocalFileUpload[] = [];
+
+  constructor(provider: string, options: Record<string, unknown> = {}) {
+    this.provider = provider;
+    this.options = { ...options };
+  }
+
+  upload(name: string, file: InputFile): LocalFileUpload {
+    const rendered = renderLLMInputFile(name, file);
+    const upload = {
+      id: `${this.provider}-file-${String(this.uploads.length + 1)}`,
+      provider: this.provider,
+      name,
+      filename: rendered.filename,
+      contentType: rendered.contentType,
+      content: rendered.content,
+      size: rendered.content.length,
+    };
+    this.uploads.push(upload);
+    return upload;
+  }
+
+  upload_file(name: string, file: InputFile): LocalFileUpload {
+    return this.upload(name, file);
+  }
+}
 
 export const DEFAULT_CONTEXT_WINDOW_SIZE = 4096;
 export const DEFAULT_SUPPORTS_STOP_WORDS = true;
@@ -1061,11 +1104,11 @@ export abstract class BaseLLM implements LLMClient {
     return this.formatTextContent(text);
   }
 
-  getFileUploader(): null {
+  getFileUploader(): LocalFileUploader | null {
     return null;
   }
 
-  get_file_uploader(): null {
+  get_file_uploader(): LocalFileUploader | null {
     return this.getFileUploader();
   }
 
@@ -1260,7 +1303,31 @@ export abstract class BaseLLM implements LLMClient {
     if (!this.supportsMultimodal() && messages.some((message) => message.files && Object.keys(message.files).length > 0)) {
       throw new Error(`Model '${this.model}' does not support multimodal input, but files were provided via 'input_files'.`);
     }
-    return messages.map((message) => ({ ...message }));
+    if (!this.supportsMultimodal()) {
+      return messages.map((message) => ({ ...message }));
+    }
+    const uploader = this.preferUpload ? this.getFileUploader() : null;
+    return messages.map((message) => {
+      if (!message.files || Object.keys(message.files).length === 0) {
+        return { ...message };
+      }
+      const contentBlocks: Record<string, unknown>[] = [];
+      if (typeof message.content === "string" && message.content.length > 0) {
+        contentBlocks.push(this.formatTextContent(message.content));
+      }
+      for (const [name, file] of Object.entries(message.files)) {
+        contentBlocks.push(uploader
+          ? formatUploadedFileContentBlock(name, uploader.upload(name, file))
+          : formatInlineFileContentBlock(name, file));
+      }
+      const { files: _files, ...rest } = message;
+      void _files;
+      const formattedMessage = {
+        ...rest,
+        content: contentBlocks as unknown as string,
+      };
+      return formattedMessage;
+    });
   }
 
   _process_message_files(messages: readonly LLMMessage[]): LLMMessage[] {
@@ -1872,6 +1939,80 @@ function serializeLLMMessages(messages: readonly LLMMessage[]): readonly Record<
     ...(message.files === undefined ? {} : { files: message.files }),
     ...(message.cache_breakpoint === undefined ? {} : { cache_breakpoint: message.cache_breakpoint }),
   }));
+}
+
+function formatInlineFileContentBlock(name: string, file: InputFile): Record<string, unknown> {
+  const rendered = renderLLMInputFile(name, file);
+  return {
+    type: "file",
+    source: "inline",
+    name,
+    filename: rendered.filename,
+    content_type: rendered.contentType,
+    content: rendered.content,
+  };
+}
+
+function formatUploadedFileContentBlock(name: string, upload: LocalFileUpload): Record<string, unknown> {
+  return {
+    type: "file",
+    source: "upload",
+    name,
+    filename: upload.filename,
+    file_id: upload.id,
+    content_type: upload.contentType,
+  };
+}
+
+function renderLLMInputFile(name: string, file: InputFile): { filename: string; contentType: string | null; content: string } {
+  if (typeof file === "string") {
+    return {
+      filename: basename(file) || name,
+      contentType: guessLLMFileContentType(file),
+      content: readFileSync(file, "utf8"),
+    };
+  }
+  if (typeof file.content === "string") {
+    return {
+      filename: file.filename ?? (file.path ? basename(file.path) : name),
+      contentType: file.contentType ?? guessLLMFileContentType(file.filename ?? file.path ?? name),
+      content: file.content,
+    };
+  }
+  if (file.path) {
+    return {
+      filename: file.filename ?? (basename(file.path) || name),
+      contentType: file.contentType ?? guessLLMFileContentType(file.path),
+      content: readFileSync(file.path, "utf8"),
+    };
+  }
+  throw new Error(`Input file '${name}' requires either a path or text content.`);
+}
+
+function guessLLMFileContentType(path: string): string | null {
+  const lower = path.toLowerCase();
+  if (lower.endsWith(".json")) {
+    return "application/json";
+  }
+  if (lower.endsWith(".csv")) {
+    return "text/csv";
+  }
+  if (lower.endsWith(".md") || lower.endsWith(".markdown")) {
+    return "text/markdown";
+  }
+  if (lower.endsWith(".txt") || lower.endsWith(".log")) {
+    return "text/plain";
+  }
+  if (lower.endsWith(".png")) {
+    return "image/png";
+  }
+  if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) {
+    return "image/jpeg";
+  }
+  if (lower.endsWith(".webp")) {
+    return "image/webp";
+  }
+  return null;
 }
 
 function serializeLLMEventMessages(messages: string | readonly LLMMessage[]): string | readonly Record<string, unknown>[] {
