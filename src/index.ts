@@ -1877,6 +1877,8 @@ export {
   DEFAULT_STORAGE_PATH,
   DEFAULT_TENANT,
   DEFAULT_VECTOR_PARAMS,
+  defaultRagEmbeddingFunction,
+  default_rag_embedding_function,
   DISCRIMINATOR,
   DType32,
   DType64,

@@ -445,6 +445,7 @@ import {
   CohereEmbeddingFunction,
   CohereProvider,
   CustomEmbeddingFunction,
+  defaultRagEmbeddingFunction,
   GeminiCompletion,
   GenerativeAiProvider,
   GoogleGenerativeAiEmbeddingFunction,
@@ -6795,12 +6796,29 @@ describe("RAG configuration and factories", () => {
     expect(chroma.settings.persistDirectory).toBe("/tmp/chroma-test");
     expect(chroma.settings.persist_directory).toBe("/tmp/chroma-test");
     expect(chroma.settings.allowReset).toBe(false);
+    expect(chroma.embedding_function).toBe(defaultRagEmbeddingFunction);
     expect(qdrant.provider).toBe("qdrant");
     expect(qdrant.limit).toBe(8);
     expect(qdrant.vectorsConfig).toEqual({ size: 1536, distance: "Cosine" });
     expect(qdrant.options).toEqual({ api_key: "secret", prefer_grpc: true });
+    expect(qdrant.embedding_function).toBe(defaultRagEmbeddingFunction);
     expect(normalizeRagConfig({ provider: "chromadb", tenant: "tenant-a" }).provider).toBe("chromadb");
     expect(normalizeRagConfig({ provider: "qdrant", options: { path: "/tmp/qdrant" } }).provider).toBe("qdrant");
+  });
+
+  it("uses deterministic non-zero default RAG embeddings instead of placeholder vectors", () => {
+    const first = defaultRagEmbeddingFunction("CrewAI") as number[];
+    const second = defaultRagEmbeddingFunction("CrewAI") as number[];
+    const different = defaultRagEmbeddingFunction("crew ai") as number[];
+    const batched = defaultRagEmbeddingFunction(["CrewAI", "crew ai"]) as number[][];
+
+    expect(first).toHaveLength(384);
+    expect(first).toEqual(second);
+    expect(first).not.toEqual(different);
+    expect(first.some((value) => value !== 0)).toBe(true);
+    expect(batched).toEqual([first, different]);
+    expect(new ChromaDBClient(new FakeChromaClient()).embedding_function).toBe(defaultRagEmbeddingFunction);
+    expect(new QdrantClient(new FakeQdrantClient()).embedding_function).toBe(defaultRagEmbeddingFunction);
   });
 
   it("creates RAG clients through registered provider factories", () => {

@@ -1986,8 +1986,8 @@ export type BaseRagConfigOptions = {
 
 export class BaseRagConfig {
   readonly provider: RagProvider;
-  readonly embeddingFunction: EmbeddingFunction | null;
-  readonly embedding_function: EmbeddingFunction | null;
+  readonly embeddingFunction: EmbeddingFunction;
+  readonly embedding_function: EmbeddingFunction;
   readonly limit: number;
   readonly scoreThreshold: number;
   readonly score_threshold: number;
@@ -1996,7 +1996,7 @@ export class BaseRagConfig {
 
   protected constructor(provider: RagProvider, options: BaseRagConfigOptions = {}) {
     this.provider = provider;
-    this.embeddingFunction = options.embeddingFunction ?? options.embedding_function ?? null;
+    this.embeddingFunction = options.embeddingFunction ?? options.embedding_function ?? defaultRagEmbeddingFunction;
     this.embedding_function = this.embeddingFunction;
     this.limit = options.limit ?? 5;
     this.scoreThreshold = options.scoreThreshold ?? options.score_threshold ?? 0.6;
@@ -2113,6 +2113,25 @@ const ragClientFactories = new Map<RagProvider, RagClientFactory>();
 let currentRagConfig: RagConfigType | null = null;
 let currentRagClient: RagClient | null = null;
 type SimpleEmbeddingFunction = (...args: never[]) => unknown;
+const DEFAULT_RAG_EMBEDDING_DIMENSIONS = 384;
+
+export function defaultRagEmbeddingFunction(input: unknown): Embedding | Embeddings {
+  if (Array.isArray(input)) {
+    return input.map((value) => deterministicEmbedding(String(value)));
+  }
+  return deterministicEmbedding(String(input));
+}
+
+export const default_rag_embedding_function = defaultRagEmbeddingFunction;
+
+function deterministicEmbedding(text: string): Embedding {
+  const vector: number[] = [];
+  for (let index = 0; index < DEFAULT_RAG_EMBEDDING_DIMENSIONS; index += 1) {
+    const digest = createHash("sha256").update(`${text}\0${String(index)}`).digest();
+    vector.push((digest.readUInt32BE(0) / 0xffffffff) * 2 - 1);
+  }
+  return vector;
+}
 
 export class ClientMethodMismatchError extends TypeError {
   constructor(methodName: string, expectedClient: string, altMethod: string, altClient: string) {
@@ -2134,10 +2153,7 @@ export class ChromaDBClient {
 
   constructor(
     client: unknown,
-    embeddingFunction: SimpleEmbeddingFunction = (...args: readonly unknown[]) => {
-      void args;
-      return [[0]];
-    },
+    embeddingFunction: SimpleEmbeddingFunction = defaultRagEmbeddingFunction,
     defaultLimit = 5,
     defaultScoreThreshold = 0.6,
     defaultBatchSize = 100,
@@ -2309,10 +2325,7 @@ export class QdrantClient {
 
   constructor(
     client: unknown,
-    embeddingFunction: SimpleEmbeddingFunction = (...args: readonly unknown[]) => {
-      void args;
-      return [[0]];
-    },
+    embeddingFunction: SimpleEmbeddingFunction = defaultRagEmbeddingFunction,
     defaultLimit = 5,
     defaultScoreThreshold = 0.6,
     defaultBatchSize = 100,
