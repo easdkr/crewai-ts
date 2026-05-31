@@ -150,7 +150,7 @@ export const setup_agents = setupAgents;
 
 export function prepareTaskExecution(crew: Record<string, unknown>, task: Record<string, unknown>, taskIndex: number, startIndex: number | null, taskOutputs: unknown[], lastSyncOutput: unknown = null): [TaskExecutionData, unknown[], unknown] {
   if (startIndex !== null && taskIndex < startIndex) {
-    if (task.output !== undefined) {
+    if (task.output) {
       taskOutputs.push(task.output);
       if (!task.async_execution && !task.asyncExecution) {
         lastSyncOutput = task.output;
@@ -161,9 +161,29 @@ export function prepareTaskExecution(crew: Record<string, unknown>, task: Record
   const getAgent = crew._get_agent_to_use;
   const agent: unknown = typeof getAgent === "function" ? getAgent.call(crew, task) : task.agent ?? null;
   if (!agent) {
-    throw new Error(`No agent available for task: ${safeString(task.description)}.`);
+    throw new Error([
+      `No agent available for task: ${safeString(task.description)}.`,
+      "Ensure that either the task has an assigned agent or a manager agent is provided.",
+    ].join(" "));
   }
-  const tools = Array.isArray(task.tools) ? task.tools as readonly unknown[] : [];
+  const agentRecord = typeof agent === "object" ? agent as Record<string, unknown> : {};
+  const taskTools = Array.isArray(task.tools) && task.tools.length > 0
+    ? task.tools as readonly unknown[]
+    : Array.isArray(agentRecord.tools)
+      ? agentRecord.tools as readonly unknown[]
+      : [];
+  const prepareTools = crew._prepare_tools;
+  const preparedTools = typeof prepareTools === "function"
+    ? (prepareTools as (this: unknown, agent: unknown, task: unknown, tools: readonly unknown[]) => unknown)
+      .call(crew, agent, task, taskTools)
+    : taskTools;
+  const tools = Array.isArray(preparedTools) ? preparedTools as readonly unknown[] : taskTools;
+  const executor = agentRecord.agent_executor ?? agentRecord.agentExecutor;
+  const isResuming = Boolean(executor && typeof executor === "object" && (executor as { _resuming?: unknown })._resuming);
+  const logTaskStart = crew._log_task_start;
+  if (!isResuming && typeof logTaskStart === "function") {
+    logTaskStart.call(crew, task, agentRecord.role);
+  }
   return [new TaskExecutionData(agent, tools), taskOutputs, lastSyncOutput];
 }
 

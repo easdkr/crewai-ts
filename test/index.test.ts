@@ -541,6 +541,8 @@ import {
   resolveRefs,
   runWithExecutionContext,
   runCrewTool,
+  prepareTaskExecution,
+  prepare_task_execution,
   setCrewChatLoader,
   processGuardrail,
   processConfig,
@@ -5530,6 +5532,84 @@ describe("config and token counter utilities", () => {
       cached_prompt_tokens: 4,
       successful_requests: 3,
     });
+  });
+});
+
+describe("crew execution utilities", () => {
+  it("prepares task execution with agent tool fallback, crew tool preparation, and start logging", () => {
+    const agent = {
+      role: "Researcher",
+      tools: ["agent-tool"],
+      agent_executor: { _resuming: false },
+    };
+    const task = {
+      description: "Research CrewAI",
+      tools: [],
+    };
+    const logs: unknown[][] = [];
+    const preparedCalls: unknown[][] = [];
+    const crew = {
+      _get_agent_to_use: (receivedTask: unknown) => {
+        expect(receivedTask).toBe(task);
+        return agent;
+      },
+      _prepare_tools: (...args: unknown[]) => {
+        preparedCalls.push(args);
+        return ["prepared-tool"];
+      },
+      _log_task_start: (...args: unknown[]) => {
+        logs.push(args);
+      },
+    };
+
+    const [data, outputs, lastSync] = prepareTaskExecution(crew, task, 0, null, [], null);
+
+    expect(data.agent).toBe(agent);
+    expect(data.tools).toEqual(["prepared-tool"]);
+    expect(data.should_skip).toBe(false);
+    expect(outputs).toEqual([]);
+    expect(lastSync).toBeNull();
+    expect(preparedCalls).toEqual([[agent, task, ["agent-tool"]]]);
+    expect(logs).toEqual([[task, "Researcher"]]);
+  });
+
+  it("preserves replayed task outputs and skips start logging for resuming executors", () => {
+    const previousOutput = new TaskOutput({
+      description: "Previous",
+      raw: "done",
+      agent: "Researcher",
+    });
+    const skippedOutputs: unknown[] = [];
+    const [skipped, outputs, lastSync] = prepare_task_execution(
+      {},
+      { output: previousOutput, async_execution: false },
+      0,
+      1,
+      skippedOutputs,
+      null,
+    );
+
+    expect(skipped.shouldSkip).toBe(true);
+    expect(outputs).toEqual([previousOutput]);
+    expect(lastSync).toBe(previousOutput);
+
+    const logs: unknown[][] = [];
+    const agent = {
+      role: "Writer",
+      tools: ["agent-tool"],
+      agent_executor: { _resuming: true },
+    };
+    const [prepared] = prepareTaskExecution({
+      _get_agent_to_use: () => agent,
+      _log_task_start: (...args: unknown[]) => {
+        logs.push(args);
+      },
+    }, { description: "Resume", tools: ["task-tool"] }, 1, null, [], null);
+
+    expect(prepared.tools).toEqual(["task-tool"]);
+    expect(logs).toEqual([]);
+    expect(() => prepareTaskExecution({}, { description: "No agent" }, 0, null, [], null))
+      .toThrow("Ensure that either the task has an assigned agent or a manager agent is provided.");
   });
 });
 
