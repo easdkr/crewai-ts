@@ -13548,6 +13548,7 @@ describe("lite agent", () => {
     expect(agent.before_llm_call_hooks).toHaveLength(1);
     expect(agent.after_llm_call_hooks).toHaveLength(1);
     expect(agent.memory).toBeInstanceOf(Memory);
+    expect(Object.hasOwn(LiteAgent.prototype, "key")).toBe(true);
     expect(agent.key).toHaveLength(36);
     expect(agent._original_role).toBe("Helper Agent");
     expect(() => LiteAgent.validate_guardrail_function(() => [true, "ok"]))

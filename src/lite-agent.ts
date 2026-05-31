@@ -91,11 +91,11 @@ export class LiteAgent {
   readonly stepCallback: AgentStepCallback | null;
   readonly codeExecutionMode: CodeExecutionMode;
   readonly code_execution_mode: CodeExecutionMode;
-  readonly key: string;
   readonly originalAgent: Agent | null = null;
   readonly original_agent: Agent | null = null;
   toolsResults: Record<string, unknown>[] = [];
   tools_results: Record<string, unknown>[] = this.toolsResults;
+  private readonly _key: string;
   private currentMessages: LLMMessage[] = [];
   private currentIterations = 0;
   private usageMetrics: UsageMetrics = emptyUsageMetrics();
@@ -131,8 +131,12 @@ export class LiteAgent {
     this.stepCallback = options.stepCallback ?? options.step_callback ?? null;
     this.codeExecutionMode = options.codeExecutionMode ?? options.code_execution_mode ?? "safe";
     this.code_execution_mode = this.codeExecutionMode;
-    this.key = randomUUID();
+    this._key = randomUUID();
     this.resolveMemory();
+  }
+
+  get key(): string {
+    return this._key;
   }
 
   get messages(): readonly LLMMessage[] {

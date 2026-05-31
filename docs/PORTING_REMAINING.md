@@ -125,7 +125,7 @@ When more goal budget is available, continue from the behavioral parity audits b
   - `HTTPDigestAuth.configure_client` and `APIKeyAuth.configure_client` now idempotently configure digest auth and query-param request hooks.
 - Added LiteAgent compatibility behavior:
   - `LiteAgent` now exposes upstream-style setup/helper methods for LLM setup, tool parsing, A2A setup, guardrail validation, and memory resolution.
-  - `LiteAgent` now exposes before/after LLM hook getters and resolves `memory: true` to a default `Memory` instance.
+  - `LiteAgent` now exposes before/after LLM hook getters, an upstream-style `key` property getter, and resolves `memory: true` to a default `Memory` instance.
 
 1. Storage backends
    - `memory/storage/backend.py`
