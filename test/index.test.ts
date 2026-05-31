@@ -7389,6 +7389,9 @@ describe("core crew runtime", () => {
     expect(agentInstance.__repr__()).toBe("Agent(role=Researcher CrewAI, goal=Find facts about CrewAI, backstory=Careful analyst)");
     expect(agentInstance.toString()).toBe(agentInstance.__repr__());
     expect(agentInstance.resolve_memory()).toBeNull();
+    expect(agentInstance._is_any_available_memory()).toBe(false);
+    agentInstance.memory = new Memory();
+    expect(agentInstance._is_any_available_memory()).toBe(true);
     expect(agentInstance.get_delegation_tools()).toEqual([]);
     expect(agentInstance.get_platform_tools()).toEqual([]);
     expect(agentInstance.get_mcp_tools()).toEqual([]);
@@ -7421,6 +7424,34 @@ describe("core crew runtime", () => {
     });
     expect(Agent.get_output_converter({ call: () => "converted" }, "raw", { name: "Output" }, "Convert"))
       .toBeInstanceOf(Converter);
+    const searchTool = new StructuredTool({
+      name: "search tool",
+      description: "Search primary sources",
+      func: () => "result",
+    });
+    expect(Agent._render_text_description([searchTool])).toBe([
+      "Tool name: search_tool",
+      "Tool description:",
+      "Search primary sources",
+    ].join("\n"));
+    expect(new Agent({
+      role: "Tool caller",
+      goal: "Use tools",
+      backstory: "Tool compatibility",
+      llm: {
+        call: () => "done",
+        supports_function_calling: () => true,
+      } as unknown as LLM & { supports_function_calling: () => boolean },
+    })._supports_native_tool_calling([searchTool])).toBe(true);
+    agentInstance.cacheHandler = null;
+    agentInstance.cache_handler = null;
+    agentInstance._setup_agent_executor();
+    expect(agentInstance.cache_handler).toBeInstanceOf(CacheHandler);
+    const cleanup = vi.fn();
+    (agentInstance as unknown as { _mcp_resolver: { cleanup: () => void } })._mcp_resolver = { cleanup };
+    await expect(agentInstance._cleanup_mcp_clients()).resolves.toBeUndefined();
+    expect(cleanup).toHaveBeenCalled();
+    expect((agentInstance as unknown as { _mcp_resolver: unknown })._mcp_resolver).toBeNull();
 
     try {
       writeFileSync("training_data.pkl", JSON.stringify({

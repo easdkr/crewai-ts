@@ -644,6 +644,18 @@ export class Agent {
     return this.validateMcps();
   }
 
+  setupAgentExecutor(): void {
+    if (!this.cacheHandler) {
+      this.cacheHandler = new CacheHandler();
+      this.cache_handler = this.cacheHandler;
+    }
+    this.setCacheHandler(this.cacheHandler);
+  }
+
+  _setup_agent_executor(): void {
+    this.setupAgentExecutor();
+  }
+
   validateAndSetAttributes(): this {
     return this.setPrivateAttrs();
   }
@@ -676,6 +688,35 @@ export class Agent {
     this.setRpmController(controller);
   }
 
+  isAnyAvailableMemory(): boolean {
+    if (this.memory) {
+      return true;
+    }
+    const crewMemory = readRecordValue(this.crew, "_memory")
+      ?? readRecordValue(this.crew, "memory")
+      ?? readRecordValue(this.crew, "resolvedMemory");
+    return Boolean(crewMemory);
+  }
+
+  _is_any_available_memory(): boolean {
+    return this.isAnyAvailableMemory();
+  }
+
+  supportsNativeToolCalling(tools: readonly Tool[]): boolean {
+    const llmValue = typeof this.llm === "string"
+      ? this.resolveLLMReference(this.llm)
+      : this.llm;
+    const supports = readRecordValue(llmValue, "supports_function_calling")
+      ?? readRecordValue(llmValue, "supportsFunctionCalling");
+    return tools.length > 0
+      && typeof supports === "function"
+      && Boolean((supports as () => unknown).call(llmValue));
+  }
+
+  _supports_native_tool_calling(tools: readonly Tool[]): boolean {
+    return this.supportsNativeToolCalling(tools);
+  }
+
   getDelegationTools(): readonly Tool[] {
     return [];
   }
@@ -698,6 +739,20 @@ export class Agent {
 
   get_mcp_tools(): readonly Tool[] {
     return this.getMcpTools();
+  }
+
+  async cleanupMcpClients(): Promise<void> {
+    const resolver = readRecordValue(this, "_mcp_resolver") ?? readRecordValue(this, "mcpResolver");
+    const cleanup = readRecordValue(resolver, "cleanup");
+    if (typeof cleanup === "function") {
+      await cleanup.call(resolver);
+    }
+    (this as unknown as { _mcp_resolver?: null; mcpResolver?: null })._mcp_resolver = null;
+    (this as unknown as { mcpResolver?: null }).mcpResolver = null;
+  }
+
+  async _cleanup_mcp_clients(): Promise<void> {
+    await this.cleanupMcpClients();
   }
 
   getMultimodalTools(): readonly Tool[] {
@@ -824,6 +879,16 @@ export class Agent {
     return suggestions.length > 0
       ? `${taskPrompt}\n\nYou MUST follow these instructions: \n - ${suggestions.join("\n - ")}`
       : taskPrompt;
+  }
+
+  static renderTextDescription(tools: readonly Tool[]): string {
+    return tools
+      .map((tool) => `Tool name: ${sanitizeToolName(tool.name)}\nTool description:\n${tool.description ?? ""}`)
+      .join("\n");
+  }
+
+  static _render_text_description(tools: readonly Tool[]): string {
+    return Agent.renderTextDescription(tools);
   }
 
   _injectDateToTask(task: Record<string, unknown>): void {
