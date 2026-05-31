@@ -23,6 +23,7 @@ import {
   A2UIMessageV09,
   A2UIValidationError,
   A2UI_V09_BASIC_CATALOG_ID,
+  ActionV09,
   SCHEMA_NAMES,
   V09_SCHEMA_NAMES,
   load_schema,
@@ -3392,6 +3393,10 @@ describe("a2a utilities", () => {
         context: {},
       },
     })._check_exactly_one()).toBeInstanceOf(A2UIEventV09);
+    expect(new ActionV09({
+      functionCall: { call: "openUrl", args: { href: "https://example.com" } },
+    })._check_exactly_one()).toBeInstanceOf(ActionV09);
+    expect(() => new ActionV09({ event: { name: "submit" }, functionCall: { call: "openUrl" } })).toThrow("Exactly one event or functionCall");
     expect(() => new A2UIEventV09()._check_exactly_one()).toThrow("Exactly one A2UI v0.9 event type");
 
     const unknownComponent = validate_a2ui_message_v09({

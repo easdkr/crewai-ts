@@ -249,7 +249,21 @@ export class CheckRule extends A2UIModel {}
 export class AccessibilityAttributes extends A2UIModel {}
 export const ChildListV09 = Object.freeze({ kind: "ChildListV09" });
 export class EventAction extends A2UIModel {}
-export class ActionV09 extends A2UIModel {}
+export class ActionV09 extends A2UIModel {
+  constructor(options: A2UIRecord = {}) {
+    super(options);
+    this.checkExactlyOne();
+  }
+
+  checkExactlyOne(): this {
+    assertExactlyOneGroupSet(this.modelDump(), [["event"], ["functionCall", "function_call"]], "event or functionCall");
+    return this;
+  }
+
+  _check_exactly_one(): this {
+    return this.checkExactlyOne();
+  }
+}
 export class TextV09 extends A2UIModel {}
 export class ImageV09 extends A2UIModel {}
 export class IconV09 extends A2UIModel {}
