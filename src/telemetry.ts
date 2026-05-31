@@ -1,3 +1,5 @@
+import { __version__ } from "./version.js";
+
 export const CREWAI_TELEMETRY_BASE_URL = "https://telemetry.crewai.com:4319";
 export const CREWAI_TELEMETRY_SERVICE_NAME = "crewAI-telemetry";
 
@@ -152,7 +154,7 @@ export class Telemetry {
   crew_creation(crew: unknown, inputs: Record<string, unknown> | null = null): void {
     this._safe_telemetry_operation(() => {
       const span = this.startSpan("Crew Created");
-      this._add_attribute(span, "crewai_version", "crewai-ts");
+      this._add_attribute(span, "crewai_version", __version__);
       addCrewAttributes(span, crew, this._add_attribute.bind(this));
       this._add_attribute(span, "crew_process", readProperty(crew, "process"));
       this._add_attribute(span, "crew_memory", readProperty(crew, "memory"));
@@ -213,7 +215,7 @@ export class Telemetry {
 
   tool_repeated_usage(llm: unknown, tool_name: string, attempts: number): void {
     this.closedSpan("Tool Repeated Usage", {
-      crewai_version: "crewai-ts",
+      crewai_version: __version__,
       tool_name,
       attempts,
       ...(llmModel(llm) ? { llm: llmModel(llm) } : {}),
@@ -227,7 +229,7 @@ export class Telemetry {
   tool_usage(llm: unknown, tool_name: string, attempts: number, agent: unknown = null): void {
     this._safe_telemetry_operation(() => {
       const span = this.startSpan("Tool Usage");
-      this._add_attribute(span, "crewai_version", "crewai-ts");
+      this._add_attribute(span, "crewai_version", __version__);
       this._add_attribute(span, "tool_name", tool_name);
       this._add_attribute(span, "attempts", attempts);
       if (llmModel(llm)) {
@@ -245,7 +247,7 @@ export class Telemetry {
   tool_usage_error(llm: unknown, agent: unknown = null, tool_name: string | null = null): void {
     this._safe_telemetry_operation(() => {
       const span = this.startSpan("Tool Usage Error");
-      this._add_attribute(span, "crewai_version", "crewai-ts");
+      this._add_attribute(span, "crewai_version", __version__);
       if (llmModel(llm)) {
         this._add_attribute(span, "llm", llmModel(llm));
       }
@@ -263,7 +265,7 @@ export class Telemetry {
 
   individual_test_result_span(crew: unknown, quality: number, exec_time: number, model_name: string): void {
     this.closedSpan("Crew Individual Test Result", {
-      crewai_version: "crewai-ts",
+      crewai_version: __version__,
       crew_key: readProperty(crew, "key") ?? "",
       crew_id: telemetryString(readProperty(crew, "id")),
       quality: String(quality),
@@ -274,7 +276,7 @@ export class Telemetry {
 
   test_execution_span(crew: unknown, iterations: number, inputs: Record<string, unknown> | null, model_name: string): void {
     this.closedSpan("Crew Test Execution", {
-      crewai_version: "crewai-ts",
+      crewai_version: __version__,
       crew_key: readProperty(crew, "key") ?? "",
       crew_id: telemetryString(readProperty(crew, "id")),
       iterations: String(iterations),
@@ -313,7 +315,7 @@ export class Telemetry {
     }
     return this._safe_telemetry_operation(() => {
       const span = this.startSpan("Crew Execution");
-      this._add_attribute(span, "crewai_version", "crewai-ts");
+      this._add_attribute(span, "crewai_version", __version__);
       addCrewAttributes(span, crew, this._add_attribute.bind(this), false);
       this._add_attribute(span, "crew_inputs", JSON.stringify(inputs ?? {}));
       this._add_attribute(span, "crew_agents", JSON.stringify(asArray(readProperty(crew, "agents")).map((agent) => publicAgentTelemetry(agent, true))));
@@ -328,7 +330,7 @@ export class Telemetry {
     }
     this._safe_telemetry_operation(() => {
       const span = readProperty(crew, "_execution_span") as SpanLike | null;
-      this._add_attribute(span, "crewai_version", "crewai-ts");
+      this._add_attribute(span, "crewai_version", __version__);
       this._add_attribute(span, "crew_output", final_string_output);
       this._add_attribute(span, "crew_tasks_output", JSON.stringify(asArray(readProperty(crew, "tasks")).map((task) => ({
         id: telemetryString(readProperty(task, "id")),
@@ -354,7 +356,7 @@ export class Telemetry {
   }
 
   env_context_span(tool: string): void {
-    this.closedSpan("Environment Context", { crewai_version: "crewai-ts", tool });
+    this.closedSpan("Environment Context", { crewai_version: __version__, tool });
   }
 
   human_feedback_span(
@@ -374,11 +376,11 @@ export class Telemetry {
   }
 
   feature_usage_span(feature: string): void {
-    this.closedSpan("Feature Usage", { crewai_version: "crewai-ts", feature });
+    this.closedSpan("Feature Usage", { crewai_version: __version__, feature });
   }
 
   template_installed_span(template_name: string): void {
-    this.closedSpan("Template Installed", { crewai_version: "crewai-ts", template_name });
+    this.closedSpan("Template Installed", { crewai_version: __version__, template_name });
   }
 
   private startSpan(name: string): RecordedSpan {

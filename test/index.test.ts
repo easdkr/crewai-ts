@@ -4082,6 +4082,7 @@ describe("telemetry compatibility", () => {
     });
     expect(spans[1]?.ended).toBe(true);
     expect(spans[2]?.attributes).toMatchObject({
+      crewai_version: "1.14.6",
       tool_name: "Search Tool",
       attempts: 2,
       llm: "demo-model",
@@ -4095,8 +4096,8 @@ describe("telemetry compatibility", () => {
       feedback_provided: true,
       outcome: "approved",
     });
-    expect(spans[8]?.attributes.feature).toBe("planning:creation");
-    expect(spans[9]?.attributes.template_name).toBe("starter");
+    expect(spans[8]?.attributes).toMatchObject({ crewai_version: "1.14.6", feature: "planning:creation" });
+    expect(spans[9]?.attributes).toMatchObject({ crewai_version: "1.14.6", template_name: "starter" });
   });
 });
 
