@@ -1,9 +1,11 @@
 import { Agent, type AgentOptions } from "./agent.js";
 import { convertToolsToOpenAISchema } from "./agent-utils.js";
 import { Converter } from "./converter.js";
+import { AgentExecutionCompletedEvent, AgentExecutionErrorEvent, AgentExecutionStartedEvent, crewaiEventBus } from "./events.js";
 import { I18N_DEFAULT } from "./i18n.js";
 import { generateModelDescription, type ModelDescription } from "./schema-utils.js";
 import { sanitizeToolName } from "./string-utils.js";
+import { AgentTools } from "./tools.js";
 import type { Tool as CrewTool } from "./types.js";
 
 export abstract class BaseToolAdapter {
@@ -248,8 +250,40 @@ export class OpenAIAgentAdapter extends BaseAgentAdapter {
     }
   }
 
+  configure_tools(tools?: readonly CrewTool[] | null): void {
+    this.configureTools(tools);
+  }
+
   configureStructuredOutput(task: unknown): void {
     this.converterAdapter.configureStructuredOutput(task);
+  }
+
+  configure_structured_output(task: unknown): void {
+    this.configureStructuredOutput(task);
+  }
+
+  async execute_task(task: unknown, context: string | null = null, tools: readonly CrewTool[] | null = null): Promise<string> {
+    this.configureStructuredOutput(task);
+    this.createAgentExecutor(tools);
+    const taskPrompt = formatAdapterTaskPrompt(task, context);
+    crewaiEventBus.emit(this, new AgentExecutionStartedEvent({
+      agent: this,
+      tools: this.tools,
+      task,
+      taskPrompt,
+    }));
+    try {
+      if (!this.openaiAgent || !this.agent_executor) {
+        throw new Error("Agent executor is not configured.");
+      }
+      const result = await Promise.resolve(this.agent_executor.run_sync(this.openaiAgent, taskPrompt));
+      const finalAnswer = this.handleExecutionResult(result);
+      crewaiEventBus.emit(this, new AgentExecutionCompletedEvent({ agent: this, task, output: finalAnswer }));
+      return finalAnswer;
+    } catch (error) {
+      crewaiEventBus.emit(this, new AgentExecutionErrorEvent({ agent: this, task, error }));
+      throw error;
+    }
   }
 
   handleExecutionResult(result: unknown): string {
@@ -259,6 +293,10 @@ export class OpenAIAgentAdapter extends BaseAgentAdapter {
 
   handle_execution_result(result: unknown): string {
     return this.handleExecutionResult(result);
+  }
+
+  get_delegation_tools(agents: readonly Agent[] = []): CrewTool[] {
+    return new AgentTools(agents as ConstructorParameters<typeof AgentTools>[0]).tools();
   }
 }
 
@@ -311,15 +349,28 @@ export class LangGraphAgentAdapter extends BaseAgentAdapter {
 
   configureTools(tools?: readonly CrewTool[] | null): void {
     this.toolAdapter.configureTools(tools ?? []);
+    const graph = asRecord(this.graph);
+    if (graph) {
+      graph.tools = this.toolAdapter.tools();
+    }
+  }
+
+  configure_tools(tools?: readonly CrewTool[] | null): void {
+    this.configureTools(tools);
   }
 
   configureStructuredOutput(task: unknown): void {
     this.converterAdapter.configureStructuredOutput(task);
   }
 
+  configure_structured_output(task: unknown): void {
+    this.configureStructuredOutput(task);
+  }
+
   createAgentExecutor(tools: readonly CrewTool[] | null = null): void {
     this.configureTools([...this.tools, ...(tools ?? [])]);
     this.graph = {
+      tools: this.toolAdapter.tools(),
       invoke: (input: unknown) => ({ messages: [{ content: stringifyAdapterValue(input) }] }),
     };
     this._graph = this.graph;
@@ -327,6 +378,61 @@ export class LangGraphAgentAdapter extends BaseAgentAdapter {
 
   create_agent_executor(tools: readonly CrewTool[] | null = null): void {
     this.createAgentExecutor(tools);
+  }
+
+  buildSystemPrompt(): string {
+    return this.converterAdapter.enhanceSystemPrompt([
+      `You are ${this.role}.`,
+      `Your goal is: ${this.goal}`,
+      `Your backstory: ${this.backstory}`,
+      "When working on tasks, think step-by-step and use the available tools when necessary.",
+    ].join("\n\n"));
+  }
+
+  _build_system_prompt(): string {
+    return this.buildSystemPrompt();
+  }
+
+  async execute_task(task: unknown, context: string | null = null, tools: readonly CrewTool[] | null = null): Promise<string> {
+    this.createAgentExecutor(tools);
+    this.configureStructuredOutput(task);
+    const taskPrompt = formatAdapterTaskPrompt(task, context);
+    crewaiEventBus.emit(this, new AgentExecutionStartedEvent({
+      agent: this,
+      tools: this.tools,
+      task,
+      taskPrompt,
+    }));
+    try {
+      const graph = asRecord(this.graph);
+      if (!graph || typeof graph.invoke !== "function") {
+        throw new Error("LangGraph agent graph is not configured.");
+      }
+      const invoke = graph.invoke as (input: unknown, config: unknown) => unknown;
+      const result = await Promise.resolve(invoke({
+        messages: [
+          ["system", this.buildSystemPrompt()],
+          ["user", taskPrompt],
+        ],
+      }, { configurable: { thread_id: `task_${adapterTaskId(task)}` } }));
+      const messages = Array.isArray(asRecord(result)?.messages) ? asRecord(result)?.messages as unknown[] : [];
+      const lastMessage = messages.at(-1);
+      const finalAnswer = this.converterAdapter.postProcessResult(asRecord(lastMessage)?.content ?? lastMessage ?? "")
+        || "Task execution completed but no clear answer was provided.";
+      crewaiEventBus.emit(this, new AgentExecutionCompletedEvent({ agent: this, task, output: finalAnswer }));
+      return finalAnswer;
+    } catch (error) {
+      crewaiEventBus.emit(this, new AgentExecutionErrorEvent({ agent: this, task, error }));
+      throw error;
+    }
+  }
+
+  get_delegation_tools(agents: readonly Agent[] = []): CrewTool[] {
+    return new AgentTools(agents as ConstructorParameters<typeof AgentTools>[0]).tools();
+  }
+
+  static get_output_converter(llm: unknown, text: string, model: unknown, instructions: string): Converter {
+    return new Converter({ llm: llm as ConstructorParameters<typeof Converter>[0]["llm"], text, model: model as ConstructorParameters<typeof Converter>[0]["model"], instructions });
   }
 }
 
@@ -347,6 +453,33 @@ function appendStructuredOutputPrompt(basePrompt: string, outputFormat: "json" |
   const template = I18N_DEFAULT.slice("formatted_task_instructions");
   const instruction = template.replace("{output_format}", JSON.stringify(schema, null, 2));
   return `${basePrompt}\n\n${instruction}`;
+}
+
+function formatAdapterTaskPrompt(task: unknown, context: string | null): string {
+  const taskPrompt = taskPromptFromUnknown(task);
+  if (!context) {
+    return taskPrompt;
+  }
+  return I18N_DEFAULT.slice("task_with_context")
+    .replace("{task}", taskPrompt)
+    .replace("{context}", context);
+}
+
+function taskPromptFromUnknown(task: unknown): string {
+  const record = asRecord(task);
+  if (record && typeof record.prompt === "function") {
+    const prompt = record.prompt as (this: unknown) => unknown;
+    return stringifyAdapterValue(prompt.call(task));
+  }
+  if (record && typeof record.description === "string") {
+    return record.description;
+  }
+  return stringifyAdapterValue(task);
+}
+
+function adapterTaskId(task: unknown): string {
+  const record = asRecord(task);
+  return typeof record?.id === "string" || typeof record?.id === "number" ? String(record.id) : String(Date.now());
 }
 
 function modelDescriptionFromUnknown(model: unknown): ModelDescription {

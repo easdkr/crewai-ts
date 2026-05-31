@@ -11,7 +11,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `npm run lint`
   - `npm run smoke:pack`
   - `python3 scripts/check-export-parity.py`
-- Test suite: 452 passing tests.
+- Test suite: 453 passing tests.
 - Root export parity against upstream clone `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `5cdc420`: `total_missing=0`.
 - Public method parity has been tightened for core runtime classes:
   - `ConsoleFormatter`: `missing=0`
@@ -173,6 +173,8 @@ When more goal budget is available, continue from the behavioral parity audits b
 - Added project wrapper compatibility behavior:
   - `TaskMethod` now exposes upstream-style `ensure_task_name` and applies default task names on direct `call`/`invoke` paths.
   - `CrewAIPlugin.get_class_decorator_hook` now exposes a deterministic no-op-compatible mypy plugin hook surface for `CrewBase` decorator metadata.
+- Added agent adapter compatibility behavior:
+  - `OpenAIAgentAdapter` and `LangGraphAgentAdapter` now expose upstream-style direct `execute_task`, `configure_tools`, `configure_structured_output`, delegation-tool creation, and LangGraph output converter helpers while staying deterministic and SDK-free in the default gate.
 - Added hooks compatibility behavior:
   - Filtered hook decorator factories now register upstream-style global wrappers for function hooks, preserve snake_case marker metadata, and apply sanitized tool/agent filters.
 - Added planning compatibility behavior:

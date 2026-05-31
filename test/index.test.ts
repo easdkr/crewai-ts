@@ -38,6 +38,8 @@ import {
   Agent,
   AgentCardSigningConfig,
   AgentExecutor,
+  OpenAIAgentAdapter,
+  LangGraphAgentAdapter,
   BaseAgent,
   AuthenticatedUser,
   AccumulatedToolArgs,
@@ -6125,6 +6127,56 @@ describe("core crew runtime", () => {
     expect(baseAgent.validate_tools()).toBe(baseAgent);
     expect(baseAgent.copy()).toBeInstanceOf(BaseAgent);
     await expect(baseAgent.aexecute_task("Base task")).resolves.toBe("base output");
+  });
+
+  it("executes OpenAI and LangGraph agent adapters through upstream public methods", async () => {
+    const events: string[] = [];
+    crewaiEventBus.on("agent_execution_started", (_source, event) => {
+      events.push(event.type);
+    });
+    crewaiEventBus.on("agent_execution_completed", (_source, event) => {
+      events.push(`${event.type}:${event.output}`);
+    });
+    const writer = new Agent({
+      role: "Writer",
+      goal: "Draft",
+      backstory: "Writes summaries",
+      llm: () => "writer output",
+    });
+    const taskInstance = new Task({
+      description: "Summarize adapter behavior",
+      expectedOutput: "Summary",
+    });
+
+    const openai = new OpenAIAgentAdapter({
+      role: "OpenAI Adapter",
+      goal: "Run task",
+      backstory: "Adapter",
+      model: "gpt-test",
+    });
+    const openaiResult = await openai.execute_task(taskInstance, "adapter context");
+
+    expect(openaiResult).toContain("adapter context");
+    expect(openai.agent_executor).not.toBeNull();
+    expect(openai._openai_agent?.options.model).toBe("gpt-test");
+    expect(openai.get_delegation_tools([writer]).map((toolInstance) => toolInstance.name)).toEqual([
+      "delegate_work_to_coworker",
+      "ask_question_to_coworker",
+    ]);
+
+    const langGraph = new LangGraphAgentAdapter({
+      role: "LangGraph Adapter",
+      goal: "Run graph",
+      backstory: "Adapter",
+      llm: "graph-model",
+    });
+    const langGraphResult = await langGraph.execute_task(taskInstance, "graph context");
+
+    expect(langGraphResult).toContain("LangGraph Adapter");
+    expect(langGraph.get_delegation_tools([writer])).toHaveLength(2);
+    expect(LangGraphAgentAdapter.get_output_converter(() => "converted", "raw", { name: "Output" }, "Convert")).toBeInstanceOf(Converter);
+    expect(events).toContain("agent_execution_started");
+    expect(events.some((event) => event.startsWith("agent_execution_completed:"))).toBe(true);
   });
 
   it("exposes upstream Crew validation, knowledge, train, and test lifecycle methods", async () => {
