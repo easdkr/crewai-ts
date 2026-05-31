@@ -302,12 +302,16 @@ export class Crew {
 
   static async fromCheckpoint(config: CheckpointConfig): Promise<Crew> {
     const state = await RuntimeState.fromCheckpoint(config);
-    const crew = state.root.find((entity): entity is Crew => entity instanceof Crew);
+    crewaiEventBus.setRuntimeState(state);
+    const crew = state.root
+      .map((entity) => normalizeCheckpointCrewEntity(entity))
+      .find((entity): entity is Crew => entity instanceof Crew);
     if (!crew) {
       throw new Error(`No Crew found in checkpoint: ${config.restoreFrom ?? config.restore_from ?? ""}`);
     }
     crew.executionContext = crew.executionContext ? crew.executionContext.clone() : null;
     crew.execution_context = crew.executionContext;
+    crew.restoreRuntime();
     return crew;
   }
 
@@ -317,9 +321,32 @@ export class Crew {
 
   static async fork(config: CheckpointConfig, branch?: string | null): Promise<Crew> {
     const crew = await Crew.fromCheckpoint(config);
-    const state = new RuntimeState({ entities: [crew], parentId: config.restoreFrom ?? config.restore_from ?? null });
+    const state = crewaiEventBus.runtimeState ?? new RuntimeState({
+      entities: [crew],
+      parentId: config.restoreFrom ?? config.restore_from ?? null,
+    });
     state.fork(branch ?? undefined);
+    crewaiEventBus.setRuntimeState(state);
     return crew;
+  }
+
+  static dropUnresolvableCallbacks<T>(value: T[] | T): T[] | T {
+    return Array.isArray(value) ? value.filter((item) => item !== null && item !== undefined) : value;
+  }
+
+  static _drop_unresolvable_callbacks<T>(value: T[] | T): T[] | T {
+    return Crew.dropUnresolvableCallbacks(value);
+  }
+
+  static denyUserSetId(value: string | null | undefined, context: { fromCheckpoint?: boolean; from_checkpoint?: boolean } | null = null): string | null | undefined {
+    if (value && !(context?.fromCheckpoint ?? context?.from_checkpoint ?? false)) {
+      throw new Error("The 'id' field cannot be set by the user.");
+    }
+    return value;
+  }
+
+  static _deny_user_set_id(value: string | null | undefined, context: { fromCheckpoint?: boolean; from_checkpoint?: boolean } | null = null): string | null | undefined {
+    return Crew.denyUserSetId(value, context);
   }
 
   static coerceSkillStrings(skills: unknown): unknown {
@@ -353,9 +380,102 @@ export class Crew {
     return createHash("md5").update(source.join("|")).digest("hex");
   }
 
+  toJSON(): Record<string, unknown> {
+    return {
+      type: "Crew",
+      entity_type: this.entity_type,
+      id: this.id,
+      name: this.name,
+      process: this.process,
+      verbose: this.verbose,
+      cache: this.cache,
+      agents: this.agents.map((agent) => serializeCheckpointAgent(agent)),
+      tasks: this.tasks.map((task) => serializeCheckpointTask(task)),
+      memory: this.memory === true ? true : false,
+      checkpoint_inputs: this.checkpointInputs,
+      checkpoint_train: this.checkpointTrain,
+      checkpoint_kickoff_event_id: this.checkpointKickoffEventId,
+      execution_context: this.executionContext ? this.executionContext.toJSON() : null,
+    };
+  }
+
   setPrivateAttrs(): this {
     this.configureAgents();
     return this;
+  }
+
+  restoreRuntime(): void {
+    const candidateAgents = [...this.agents, ...(this.managerAgent ? [this.managerAgent] : [])];
+    for (const agent of candidateAgents) {
+      (agent as unknown as { crew: Crew }).crew = this;
+      const executor = agent.agentExecutor;
+      if (executor && typeof executor === "object") {
+        (executor as { crew?: Crew; agent?: Agent; _resuming?: boolean }).crew = this;
+        (executor as { agent?: Agent }).agent = agent;
+        (executor as { _resuming?: boolean })._resuming = true;
+      }
+    }
+    for (const task of this.tasks) {
+      if (task.agent) {
+        const restoredAgent = candidateAgents.find((agent) => agent.role === task.agent?.role);
+        if (restoredAgent) {
+          (task as unknown as { agent: Agent }).agent = restoredAgent;
+        }
+      }
+      if (task.checkpointOriginalDescription !== null) {
+        (task as unknown as { checkpointOriginalDescription: string | null }).checkpointOriginalDescription = task.checkpointOriginalDescription;
+        task.checkpoint_original_description = task.checkpointOriginalDescription;
+      }
+      if (task.checkpointOriginalExpectedOutput !== null) {
+        (task as unknown as { checkpointOriginalExpectedOutput: string | null }).checkpointOriginalExpectedOutput = task.checkpointOriginalExpectedOutput;
+        task.checkpoint_original_expected_output = task.checkpointOriginalExpectedOutput;
+      }
+    }
+    if (this.checkpointInputs !== null) {
+      (this as unknown as { _inputs: InputValues })._inputs = this.checkpointInputs;
+    }
+    if (this.checkpointKickoffEventId !== null) {
+      (this as unknown as { _kickoff_event_id: string })._kickoff_event_id = this.checkpointKickoffEventId;
+    }
+    if (this.checkpointTrain !== null) {
+      (this as unknown as { _train: boolean })._train = this.checkpointTrain;
+    }
+    this.rebindMemoryViews();
+    this.restoreEventScope();
+    this.configureAgents();
+  }
+
+  _restore_runtime(): void {
+    this.restoreRuntime();
+  }
+
+  rebindMemoryViews(): void {
+    const backing = this.resolvedMemory instanceof Memory ? this.resolvedMemory : this.memory instanceof Memory ? this.memory : null;
+    if (!backing) {
+      return;
+    }
+    bindMemoryView(this.memory, backing);
+    for (const agent of this.agents) {
+      bindMemoryView(agent.memory, backing);
+    }
+  }
+
+  _rebind_memory_views(): void {
+    this.rebindMemoryViews();
+  }
+
+  restoreEventScope(): void {
+    const runtime = crewaiEventBus.runtimeState;
+    if (!runtime) {
+      return;
+    }
+    if (this.checkpointKickoffEventId) {
+      (this as unknown as { _kickoff_event_id: string })._kickoff_event_id = this.checkpointKickoffEventId;
+    }
+  }
+
+  _restore_event_scope(): void {
+    this.restoreEventScope();
   }
 
   set_private_attrs(): this {
@@ -2442,6 +2562,123 @@ function copyTask(task: Task, agentByRole: ReadonlyMap<string, Agent>): Task {
     });
   }
   return new Task(options);
+}
+
+function normalizeCheckpointCrewEntity(entity: unknown): Crew | null {
+  if (entity instanceof Crew) {
+    return entity;
+  }
+  if (!entity || typeof entity !== "object") {
+    return null;
+  }
+  const record = entity as Record<string, unknown>;
+  if (record.type !== "Crew" && record.entity_type !== "crew") {
+    return null;
+  }
+  const agents = Array.isArray(record.agents)
+    ? record.agents.map((agent) => createAgentFromConfig(asRecord(agent)))
+    : [];
+  const agentByRole = new Map(agents.map((agent) => [agent.role, agent]));
+  const tasks = Array.isArray(record.tasks)
+    ? record.tasks.map((task) => deserializeCheckpointTask(asRecord(task), agentByRole))
+    : [];
+  return new Crew({
+    ...(typeof record.id === "string" ? { id: record.id } : {}),
+    name: typeof record.name === "string" ? record.name : null,
+    agents,
+    tasks,
+    process: parseProcess(record.process, Process.sequential),
+    verbose: Boolean(record.verbose),
+    cache: record.cache !== false,
+    memory: record.memory === true,
+    checkpointInputs: isPlainRecord(record.checkpoint_inputs) ? record.checkpoint_inputs : null,
+    checkpointTrain: typeof record.checkpoint_train === "boolean" ? record.checkpoint_train : null,
+    checkpointKickoffEventId: typeof record.checkpoint_kickoff_event_id === "string" ? record.checkpoint_kickoff_event_id : null,
+  });
+}
+
+function serializeCheckpointAgent(agent: Agent): Record<string, unknown> {
+  return {
+    role: agent.role,
+    goal: agent.goal,
+    backstory: agent.backstory,
+    verbose: agent.verbose,
+    allow_delegation: agent.allow_delegation,
+    allow_code_execution: agent.allow_code_execution,
+    multimodal: agent.multimodal,
+  };
+}
+
+function serializeCheckpointTask(task: Task): Record<string, unknown> {
+  return {
+    id: task.id,
+    name: task.name,
+    description: task.description,
+    expected_output: task.expectedOutput,
+    agent: task.agent?.role ?? null,
+    async_execution: task.asyncExecution,
+    human_input: task.humanInput,
+    markdown: task.markdown,
+    output: task.output ? serializeTaskOutput(task.output) : null,
+    checkpoint_original_description: task.checkpointOriginalDescription,
+    checkpoint_original_expected_output: task.checkpointOriginalExpectedOutput,
+    checkpoint_original_output_file: task.checkpointOriginalOutputFile,
+  };
+}
+
+function deserializeCheckpointTask(record: Record<string, unknown>, agentByRole: ReadonlyMap<string, Agent>): Task {
+  const agentRole = typeof record.agent === "string" ? record.agent : null;
+  const task = new Task({
+    ...(typeof record.id === "string" ? { id: record.id } : {}),
+    name: typeof record.name === "string" ? record.name : null,
+    description: stringifyConfigValue(record.description),
+    expectedOutput: stringifyConfigValue(record.expectedOutput ?? record.expected_output),
+    agent: agentRole ? agentByRole.get(agentRole) ?? null : null,
+    asyncExecution: Boolean(record.async_execution ?? record.asyncExecution),
+    humanInput: Boolean(record.human_input ?? record.humanInput),
+    markdown: Boolean(record.markdown),
+    checkpointOriginalDescription: typeof record.checkpoint_original_description === "string" ? record.checkpoint_original_description : null,
+    checkpointOriginalExpectedOutput: typeof record.checkpoint_original_expected_output === "string" ? record.checkpoint_original_expected_output : null,
+    checkpointOriginalOutputFile: typeof record.checkpoint_original_output_file === "string" ? record.checkpoint_original_output_file : null,
+  });
+  if (isPlainRecord(record.output)) {
+    task.output = new TaskOutput({
+      description: stringifyConfigValue(record.output.description),
+      raw: stringifyConfigValue(record.output.raw),
+      agent: stringifyConfigValue(record.output.agent),
+      expectedOutput: typeof record.output.expected_output === "string" ? record.output.expected_output : null,
+      jsonDict: isPlainRecord(record.output.json_dict) ? record.output.json_dict : null,
+      pydantic: record.output.pydantic,
+    });
+  }
+  return task;
+}
+
+function serializeTaskOutput(output: TaskOutput): Record<string, unknown> {
+  return {
+    description: output.description,
+    expected_output: output.expectedOutput,
+    raw: output.raw,
+    json_dict: output.jsonDict,
+    pydantic: output.pydantic,
+    agent: output.agent,
+    output_format: output.outputFormat,
+    messages: output.messages,
+  };
+}
+
+function bindMemoryView(value: unknown, backing: Memory): void {
+  if (!value || typeof value !== "object" || value instanceof Memory) {
+    return;
+  }
+  const bind = (value as { bind?: unknown }).bind;
+  if (typeof bind === "function") {
+    bind.call(value, backing);
+  }
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
 
 function withTokenUsage(output: CrewOutput, tokenUsage: UsageMetrics): CrewOutput {

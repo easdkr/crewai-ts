@@ -18862,6 +18862,63 @@ describe("checkpoint state providers", () => {
     expect(flow.checkpoint).toBe(false);
   });
 
+  it("restores and forks crews from runtime checkpoints", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "crewai-ts-crew-checkpoint-"));
+    const provider = new JsonProvider();
+    const agent = new Agent({
+      role: "Checkpoint Researcher",
+      goal: "Restore crews",
+      backstory: "Keeps state",
+      llm: () => "done",
+    });
+    const task = new Task({
+      description: "Restore CrewAI",
+      expectedOutput: "Restored",
+      agent,
+      checkpoint_original_description: "Original {topic}",
+      checkpoint_original_expected_output: "Original output",
+    });
+    task.output = new TaskOutput({
+      description: "Restore CrewAI",
+      raw: "already done",
+      agent: agent.role,
+    });
+    const crew = new Crew({
+      name: "Checkpoint Crew",
+      agents: [agent],
+      tasks: [task],
+      checkpoint_inputs: { topic: "CrewAI" },
+      checkpoint_train: true,
+      checkpoint_kickoff_event_id: "kickoff-event",
+    });
+    const checkpointLocation = new RuntimeState({ root: [crew], provider }).checkpoint(directory);
+
+    const restored = await Crew.from_checkpoint(new CheckpointConfig({
+      restore_from: checkpointLocation,
+      provider,
+    }));
+
+    expect(restored).toBeInstanceOf(Crew);
+    expect(restored.name).toBe("Checkpoint Crew");
+    expect(restored.tasks[0]?.agent).toBe(restored.agents[0]);
+    expect(restored.tasks[0]?.output?.raw).toBe("already done");
+    expect((restored as unknown as { _inputs: InputValues })._inputs).toEqual({ topic: "CrewAI" });
+    expect((restored as unknown as { _kickoff_event_id: string })._kickoff_event_id).toBe("kickoff-event");
+    expect((restored as unknown as { _train: boolean })._train).toBe(true);
+    expect(crewaiEventBus.runtime_state?.checkpoint_id).toBe(provider.extract_id(checkpointLocation));
+
+    const forked = await Crew.fork(new CheckpointConfig({
+      restore_from: checkpointLocation,
+      provider,
+    }), "fork/manual");
+
+    expect(forked).toBeInstanceOf(Crew);
+    expect(crewaiEventBus.runtime_state?.branch).toBe("fork/manual");
+    expect(Crew._drop_unresolvable_callbacks([null, () => "ok", undefined])).toHaveLength(1);
+    expect(() => Crew._deny_user_set_id("manual-id")).toThrow("id");
+    expect(Crew._deny_user_set_id("restored-id", { from_checkpoint: true })).toBe("restored-id");
+  });
+
   it("stores SQLite checkpoints with branch and parent metadata", async () => {
     const directory = mkdtempSync(join(tmpdir(), "crewai-ts-sqlite-checkpoint-"));
     const provider = new SqliteProvider();
