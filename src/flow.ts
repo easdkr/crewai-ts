@@ -369,6 +369,8 @@ export type FlowKickoffOptions = {
   inputs?: InputValues;
   inputFiles?: InputFiles;
   input_files?: InputFiles;
+  fromCheckpoint?: CheckpointConfig | null;
+  from_checkpoint?: CheckpointConfig | null;
 };
 
 export type FlowExecutionTraceEntry = {
@@ -564,6 +566,7 @@ export class Flow<TState extends object = Record<string, unknown>> {
   private lastInputs: InputValues = {};
   private currentMethodName: string | null = null;
   private currentFlowRequestId: string | null = null;
+  private checkpointRestoreActive = false;
 
   constructor(options: FlowOptions<TState> = {}) {
     this.name = options.name ?? null;
@@ -588,6 +591,11 @@ export class Flow<TState extends object = Record<string, unknown>> {
   }
 
   async kickoffAsync(options: FlowKickoffOptions = {}): Promise<unknown> {
+    const checkpointConfig = options.fromCheckpoint ?? options.from_checkpoint ?? null;
+    if (checkpointConfig?.restoreFrom) {
+      const restored = await Flow.fromCheckpoint.call(this.constructor as new () => Flow<object>, checkpointConfig);
+      return await restored.kickoffAsync(withoutCheckpointOptions(options));
+    }
     if (this.stream) {
       return new FlowStreamingOutput(async () => await this.withStreamDisabled(async () => await this.kickoffAsync(options)));
     }
@@ -605,16 +613,45 @@ export class Flow<TState extends object = Record<string, unknown>> {
     crewaiEventBus.emit(this, new FlowStartedEvent({ flowName, inputs }));
 
     try {
-      this.resetRuntimeState();
+      const isRestoringCheckpoint = this.checkpointRestoreActive;
+      const restoredCompletedMethods = [...this.runtimeCompletedMethods];
+      const restoredMethodOutputs = [...this.runtimeMethodOutputs];
+      const skipCompletedMethods = new Set(isRestoringCheckpoint ? restoredCompletedMethods : []);
+      if (!isRestoringCheckpoint) {
+        this.resetRuntimeState();
+      }
       const entries = getFlowMetadata(this);
       const outputs = new Map<string, unknown>();
-      const completed = new Set<string>();
+      const completed = new Set<string>(restoredCompletedMethods);
       const queue: Array<{ name: string; input: unknown }> = [];
-      let lastOutput: unknown;
+      let lastOutput: unknown = restoredMethodOutputs.at(-1);
       let methodCalls = 0;
 
+      restoredCompletedMethods.forEach((methodName, index) => {
+        outputs.set(methodName, restoredMethodOutputs[index]);
+      });
+
       for (const entry of entries.filter((candidate) => candidate.kind === "start" && !candidate.condition)) {
-        queue.push({ name: String(entry.name), input: inputs });
+        const name = String(entry.name);
+        if (!skipCompletedMethods.has(name)) {
+          queue.push({ name, input: inputs });
+        }
+      }
+
+      for (const triggerName of restoredCompletedMethods) {
+        for (const entry of entries) {
+          const name = String(entry.name);
+          if (!entry.condition || skipCompletedMethods.has(name) || queue.some((candidate) => candidate.name === name)) {
+            continue;
+          }
+          if (!conditionIncludesTrigger(entry.condition, triggerName)) {
+            continue;
+          }
+          const trigger = conditionSatisfied(entry.condition, completed);
+          if (trigger.satisfied) {
+            queue.push({ name, input: outputs.get(triggerName) });
+          }
+        }
       }
 
       while (queue.length > 0) {
@@ -658,7 +695,7 @@ export class Flow<TState extends object = Record<string, unknown>> {
         for (const triggerName of triggers) {
           for (const entry of entries) {
             const name = String(entry.name);
-            if (!entry.condition || queue.some((candidate) => candidate.name === name)) {
+            if (!entry.condition || skipCompletedMethods.has(name) || queue.some((candidate) => candidate.name === name)) {
               continue;
             }
             if (!conditionIncludesTrigger(entry.condition, triggerName)) {
@@ -696,6 +733,7 @@ export class Flow<TState extends object = Record<string, unknown>> {
       }));
       throw error;
     } finally {
+      this.checkpointRestoreActive = false;
       this.currentFlowRequestId = null;
       this.currentInputFiles = previousInputFiles;
     }
@@ -1108,6 +1146,7 @@ export class Flow<TState extends object = Record<string, unknown>> {
     for (const [methodName, count] of Object.entries(checkpoint.checkpoint_method_counts)) {
       this.runtimeMethodExecutionCounts.set(methodName, count);
     }
+    this.checkpointRestoreActive = true;
   }
 
   private async continueFromHumanFeedback(context: PendingFeedbackContext, feedback: string): Promise<unknown> {
@@ -2657,6 +2696,14 @@ function isArrayIndex(property: string): boolean {
   }
   const index = Number(property);
   return Number.isInteger(index) && index >= 0 && String(index) === property;
+}
+
+function withoutCheckpointOptions(options: FlowKickoffOptions): FlowKickoffOptions {
+  return {
+    ...(options.inputs === undefined ? {} : { inputs: options.inputs }),
+    ...(options.inputFiles === undefined ? {} : { inputFiles: options.inputFiles }),
+    ...(options.input_files === undefined ? {} : { input_files: options.input_files }),
+  };
 }
 
 function nestedConditionSatisfied(

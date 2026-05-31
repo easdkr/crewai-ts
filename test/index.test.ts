@@ -6857,6 +6857,69 @@ describe("flow runtime", () => {
     expect(forked.methodOutputs).toEqual(["ready", "done"]);
   });
 
+  it("resumes kickoff from a checkpoint without replaying completed methods", async () => {
+    class KickoffCheckpointFlow extends Flow<{ id: string; events: string[]; done?: boolean }> {
+      static replayForbidden = false;
+
+      constructor() {
+        super({ initialState: { id: "flow-1", events: [] } });
+      }
+
+      begin() {
+        if (KickoffCheckpointFlow.replayForbidden) {
+          throw new Error("begin replayed");
+        }
+        this.state.events.push("begin");
+        return "ready";
+      }
+
+      finish() {
+        if (KickoffCheckpointFlow.replayForbidden) {
+          throw new Error("finish replayed");
+        }
+        this.state.events.push("finish");
+        this.state.done = true;
+        return "done";
+      }
+    }
+
+    const initializers = [
+      decorateMethod(KickoffCheckpointFlow, "begin", start() as unknown as Decorator),
+      decorateMethod(KickoffCheckpointFlow, "finish", listen("begin") as unknown as Decorator),
+    ];
+    const original = new KickoffCheckpointFlow();
+    initializers.forEach((initializer) => {
+      initializer.call(original);
+    });
+    await original.kickoff();
+    const directory = mkdtempSync(join(tmpdir(), "crewai-ts-flow-kickoff-checkpoint-"));
+    const provider = new JsonProvider();
+    const checkpointLocation = new RuntimeState({
+      root: [original],
+      provider,
+    }).checkpoint(directory);
+
+    const resumed = new KickoffCheckpointFlow();
+    initializers.forEach((initializer) => {
+      initializer.call(resumed);
+    });
+    KickoffCheckpointFlow.replayForbidden = true;
+    const output = await resumed.kickoff({
+      from_checkpoint: new CheckpointConfig({
+        restore_from: checkpointLocation,
+        provider,
+      }),
+    });
+
+    expect(output).toBe("done");
+    expect(resumed.state).toEqual({ id: "flow-1", events: [] });
+    const restored = await KickoffCheckpointFlow.from_checkpoint(new CheckpointConfig({
+      restore_from: checkpointLocation,
+      provider,
+    }));
+    expect(restored.state.events).toEqual(["begin", "finish"]);
+  });
+
   it("mutates underlying state through locked flow proxies", () => {
     const listSource = ["a", "b"];
     const list = new LockedListProxy(listSource);

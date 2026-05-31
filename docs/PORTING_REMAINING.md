@@ -57,6 +57,7 @@ When more goal budget is available, continue from the behavioral parity audits b
 - Added Flow checkpoint restoration/fork compatibility plus mutable locked proxy behavior:
   - `Flow.fromCheckpoint` / `Flow.from_checkpoint`
   - `Flow.fork`
+  - kickoff-time `fromCheckpoint` / `from_checkpoint` resume without replaying completed methods
   - runtime checkpoint serialization of completed methods, method outputs/counts, and flow state
   - `LockedListProxy`, `LockedDictProxy`, and `StateProxy` mutation helpers backed by the original state values
 
@@ -79,8 +80,8 @@ When more goal budget is available, continue from the behavioral parity audits b
    - Prioritize persistence replay and resume behavior because it affects user-visible workflow recovery.
    - Flow persistence backends now expose upstream snake_case aliases for state and pending-feedback lifecycle methods.
    - Flow now supports auto memory plus `remember`, `recall`, and `extract_memories` delegation.
-   - Flow checkpoint snapshots now restore/fork completed methods, method outputs/counts, and state through `from_checkpoint`/`fork`; locked dict/list proxies now mutate the backing values.
-   - Remaining: broaden checkpoint resume integration through kickoff-time `from_checkpoint`, checkpoint event bus runtime-state wiring, and any Pydantic/BaseModel-only state behavior that has no direct TypeScript equivalent yet.
+   - Flow checkpoint snapshots now restore/fork completed methods, method outputs/counts, and state through `from_checkpoint`/`fork`; kickoff-time `from_checkpoint` delegates to the restored flow and does not replay completed methods; locked dict/list proxies now mutate the backing values.
+   - Remaining: checkpoint event bus runtime-state wiring and any Pydantic/BaseModel-only state behavior that has no direct TypeScript equivalent yet.
 
 4. Unified memory
    - Async aliases and record/scope/category listing.
