@@ -1,3 +1,6 @@
+import { CrewKickoffStartedEvent, crewaiEventBus } from "./events.js";
+import { storeFiles, type FileInputMap } from "./file-store.js";
+import { extractInputFilesFromInputs, type InputFiles } from "./input-files.js";
 import { FlowStreamingOutput, CrewStreamingOutput } from "./streaming.js";
 import type { LLMMessage, Tool } from "./types.js";
 
@@ -198,8 +201,75 @@ export function checkConditionalSkip(_crew: unknown, task: { should_execute?: (o
 
 export const check_conditional_skip = checkConditionalSkip;
 
-export function prepareKickoff(_crew: unknown, inputs: Record<string, unknown> = {}): Record<string, unknown> {
-  return { ...inputs };
+export function prepareKickoff(
+  crew: Record<string, unknown>,
+  inputs: Record<string, unknown> | null = {},
+  inputFiles: InputFiles | null = null,
+): Record<string, unknown> | null {
+  let normalizedInputs = normalizeKickoffInputs(inputs);
+  for (const callback of readArray(crew.beforeKickoffCallbacks ?? crew.before_kickoff_callbacks)) {
+    if (typeof callback !== "function") {
+      continue;
+    }
+    normalizedInputs ??= {};
+    normalizedInputs = normalizeKickoffInputs(callUnknown(callback, crew, normalizedInputs));
+  }
+
+  const isResumingFromCheckpoint = crew.checkpointKickoffEventId !== undefined
+    || crew.checkpoint_kickoff_event_id !== undefined;
+  if (!isResumingFromCheckpoint) {
+    const started = new CrewKickoffStartedEvent({
+      crewName: typeof crew.name === "string" ? crew.name : null,
+      crew,
+      inputs: normalizedInputs ?? {},
+    });
+    crew._kickoff_event_id = started.eventId;
+    crew.kickoffEventId = started.eventId;
+    crew.kickoff_event_id = started.eventId;
+    crewaiEventBus.emit(crew, started);
+  }
+
+  const taskOutputHandler = crew._task_output_handler ?? crew.taskOutputStorageHandler ?? crew.task_output_storage_handler;
+  callNamed(taskOutputHandler, ["reset"], taskOutputHandler);
+  crew._logging_color = "bold_purple";
+  crew.loggingColor = "bold_purple";
+  crew.logging_color = "bold_purple";
+
+  let filesToStore: FileInputMap = { ...(inputFiles ?? {}) };
+  if (normalizedInputs !== null) {
+    const extracted = extractInputFilesFromInputs(normalizedInputs);
+    normalizedInputs = extracted.inputs;
+    filesToStore = { ...filesToStore, ...extracted.inputFiles };
+    crew._inputs = normalizedInputs;
+    crew.inputs = normalizedInputs;
+  }
+  const crewId = stringValue(crew.id ?? crew._execution_id ?? crew.executionId ?? crew.execution_id);
+  if (crewId && Object.keys(filesToStore).length > 0) {
+    storeFiles(crewId, filesToStore);
+  }
+
+  callNamed(crew, ["_interpolate_inputs", "_interpolateInputs", "interpolateInputs", "interpolate_inputs"], crew, normalizedInputs ?? {});
+  callNamed(crew, ["_set_tasks_callbacks", "_setTasksCallbacks", "setTasksCallbacks", "set_tasks_callbacks"], crew);
+  callNamed(crew, [
+    "_set_allow_crewai_trigger_context_for_first_task",
+    "_setAllowCrewaiTriggerContextForFirstTask",
+    "setAllowCrewaiTriggerContextForFirstTask",
+    "set_allow_crewai_trigger_context_for_first_task",
+  ], crew);
+
+  setupAgents(
+    crew,
+    kickoffAgents(crew),
+    crew.embedder,
+    crew.functionCallingLlm ?? crew.function_calling_llm,
+    crew.stepCallback ?? crew.step_callback,
+  );
+
+  if (crew.planning) {
+    callNamed(crew, ["_handle_crew_planning", "_handleCrewPlanning", "handleCrewPlanning", "handle_crew_planning"], crew);
+  }
+
+  return normalizedInputs;
 }
 
 export const prepare_kickoff = prepareKickoff;
@@ -241,4 +311,59 @@ function hasModelDump(value: unknown): value is { model_dump: () => Record<strin
     && typeof value === "object"
     && "model_dump" in value
     && typeof value.model_dump === "function";
+}
+
+function normalizeKickoffInputs(value: unknown): Record<string, unknown> | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  if (!isPlainRecord(value)) {
+    throw new TypeError("Crew kickoff inputs must be a mapping/object or null.");
+  }
+  return { ...value };
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function readArray(value: unknown): readonly unknown[] {
+  return Array.isArray(value) ? value : [];
+}
+
+function callUnknown(callback: unknown, receiver: unknown, ...args: unknown[]): unknown {
+  return (callback as (this: unknown, ...args: unknown[]) => unknown).call(receiver, ...args);
+}
+
+function callNamed(target: unknown, names: readonly string[], receiver: unknown, ...args: unknown[]): unknown {
+  if (!isPlainRecord(target)) {
+    return undefined;
+  }
+  for (const name of names) {
+    const callback = target[name];
+    if (typeof callback === "function") {
+      return callUnknown(callback, receiver, ...args);
+    }
+  }
+  return undefined;
+}
+
+function stringValue(value: unknown): string | null {
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+function kickoffAgents(crew: Record<string, unknown>): Record<string, unknown>[] {
+  const agents: Record<string, unknown>[] = [];
+  for (const agent of readArray(crew.agents)) {
+    if (isPlainRecord(agent) && !agents.includes(agent)) {
+      agents.push(agent);
+    }
+  }
+  for (const task of readArray(crew.tasks)) {
+    if (!isPlainRecord(task) || !isPlainRecord(task.agent) || agents.includes(task.agent)) {
+      continue;
+    }
+    agents.push(task.agent);
+  }
+  return agents;
 }

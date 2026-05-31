@@ -542,7 +542,9 @@ import {
   runWithExecutionContext,
   runCrewTool,
   prepareTaskExecution,
+  prepareKickoff,
   prepare_task_execution,
+  prepare_kickoff,
   setCrewChatLoader,
   processGuardrail,
   processConfig,
@@ -5610,6 +5612,105 @@ describe("crew execution utilities", () => {
     expect(logs).toEqual([]);
     expect(() => prepareTaskExecution({}, { description: "No agent" }, 0, null, [], null))
       .toThrow("Ensure that either the task has an assigned agent or a manager agent is provided.");
+  });
+
+  it("prepares kickoff inputs, files, events, agents, and planning hooks", () => {
+    const events: CrewKickoffStartedEvent[] = [];
+    const off = crewaiEventBus.on("crew_kickoff_started", (_source, event) => {
+      events.push(event);
+    });
+    try {
+      const reset = vi.fn();
+      const interpolate = vi.fn();
+      const setCallbacks = vi.fn();
+      const setTriggerContext = vi.fn();
+      const planning = vi.fn();
+      const agent = { role: "Researcher" };
+      const taskOnlyAgent = { role: "Writer" };
+      const crew = {
+        id: "kickoff-crew",
+        name: "Kickoff Crew",
+        beforeKickoffCallbacks: [
+          (input: Record<string, unknown>) => ({ ...input, topic: `${String(input.topic)} TS`, extra: true }),
+        ],
+        _task_output_handler: { reset },
+        _interpolate_inputs: interpolate,
+        _set_tasks_callbacks: setCallbacks,
+        _set_allow_crewai_trigger_context_for_first_task: setTriggerContext,
+        _handle_crew_planning: planning,
+        agents: [agent],
+        tasks: [{ agent }, { agent: taskOnlyAgent }],
+        embedder: { provider: "memory" },
+        function_calling_llm: "tool-llm",
+        step_callback: "step-callback",
+        planning: true,
+      };
+
+      const prepared = prepareKickoff(crew, {
+        topic: "CrewAI",
+        brief: { content: "Use TypeScript", filename: "brief.md" },
+      }, {
+        requirements: { content: "Keep parity", filename: "requirements.txt" },
+      });
+
+      expect(prepared).toEqual({ topic: "CrewAI TS", extra: true });
+      expect(events).toHaveLength(1);
+      expect(events[0]).toMatchObject({
+        type: "crew_kickoff_started",
+        crewName: "Kickoff Crew",
+        inputs: {
+          topic: "CrewAI TS",
+          extra: true,
+          brief: { content: "Use TypeScript", filename: "brief.md" },
+        },
+      });
+      expect((crew as { _kickoff_event_id?: string })._kickoff_event_id).toBe(events[0]?.eventId);
+      expect(reset).toHaveBeenCalledOnce();
+      expect(interpolate).toHaveBeenCalledWith(prepared);
+      expect(setCallbacks).toHaveBeenCalledOnce();
+      expect(setTriggerContext).toHaveBeenCalledOnce();
+      expect(planning).toHaveBeenCalledOnce();
+      expect(getFiles("kickoff-crew")).toEqual({
+        requirements: { content: "Keep parity", filename: "requirements.txt" },
+        brief: { content: "Use TypeScript", filename: "brief.md" },
+      });
+      expect(agent).toMatchObject({
+        crew,
+        embedder: { provider: "memory" },
+        function_calling_llm: "tool-llm",
+        step_callback: "step-callback",
+      });
+      expect(taskOnlyAgent).toMatchObject({
+        crew,
+        embedder: { provider: "memory" },
+        function_calling_llm: "tool-llm",
+        step_callback: "step-callback",
+      });
+    } finally {
+      off();
+    }
+  });
+
+  it("preserves checkpoint kickoff event ids and validates kickoff input mappings", () => {
+    const events: CrewKickoffStartedEvent[] = [];
+    const off = crewaiEventBus.on("crew_kickoff_started", (_source, event) => {
+      events.push(event);
+    });
+    try {
+      const crew = {
+        id: "resume-crew",
+        checkpoint_kickoff_event_id: "checkpoint-event",
+        _kickoff_event_id: "checkpoint-event",
+      };
+
+      expect(prepare_kickoff(crew, null)).toBeNull();
+      expect(crew._kickoff_event_id).toBe("checkpoint-event");
+      expect(events).toEqual([]);
+      expect(() => prepareKickoff({}, [] as unknown as Record<string, unknown>))
+        .toThrow("Crew kickoff inputs must be a mapping/object or null.");
+    } finally {
+      off();
+    }
   });
 });
 
