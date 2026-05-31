@@ -92,6 +92,7 @@ import {
   LockedListProxy,
   JSONKnowledgeSource,
   ExcelKnowledgeSource,
+  BaseFileKnowledgeSource,
   BaseKnowledgeSource,
   KnowledgeStorage,
   KnowledgeQueryCompletedEvent,
@@ -12933,6 +12934,29 @@ describe("knowledge", () => {
     expect(output.raw).toContain("library consumption");
     expect(output.raw).toContain("standard, no reflect metadata");
     expect(prompts[0]).toContain("Additional Information:");
+  });
+
+  it("exposes upstream file knowledge source path and content helpers", () => {
+    const baseDirectory = mkdtempSync(join(tmpdir(), "crewai-ts-file-knowledge-"));
+    const textPath = join(baseDirectory, "notes.txt");
+    writeFileSync(textPath, "File knowledge source content.", "utf8");
+
+    try {
+      const source = new TextFileKnowledgeSource({ file_path: textPath, chunkSize: 12, chunkOverlap: 0 });
+
+      expect(source).toBeInstanceOf(BaseFileKnowledgeSource);
+      expect(source.file_path).toBe(textPath);
+      expect(source.file_paths).toEqual([textPath]);
+      expect(source.safe_file_paths).toEqual([textPath]);
+      expect(source.content[textPath]).toBe("File knowledge source content.");
+      expect(source.load_content()).toEqual({ [textPath]: "File knowledge source content." });
+      expect(source.loadContent()).toEqual({ [textPath]: "File knowledge source content." });
+      expect(source.validate_file_path(null, { field_name: "file_paths", data: {} })).toBeNull();
+      expect(source.convert_to_path("relative.txt")).toBe(join("knowledge", "relative.txt"));
+      expect(source.chunks()).toEqual(["File knowled", "ge source co", "ntent."]);
+    } finally {
+      rmSync(baseDirectory, { recursive: true, force: true });
+    }
   });
 
   it("selects PDF and Excel knowledge sources with optional host extractors", () => {

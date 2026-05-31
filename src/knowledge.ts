@@ -1,4 +1,4 @@
-import { extname } from "node:path";
+import { extname, isAbsolute, join } from "node:path";
 import { readFileSync } from "node:fs";
 import {
   getRagClient,
@@ -6,6 +6,7 @@ import {
   type RagClient,
   type SearchResult,
 } from "./rag.js";
+import { KNOWLEDGE_DIRECTORY } from "./settings.js";
 
 export type KnowledgeSearchResult = {
   content: string;
@@ -356,110 +357,196 @@ abstract class BaseTextKnowledgeSource implements KnowledgeSource {
   }
 }
 
-export class TextFileKnowledgeSource extends BaseTextKnowledgeSource {
+export abstract class BaseFileKnowledgeSource extends BaseTextKnowledgeSource {
+  readonly filePath: string | readonly string[] | null;
+  readonly file_path: string | readonly string[] | null;
+  readonly filePaths: readonly string[];
+  readonly file_paths: readonly string[];
+  safeFilePaths: string[] = [];
+  safe_file_paths: string[] = this.safeFilePaths;
+  content: Record<string, string> = {};
+
+  protected constructor(options: FileKnowledgeSourceOptions | string | readonly string[]) {
+    const normalized = normalizeFileKnowledgeOptions(options);
+    super(normalized);
+    this.filePath = isFileKnowledgeOptionsObject(options) ? options.file_path ?? null : null;
+    this.file_path = this.filePath;
+    this.filePaths = normalized.filePaths;
+    this.file_paths = this.filePaths;
+  }
+
+  model_post_init(_context: unknown = null): void {
+    void _context;
+    this.safeFilePaths = this.processFilePaths();
+    this.safe_file_paths = this.safeFilePaths;
+    this.validateContent();
+    this.content = this.load_content();
+  }
+
+  validateFilePath(
+    value: string | readonly string[] | null,
+    info: { field_name?: string; data?: Record<string, unknown> } = {},
+  ): string | readonly string[] | null {
+    const alternate = info.field_name === "file_paths" ? "file_path" : "file_paths";
+    if (value === null && info.data?.[alternate] === undefined) {
+      return null;
+    }
+    return value;
+  }
+
+  validate_file_path(
+    value: string | readonly string[] | null,
+    info: { field_name?: string; data?: Record<string, unknown> } = {},
+  ): string | readonly string[] | null {
+    return this.validateFilePath(value, info);
+  }
+
+  override validateContent(): void {
+    for (const filePath of this.safeFilePaths) {
+      readFileSync(filePath);
+    }
+  }
+
+  override validate_content(): void {
+    this.validateContent();
+  }
+
+  abstract loadContent(): Record<string, string>;
+
+  load_content(): Record<string, string> {
+    return this.loadContent();
+  }
+
+  convertToPath(filePath: string): string {
+    return isAbsolute(filePath) ? filePath : join(KNOWLEDGE_DIRECTORY, filePath);
+  }
+
+  convert_to_path(filePath: string): string {
+    return this.convertToPath(filePath);
+  }
+
+  protected override loadText(): string {
+    return Object.values(this.content).join("\n");
+  }
+
+  protected processFilePaths(): string[] {
+    if (this.filePaths.length === 0) {
+      throw new Error("file_path/file_paths must be a Path, str, or a list of these types");
+    }
+    return this.filePaths.map((filePath) => this.convertToPath(filePath));
+  }
+}
+
+export class TextFileKnowledgeSource extends BaseFileKnowledgeSource {
   readonly sourceType = "text_file";
-  readonly filePaths: readonly string[];
+  readonly source_type = "text_file";
 
   constructor(options: FileKnowledgeSourceOptions | string | readonly string[]) {
-    const normalized = normalizeFileKnowledgeOptions(options);
-    super(normalized);
-    this.filePaths = normalized.filePaths;
+    super(options);
+    this.model_post_init();
   }
 
-  protected loadText(): string {
-    return this.filePaths.map((filePath) => readFileSync(filePath, "utf8")).join("\n");
+  loadContent(): Record<string, string> {
+    return Object.fromEntries(this.safeFilePaths.map((filePath) => [filePath, readFileSync(filePath, "utf8")]));
   }
 }
 
-export class JSONKnowledgeSource extends BaseTextKnowledgeSource {
+export class JSONKnowledgeSource extends BaseFileKnowledgeSource {
   readonly sourceType = "json";
-  readonly filePaths: readonly string[];
+  readonly source_type = "json";
 
   constructor(options: FileKnowledgeSourceOptions | string | readonly string[]) {
-    const normalized = normalizeFileKnowledgeOptions(options);
-    super(normalized);
-    this.filePaths = normalized.filePaths;
+    super(options);
+    this.model_post_init();
   }
 
-  protected loadText(): string {
-    return this.filePaths
-      .map((filePath) => jsonToText(JSON.parse(readFileSync(filePath, "utf8"))))
-      .join("\n");
+  loadContent(): Record<string, string> {
+    return Object.fromEntries(this.safeFilePaths.map((filePath) => [
+      filePath,
+      jsonToText(JSON.parse(readFileSync(filePath, "utf8"))),
+    ]));
   }
 }
 
-export class CSVKnowledgeSource extends BaseTextKnowledgeSource {
+export class CSVKnowledgeSource extends BaseFileKnowledgeSource {
   readonly sourceType = "csv";
-  readonly filePaths: readonly string[];
+  readonly source_type = "csv";
 
   constructor(options: FileKnowledgeSourceOptions | string | readonly string[]) {
-    const normalized = normalizeFileKnowledgeOptions(options);
-    super(normalized);
-    this.filePaths = normalized.filePaths;
+    super(options);
+    this.model_post_init();
   }
 
-  protected loadText(): string {
-    return this.filePaths
-      .map((filePath) => parseCsv(readFileSync(filePath, "utf8"))
+  loadContent(): Record<string, string> {
+    return Object.fromEntries(this.safeFilePaths.map((filePath) => [
+      filePath,
+      parseCsv(readFileSync(filePath, "utf8"))
         .map((row) => row.join(" "))
-        .join("\n"))
-      .join("\n");
+        .join("\n"),
+    ]));
   }
 }
 
-export class PDFKnowledgeSource extends BaseTextKnowledgeSource {
+export class PDFKnowledgeSource extends BaseFileKnowledgeSource {
   readonly sourceType = "pdf";
-  readonly filePaths: readonly string[];
+  readonly source_type = "pdf";
   private readonly extractor: PDFTextExtractor | null;
 
   constructor(options: PDFKnowledgeSourceOptions | string | readonly string[]) {
-    const normalized = normalizeFileKnowledgeOptions(options);
-    super(normalized);
-    this.filePaths = normalized.filePaths;
+    super(options);
     this.extractor = isFileKnowledgeOptionsObject(options) && "extractor" in options ? options.extractor ?? null : null;
+    if (this.extractor) {
+      this.model_post_init();
+    } else {
+      this.safeFilePaths = this.processFilePaths();
+      this.safe_file_paths = this.safeFilePaths;
+      this.validateContent();
+    }
   }
 
-  protected loadText(): string {
+  loadContent(): Record<string, string> {
     const extractor = this.extractor ?? defaultPDFTextExtractor;
-    return this.filePaths
-      .map((filePath) => extractor(filePath, readFileSync(filePath)))
-      .join("\n");
+    return Object.fromEntries(this.safeFilePaths.map((filePath) => [filePath, extractor(filePath, readFileSync(filePath))]));
   }
 }
 
-export class ExcelKnowledgeSource extends BaseTextKnowledgeSource {
+export class ExcelKnowledgeSource extends BaseFileKnowledgeSource {
   readonly sourceType = "excel";
-  readonly filePaths: readonly string[];
+  readonly source_type = "excel";
   private readonly extractor: ExcelTextExtractor | null;
 
   constructor(options: ExcelKnowledgeSourceOptions | string | readonly string[]) {
-    const normalized = normalizeFileKnowledgeOptions(options);
-    super(normalized);
-    this.filePaths = normalized.filePaths;
+    super(options);
     this.extractor = isFileKnowledgeOptionsObject(options) && "extractor" in options ? options.extractor ?? null : null;
+    if (this.extractor) {
+      this.model_post_init();
+    } else {
+      this.safeFilePaths = this.processFilePaths();
+      this.safe_file_paths = this.safeFilePaths;
+      this.validateContent();
+    }
   }
 
-  protected loadText(): string {
+  loadContent(): Record<string, string> {
     const extractor = this.extractor ?? defaultExcelTextExtractor;
-    return this.filePaths
-      .map((filePath) => excelContentToText(extractor(filePath, readFileSync(filePath))))
-      .join("\n");
+    return Object.fromEntries(this.safeFilePaths.map((filePath) => [
+      filePath,
+      excelContentToText(extractor(filePath, readFileSync(filePath))),
+    ]));
   }
 }
 
-export class CrewDoclingSource extends BaseTextKnowledgeSource {
+export class CrewDoclingSource extends BaseFileKnowledgeSource {
   readonly sourceType = "docling";
-  readonly filePaths: readonly string[];
+  readonly source_type = "docling";
 
   constructor(options: FileKnowledgeSourceOptions | string | readonly string[]) {
-    const normalized = normalizeFileKnowledgeOptions(options);
-    super(normalized);
-    this.filePaths = normalized.filePaths;
+    super(options);
     throw new Error("CrewDoclingSource requires the Python docling package upstream; use TextFileKnowledgeSource, JSONKnowledgeSource, CSVKnowledgeSource, PDFKnowledgeSource with an extractor, or ExcelKnowledgeSource with an extractor in TypeScript.");
   }
 
-  protected loadText(): string {
-    return "";
+  loadContent(): Record<string, string> {
+    return {};
   }
 }
 
