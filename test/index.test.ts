@@ -571,6 +571,7 @@ import {
   requireModule,
   renderColoredText,
   renderTextDescriptionAndArgs,
+  reset_memories_command,
   resetEnvContextForTesting,
   setSuppressConsoleOutput,
   shouldSuppressConsoleOutput,
@@ -16964,6 +16965,68 @@ describe("crew memory reset", () => {
 
     expect(crewInstance.executionLogs).toEqual([]);
     expect(taskInstance.output).toBeNull();
+  });
+
+  it("runs upstream-style reset memories command for crews and flows", () => {
+    const crewCommands: string[] = [];
+    const flowMemory = new Memory();
+    flowMemory.remember("Flow memory reset command");
+    const messages: string[] = [];
+    const errors: string[] = [];
+    const output = {
+      log: (message: string) => {
+        messages.push(message);
+      },
+      error: (message: string) => {
+        errors.push(message);
+      },
+    };
+
+    reset_memories_command(true, false, false, true, false, {
+      crews: [{
+        name: "Demo Crew",
+        reset_memories: (command: string) => {
+          crewCommands.push(command);
+        },
+      }],
+      flows: [{
+        name: "Demo Flow",
+        memory: flowMemory,
+      }],
+      console: output,
+    });
+
+    expect(crewCommands).toEqual(["memory", "kickoff_outputs"]);
+    expect(flowMemory.recall("command", { scoreThreshold: null })).toEqual([]);
+    expect(messages).toEqual([
+      "[Crew (Demo Crew)] Memory has been reset.",
+      "[Crew (Demo Crew)] Latest Kickoff outputs stored has been reset.",
+      "[Flow (Demo Flow)] Memory has been reset.",
+    ]);
+    expect(errors).toEqual([]);
+  });
+
+  it("reports reset memories command validation and discovery errors", () => {
+    const messages: string[] = [];
+    const errors: string[] = [];
+    const output = {
+      log: (message: string) => {
+        messages.push(message);
+      },
+      error: (message: string) => {
+        errors.push(message);
+      },
+    };
+
+    reset_memories_command(false, false, false, false, false, { console: output });
+    reset_memories_command(true, false, false, false, false, { console: output });
+
+    expect(messages).toEqual([
+      "No memory type specified. Please specify at least one type to reset.",
+    ]);
+    expect(errors).toEqual([
+      "An unexpected error occurred: No crew or flow found.",
+    ]);
   });
 });
 

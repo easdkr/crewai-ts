@@ -2498,6 +2498,7 @@ export {
   Serializable,
   SerializableCallable,
   SerializablePrimitive,
+  type ResetMemoriesCommandOptions,
   type ToSerializableOptions,
 } from "./utilities.js";
 

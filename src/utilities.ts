@@ -93,18 +93,166 @@ export function get_crew_context(crew: unknown = null): CrewContext {
 
 export const console = globalThis.console;
 
+export type ResetMemoriesCommandOptions = {
+  crews?: readonly unknown[];
+  flows?: readonly unknown[];
+  getCrews?: () => readonly unknown[];
+  get_crews?: () => readonly unknown[];
+  getFlows?: () => readonly unknown[];
+  get_flows?: () => readonly unknown[];
+  console?: Pick<Console, "log" | "error">;
+};
+
 export function reset_memories_command(
   memory = false,
   knowledge = false,
   agent_knowledge = false,
   kickoff_outputs = false,
   all = false,
+  options: ResetMemoriesCommandOptions = {},
 ): void {
-  void memory;
-  void knowledge;
-  void agent_knowledge;
-  void kickoff_outputs;
-  void all;
+  const output = options.console ?? console;
+  try {
+    if (!memory && !knowledge && !agent_knowledge && !kickoff_outputs && !all) {
+      output.log("No memory type specified. Please specify at least one type to reset.");
+      return;
+    }
+
+    const crews = [
+      ...(options.crews ?? []),
+      ...((options.getCrews ?? options.get_crews)?.() ?? []),
+    ];
+    const flows = [
+      ...(options.flows ?? []),
+      ...((options.getFlows ?? options.get_flows)?.() ?? []),
+    ];
+
+    if (crews.length === 0 && flows.length === 0) {
+      throw new Error("No crew or flow found.");
+    }
+
+    for (const crew of crews) {
+      const reset = getCallable(crew, "reset_memories", "resetMemories");
+      if (!reset) {
+        continue;
+      }
+      const crewLabel = crewDisplayName(crew);
+      if (all) {
+        reset("all");
+        output.log(`[Crew (${crewLabel})] Reset memories command has been completed.`);
+        continue;
+      }
+      if (memory) {
+        reset("memory");
+        output.log(`[Crew (${crewLabel})] Memory has been reset.`);
+      }
+      if (kickoff_outputs) {
+        reset("kickoff_outputs");
+        output.log(`[Crew (${crewLabel})] Latest Kickoff outputs stored has been reset.`);
+      }
+      if (knowledge) {
+        reset("knowledge");
+        output.log(`[Crew (${crewLabel})] Knowledge has been reset.`);
+      }
+      if (agent_knowledge) {
+        reset("agent_knowledge");
+        output.log(`[Crew (${crewLabel})] Agents knowledge has been reset.`);
+      }
+    }
+
+    for (const flow of flows) {
+      const flowLabel = flowDisplayName(flow);
+      if (all) {
+        resetFlowMemory(flow);
+        output.log(`[Flow (${flowLabel})] Reset memories command has been completed.`);
+        continue;
+      }
+      if (memory) {
+        resetFlowMemory(flow);
+        output.log(`[Flow (${flowLabel})] Memory has been reset.`);
+      }
+    }
+  } catch (error) {
+    output.error(`An unexpected error occurred: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+function getCallable(target: unknown, ...names: string[]): ((value: string) => void) | null {
+  if (!target || typeof target !== "object") {
+    return null;
+  }
+  const record = target as Record<string, unknown>;
+  for (const name of names) {
+    const value = record[name];
+    if (typeof value === "function") {
+      return (argument: string) => {
+        (value as (this: unknown, value: string) => void).call(target, argument);
+      };
+    }
+  }
+  return null;
+}
+
+function resetFlowMemory(flow: unknown): void {
+  if (!flow || typeof flow !== "object") {
+    return;
+  }
+  const memoryValue = (flow as { memory?: unknown }).memory;
+  if (!memoryValue || typeof memoryValue !== "object") {
+    return;
+  }
+  const directReset = (memoryValue as { reset?: unknown }).reset;
+  if (typeof directReset === "function") {
+    try {
+      (directReset as (this: unknown) => void).call(memoryValue);
+    } catch (error) {
+      if (!isMissingStorageError(error)) {
+        throw error;
+      }
+    }
+    return;
+  }
+  const nestedMemory = (memoryValue as { memory?: unknown; _memory?: unknown }).memory
+    ?? (memoryValue as { _memory?: unknown })._memory;
+  const nestedReset = nestedMemory && typeof nestedMemory === "object"
+    ? (nestedMemory as { reset?: unknown }).reset
+    : null;
+  if (typeof nestedReset === "function") {
+    try {
+      (nestedReset as (this: unknown) => void).call(nestedMemory);
+    } catch (error) {
+      if (!isMissingStorageError(error)) {
+        throw error;
+      }
+    }
+  }
+}
+
+function isMissingStorageError(error: unknown): boolean {
+  return error instanceof Error
+    && (error.name === "FileNotFoundError" || error.name === "ENOENT" || "code" in error && (error as { code?: unknown }).code === "ENOENT");
+}
+
+function crewDisplayName(crew: unknown): string {
+  if (!crew || typeof crew !== "object") {
+    return "unknown";
+  }
+  const record = crew as { name?: unknown; id?: unknown };
+  return typeof record.name === "string" && record.name
+    ? record.name
+    : typeof record.id === "string" && record.id
+      ? record.id
+      : "unknown";
+}
+
+function flowDisplayName(flow: unknown): string {
+  if (!flow || typeof flow !== "object") {
+    return "unknown";
+  }
+  const record = flow as { name?: unknown; constructor?: { name?: string } };
+  return typeof record.name === "string" && record.name
+    ? record.name
+    : record.constructor?.name ?? "unknown";
 }
 
 function resolveInstructorAgentLlm(agent: unknown): unknown {
