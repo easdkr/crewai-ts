@@ -19,6 +19,29 @@ export const NATIVE_STRUCTURED_OUTPUT_MODELS = Object.freeze([
   "claude-haiku-4.5",
 ] as const);
 
+const BEDROCK_DOCUMENT_FORMATS: Record<string, string> = {
+  "application/pdf": "pdf",
+  "text/csv": "csv",
+  "text/plain": "txt",
+  "text/markdown": "md",
+  "text/html": "html",
+  "application/msword": "doc",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
+  "application/vnd.ms-excel": "xls",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx",
+};
+
+const BEDROCK_VIDEO_FORMATS: Record<string, string> = {
+  "video/mp4": "mp4",
+  "video/quicktime": "mov",
+  "video/x-matroska": "mkv",
+  "video/webm": "webm",
+  "video/x-flv": "flv",
+  "video/mpeg": "mpeg",
+  "video/x-ms-wmv": "wmv",
+  "video/3gpp": "three_gp",
+};
+
 export type AnthropicThinkingConfigOptions = {
   type: "enabled" | "disabled";
   budget_tokens?: number | null;
@@ -632,6 +655,22 @@ export class BedrockCompletion extends ConfiguredLLM {
 
   override format_text_content(text: string): Record<string, string> {
     return this.formatTextContent(text);
+  }
+
+  getDocumentFormat(contentType: string): string | null {
+    return BEDROCK_DOCUMENT_FORMATS[contentType] ?? null;
+  }
+
+  _get_document_format(contentType: string): string | null {
+    return this.getDocumentFormat(contentType);
+  }
+
+  getVideoFormat(contentType: string): string | null {
+    return BEDROCK_VIDEO_FORMATS[contentType] ?? null;
+  }
+
+  _get_video_format(contentType: string): string | null {
+    return this.getVideoFormat(contentType);
   }
 
   override getFileUploader(): LocalFileUploader {

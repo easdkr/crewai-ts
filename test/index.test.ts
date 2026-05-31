@@ -10866,6 +10866,23 @@ describe("LLM providers", () => {
     });
   });
 
+  it("maps Bedrock document and video content types", () => {
+    const bedrock = new BedrockCompletion({ model: "anthropic.claude-3-5-sonnet-20241022-v2:0" });
+
+    expect((bedrock as unknown as {
+      _get_document_format(contentType: string): string | null;
+    })._get_document_format("application/vnd.openxmlformats-officedocument.wordprocessingml.document")).toBe("docx");
+    expect((bedrock as unknown as {
+      _get_document_format(contentType: string): string | null;
+    })._get_document_format("application/octet-stream")).toBeNull();
+    expect((bedrock as unknown as {
+      _get_video_format(contentType: string): string | null;
+    })._get_video_format("video/3gpp")).toBe("three_gp");
+    expect((bedrock as unknown as {
+      _get_video_format(contentType: string): string | null;
+    })._get_video_format("video/unknown")).toBeNull();
+  });
+
   it("extracts Bedrock tool uses and structured output from Converse responses", () => {
     const response = {
       output: {
