@@ -65,6 +65,7 @@ When more goal budget is available, continue from the behavioral parity audits b
   - `supportsFunctionCalling` / `supports_function_calling`
   - native OpenAI/Azure/Anthropic/Bedrock support overrides for function calling, stop words, and multimodal capability where deterministic
   - OpenAI/Azure response-chain compatibility getters and reset methods (`last_response_id`, `last_reasoning_items`, `reset_chain`, `reset_reasoning_chain`)
+  - Gemini completion shim with deterministic config, context-window, multimodal/text-formatting, token-usage extraction, response text extraction, property ordering, and content conversion helpers
 
 1. Storage backends
    - `memory/storage/backend.py`
@@ -76,8 +77,8 @@ When more goal budget is available, continue from the behavioral parity audits b
 
 2. LLM providers
    - OpenAI, Azure, Anthropic, Bedrock, Gemini provider classes.
-   - `to_config_dict`, context window, adapter-level function-calling support, deterministic multimodal support flags, and response-chain/reset compatibility are now covered for the native provider shims.
-   - Remaining: SDK-backed request/response translation details, streaming function-call accumulation, file uploader integrations, and Gemini-specific completion behavior.
+   - `to_config_dict`, context window, adapter-level function-calling support, deterministic multimodal support flags, response-chain/reset compatibility, and Gemini adapter helpers are now covered for the native provider shims.
+   - Remaining: SDK-backed request/response translation details, streaming function-call accumulation, and file uploader integrations.
    - Keep provider tests adapter-level and mock network calls. Do not introduce live API keys or provider-specific SDK side effects into the default test gate.
 
 3. Flow and persistence

@@ -1,4 +1,4 @@
-import { ConfiguredLLM, type BaseLLMOptions, type LLMCallOptions, type LLMResponse } from "./llm.js";
+import { ConfiguredLLM, CONTEXT_WINDOW_USAGE_RATIO, type BaseLLMOptions, type LLMCallOptions, type LLMResponse } from "./llm.js";
 import type { LLMMessage } from "./types.js";
 
 export const TOOL_SEARCH_TOOL_TYPES = Object.freeze([
@@ -243,6 +243,195 @@ export class BedrockCompletion extends ConfiguredLLM {
   }
 }
 
+export type GeminiCompletionOptions = BaseLLMOptions & {
+  project?: string | null;
+  location?: string | null;
+  use_vertexai?: boolean;
+  useVertexai?: boolean;
+  timeout?: number | null;
+  max_retries?: number;
+  maxRetries?: number;
+  top_p?: number | null;
+  topP?: number | null;
+  top_k?: number | null;
+  topK?: number | null;
+  max_output_tokens?: number | null;
+  maxOutputTokens?: number | null;
+  safety_settings?: readonly unknown[] | null;
+  safetySettings?: readonly unknown[] | null;
+  stream?: boolean;
+  client_params?: Record<string, unknown> | null;
+  clientParams?: Record<string, unknown> | null;
+  interceptor?: unknown;
+};
+
+export class GeminiCompletion extends ConfiguredLLM {
+  readonly project: string | null;
+  readonly location: string;
+  readonly useVertexai: boolean;
+  readonly use_vertexai: boolean;
+  readonly timeout: number | null;
+  readonly maxRetries: number;
+  readonly max_retries: number;
+  readonly topP: number | null;
+  readonly top_p: number | null;
+  readonly topK: number | null;
+  readonly top_k: number | null;
+  readonly maxOutputTokens: number | null;
+  readonly max_output_tokens: number | null;
+  readonly safetySettings: readonly unknown[] | null;
+  readonly safety_settings: readonly unknown[] | null;
+  readonly stream: boolean;
+  readonly clientParams: Record<string, unknown> | null;
+  readonly client_params: Record<string, unknown> | null;
+  readonly interceptor: unknown;
+
+  constructor(options: GeminiCompletionOptions = { model: "gemini-2.5-flash" }) {
+    super(stripUndefined({
+      model: options.model,
+      provider: options.provider ?? "gemini",
+      temperature: options.temperature,
+      apiKey: options.apiKey,
+      api_key: options.api_key ?? process.env.GOOGLE_API_KEY ?? process.env.GEMINI_API_KEY ?? null,
+      baseUrl: options.baseUrl,
+      base_url: options.base_url,
+      stop: options.stop,
+      stopSequences: options.stopSequences,
+      stop_sequences: options.stop_sequences,
+      timeout: options.timeout ?? null,
+    }) as BaseLLMOptions & { timeout?: number | null });
+    this.project = options.project ?? process.env.GOOGLE_CLOUD_PROJECT ?? null;
+    this.location = options.location ?? "us-central1";
+    this.useVertexai = options.useVertexai ?? options.use_vertexai ?? false;
+    this.use_vertexai = this.useVertexai;
+    this.timeout = options.timeout ?? null;
+    this.maxRetries = options.maxRetries ?? options.max_retries ?? 2;
+    this.max_retries = this.maxRetries;
+    this.topP = options.topP ?? options.top_p ?? null;
+    this.top_p = this.topP;
+    this.topK = options.topK ?? options.top_k ?? null;
+    this.top_k = this.topK;
+    this.maxOutputTokens = options.maxOutputTokens ?? options.max_output_tokens ?? null;
+    this.max_output_tokens = this.maxOutputTokens;
+    this.safetySettings = options.safetySettings ?? options.safety_settings ?? null;
+    this.safety_settings = this.safetySettings;
+    this.stream = options.stream ?? false;
+    this.clientParams = options.clientParams ?? options.client_params ?? null;
+    this.client_params = this.clientParams;
+    this.interceptor = options.interceptor ?? null;
+  }
+
+  override call(messages: readonly LLMMessage[], options?: LLMCallOptions): Promise<LLMResponse> {
+    return super.call(messages, options);
+  }
+
+  override supportsFunctionCalling(): boolean {
+    return true;
+  }
+
+  override supportsStopWords(): boolean {
+    return true;
+  }
+
+  override supportsMultimodal(): boolean {
+    return true;
+  }
+
+  override getContextWindowSize(): number {
+    return geminiContextWindowSize(this.model);
+  }
+
+  override formatTextContent(text: string): { text: string } {
+    return { text };
+  }
+
+  override toConfigDict(): Record<string, unknown> {
+    return {
+      ...super.toConfigDict(),
+      ...(this.project ? { project: this.project } : {}),
+      ...(this.location !== "us-central1" ? { location: this.location } : {}),
+      ...(this.topP === null ? {} : { top_p: this.topP }),
+      ...(this.topK === null ? {} : { top_k: this.topK }),
+      ...(this.maxOutputTokens === null ? {} : { max_output_tokens: this.maxOutputTokens }),
+      ...(this.safetySettings ? { safety_settings: [...this.safetySettings] } : {}),
+    };
+  }
+
+  static extractTokenUsage(response: unknown): Record<string, number> {
+    const usage = readObject(readObject(response).usage_metadata);
+    if (Object.keys(usage).length === 0) {
+      return { total_tokens: 0 };
+    }
+    const candidatesTokens = numberField(usage, "candidates_token_count");
+    const thinkingTokens = numberField(usage, "thoughts_token_count");
+    return {
+      prompt_token_count: numberField(usage, "prompt_token_count"),
+      candidates_token_count: candidatesTokens,
+      completion_tokens: candidatesTokens + thinkingTokens,
+      total_token_count: numberField(usage, "total_token_count"),
+      total_tokens: numberField(usage, "total_token_count"),
+      cached_prompt_tokens: numberField(usage, "cached_content_token_count"),
+      reasoning_tokens: thinkingTokens,
+    };
+  }
+
+  static extract_token_usage(response: unknown): Record<string, number> {
+    return GeminiCompletion.extractTokenUsage(response);
+  }
+
+  static extractTextFromResponse(response: unknown): string {
+    const candidates = readObject(response).candidates;
+    if (!Array.isArray(candidates)) {
+      return "";
+    }
+    const first = readObject(candidates[0]);
+    const rawParts = Array.isArray(readObject(first.content).parts)
+      ? readObject(first.content).parts as unknown[]
+      : [];
+    return rawParts
+      .map((part) => readObject(part))
+      .filter((part) => typeof part.text === "string" && part.thought !== true)
+      .map((part) => String(part.text))
+      .join("");
+  }
+
+  static extract_text_from_response(response: unknown): string {
+    return GeminiCompletion.extractTextFromResponse(response);
+  }
+
+  static addPropertyOrdering<T extends Record<string, unknown>>(schema: T): T {
+    addGeminiPropertyOrdering(schema);
+    return schema;
+  }
+
+  static add_property_ordering<T extends Record<string, unknown>>(schema: T): T {
+    return GeminiCompletion.addPropertyOrdering(schema);
+  }
+
+  static convertContentsToDict(contents: readonly unknown[]): LLMMessage[] {
+    return contents.map((content) => {
+      const record = readObject(content);
+      const role = record.role === "model"
+        ? "assistant"
+        : typeof record.role === "string"
+          ? record.role
+          : "user";
+      const parts = Array.isArray(record.parts) ? record.parts : [];
+      return {
+        role: role === "assistant" || role === "system" ? role : "user",
+        content: parts
+          .map((part) => readObject(part).text)
+          .filter((text): text is string => typeof text === "string")
+          .join(" "),
+      };
+    });
+  }
+
+  static convert_contents_to_dict(contents: readonly unknown[]): LLMMessage[] {
+    return GeminiCompletion.convertContentsToDict(contents);
+  }
+}
+
 export const AzureCompletionParams = Object.freeze({ kind: "AzureCompletionParams" });
 export type AzureCompletionParams = {
   messages?: readonly LLMMessage[];
@@ -433,5 +622,55 @@ function isAzureOpenAIEndpoint(endpoint: string | null): boolean {
     return (url.hostname === "openai.azure.com" || url.hostname.endsWith(".openai.azure.com")) && url.pathname.includes("/openai/deployments/");
   } catch {
     return false;
+  }
+}
+
+function geminiContextWindowSize(model: string): number {
+  const windows: Record<string, number> = {
+    "gemini-3-pro-preview": 1048576,
+    "gemini-2.0-flash-thinking": 32768,
+    "gemini-2.0-flash-lite": 1048576,
+    "gemini-2.0-flash": 1048576,
+    "gemini-2.5-flash": 1048576,
+    "gemini-2.5-pro": 1048576,
+    "gemini-1.5-pro": 2097152,
+    "gemini-1.5-flash-8b": 1048576,
+    "gemini-1.5-flash": 1048576,
+    "gemini-1.0-pro": 32768,
+    "gemma-3-1b": 32000,
+    "gemma-3-4b": 128000,
+    "gemma-3-12b": 128000,
+    "gemma-3-27b": 128000,
+  };
+  const match = Object.entries(windows).find(([prefix]) => model.startsWith(prefix));
+  return Math.trunc((match?.[1] ?? 1048576) * CONTEXT_WINDOW_USAGE_RATIO);
+}
+
+function readObject(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function numberField(record: Record<string, unknown>, field: string): number {
+  const value = record[field];
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function addGeminiPropertyOrdering(schema: Record<string, unknown>): void {
+  if (schema.type === "object" && !("propertyOrdering" in schema)) {
+    const properties = readObject(schema.properties);
+    if (Object.keys(properties).length > 0) {
+      schema.propertyOrdering = Object.keys(properties);
+    }
+  }
+  for (const value of Object.values(schema)) {
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      addGeminiPropertyOrdering(value as Record<string, unknown>);
+    } else if (Array.isArray(value)) {
+      for (const item of value) {
+        if (item && typeof item === "object" && !Array.isArray(item)) {
+          addGeminiPropertyOrdering(item as Record<string, unknown>);
+        }
+      }
+    }
   }
 }

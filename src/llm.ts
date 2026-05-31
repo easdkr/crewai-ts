@@ -1053,11 +1053,11 @@ export abstract class BaseLLM implements LLMClient {
     return this.supportsMultimodal();
   }
 
-  formatTextContent(text: string): { type: "text"; text: string } {
+  formatTextContent(text: string): Record<string, string> {
     return { type: "text", text };
   }
 
-  format_text_content(text: string): { type: "text"; text: string } {
+  format_text_content(text: string): Record<string, string> {
     return this.formatTextContent(text);
   }
 

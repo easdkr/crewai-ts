@@ -322,6 +322,7 @@ import {
   AnthropicCompletion,
   AzureCompletion,
   BedrockCompletion,
+  GeminiCompletion,
   OpenAICompletion,
   EntraIdProvider,
   KeycloakProvider,
@@ -8199,6 +8200,93 @@ describe("LLM providers", () => {
     expect(azureOpenAI.last_response_id).toBe("az-resp-1");
     azureOpenAI.reset_chain();
     expect(azureOpenAI.last_response_id).toBeNull();
+  });
+
+  it("exposes Gemini completion provider parity helpers", () => {
+    const gemini = new GeminiCompletion({
+      model: "gemini-2.5-pro",
+      api_key: "gemini-key",
+      project: "demo-project",
+      location: "europe-west1",
+      top_p: 0.9,
+      top_k: 40,
+      max_output_tokens: 2048,
+      safety_settings: [{ category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_ONLY_HIGH" }],
+    });
+
+    expect(gemini.supports_function_calling()).toBe(true);
+    expect(gemini.supports_stop_words()).toBe(true);
+    expect(gemini.supports_multimodal()).toBe(true);
+    expect(gemini.get_context_window_size()).toBe(Math.trunc(1048576 * CONTEXT_WINDOW_USAGE_RATIO));
+    expect(gemini.format_text_content("hello")).toEqual({ text: "hello" });
+    expect(gemini.to_config_dict()).toMatchObject({
+      model: "gemini-2.5-pro",
+      provider: "gemini",
+      api_key: "gemini-key",
+      project: "demo-project",
+      location: "europe-west1",
+      top_p: 0.9,
+      top_k: 40,
+      max_output_tokens: 2048,
+      safety_settings: [{ category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_ONLY_HIGH" }],
+    });
+
+    expect(GeminiCompletion.extract_token_usage({
+      usage_metadata: {
+        prompt_token_count: 10,
+        candidates_token_count: 7,
+        thoughts_token_count: 3,
+        total_token_count: 20,
+        cached_content_token_count: 2,
+      },
+    })).toEqual({
+      prompt_token_count: 10,
+      candidates_token_count: 7,
+      completion_tokens: 10,
+      total_token_count: 20,
+      total_tokens: 20,
+      cached_prompt_tokens: 2,
+      reasoning_tokens: 3,
+    });
+    expect(GeminiCompletion.extract_text_from_response({
+      candidates: [{
+        content: {
+          parts: [
+            { text: "visible" },
+            { text: "hidden", thought: true },
+            { text: " text" },
+          ],
+        },
+      }],
+    })).toBe("visible text");
+    expect(GeminiCompletion.add_property_ordering({
+      type: "object",
+      properties: {
+        name: { type: "string" },
+        nested: {
+          type: "object",
+          properties: { value: { type: "number" } },
+        },
+      },
+    })).toEqual({
+      type: "object",
+      propertyOrdering: ["name", "nested"],
+      properties: {
+        name: { type: "string" },
+        nested: {
+          type: "object",
+          propertyOrdering: ["value"],
+          properties: { value: { type: "number" } },
+        },
+      },
+    });
+    expect(GeminiCompletion.convert_contents_to_dict([
+      { role: "model", parts: [{ text: "assistant text" }] },
+      { role: null, parts: [{ text: "user text" }] },
+    ])).toEqual([
+      { role: "assistant", content: "assistant text" },
+      { role: "user", content: "user text" },
+    ]);
   });
 
   it("creates configured LLM clients from strings, objects, clients, and environment fallback", async () => {

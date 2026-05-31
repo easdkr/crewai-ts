@@ -409,6 +409,7 @@ export {
   BedrockConverseRequestBody,
   BedrockConverseStreamRequestBody,
   ConverseToolTypeDef,
+  GeminiCompletion,
   NATIVE_STRUCTURED_OUTPUT_MODELS,
   STRUCTURED_OUTPUT_TOOL_NAME,
   TOOL_SEARCH_TOOL_TYPES,
@@ -419,6 +420,7 @@ export {
   type AnthropicToolSearchConfigOptions,
   type AzureCompletionOptions,
   type BedrockCompletionOptions,
+  type GeminiCompletionOptions,
 } from "./provider-completions.js";
 export {
   AgentPlanning,
@@ -2486,10 +2488,6 @@ export const SupportedProvider = Object.freeze({ kind: "SupportedProvider" });
 
 export class StorageBackend {
   readonly kind = "StorageBackend";
-}
-
-export class GeminiCompletion {
-  readonly kind = "GeminiCompletion";
 }
 
 export function extract_knowledge_context(items: readonly unknown[] = []): string {
