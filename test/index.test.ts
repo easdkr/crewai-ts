@@ -8433,6 +8433,19 @@ describe("core crew runtime", () => {
     expect(BaseConverterAdapter._extract_json_from_text("```json\n{\"summary\":\"ok\"}\n```")).toBe("{\"summary\":\"ok\"}");
     expect(BaseConverterAdapter._extract_json_from_text("prefix {\"score\":9} suffix")).toBe("{\"score\":9}");
     expect(BaseConverterAdapter._extract_json_from_text(42)).toBe("42");
+    const [format, schema] = BaseConverterAdapter._configure_format_from_task({
+      output_json: {
+        name: "Summary",
+        schema: {
+          type: "object",
+          properties: { summary: { type: "string" } },
+        },
+      },
+    });
+    expect(format).toBe("json");
+    expect(schema?.type).toBe("json_schema");
+    expect(schema?.json_schema.schema).toMatchObject({ type: "object" });
+    expect(BaseConverterAdapter._configure_format_from_task({})).toEqual([null, null]);
     const openaiResult = await openai.execute_task(taskInstance, "adapter context");
 
     expect(openaiResult).toContain("adapter context");

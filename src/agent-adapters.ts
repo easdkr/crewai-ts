@@ -111,25 +111,25 @@ export abstract class BaseConverterAdapter {
     return this.extractJsonFromText(result);
   }
 
-  protected configureFormatFromTask(task: unknown): void {
+  static _configure_format_from_task(task: unknown): ["json" | "pydantic" | null, ModelDescription | null] {
     const record = asRecord(task);
     const outputJson = record?.outputJson ?? record?.output_json;
     const outputPydantic = record?.outputPydantic ?? record?.output_pydantic;
     if (outputJson) {
-      this.outputFormat = "json";
-      this.output_format = this.outputFormat;
-      this.schema = modelDescriptionFromUnknown(outputJson);
-      return;
+      return ["json", modelDescriptionFromUnknown(outputJson)];
     }
     if (outputPydantic) {
-      this.outputFormat = "pydantic";
-      this.output_format = this.outputFormat;
-      this.schema = modelDescriptionFromUnknown(outputPydantic);
-      return;
+      return ["pydantic", modelDescriptionFromUnknown(outputPydantic)];
     }
-    this.outputFormat = null;
+    return [null, null];
+  }
+
+  protected configureFormatFromTask(task: unknown): void {
+    const [outputFormat, schema] = BaseConverterAdapter._configure_format_from_task(task);
+    this.outputFormat = outputFormat;
     this.output_format = null;
-    this.schema = null;
+    this.output_format = this.outputFormat;
+    this.schema = schema;
   }
 }
 
