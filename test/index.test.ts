@@ -48,6 +48,7 @@ import {
   AuthenticatedUser,
   AccumulatedToolArgs,
   BaseLLM,
+  BaseTool,
   LLM,
   BaseTransport,
   BaseInterceptor,
@@ -550,6 +551,8 @@ import {
   getProjectDescription,
   getProjectName,
   getProjectVersion,
+  isValidTool,
+  is_valid_tool,
   getCrewaiVersion,
   handlePartialJson,
   extractTaskSection,
@@ -1014,6 +1017,27 @@ describe("serialization and project utilities", () => {
     await expect(stringToCallable("node:process.exit")).rejects.toThrow("CREWAI_DESERIALIZE_CALLBACKS=1");
     await expect(stringToCallable(123)).rejects.toThrow("Expected a callable");
     expect(callableToString(() => "anonymous")).toBeNull();
+  });
+
+  it("recognizes BaseTool subclasses as valid project tool exports", () => {
+    class ProjectSearchTool extends BaseTool {
+      constructor() {
+        super({
+          name: "project_search",
+          description: "Search project data",
+          argsSchema: {},
+        });
+      }
+
+      protected _run(): string {
+        return "found";
+      }
+    }
+    const instance = new ProjectSearchTool();
+
+    expect(isValidTool(ProjectSearchTool)).toBe(true);
+    expect(is_valid_tool(ProjectSearchTool)).toBe(true);
+    expect(isValidTool(instance)).toBe(true);
   });
 
   it("parses pyproject TOML and reads CrewAI project metadata", () => {

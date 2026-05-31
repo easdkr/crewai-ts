@@ -7,7 +7,7 @@ import { Crew } from "./crew.js";
 import type { PlanningConfig, PlanningConfigOptions } from "./agent-planning.js";
 import { Task, type TaskInputFiles, type TaskOptions, type TaskOutputConverter } from "./task.js";
 import type { AgentStepCallback, LLM, TaskCallback, Tool } from "./types.js";
-import type { CacheHandler } from "./tools.js";
+import { BaseTool, type CacheHandler } from "./tools.js";
 import type { EmbedderConfig } from "./rag.js";
 import { getCrewMetadata } from "./metadata.js";
 
@@ -496,6 +496,9 @@ export function getFlows(moduleLike: ProjectModuleLike): unknown[] {
 export const get_flows = getFlows;
 
 export function isValidTool(value: unknown): value is Tool {
+  if (typeof value === "function") {
+    return value.prototype instanceof BaseTool;
+  }
   return isRecord(value) && typeof value.name === "string" && typeof value.run === "function";
 }
 
