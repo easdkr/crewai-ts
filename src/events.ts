@@ -18,6 +18,11 @@ import {
 import type { LiteAgentOutput } from "./lite-agent-output.js";
 import type { CrewOutput, TaskOutput } from "./outputs.js";
 import { RuntimeState } from "./state.js";
+import {
+  markFirstExecutionCompleted,
+  promptUserForTraceViewing,
+  shouldAutoCollectFirstTimeTraces,
+} from "./tracing-utils.js";
 import type { InputValues } from "./types.js";
 
 export type EventType =
@@ -4619,9 +4624,79 @@ export class TraceCollectionListener extends BaseEventListener {
 
 export class FirstTimeTraceHandler {
   readonly enabled: boolean;
+  isFirstTime = false;
+  is_first_time = false;
+  collectedEvents = false;
+  collected_events = false;
+  traceBatchId: string | null = null;
+  trace_batch_id: string | null = null;
+  ephemeralUrl: string | null = null;
+  ephemeral_url: string | null = null;
+  batchManager: TraceBatchManager | null = null;
+  batch_manager: TraceBatchManager | null = null;
 
   constructor(enabled = true) {
     this.enabled = enabled;
+  }
+
+  initializeForFirstTimeUser(): boolean {
+    this.isFirstTime = this.enabled && shouldAutoCollectFirstTimeTraces();
+    this.is_first_time = this.isFirstTime;
+    return this.isFirstTime;
+  }
+
+  initialize_for_first_time_user(): boolean {
+    return this.initializeForFirstTimeUser();
+  }
+
+  setBatchManager(batchManager: TraceBatchManager): void {
+    this.batchManager = batchManager;
+    this.batch_manager = batchManager;
+    this.traceBatchId = batchManager.traceBatchId;
+    this.trace_batch_id = this.traceBatchId;
+  }
+
+  set_batch_manager(batch_manager: TraceBatchManager): void {
+    this.setBatchManager(batch_manager);
+  }
+
+  markEventsCollected(): void {
+    this.collectedEvents = true;
+    this.collected_events = true;
+  }
+
+  mark_events_collected(): void {
+    this.markEventsCollected();
+  }
+
+  handleExecutionCompletion(): void {
+    if (!this.isFirstTime || !this.collectedEvents) {
+      return;
+    }
+    try {
+      const userConsented = promptUserForTraceViewing();
+      if (userConsented) {
+        this.captureLocalTraceSummary();
+      }
+      markFirstExecutionCompleted(userConsented);
+    } catch {
+      markFirstExecutionCompleted(false);
+    }
+  }
+
+  handle_execution_completion(): void {
+    this.handleExecutionCompletion();
+  }
+
+  private captureLocalTraceSummary(): void {
+    const manager = this.batchManager;
+    if (!manager) {
+      return;
+    }
+    this.traceBatchId = manager.traceBatchId;
+    this.trace_batch_id = this.traceBatchId;
+    this.ephemeralUrl = manager.ephemeralTraceUrl;
+    this.ephemeral_url = this.ephemeralUrl;
   }
 }
 

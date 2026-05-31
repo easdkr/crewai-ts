@@ -59,6 +59,7 @@ import {
   EventRecord,
   EventBus,
   EventListener,
+  FirstTimeTraceHandler,
   Fingerprint,
   Flow,
   FlowCreatedEvent,
@@ -463,6 +464,7 @@ import {
   serializeGuardrailsForJson,
   setHallucinationGuardrailHook,
   setCurrentTaskId,
+  setFirstTimeTraceHook,
   setLastEventId,
   sanitizeToolParamsForAnthropicStrict,
   sanitizeToolParamsForBedrockStrict,
@@ -510,7 +512,9 @@ import {
   TokenProcess,
   TokenCalcHandler,
   TrainingConverter,
+  TraceBatchManager,
   TraceCollectionListener,
+  TraceEvent,
   WorkosProvider,
   OutputParserError,
   OptionalDependencyError,
@@ -3858,6 +3862,44 @@ describe("evaluator utilities", () => {
 });
 
 describe("telemetry compatibility", () => {
+  it("handles first-time trace collection state locally", () => {
+    const previousDataDir = process.env.CREWAI_TS_DATA_DIR;
+    const dataDir = mkdtempSync(join(tmpdir(), "crewai-ts-first-trace-"));
+    process.env.CREWAI_TS_DATA_DIR = dataDir;
+    setFirstTimeTraceHook(() => true);
+    try {
+      const handler = new FirstTimeTraceHandler();
+      const batchManager = new TraceBatchManager();
+      batchManager.initialize_batch(
+        { trace_id: "trace-1", user_id: "user-1" },
+        { execution_type: "crew", crew_name: "Demo Crew" },
+        true,
+      );
+      batchManager.add_event(new TraceEvent({ type: "default_env", source_type: "test" }));
+
+      expect(handler.initialize_for_first_time_user()).toBe(true);
+      handler.set_batch_manager(batchManager);
+      handler.mark_events_collected();
+      expect(handler.collected_events).toBe(true);
+
+      handler.handle_execution_completion();
+
+      expect(loadUserData()).toMatchObject({
+        first_execution_done: true,
+        trace_consent: false,
+      });
+      expect(handler.batch_manager).toBe(batchManager);
+    } finally {
+      setFirstTimeTraceHook(null);
+      if (previousDataDir === undefined) {
+        delete process.env.CREWAI_TS_DATA_DIR;
+      } else {
+        process.env.CREWAI_TS_DATA_DIR = previousDataDir;
+      }
+      rmSync(dataDir, { recursive: true, force: true });
+    }
+  });
+
   it("records task, tool, flow, and feature spans without network exporters", () => {
     const telemetry = new Telemetry();
     telemetry.clearSpans();
