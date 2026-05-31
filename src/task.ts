@@ -59,6 +59,15 @@ type RenderedTask = {
 
 type ExportedTaskOutput = readonly [unknown, Record<string, unknown> | null];
 
+type TaskAsyncFuture = {
+  setResult?: (value: TaskOutput) => void;
+  set_result?: (value: TaskOutput) => void;
+  resolve?: (value: TaskOutput) => void;
+  setException?: (error: unknown) => void;
+  set_exception?: (error: unknown) => void;
+  reject?: (error: unknown) => void;
+};
+
 export type TaskOptions = {
   id?: string;
   name?: string | null;
@@ -344,6 +353,25 @@ export class Task {
     return this.outputFileValidation(value);
   }
 
+  static denyUserSetId(value: string | null | undefined, context: { fromCheckpoint?: boolean; from_checkpoint?: boolean } | null = null): string | null | undefined {
+    if (value && !(context?.fromCheckpoint ?? context?.from_checkpoint ?? false)) {
+      throw new Error("The 'id' field cannot be set by the user.");
+    }
+    return value;
+  }
+
+  static _deny_user_set_id(value: string | null | undefined, context: { fromCheckpoint?: boolean; from_checkpoint?: boolean } | null = null): string | null | undefined {
+    return Task.denyUserSetId(value, context);
+  }
+
+  static normalizeInputFiles<T extends TaskInputFiles | null | undefined>(value: T): T {
+    return value;
+  }
+
+  static _normalize_input_files<T extends TaskInputFiles | null | undefined>(value: T): T {
+    return Task.normalizeInputFiles(value);
+  }
+
   setAttributesBasedOnConfig(): this {
     if (!this.config) {
       return this;
@@ -405,12 +433,67 @@ export class Task {
     return this.executeAsync(agent, context, tools);
   }
 
+  async executeCore(agent: Agent | null = null, context: string | null = null, tools?: readonly Tool[] | null): Promise<TaskOutput> {
+    return await this.execute({}, agent, tools ?? undefined, false, { context });
+  }
+
+  async _execute_core(agent: Agent | null = null, context: string | null = null, tools?: readonly Tool[] | null): Promise<TaskOutput> {
+    return await this.executeCore(agent, context, tools);
+  }
+
+  async aexecuteCore(agent: Agent | null = null, context: string | null = null, tools?: readonly Tool[] | null): Promise<TaskOutput> {
+    return await this.executeCore(agent, context, tools);
+  }
+
+  async _aexecute_core(agent: Agent | null = null, context: string | null = null, tools?: readonly Tool[] | null): Promise<TaskOutput> {
+    return await this.aexecuteCore(agent, context, tools);
+  }
+
+  executeTaskAsync(
+    agent: Agent | null,
+    context: string | null,
+    tools: readonly Tool[] | null,
+    future: TaskAsyncFuture,
+  ): void {
+    this.startTime = new Date();
+    this.start_time = this.startTime;
+    void this.executeCore(agent, context, tools).then(
+      (result) => {
+        future.setResult?.(result);
+        future.set_result?.(result);
+        future.resolve?.(result);
+      },
+      (error: unknown) => {
+        future.setException?.(error);
+        future.set_exception?.(error);
+        future.reject?.(error);
+      },
+    );
+  }
+
+  _execute_task_async(
+    agent: Agent | null,
+    context: string | null,
+    tools: readonly Tool[] | null,
+    future: TaskAsyncFuture,
+  ): void {
+    this.executeTaskAsync(agent, context, tools, future);
+  }
+
   aexecuteSync(agent: Agent | null = null, context: string | null = null, tools?: readonly Tool[]): Promise<TaskOutput> {
     return this.executeSync(agent, context, tools);
   }
 
   aexecute_sync(agent: Agent | null = null, context: string | null = null, tools?: readonly Tool[]): Promise<TaskOutput> {
     return this.aexecuteSync(agent, context, tools);
+  }
+
+  postAgentExecution(agent: Agent): void {
+    void agent;
+  }
+
+  _post_agent_execution(agent: Agent): void {
+    this.postAgentExecution(agent);
   }
 
   prompt(): string {

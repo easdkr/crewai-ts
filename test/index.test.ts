@@ -15813,6 +15813,53 @@ describe("task output files", () => {
     expect(taskInstance.toString()).toBe("Task(description=Write report, expected_output=A concise report)");
   });
 
+  it("exposes upstream-compatible task execution core helpers", async () => {
+    const agentInstance = new Agent({
+      role: "Core Agent",
+      goal: "Execute task core",
+      backstory: "Runs compatibility helpers",
+      llm: (messages) => messages.at(-1)?.content.includes("core context") ? "core done" : "async done",
+    });
+    const taskInstance = new Task({
+      description: "Run core",
+      expectedOutput: "Done",
+      agent: agentInstance,
+    });
+
+    expect(Task._normalize_input_files({ notes: "notes.txt" })).toEqual({ notes: "notes.txt" });
+    expect(() => Task._deny_user_set_id("manual-id")).toThrow("id");
+    expect(Task._deny_user_set_id("restored-id", { from_checkpoint: true })).toBe("restored-id");
+
+    await expect(taskInstance._execute_core(null, "core context", null))
+      .resolves.toMatchObject({ raw: "core done", agent: "Core Agent" });
+    await expect(taskInstance._aexecute_core(agentInstance, null, []))
+      .resolves.toMatchObject({ raw: "async done", agent: "Core Agent" });
+    expect(() => {
+      taskInstance._post_agent_execution(agentInstance);
+    }).not.toThrow();
+  });
+
+  it("settles upstream-compatible task async futures", async () => {
+    const agentInstance = new Agent({
+      role: "Future Agent",
+      goal: "Resolve future",
+      backstory: "Runs async compatibility helper",
+      llm: () => "future done",
+    });
+    const taskInstance = new Task({
+      description: "Run future",
+      expectedOutput: "Done",
+      agent: agentInstance,
+    });
+
+    const output = await new Promise<TaskOutput>((resolve, reject) => {
+      taskInstance._execute_task_async(agentInstance, null, [], { resolve, reject });
+    });
+
+    expect(output.raw).toBe("future done");
+    expect(output.agent).toBe("Future Agent");
+  });
+
   it("rejects unsafe output file paths", () => {
     const agentInstance = new Agent({
       role: "Writer",
