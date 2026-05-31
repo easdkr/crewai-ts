@@ -1448,26 +1448,91 @@ export class OIDCAuth extends ServerAuthScheme {
   }
 }
 
+type OAuth2Scopes = readonly string[] | Record<string, string>;
+
 export class OAuth2ServerAuth extends OIDCAuth {
-  readonly scopes: readonly string[];
+  readonly tokenUrl: string;
+  readonly token_url: string;
+  readonly authorizationUrl: string | null;
+  readonly authorization_url: string | null;
+  readonly refreshUrl: string | null;
+  readonly refresh_url: string | null;
+  readonly scopes: Record<string, string>;
   readonly introspectionEndpoint: string | null;
   readonly introspection_endpoint: string | null;
+  readonly introspectionUrl: string | null;
+  readonly introspection_url: string | null;
 
   constructor(options: ConstructorParameters<typeof OIDCAuth>[0] & {
-    scopes?: readonly string[];
+    tokenUrl?: string;
+    token_url?: string;
+    authorizationUrl?: string | null;
+    authorization_url?: string | null;
+    refreshUrl?: string | null;
+    refresh_url?: string | null;
+    scopes?: OAuth2Scopes;
     introspectionEndpoint?: string | null;
     introspection_endpoint?: string | null;
+    introspectionUrl?: string | null;
+    introspection_url?: string | null;
   }) {
     super(options);
-    this.scopes = [...(options.scopes ?? [])];
-    this.introspectionEndpoint = options.introspectionEndpoint ?? options.introspection_endpoint ?? null;
+    this.tokenUrl = options.tokenUrl ?? options.token_url ?? "";
+    this.token_url = this.tokenUrl;
+    this.authorizationUrl = options.authorizationUrl ?? options.authorization_url ?? null;
+    this.authorization_url = this.authorizationUrl;
+    this.refreshUrl = options.refreshUrl ?? options.refresh_url ?? null;
+    this.refresh_url = this.refreshUrl;
+    this.scopes = normalizeOAuth2ServerScopes(options.scopes);
+    this.introspectionEndpoint = options.introspectionEndpoint ?? options.introspection_endpoint ?? options.introspectionUrl ?? options.introspection_url ?? null;
     this.introspection_endpoint = this.introspectionEndpoint;
+    this.introspectionUrl = this.introspectionEndpoint;
+    this.introspection_url = this.introspectionEndpoint;
   }
 
   override async authenticate(token: string): Promise<AuthenticatedUser> {
     const user = await super.authenticate(token);
     return new AuthenticatedUser({ token: user.token, scheme: "oauth2", claims: user.claims });
   }
+
+  toSecurityScheme(): Record<string, unknown> {
+    return {
+      flows: {
+        client_credentials: this.tokenUrl
+          ? {
+              token_url: this.tokenUrl,
+              refresh_url: this.refreshUrl,
+              scopes: this.scopes,
+            }
+          : null,
+        authorization_code: this.authorizationUrl
+          ? {
+              authorization_url: this.authorizationUrl,
+              token_url: this.tokenUrl,
+              refresh_url: this.refreshUrl,
+              scopes: this.scopes,
+            }
+          : null,
+      },
+      description: "OAuth2 authentication",
+    };
+  }
+
+  to_security_scheme(): Record<string, unknown> {
+    return this.toSecurityScheme();
+  }
+}
+
+function normalizeOAuth2ServerScopes(scopes: OAuth2Scopes | undefined): Record<string, string> {
+  if (!scopes) {
+    return {};
+  }
+  if (Array.isArray(scopes)) {
+    const scopeList = scopes as readonly string[];
+    return Object.fromEntries(scopeList.map((scope) => [scope, ""]));
+  }
+  const scopeMap = scopes as Record<string, string>;
+  return { ...scopeMap };
 }
 
 export class MTLSServerAuth extends ServerAuthScheme {

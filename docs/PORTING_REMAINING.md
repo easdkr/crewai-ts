@@ -11,8 +11,8 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `npm run lint`
   - `npm run smoke:pack`
   - `python3 scripts/check-export-parity.py`
-- Test suite: 372 passing tests.
-- Root export parity against upstream clone `/tmp/crewai-upstream.lPeuQi/crewAI` at commit `2148c7e`: `total_missing=0`.
+- Test suite: 386 passing tests.
+- Root export parity against upstream clone `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `5cdc420`: `total_missing=0`.
 - Public method parity has been tightened for core runtime classes:
   - `ConsoleFormatter`: `missing=0`
   - `Task`: `missing=0`
@@ -142,9 +142,11 @@ When more goal budget is available, continue from the behavioral parity audits b
 - Added rate-limit compatibility behavior:
   - `RPMController.reset_counter` now exposes the upstream reset helper and returns the controller instance.
 - Added A2A auth compatibility behavior:
+  - `A2AEventBase.extract_task_and_agent_metadata` now exposes the upstream pre-validation metadata extraction helper for task/agent source fingerprints.
   - `HTTPBasicAuth`, `HTTPDigestAuth`, and `APIKeyAuth` now expose upstream-style concrete `apply_auth` helpers.
   - `HTTPDigestAuth.configure_client` and `APIKeyAuth.configure_client` now idempotently configure digest auth and query-param request hooks.
   - `OAuth2AuthorizationCode` now exposes upstream-style `set_authorization_callback`, initial authorization-code token exchange, and refresh-token renewal behavior.
+  - `OAuth2ServerAuth.to_security_scheme` now exposes upstream-style OAuth2 AgentCard flow declarations for client-credentials and authorization-code flows.
   - `TLSConfig.get_grpc_credentials` now exposes upstream-style gRPC credential material loading for mTLS and CA files.
 - Added security compatibility behavior:
   - `SecurityConfig.validate_fingerprint` now exposes upstream-style fingerprint coercion for null, seed strings, dicts, and `Fingerprint` instances.

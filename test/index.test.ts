@@ -12,6 +12,7 @@ import {
   A2AServerConfig,
   A2ATransport,
   A2AHTTPException,
+  A2AEventBase,
   A2AAgentCardFetchedEvent,
   A2AConnectionErrorEvent,
   A2AContextCompletedEvent,
@@ -120,6 +121,7 @@ import {
   LLMThinkingChunkEvent,
   OAuth2AuthorizationCode,
   OAuth2ClientCredentials,
+  OAuth2ServerAuth,
   OIDCAuth,
   OutputFormat,
   PDFKnowledgeSource,
@@ -2974,6 +2976,73 @@ describe("a2a utilities", () => {
     await expect(auth.apply_auth(null, {})).resolves.toEqual({ Authorization: "Bearer refreshed-token" });
     expect(callback).toHaveBeenCalledTimes(1);
     expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  it("declares OAuth2 server auth security schemes for AgentCards", () => {
+    const auth = new OAuth2ServerAuth({
+      issuer: "https://auth.example.com/",
+      audience: "a2a-client",
+      token_url: "https://auth.example.com/token",
+      authorization_url: "https://auth.example.com/authorize",
+      refresh_url: "https://auth.example.com/refresh",
+      jwks_url: "https://auth.example.com/.well-known/jwks.json",
+      scopes: {
+        "read:tools": "Read tool metadata",
+        "write:tools": "Invoke tools",
+      },
+    });
+
+    expect(auth.to_security_scheme()).toEqual({
+      description: "OAuth2 authentication",
+      flows: {
+        client_credentials: {
+          token_url: "https://auth.example.com/token",
+          refresh_url: "https://auth.example.com/refresh",
+          scopes: {
+            "read:tools": "Read tool metadata",
+            "write:tools": "Invoke tools",
+          },
+        },
+        authorization_code: {
+          authorization_url: "https://auth.example.com/authorize",
+          token_url: "https://auth.example.com/token",
+          refresh_url: "https://auth.example.com/refresh",
+          scopes: {
+            "read:tools": "Read tool metadata",
+            "write:tools": "Invoke tools",
+          },
+        },
+      },
+    });
+  });
+
+  it("extracts A2A task and agent metadata like upstream validators", () => {
+    const task = { id: 123, name: "", description: "Draft report" };
+    expect(A2AEventBase.extract_task_and_agent_metadata({ from_task: task })).toEqual({
+      from_task: null,
+      task_id: "123",
+      task_name: "Draft report",
+      source_fingerprint: "123",
+      source_type: "task",
+      fingerprint_metadata: {
+        task_id: "123",
+        task_name: "Draft report",
+      },
+    });
+
+    const agent = { id: "agent-1", role: "Researcher" };
+    expect(A2AEventBase.extractTaskAndAgentMetadata({
+      fromAgent: agent,
+      sourceType: "custom",
+      fingerprintMetadata: { existing: true },
+    })).toEqual({
+      fromAgent: null,
+      agent_id: "agent-1",
+      agent_role: "Researcher",
+      sourceType: "custom",
+      sourceFingerprint: "agent-1",
+      fingerprintMetadata: { existing: true },
+    });
   });
 
   it("authenticates A2A simple server tokens", async () => {

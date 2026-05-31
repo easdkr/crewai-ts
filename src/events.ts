@@ -1752,6 +1752,54 @@ export abstract class A2AEventBase extends BaseEvent {
   readonly fingerprintMetadata: A2AEventMetadata | null;
   readonly fingerprint_metadata: A2AEventMetadata | null;
 
+  static extractTaskAndAgentMetadata<T extends Record<string, unknown>>(data: T): T & Record<string, unknown> {
+    const extracted: Record<string, unknown> = { ...data };
+    const task = extracted.from_task ?? extracted.fromTask;
+    const agent = extracted.from_agent ?? extracted.fromAgent;
+
+    if (task) {
+      const taskId = getStringProperty(task, "id");
+      const taskName = getNonEmptyStringProperty(task, "name") ?? getStringProperty(task, "description");
+      extracted.task_id = taskId;
+      extracted.task_name = taskName;
+      setA2ADefault(extracted, "source_fingerprint", "sourceFingerprint", taskId);
+      setA2ADefault(extracted, "source_type", "sourceType", "task");
+      setA2ADefault(extracted, "fingerprint_metadata", "fingerprintMetadata", {
+        task_id: taskId,
+        task_name: taskName,
+      });
+      if ("fromTask" in extracted && !("from_task" in extracted)) {
+        extracted.fromTask = null;
+      } else {
+        extracted.from_task = null;
+      }
+    }
+
+    if (agent) {
+      const agentId = getStringProperty(agent, "id");
+      const agentRole = getStringProperty(agent, "role");
+      extracted.agent_id = agentId;
+      extracted.agent_role = agentRole;
+      setA2ADefault(extracted, "source_fingerprint", "sourceFingerprint", agentId);
+      setA2ADefault(extracted, "source_type", "sourceType", "agent");
+      setA2ADefault(extracted, "fingerprint_metadata", "fingerprintMetadata", {
+        agent_id: agentId,
+        agent_role: agentRole,
+      });
+      if ("fromAgent" in extracted && !("from_agent" in extracted)) {
+        extracted.fromAgent = null;
+      } else {
+        extracted.from_agent = null;
+      }
+    }
+
+    return extracted as T & Record<string, unknown>;
+  }
+
+  static extract_task_and_agent_metadata(data: Record<string, unknown>): Record<string, unknown> {
+    return this.extractTaskAndAgentMetadata(data);
+  }
+
   constructor(type: EventType, options: A2ACommonEventOptions = {}) {
     const sourceType = options.sourceType ?? options.source_type ?? inferA2ASourceType(options);
     const sourceFingerprint = options.sourceFingerprint ?? options.source_fingerprint ?? inferA2ASourceFingerprint(options);
@@ -4656,6 +4704,22 @@ function createA2AFingerprintMetadata(event: A2AEventBase): A2AEventMetadata | n
   return null;
 }
 
+function setA2ADefault(
+  data: Record<string, unknown>,
+  snakeKey: string,
+  camelKey: string,
+  value: unknown,
+): void {
+  if (data[snakeKey] !== undefined || data[camelKey] !== undefined) {
+    return;
+  }
+  if (camelKey in data || "sourceType" in data || "sourceFingerprint" in data || "fingerprintMetadata" in data || "fromTask" in data || "fromAgent" in data) {
+    data[camelKey] = value;
+    return;
+  }
+  data[snakeKey] = value;
+}
+
 function getStringProperty(value: unknown, key: string): string | null {
   if (!value || typeof value !== "object" || !(key in value)) {
     return null;
@@ -4671,6 +4735,11 @@ function getStringProperty(value: unknown, key: string): string | null {
     return property.toString();
   }
   return null;
+}
+
+function getNonEmptyStringProperty(value: unknown, key: string): string | null {
+  const property = getStringProperty(value, key);
+  return property && property.length > 0 ? property : null;
 }
 
 function getObjectProperty(value: unknown, key: string): unknown {
