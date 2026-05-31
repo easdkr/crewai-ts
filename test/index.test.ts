@@ -453,6 +453,7 @@ import {
   captureExecutionContext,
   convertToolsToOpenAISchema,
   convertToModel,
+  convertWithInstructions,
   convertOneOfToAnyOf,
   checkConversationalCrewsVersion,
   callableToString,
@@ -5214,6 +5215,39 @@ describe("converter utilities", () => {
 
     expect(result).toEqual({ summary: "fallback converted" });
     expect(seenTexts).toEqual(["summary: converted through fallback"]);
+  });
+
+  it("falls back to agent LLM instructions for synchronous partial JSON conversion", () => {
+    const seenTexts: string[] = [];
+    const result = convertToModel(
+      "summary: converted through sync fallback",
+      null,
+      summaryModel,
+      {
+        llm: {
+          call(messages, options) {
+            seenTexts.push(messages[1]?.content ?? "");
+            expect(options?.responseModel).toBe(summaryModel);
+            return "{\"summary\":\"sync fallback converted\"}";
+          },
+        },
+      },
+    );
+
+    expect(result).toEqual({ summary: "sync fallback converted" });
+    expect(seenTexts).toEqual(["summary: converted through sync fallback"]);
+    expect(convertWithInstructions(
+      "summary: direct sync fallback",
+      summaryModel,
+      true,
+      {
+        llm: {
+          call() {
+            return "{\"summary\":\"direct sync converted\"}";
+          },
+        },
+      },
+    )).toEqual({ summary: "direct sync converted" });
   });
 });
 

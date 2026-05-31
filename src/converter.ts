@@ -179,7 +179,7 @@ export function handlePartialJson<T>(
   if (!agent && !converterClass) {
     return result;
   }
-  throw new ConverterError("LLM conversion fallback requires async convertWithInstructions in TypeScript.");
+  return convertWithInstructions(result, model, isJsonOutput, agent, converterClass ?? Converter<T>);
 }
 
 export const handle_partial_json = handlePartialJson;
@@ -200,7 +200,7 @@ export async function asyncHandlePartialJson<T>(
         return result;
       }
       if (error instanceof SyntaxError) {
-        return await convertWithInstructions(result, model, isJsonOutput, agent, converterClass ?? Converter<T>);
+        return await asyncConvertWithInstructions(result, model, isJsonOutput, agent, converterClass ?? Converter<T>);
       }
       throw error;
     }
@@ -208,7 +208,7 @@ export async function asyncHandlePartialJson<T>(
   if (!agent) {
     return result;
   }
-  return await convertWithInstructions(result, model, isJsonOutput, agent, converterClass ?? Converter<T>);
+  return await asyncConvertWithInstructions(result, model, isJsonOutput, agent, converterClass ?? Converter<T>);
 }
 
 export const async_handle_partial_json = asyncHandlePartialJson;
@@ -239,7 +239,53 @@ export function convertToModel<T>(
 
 export const convert_to_model = convertToModel;
 
-export async function convertWithInstructions<T>(
+export function convertWithInstructions<T>(
+  result: string,
+  model: StructuredModel<T>,
+  isJsonOutput: boolean,
+  agent: ConversionAgent | null,
+  converterClass: typeof Converter<T> = Converter<T>,
+): T | Record<string, unknown> | string {
+  if (!agent) {
+    throw new TypeError("Agent must be provided if converter_cls is not specified.");
+  }
+  if (converterClass !== Converter<T>) {
+    throw new ConverterError("Use asyncConvertToModel when converterClass fallback is required.");
+  }
+  const llm = agent.functionCallingLlm ?? agent.function_calling_llm ?? agent.llm;
+  if (!llm) {
+    throw new Error("Agent must have a valid LLM instance for conversion");
+  }
+  const response = llm.call(
+    [
+      { role: "system", content: getConversionInstructions(model, llm) },
+      { role: "user", content: result },
+    ],
+    { responseModel: model },
+  );
+  if (isPromiseLike(response)) {
+    throw new ConverterError("Use asyncConvertToModel when the LLM conversion fallback returns a Promise.");
+  }
+  if (isJsonOutput) {
+    const converted = typeof response === "string" ? response : JSON.stringify(response);
+    try {
+      return validateModel(converted, model, true);
+    } catch {
+      return result;
+    }
+  }
+  try {
+    return coerceResponseToModel(response, model);
+  } catch {
+    return result;
+  }
+}
+
+export const convert_with_instructions = convertWithInstructions;
+export const convertWithInstructionsSync = convertWithInstructions;
+export const convert_with_instructions_sync = convertWithInstructions;
+
+export async function asyncConvertWithInstructions<T>(
   result: string,
   model: StructuredModel<T>,
   isJsonOutput: boolean,
@@ -270,8 +316,7 @@ export async function convertWithInstructions<T>(
   return converted;
 }
 
-export const convert_with_instructions = convertWithInstructions;
-export const async_convert_with_instructions = convertWithInstructions;
+export const async_convert_with_instructions = asyncConvertWithInstructions;
 
 export function createConverter<T>(options: ConverterOptions<T>): Converter<T> {
   return new Converter(options);
@@ -297,7 +342,7 @@ export async function asyncConvertToModel<T>(
     return validateModel(JSON.stringify(JSON.parse(result)), model, Boolean(outputJson));
   } catch {
     if (converterClass) {
-      return await convertWithInstructions(result, model, Boolean(outputJson), agent, converterClass);
+      return await asyncConvertWithInstructions(result, model, Boolean(outputJson), agent, converterClass);
     }
     return await asyncHandlePartialJson(result, model, Boolean(outputJson), agent, converterClass);
   }
@@ -356,6 +401,10 @@ function dumpStructuredModel<T>(value: T, model: StructuredModel<T>): Record<str
   return value && typeof value === "object" && !Array.isArray(value)
     ? { ...(value as Record<string, unknown>) }
     : { value };
+}
+
+function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
+  return Boolean(value && typeof value === "object" && "then" in value && typeof (value as { then?: unknown }).then === "function");
 }
 
 function describeModel<T>(model: StructuredModel<T>): unknown {
