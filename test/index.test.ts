@@ -153,8 +153,17 @@ import {
   LLMCallType,
   CACHE_BREAKPOINT_KEY,
   CONTEXT_WINDOW_USAGE_RATIO,
+  ENV_VARS,
+  GROQ_MODELS,
+  HUGGINGFACE_MODELS,
   DEFAULT_CONTEXT_WINDOW_SIZE,
   DEFAULT_SUPPORTS_STOP_WORDS,
+  MODELS,
+  NVIDIA_NIM_MODELS,
+  OLLAMA_MODELS,
+  PROVIDERS,
+  SAMBANOVA_MODELS,
+  WATSON_MODELS,
   LLMGuardrailCompletedEvent,
   LLMGuardrailStartedEvent,
   LLMStreamChunkEvent,
@@ -11528,6 +11537,36 @@ describe("LLM providers", () => {
       completionTokens: 2,
       successfulRequests: 1,
     });
+  });
+
+  it("exposes upstream provider model constants for non-native LLM providers", () => {
+    expect(PROVIDERS).toEqual([
+      "openai",
+      "anthropic",
+      "gemini",
+      "nvidia_nim",
+      "groq",
+      "huggingface",
+      "ollama",
+      "watson",
+      "bedrock",
+      "azure",
+      "cerebras",
+      "sambanova",
+    ]);
+    expect(MODELS.nvidia_nim).toBe(NVIDIA_NIM_MODELS);
+    expect(MODELS.groq).toBe(GROQ_MODELS);
+    expect(MODELS.ollama).toBe(OLLAMA_MODELS);
+    expect(MODELS.watson).toBe(WATSON_MODELS);
+    expect(MODELS.huggingface).toBe(HUGGINGFACE_MODELS);
+    expect(MODELS.sambanova).toBe(SAMBANOVA_MODELS);
+    expect(NVIDIA_NIM_MODELS).toContain("nvidia_nim/meta/llama-3.1-405b-instruct");
+    expect(GROQ_MODELS).toContain("groq/llama-3.1-70b-versatile");
+    expect(OLLAMA_MODELS).toEqual(["ollama/llama3.1", "ollama/mixtral"]);
+    expect(WATSON_MODELS).toContain("watsonx/ibm/granite-3-8b-instruct");
+    expect(HUGGINGFACE_MODELS).toContain("huggingface/google/gemma-7b-it");
+    expect(SAMBANOVA_MODELS).toContain("sambanova/Meta-Llama-3.2-1B-Instruct");
+    expect(ENV_VARS.sambanova).toEqual([{ key_name: "SAMBANOVA_API_KEY" }]);
   });
 
   it("stores upstream-style BaseLLM callbacks and parses LiteLLM env callbacks", () => {

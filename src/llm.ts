@@ -659,22 +659,149 @@ export const BEDROCK_MODELS = [
   "qwen.qwen3-coder-30b-a3b-v1:0",
   "twelvelabs.pegasus-1-2-v1:0",
 ] as const;
+export const NVIDIA_NIM_MODELS = [
+  "nvidia_nim/nvidia/mistral-nemo-minitron-8b-8k-instruct",
+  "nvidia_nim/nvidia/nemotron-4-mini-hindi-4b-instruct",
+  "nvidia_nim/nvidia/llama-3.1-nemotron-70b-instruct",
+  "nvidia_nim/nvidia/llama3-chatqa-1.5-8b",
+  "nvidia_nim/nvidia/llama3-chatqa-1.5-70b",
+  "nvidia_nim/nvidia/vila",
+  "nvidia_nim/nvidia/neva-22",
+  "nvidia_nim/nvidia/nemotron-mini-4b-instruct",
+  "nvidia_nim/nvidia/usdcode-llama3-70b-instruct",
+  "nvidia_nim/nvidia/nemotron-4-340b-instruct",
+  "nvidia_nim/meta/codellama-70b",
+  "nvidia_nim/meta/llama2-70b",
+  "nvidia_nim/meta/llama3-8b-instruct",
+  "nvidia_nim/meta/llama3-70b-instruct",
+  "nvidia_nim/meta/llama-3.1-8b-instruct",
+  "nvidia_nim/meta/llama-3.1-70b-instruct",
+  "nvidia_nim/meta/llama-3.1-405b-instruct",
+  "nvidia_nim/meta/llama-3.2-1b-instruct",
+  "nvidia_nim/meta/llama-3.2-3b-instruct",
+  "nvidia_nim/meta/llama-3.2-11b-vision-instruct",
+  "nvidia_nim/meta/llama-3.2-90b-vision-instruct",
+  "nvidia_nim/meta/llama-3.1-70b-instruct",
+  "nvidia_nim/google/gemma-7b",
+  "nvidia_nim/google/gemma-2b",
+  "nvidia_nim/google/codegemma-7b",
+  "nvidia_nim/google/codegemma-1.1-7b",
+  "nvidia_nim/google/recurrentgemma-2b",
+  "nvidia_nim/google/gemma-2-9b-it",
+  "nvidia_nim/google/gemma-2-27b-it",
+  "nvidia_nim/google/gemma-2-2b-it",
+  "nvidia_nim/google/deplot",
+  "nvidia_nim/google/paligemma",
+  "nvidia_nim/mistralai/mistral-7b-instruct-v0.2",
+  "nvidia_nim/mistralai/mixtral-8x7b-instruct-v0.1",
+  "nvidia_nim/mistralai/mistral-large",
+  "nvidia_nim/mistralai/mixtral-8x22b-instruct-v0.1",
+  "nvidia_nim/mistralai/mistral-7b-instruct-v0.3",
+  "nvidia_nim/nv-mistralai/mistral-nemo-12b-instruct",
+  "nvidia_nim/mistralai/mamba-codestral-7b-v0.1",
+  "nvidia_nim/microsoft/phi-3-mini-128k-instruct",
+  "nvidia_nim/microsoft/phi-3-mini-4k-instruct",
+  "nvidia_nim/microsoft/phi-3-small-8k-instruct",
+  "nvidia_nim/microsoft/phi-3-small-128k-instruct",
+  "nvidia_nim/microsoft/phi-3-medium-4k-instruct",
+  "nvidia_nim/microsoft/phi-3-medium-128k-instruct",
+  "nvidia_nim/microsoft/phi-3.5-mini-instruct",
+  "nvidia_nim/microsoft/phi-3.5-moe-instruct",
+  "nvidia_nim/microsoft/kosmos-2",
+  "nvidia_nim/microsoft/phi-3-vision-128k-instruct",
+  "nvidia_nim/microsoft/phi-3.5-vision-instruct",
+  "nvidia_nim/databricks/dbrx-instruct",
+  "nvidia_nim/snowflake/arctic",
+  "nvidia_nim/aisingapore/sea-lion-7b-instruct",
+  "nvidia_nim/ibm/granite-8b-code-instruct",
+  "nvidia_nim/ibm/granite-34b-code-instruct",
+  "nvidia_nim/ibm/granite-3.0-8b-instruct",
+  "nvidia_nim/ibm/granite-3.0-3b-a800m-instruct",
+  "nvidia_nim/mediatek/breeze-7b-instruct",
+  "nvidia_nim/upstage/solar-10.7b-instruct",
+  "nvidia_nim/writer/palmyra-med-70b-32k",
+  "nvidia_nim/writer/palmyra-med-70b",
+  "nvidia_nim/writer/palmyra-fin-70b-32k",
+  "nvidia_nim/01-ai/yi-large",
+  "nvidia_nim/deepseek-ai/deepseek-coder-6.7b-instruct",
+  "nvidia_nim/rakuten/rakutenai-7b-instruct",
+  "nvidia_nim/rakuten/rakutenai-7b-chat",
+  "nvidia_nim/baichuan-inc/baichuan2-13b-chat",
+] as const;
+export const GROQ_MODELS = [
+  "groq/llama-3.1-8b-instant",
+  "groq/llama-3.1-70b-versatile",
+  "groq/llama-3.1-405b-reasoning",
+  "groq/gemma2-9b-it",
+  "groq/gemma-7b-it",
+] as const;
+export const OLLAMA_MODELS = [
+  "ollama/llama3.1",
+  "ollama/mixtral",
+] as const;
+export const WATSON_MODELS = [
+  "watsonx/meta-llama/llama-3-1-70b-instruct",
+  "watsonx/meta-llama/llama-3-1-8b-instruct",
+  "watsonx/meta-llama/llama-3-2-11b-vision-instruct",
+  "watsonx/meta-llama/llama-3-2-1b-instruct",
+  "watsonx/meta-llama/llama-3-2-90b-vision-instruct",
+  "watsonx/meta-llama/llama-3-405b-instruct",
+  "watsonx/mistral/mistral-large",
+  "watsonx/ibm/granite-3-8b-instruct",
+] as const;
+export const HUGGINGFACE_MODELS = [
+  "huggingface/meta-llama/Meta-Llama-3.1-8B-Instruct",
+  "huggingface/mistralai/Mixtral-8x7B-Instruct-v0.1",
+  "huggingface/tiiuae/falcon-180B-chat",
+  "huggingface/google/gemma-7b-it",
+] as const;
+export const SAMBANOVA_MODELS = [
+  "sambanova/Meta-Llama-3.3-70B-Instruct",
+  "sambanova/QwQ-32B-Preview",
+  "sambanova/Qwen2.5-72B-Instruct",
+  "sambanova/Qwen2.5-Coder-32B-Instruct",
+  "sambanova/Meta-Llama-3.1-405B-Instruct",
+  "sambanova/Meta-Llama-3.1-70B-Instruct",
+  "sambanova/Meta-Llama-3.1-8B-Instruct",
+  "sambanova/Llama-3.2-90B-Vision-Instruct",
+  "sambanova/Llama-3.2-11B-Vision-Instruct",
+  "sambanova/Meta-Llama-3.2-3B-Instruct",
+  "sambanova/Meta-Llama-3.2-1B-Instruct",
+] as const;
 export type OpenAIModels = typeof OPENAI_MODELS[number];
 export type AnthropicModels = typeof ANTHROPIC_MODELS[number];
 export type GeminiModels = typeof GEMINI_MODELS[number];
 export type AzureModels = typeof AZURE_MODELS[number];
 export type BedrockModels = typeof BEDROCK_MODELS[number];
+export type NvidiaNimModels = typeof NVIDIA_NIM_MODELS[number];
+export type GroqModels = typeof GROQ_MODELS[number];
+export type OllamaModels = typeof OLLAMA_MODELS[number];
+export type WatsonModels = typeof WATSON_MODELS[number];
+export type HuggingFaceModels = typeof HUGGINGFACE_MODELS[number];
+export type SambanovaModels = typeof SAMBANOVA_MODELS[number];
 export const OpenAIModels = OPENAI_MODELS;
 export const AnthropicModels = ANTHROPIC_MODELS;
 export const GeminiModels = GEMINI_MODELS;
 export const AzureModels = AZURE_MODELS;
 export const BedrockModels = BEDROCK_MODELS;
+export const NvidiaNimModels = NVIDIA_NIM_MODELS;
+export const GroqModels = GROQ_MODELS;
+export const OllamaModels = OLLAMA_MODELS;
+export const WatsonModels = WATSON_MODELS;
+export const HuggingFaceModels = HUGGINGFACE_MODELS;
+export const SambanovaModels = SAMBANOVA_MODELS;
 export const MODELS = Object.freeze({
   openai: OPENAI_MODELS,
   anthropic: ANTHROPIC_MODELS,
   gemini: GEMINI_MODELS,
+  nvidia_nim: NVIDIA_NIM_MODELS,
+  groq: GROQ_MODELS,
+  ollama: OLLAMA_MODELS,
+  watson: WATSON_MODELS,
   azure: AZURE_MODELS,
   bedrock: BEDROCK_MODELS,
+  huggingface: HUGGINGFACE_MODELS,
+  sambanova: SAMBANOVA_MODELS,
 } as const);
 export const CONTEXT_WINDOW_USAGE_RATIO = 0.85;
 export const MIN_CONTEXT_WINDOW_SIZE = 1024;
