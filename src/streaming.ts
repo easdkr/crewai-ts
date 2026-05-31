@@ -79,6 +79,10 @@ export class StreamChunk {
   toString(): string {
     return this.content;
   }
+
+  __str__(): string {
+    return this.toString();
+  }
 }
 
 export abstract class StreamingOutputBase<TResult> implements AsyncIterable<StreamChunk> {
@@ -161,6 +165,10 @@ export abstract class StreamingOutputBase<TResult> implements AsyncIterable<Stre
       throw new Error("Streaming has not completed yet. Use async iteration before sync iteration.");
     }
     yield* this.collectedChunks;
+  }
+
+  *__iter__(): IterableIterator<StreamChunk> {
+    yield* this;
   }
 
   async *[Symbol.asyncIterator](): AsyncIterator<StreamChunk> {

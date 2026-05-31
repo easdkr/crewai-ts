@@ -170,6 +170,7 @@ When more goal budget is available, continue from the behavioral parity audits b
   - `TaskOutput`, `CrewOutput`, and `LiteAgentOutput` now expose upstream-style `__str__` aliases, and `CrewOutput.__getitem__` mirrors keyed pydantic/json access.
   - `CrewStreamingOutput.results` now exposes upstream-style list access for completed streaming crew results.
   - `StreamingOutputBase` now exposes upstream-style `__aenter__` / `__aexit__` async context-manager aliases that close/cancel unfinished streams.
+  - `StreamChunk.__str__` and `StreamingOutputBase.__iter__` now mirror upstream string and sync-iteration helpers.
   - `InternalInstructor.to_pydantic` now exposes upstream-style structured conversion through a provided synchronous LLM client and model validation/dump hooks.
 - Added knowledge compatibility behavior:
   - `Knowledge` now accepts storage-backed configuration and exposes upstream-style `add_sources`, `aadd_sources`, `aquery`, and `areset` helpers while preserving the in-memory deterministic path.

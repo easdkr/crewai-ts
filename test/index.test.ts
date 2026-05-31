@@ -17331,6 +17331,7 @@ describe("streaming output", () => {
     expect(chunk.toolCall).toBe(toolCall);
     expect(chunk.tool_call).toBe(toolCall);
     expect(String(chunk)).toBe("searching");
+    expect(chunk.__str__()).toBe("searching");
   });
 
   it("returns a CrewStreamingOutput when a crew is configured for streaming", async () => {
@@ -17369,6 +17370,7 @@ describe("streaming output", () => {
     expect(streaming.result.raw).toContain("stream final");
     expect(streaming.results.map((result) => result.raw)).toEqual(["stream final"]);
     expect([...streaming].map((chunk) => chunk.content)).toEqual(["stream final"]);
+    expect([...streaming.__iter__()].map((chunk) => chunk.content)).toEqual(["stream final"]);
   });
 
   it("returns a FlowStreamingOutput when a flow is configured for streaming", async () => {
