@@ -135,6 +135,8 @@ When more goal budget is available, continue from the behavioral parity audits b
   - `CacheTools.hit_cache` now exposes the upstream direct cache lookup helper used by the generated cache tool.
 - Added project wrapper compatibility behavior:
   - `TaskMethod` now exposes upstream-style `ensure_task_name` and applies default task names on direct `call`/`invoke` paths.
+- Added planning compatibility behavior:
+  - `StepObservation.coerce_single_refinement_to_list` now exposes the upstream validator helper for single refinement objects.
 - Added A2A auth compatibility behavior:
   - `HTTPBasicAuth`, `HTTPDigestAuth`, and `APIKeyAuth` now expose upstream-style concrete `apply_auth` helpers.
   - `HTTPDigestAuth.configure_client` and `APIKeyAuth.configure_client` now idempotently configure digest auth and query-param request hooks.

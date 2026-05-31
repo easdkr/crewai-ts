@@ -177,8 +177,10 @@ import {
   SkillLoadFailedEvent,
   SigIntEvent,
   SignalType,
+  StepObservation,
   StepObservationCompletedEvent,
   StepObservationStartedEvent,
+  StepRefinement,
   TLSConfig,
   Settings,
   SqliteProvider,
@@ -5843,6 +5845,17 @@ describe("core crew runtime", () => {
 });
 
 describe("agent planning", () => {
+  it("exposes upstream StepObservation refinement coercion helper", () => {
+    const single = { step_number: 3, new_description: "Pick the best option" };
+
+    expect(StepObservation.coerce_single_refinement_to_list(single)).toEqual([single]);
+    const list = [single];
+    expect(StepObservation.coerceSingleRefinementToList(list)).toBe(list);
+    const observation = new StepObservation({ suggested_refinements: single });
+    expect(observation.suggested_refinements?.[0]).toBeInstanceOf(StepRefinement);
+    expect(observation.suggested_refinements?.[0]?.step_number).toBe(3);
+  });
+
   it("creates a default bounded low-effort PlanningConfig for planning true", () => {
     const agentInstance = new Agent({
       role: "Planner",

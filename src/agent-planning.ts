@@ -262,6 +262,17 @@ export class StepObservation {
   readonly goalAlreadyAchieved: boolean;
   readonly goal_already_achieved: boolean;
 
+  static coerceSingleRefinementToList(value: unknown): unknown {
+    if (value && typeof value === "object" && !Array.isArray(value) && !(value instanceof StepRefinement)) {
+      return [value];
+    }
+    return value;
+  }
+
+  static coerce_single_refinement_to_list(value: unknown): unknown {
+    return StepObservation.coerceSingleRefinementToList(value);
+  }
+
   constructor(options: {
     stepCompletedSuccessfully?: boolean;
     step_completed_successfully?: boolean;
@@ -284,7 +295,9 @@ export class StepObservation {
     this.key_information_learned = this.keyInformationLearned;
     this.remainingPlanStillValid = options.remainingPlanStillValid ?? options.remaining_plan_still_valid ?? true;
     this.remaining_plan_still_valid = this.remainingPlanStillValid;
-    const refinements = options.suggestedRefinements ?? options.suggested_refinements ?? null;
+    const refinements = StepObservation.coerceSingleRefinementToList(
+      options.suggestedRefinements ?? options.suggested_refinements ?? null,
+    ) as readonly (StepRefinement | StepRefinementOptions)[] | StepRefinement | StepRefinementOptions | null;
     this.suggestedRefinements = refinements === null ? null : (Array.isArray(refinements) ? refinements : [refinements]).map((item) => item instanceof StepRefinement ? item : new StepRefinement(item as StepRefinementOptions));
     this.suggested_refinements = this.suggestedRefinements;
     this.needsFullReplan = options.needsFullReplan ?? options.needs_full_replan ?? false;
