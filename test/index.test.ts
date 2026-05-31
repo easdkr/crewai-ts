@@ -8384,6 +8384,58 @@ describe("core crew runtime", () => {
     }).not.toThrow();
   });
 
+  it("exposes upstream StepExecutor prompt and tool execution helpers", async () => {
+    const searchTool = new StructuredTool({
+      name: "Search Tool",
+      description: "Search",
+      func: (args) => `searched:${(args as { query?: string }).query ?? ""}`,
+    });
+    const llmResponses = [
+      "Thought: use search\nAction: Search Tool\nAction Input: {\"query\":\"CrewAI\"}",
+      "Thought: done\nFinal Answer: complete",
+    ];
+    const agentInstance = new Agent({
+      role: "Researcher",
+      goal: "Find facts",
+      backstory: "Careful analyst",
+      llm: () => llmResponses.shift() ?? "Final Answer: fallback",
+    });
+    const executor = new StepExecutor({
+      agent: agentInstance,
+      tools: [searchTool],
+      available_functions: { lookup: (args: { query?: string }) => `lookup:${args.query ?? ""}` },
+    });
+    const todo = new TodoItem({ step_number: 2, description: "Collect pricing facts", tool_to_use: "Search Tool" });
+    const context = new StepExecutionContext({
+      taskDescription: "Intro\n## Task\nResearch CrewAI\n---\nFooter",
+      taskGoal: "Produce a concise brief",
+      dependencyResults: { 1: "Found docs" },
+    });
+
+    const messages = executor._build_isolated_messages(todo, context);
+    expect(messages[0]).toMatchObject({ role: "system" });
+    expect(messages[1]?.content).toContain("Research CrewAI");
+    expect(messages[1]?.content).toContain("Suggested tool: Search Tool");
+    expect(messages[1]?.content).toContain("Step 1: Found docs");
+
+    const toolCallsMade: string[] = [];
+    await expect(executor._execute_text_parsed(messages, toolCallsMade)).resolves.toBe("complete");
+    expect(toolCallsMade).toEqual(["Search Tool"]);
+    expect(messages.some((message) => typeof message.content === "string" && message.content.includes("Observation: searched:CrewAI"))).toBe(true);
+
+    const nativeMessages: unknown[] = [];
+    const nativeCallsMade: string[] = [];
+    await expect(executor._execute_native_tool_calls([
+      { id: "call-1", function: { name: "lookup", arguments: "{\"query\":\"CrewAI\"}" } },
+    ], nativeMessages as LLMMessage[], nativeCallsMade)).resolves.toBe("lookup:CrewAI");
+    expect(nativeCallsMade).toEqual(["lookup"]);
+    expect(nativeMessages.at(-1)).toMatchObject({
+      role: "tool",
+      content: "lookup:CrewAI",
+      tool_call_id: "call-1",
+    });
+  });
+
   it("exposes upstream Agent and BaseAgent compatibility methods", async () => {
     const knowledge = new Knowledge({
       sources: [new StringKnowledgeSource("CrewAI agents can use knowledge.")],

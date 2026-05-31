@@ -3,8 +3,9 @@ import type { CheckpointConfig } from "./state.js";
 import type { Crew } from "./crew.js";
 import { StepObservation, TodoItem, TodoList, TodoStatus } from "./agent-planning.js";
 import { AgentAction, AgentFinish, parseAgentOutput } from "./agent-parser.js";
+import { extractTaskSection, formatMessageForLLM } from "./agent-utils.js";
 import { Converter } from "./converter.js";
-import { UsageMetrics } from "./llm.js";
+import { UsageMetrics, type LLMResponse } from "./llm.js";
 import { StepExecutionContext, StepResult } from "./step-execution-context.js";
 import { sanitizeToolName } from "./tools.js";
 import type { LLMMessage, MaybePromise, Tool } from "./types.js";
@@ -984,6 +985,166 @@ export class StepExecutor {
     }
   }
 
+  _buildIsolatedMessages(todo: TodoItem, context: StepExecutionContext): LLMMessage[] {
+    return [
+      formatMessageForLLM(this._buildSystemPrompt(), "system"),
+      formatMessageForLLM(this._buildUserPrompt(todo, context), "user"),
+    ];
+  }
+
+  _build_isolated_messages(todo: TodoItem, context: StepExecutionContext): LLMMessage[] {
+    return this._buildIsolatedMessages(todo, context);
+  }
+
+  _buildSystemPrompt(): string {
+    const role = this.agent?.role ?? "Assistant";
+    const goal = this.agent?.goal ?? "Complete tasks efficiently";
+    const backstory = this.agent?.backstory ? `\nBackstory: ${this.agent.backstory}` : "";
+    const toolNames = this.tools.map((tool) => sanitizeToolName(tool.name));
+    const toolsSection = toolNames.length > 0
+      ? `\nAvailable tools: ${toolNames.join(", ")}`
+      : "";
+    return [
+      `You are an Executor focused on completing one plan step as ${role}.`,
+      `Goal: ${goal}${backstory}`,
+      "Return a final answer when the step is complete.",
+      toolsSection,
+    ].filter(Boolean).join("\n");
+  }
+
+  _build_system_prompt(): string {
+    return this._buildSystemPrompt();
+  }
+
+  _buildUserPrompt(todo: TodoItem, context: StepExecutionContext): string {
+    const parts: string[] = [];
+    if (context.taskDescription) {
+      parts.push(`Task context:\n${extractTaskSection(context.taskDescription)}`);
+    }
+    if (context.taskGoal) {
+      parts.push(`Task goal:\n${context.taskGoal}`);
+    }
+    parts.push(`Step:\n${todo.description}`);
+    const toolToUse = todo.toolToUse ?? todo.tool_to_use;
+    if (toolToUse) {
+      parts.push(`Suggested tool: ${toolToUse}`);
+    }
+    const dependencyEntries = Object.entries(context.dependencyResults)
+      .sort(([left], [right]) => Number(left) - Number(right));
+    if (dependencyEntries.length > 0) {
+      parts.push([
+        "Dependency results:",
+        ...dependencyEntries.map(([stepNumber, result]) => `Step ${stepNumber}: ${result}`),
+      ].join("\n"));
+    }
+    parts.push("Complete this step and provide the result.");
+    return parts.join("\n\n");
+  }
+
+  _build_user_prompt(todo: TodoItem, context: StepExecutionContext): string {
+    return this._buildUserPrompt(todo, context);
+  }
+
+  async _executeTextParsed(
+    messages: LLMMessage[],
+    toolCallsMade: string[],
+    maxStepIterations = 15,
+    stepTimeout: number | null = null,
+    startTime: number | null = null,
+  ): Promise<string> {
+    let lastToolResult = "";
+    for (let index = 0; index < maxStepIterations; index += 1) {
+      if (stepTimeout !== null && startTime !== null && Date.now() - startTime >= stepTimeout * 1000) {
+        return lastToolResult || `Step timed out after ${String(stepTimeout)}s`;
+      }
+      const answer = await this.callStepLlm(messages);
+      if (!answer) {
+        throw new Error("Empty response from LLM");
+      }
+      const answerText = stringifyStepResult(answer);
+      let parsed: AgentAction | AgentFinish;
+      try {
+        parsed = parseAgentOutput(answerText);
+      } catch {
+        return answerText;
+      }
+      if (parsed instanceof AgentFinish) {
+        return String(parsed.output);
+      }
+      toolCallsMade.push(parsed.tool);
+      const toolResult = await this._executeTextToolWithEvents(parsed);
+      lastToolResult = toolResult;
+      messages.push({ role: "assistant", content: answerText });
+      messages.push(this._buildObservationMessage(toolResult));
+    }
+    return lastToolResult;
+  }
+
+  async _execute_text_parsed(
+    messages: LLMMessage[],
+    toolCallsMade: string[],
+    maxStepIterations = 15,
+    stepTimeout: number | null = null,
+    startTime: number | null = null,
+  ): Promise<string> {
+    return await this._executeTextParsed(messages, toolCallsMade, maxStepIterations, stepTimeout, startTime);
+  }
+
+  async _executeTextToolWithEvents(formatted: AgentAction): Promise<string> {
+    const args = this._parse_tool_args(formatted.toolInput);
+    const sanitized = sanitizeToolName(formatted.tool);
+    const tool = this.tools.find((candidate) => sanitizeToolName(candidate.name) === sanitized);
+    if (!tool) {
+      throw new Error(`Tool '${formatted.tool}' is not available`);
+    }
+    const result = await tool.run(args);
+    return stringifyStepResult(result);
+  }
+
+  async _execute_text_tool_with_events(formatted: AgentAction): Promise<string> {
+    return await this._executeTextToolWithEvents(formatted);
+  }
+
+  async _executeNativeToolCalls(
+    toolCalls: readonly unknown[],
+    messages: LLMMessage[],
+    toolCallsMade: string[],
+  ): Promise<string> {
+    const results: string[] = [];
+    messages.push({ role: "assistant", content: "", tool_calls: toolCalls } as unknown as LLMMessage);
+    for (const toolCall of toolCalls) {
+      const { name, args, id } = normalizeNativeToolCall(toolCall);
+      if (!name) {
+        continue;
+      }
+      toolCallsMade.push(name);
+      const fn = this.availableFunctions[name] ?? this.availableFunctions[sanitizeToolName(name)];
+      const result = typeof fn === "function"
+        ? await (fn as (input: unknown) => MaybePromise<unknown>)(args)
+        : await this.runToolByName(name, args);
+      const text = stringifyStepResult(result);
+      results.push(text);
+      messages.push({
+        role: "tool",
+        content: text,
+        tool_call_id: id ?? name,
+      } as unknown as LLMMessage);
+      const originalTool = this.tools.find((tool) => sanitizeToolName(tool.name) === sanitizeToolName(name));
+      if (originalTool?.resultAsAnswer) {
+        return text;
+      }
+    }
+    return results.join("\n");
+  }
+
+  async _execute_native_tool_calls(
+    toolCalls: readonly unknown[],
+    messages: LLMMessage[],
+    toolCallsMade: string[],
+  ): Promise<string> {
+    return await this._executeNativeToolCalls(toolCalls, messages, toolCallsMade);
+  }
+
   async executeStep(step: string, context: StepExecutionContext = new StepExecutionContext({})): Promise<StepResult> {
     const started = Date.now();
     try {
@@ -1021,6 +1182,81 @@ export class StepExecutor {
     void _maxStepIterations;
     void _stepTimeout;
     return this.executeStep(typeof todo === "string" ? todo : todo.description, context);
+  }
+
+  private _buildObservationMessage(toolResult: string): LLMMessage {
+    return StepExecutor._build_observation_message(toolResult);
+  }
+
+  private async callStepLlm(messages: readonly LLMMessage[]): Promise<LLMResponse> {
+    if (!this.agent?.llm) {
+      return stringifyStepResult(messages.at(-1)?.content ?? "");
+    }
+    if (typeof this.agent.llm === "string") {
+      return stringifyStepResult(messages.at(-1)?.content ?? "");
+    }
+    if (typeof this.agent.llm === "function") {
+      return await this.agent.llm(messages);
+    }
+    return await this.agent.llm.call(messages);
+  }
+
+  private async runToolByName(name: string, args: unknown): Promise<unknown> {
+    const sanitized = sanitizeToolName(name);
+    const tool = this.tools.find((candidate) => sanitizeToolName(candidate.name) === sanitized);
+    if (!tool) {
+      throw new Error(`Tool '${name}' is not available`);
+    }
+    return await tool.run(args as Record<string, unknown>);
+  }
+}
+
+function stringifyStepResult(result: unknown): string {
+  if (typeof result === "string") {
+    return result;
+  }
+  if (result === null || result === undefined) {
+    return "";
+  }
+  try {
+    return JSON.stringify(result);
+  } catch {
+    return Object.prototype.toString.call(result);
+  }
+}
+
+function normalizeNativeToolCall(toolCall: unknown): { name: string | null; args: unknown; id: string | null } {
+  if (!toolCall || typeof toolCall !== "object") {
+    return { name: null, args: {}, id: null };
+  }
+  const record = toolCall as Record<string, unknown>;
+  const fn = record.function && typeof record.function === "object"
+    ? record.function as Record<string, unknown>
+    : null;
+  const name = typeof fn?.name === "string"
+    ? fn.name
+    : typeof record.name === "string"
+      ? record.name
+      : null;
+  const rawArgs = fn && "arguments" in fn ? fn.arguments : record.arguments ?? record.args ?? {};
+  const args = typeof rawArgs === "string"
+    ? parseNativeArgs(rawArgs)
+    : rawArgs;
+  return {
+    name,
+    args,
+    id: typeof record.id === "string" ? record.id : null,
+  };
+}
+
+function parseNativeArgs(rawArgs: string): unknown {
+  if (!rawArgs.trim()) {
+    return {};
+  }
+  try {
+    return JSON.parse(rawArgs) as unknown;
+  } catch {
+    return { input: rawArgs };
   }
 }
 
