@@ -312,6 +312,10 @@ export class RuntimeState {
     };
   }
 
+  _serialize(): Record<string, unknown> {
+    return this.toJSON();
+  }
+
   toJSONText(): string {
     return JSON.stringify(this.toJSON());
   }
@@ -329,6 +333,19 @@ export class RuntimeState {
       branch: typeof parsed.branch === "string" ? parsed.branch : "main",
     });
     return state;
+  }
+
+  static _deserialize(data: unknown, provider: BaseProvider = new JsonProvider()): RuntimeState {
+    if (typeof data === "string") {
+      return RuntimeState.fromJSONText(data, provider);
+    }
+    const record = isRecord(data) ? data : {};
+    return new RuntimeState({
+      entities: Array.isArray(record.entities) ? record.entities : Array.isArray(record.root) ? record.root : [],
+      provider,
+      parentId: typeof record.parent_id === "string" ? record.parent_id : typeof record.parentId === "string" ? record.parentId : null,
+      branch: typeof record.branch === "string" ? record.branch : "main",
+    });
   }
 
   static from_json(raw: string, provider: BaseProvider = new JsonProvider()): RuntimeState {
@@ -384,7 +401,11 @@ export class RuntimeState {
   }
 
   private chainLineage(location: string): void {
-    const checkpointId = this.provider.extractId(location);
+    this._chain_lineage(this.provider, location);
+  }
+
+  _chain_lineage(provider: BaseProvider, location: string): void {
+    const checkpointId = provider.extractId(location);
     this.checkpointId = checkpointId;
     this.checkpoint_id = checkpointId;
     this.parentId = checkpointId;
@@ -392,6 +413,11 @@ export class RuntimeState {
   }
 
   private beginCheckpoint(location: string): { providerName: string; parentId: string | null; branch: string; startedAt: number } {
+    const [providerName, parentId, branch, startedAt] = this._begin_checkpoint(location);
+    return { providerName, parentId, branch, startedAt };
+  }
+
+  _begin_checkpoint(location: string): [string, string | null, string, number] {
     const providerName = this.provider.constructor.name;
     const parentId = this.parentId;
     const branch = this.branch;
@@ -401,7 +427,7 @@ export class RuntimeState {
       branch,
       parent_id: parentId,
     }));
-    return { providerName, parentId, branch, startedAt: Date.now() };
+    return [providerName, parentId, branch, Date.now()];
   }
 
   private emitCheckpointCompleted(
@@ -411,13 +437,23 @@ export class RuntimeState {
     branch: string,
     startedAt: number,
   ): void {
+    this._emit_checkpoint_completed(location, providerName, branch, parentId, startedAt);
+  }
+
+  _emit_checkpoint_completed(
+    result: string,
+    providerName: string,
+    branchSnapshot: string,
+    parentIdSnapshot: string | null,
+    startedAt: number,
+  ): void {
     crewaiEventBus.emit(this, new CheckpointCompletedEvent({
-      location,
+      location: result,
       provider: providerName,
-      checkpoint_id: this.provider.extractId(location),
+      checkpoint_id: this.provider.extractId(result),
       duration_ms: Date.now() - startedAt,
-      branch,
-      parent_id: parentId,
+      branch: branchSnapshot,
+      parent_id: parentIdSnapshot,
     }));
   }
 
@@ -428,12 +464,22 @@ export class RuntimeState {
     branch: string,
     error: unknown,
   ): void {
+    this._emit_checkpoint_failed(location, providerName, branch, parentId, error);
+  }
+
+  _emit_checkpoint_failed(
+    location: string,
+    providerName: string,
+    branchSnapshot: string,
+    parentIdSnapshot: string | null,
+    error: unknown,
+  ): void {
     crewaiEventBus.emit(this, new CheckpointFailedEvent({
       location,
       provider: providerName,
       error,
-      branch,
-      parent_id: parentId,
+      branch: branchSnapshot,
+      parent_id: parentIdSnapshot,
     }));
   }
 }
@@ -718,6 +764,10 @@ export function detectProvider(path: string): BaseProvider {
 }
 
 export const detect_provider = detectProvider;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
 
 function buildCheckpointPath(directory: string, branch: string, parentId: string | null): string {
   assertSafeBranch(directory, branch);

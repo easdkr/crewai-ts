@@ -19874,6 +19874,71 @@ describe("runtime state", () => {
     expect(JSON.stringify(dumped.event_record)).toContain(event.eventId);
   });
 
+  it("exposes upstream RuntimeState serialization and checkpoint helper methods", () => {
+    const provider = new JsonProvider();
+    const state = new RuntimeState({
+      root: [{ type: "mock" }],
+      provider,
+      parentId: "parent-1",
+      branch: "experiment",
+    });
+    const events: unknown[] = [];
+    crewaiEventBus.on("checkpoint_started", (_source, event) => {
+      events.push(event);
+    });
+    crewaiEventBus.on("checkpoint_completed", (_source, event) => {
+      events.push(event);
+    });
+    crewaiEventBus.on("checkpoint_failed", (_source, event) => {
+      events.push(event);
+    });
+
+    expect(state._serialize()).toMatchObject({
+      parent_id: "parent-1",
+      branch: "experiment",
+      entities: [{ type: "Object" }],
+    });
+
+    const restored = RuntimeState._deserialize({
+      entities: [{ type: "restored" }],
+      parent_id: "parent-2",
+      branch: "restored-branch",
+    }, provider);
+    expect(restored.root).toEqual([{ type: "restored" }]);
+    expect(restored.parent_id).toBe("parent-2");
+    expect(restored.branch).toBe("restored-branch");
+
+    state._chain_lineage(provider, "/tmp/checkpoints/manual-id.json");
+    expect(state.checkpoint_id).toBe("manual-id");
+    expect(state.parent_id).toBe("manual-id");
+
+    const [providerName, parentId, branch, startedAt] = state._begin_checkpoint("/tmp/manual");
+    state._emit_checkpoint_completed("/tmp/checkpoints/result-id.json", providerName, branch, parentId, startedAt);
+    state._emit_checkpoint_failed("/tmp/manual", providerName, branch, parentId, new Error("write failed"));
+
+    expect(events[0]).toMatchObject({
+      type: "checkpoint_started",
+      location: "/tmp/manual",
+      provider: "JsonProvider",
+      branch: "experiment",
+      parent_id: "manual-id",
+    });
+    expect(events[1]).toMatchObject({
+      type: "checkpoint_completed",
+      location: "/tmp/checkpoints/result-id.json",
+      checkpoint_id: "result-id",
+      branch: "experiment",
+      parent_id: "manual-id",
+    });
+    expect(events[2]).toMatchObject({
+      type: "checkpoint_failed",
+      location: "/tmp/manual",
+      error: "write failed",
+      branch: "experiment",
+      parent_id: "manual-id",
+    });
+  });
+
   it("chains JSON checkpoint lineage and restores checkpoint ids", async () => {
     const directory = mkdtempSync(join(tmpdir(), "crewai-ts-runtime-state-"));
     const provider = new JsonProvider();
