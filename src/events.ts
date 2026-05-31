@@ -5,6 +5,7 @@ import {
   SCOPE_ENDING_EVENTS,
   SCOPE_STARTING_EVENTS,
   VALID_EVENT_PAIRS,
+  getEnclosingParentId,
   getCurrentParentId,
   getLastEventId,
   getNextEmissionSequence,
@@ -5123,27 +5124,30 @@ function getObjectProperty(value: unknown, key: string): unknown {
 }
 
 function applyEventContext(event: CrewAIEvent): void {
-  event.parentEventId ??= getCurrentParentId();
   event.previousEventId ??= getLastEventId();
   event.triggeredByEventId ??= getTriggeringEventId();
 
-  if (SCOPE_ENDING_EVENTS.has(event.type)) {
-    const popped = popEventScope();
-    if (!popped) {
-      handleEmptyPop(event.type);
-    } else {
-      const [startedEventId, startedEventType] = popped;
-      event.startedEventId ??= startedEventId;
-      const expectedStart = VALID_EVENT_PAIRS[event.type];
-      if (expectedStart && startedEventType && startedEventType !== expectedStart) {
-        handleMismatch(event.type, startedEventType, expectedStart);
+  if (event.parentEventId === null) {
+    if (SCOPE_ENDING_EVENTS.has(event.type)) {
+      event.parentEventId = getEnclosingParentId();
+      const popped = popEventScope();
+      if (!popped) {
+        handleEmptyPop(event.type);
+      } else {
+        const [startedEventId, startedEventType] = popped;
+        event.startedEventId ??= startedEventId;
+        const expectedStart = VALID_EVENT_PAIRS[event.type];
+        if (expectedStart && startedEventType && startedEventType !== expectedStart) {
+          handleMismatch(event.type, startedEventType, expectedStart);
+        }
       }
+    } else if (SCOPE_STARTING_EVENTS.has(event.type)) {
+      event.parentEventId = getCurrentParentId();
+      pushEventScope(event.eventId, event.type);
+    } else {
+      event.parentEventId = getCurrentParentId();
     }
   }
 
   setLastEventId(event.eventId);
-
-  if (SCOPE_STARTING_EVENTS.has(event.type)) {
-    pushEventScope(event.eventId, event.type);
-  }
 }

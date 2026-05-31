@@ -5894,13 +5894,47 @@ describe("execution and event context", () => {
     expect(crewStarted?.triggeredByEventId).toBe("manual-trigger");
     expect(taskStarted?.parentEventId).toBe(crewStarted?.eventId);
     expect(taskStarted?.previousEventId).toBe(crewStarted?.eventId);
-    expect(taskCompleted?.parentEventId).toBe(taskStarted?.eventId);
+    expect(taskCompleted?.parentEventId).toBe(crewStarted?.eventId);
     expect(taskCompleted?.startedEventId).toBe(taskStarted?.eventId);
-    expect(crewCompleted?.parentEventId).toBe(crewStarted?.eventId);
+    expect(crewCompleted?.parentEventId).toBeNull();
     expect(crewCompleted?.startedEventId).toBe(crewStarted?.eventId);
     expect(lastEventInsideScope).toBe(crewCompleted?.eventId);
     expect(getCurrentParentId()).toBeNull();
     expect(getLastEventId()).toBeNull();
+  });
+
+  it("tracks upstream scope pairs for agent and LLM events", () => {
+    const events: BaseEvent[] = [];
+    const eventTypes = [
+      "agent_execution_started",
+      "llm_call_started",
+      "llm_call_completed",
+      "agent_execution_completed",
+    ] as const;
+    for (const eventType of eventTypes) {
+      crewaiEventBus.on(eventType, (_source, event) => {
+        events.push(event);
+      });
+    }
+    const agentInstance = new Agent({
+      role: "Researcher",
+      goal: "Find facts",
+      backstory: "Careful analyst",
+    });
+    const messages = [{ role: "user" as const, content: "hello" }];
+
+    crewaiEventBus.emit(agentInstance, new AgentExecutionStartedEvent({ agent: agentInstance, task: null }));
+    crewaiEventBus.emit(agentInstance, new LLMCallStartedEvent({ call_id: "call-1", model: "gpt-4o", messages }));
+    crewaiEventBus.emit(agentInstance, new LLMCallCompletedEvent({ call_id: "call-1", model: "gpt-4o", response: "ok", call_type: LLMCallType.LLM_CALL }));
+    crewaiEventBus.emit(agentInstance, new AgentExecutionCompletedEvent({ agent: agentInstance, task: null, output: "done" }));
+
+    const [agentStarted, llmStarted, llmCompleted, agentCompleted] = events;
+    expect(llmStarted?.parentEventId).toBe(agentStarted?.eventId);
+    expect(llmCompleted?.parentEventId).toBe(agentStarted?.eventId);
+    expect(llmCompleted?.startedEventId).toBe(llmStarted?.eventId);
+    expect(agentCompleted?.parentEventId).toBeNull();
+    expect(agentCompleted?.startedEventId).toBe(agentStarted?.eventId);
+    expect(getCurrentParentId()).toBeNull();
   });
 });
 
