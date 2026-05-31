@@ -170,6 +170,7 @@ import {
   SQLiteFlowPersistence,
   SimpleTokenAuth,
   SkillActivatedEvent,
+  StorageBackend,
   SkillDiscoveryCompletedEvent,
   SkillDownloadCompletedEvent,
   SkillLoadFailedEvent,
@@ -12210,6 +12211,7 @@ describe("events", () => {
 
 describe("memory", () => {
   it.each([
+    ["StorageBackend", () => new StorageBackend({ vectorDim: 3 })],
     ["QdrantEdgeStorage", () => new QdrantEdgeStorage({ vectorDim: 3 })],
     ["LanceDBStorage", () => new LanceDBStorage({ vectorDim: 3 })],
   ])("%s implements storage lifecycle, filters, scope helpers, and async aliases", async (_name, createStorage) => {
@@ -12283,6 +12285,7 @@ describe("memory", () => {
   });
 
   it.each([
+    ["StorageBackend", () => new StorageBackend({ vectorDim: 3 })],
     ["QdrantEdgeStorage", () => new QdrantEdgeStorage({ vectorDim: 3 })],
     ["LanceDBStorage", () => new LanceDBStorage({ vectorDim: 3 })],
   ])("%s filters scope prefixes on path segment boundaries", (_name, createStorage) => {

@@ -1692,6 +1692,7 @@ export {
   RememberSchema,
   RememberTool,
   ScopeInfo,
+  StorageBackend,
   VECTOR_NAME,
   analyzeForConsolidation,
   analyzeForSave,
@@ -2496,10 +2497,6 @@ export const D = Object.freeze({ kind: "D" });
 export const RagContext = Object.freeze({ kind: "RagContext" });
 export const SupportedProviderConfig = Object.freeze({ kind: "SupportedProviderConfig" });
 export const SupportedProvider = Object.freeze({ kind: "SupportedProvider" });
-
-export class StorageBackend {
-  readonly kind = "StorageBackend";
-}
 
 export function extract_knowledge_context(items: readonly unknown[] = []): string {
   return items.map((item) => String(item)).join("\n");

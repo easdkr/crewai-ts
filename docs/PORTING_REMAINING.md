@@ -37,6 +37,7 @@ When more goal budget is available, continue from the behavioral parity audits b
   - metadata filters, category filters, segment-boundary-safe scope filters, min score, and limits
   - `delete`/`adelete`, `update`, `get_record`, `list_records`, `get_scope_info`, `list_scopes`, `list_categories`, `count`, and scoped/global `reset`
   - `touch_records`/`touchRecords`, `optimize`, `flush_to_central`/`flushToCentral`, `close`, and `aclose` maintenance hooks
+- Replaced the root `StorageBackend` placeholder with the same deterministic lifecycle/filter/scope behavior used by the in-memory storage shims.
 - Replaced root placeholder exports for `ChromaDBClient`, `KnowledgeStorage`, and `BaseKnowledgeStorage` with behavior-bearing implementations.
 - Added fake-client-backed RAG tests for ChromaDB and Qdrant collection create/delete/reset, upsert overwrite behavior, search, metadata filters, and async aliases.
 - Added `KnowledgeStorage` tests for collection naming, save/search, async aliases, and reset through the RAG client wrapper.

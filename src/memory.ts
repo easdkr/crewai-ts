@@ -776,6 +776,8 @@ export class QdrantEdgeStorage implements MemoryVectorStorageLike {
 
 export class LanceDBStorage extends QdrantEdgeStorage {}
 
+export class StorageBackend extends QdrantEdgeStorage {}
+
 export class RecallFlow {
   readonly _skip_auto_memory = true;
   readonly state = new RecallState();
