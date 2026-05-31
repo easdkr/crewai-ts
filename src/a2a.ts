@@ -3866,12 +3866,13 @@ export function agent_to_agent_card(agent: unknown, url: string): Record<string,
   const skills = serverConfig.skills.length > 0
     ? [...serverConfig.skills]
     : skillsFromAgent(agentRecord, role, goal);
+  const capabilities = capabilitiesWithServerExtensions(serverConfig.capabilities, serverConfig.serverExtensions);
   const card: Record<string, unknown> = {
     name: serverConfig.name ?? role,
     description,
     url: serverConfig.url ?? url,
     version: serverConfig.version,
-    capabilities: serverConfig.capabilities,
+    capabilities,
     default_input_modes: serverConfig.default_input_modes,
     default_output_modes: serverConfig.default_output_modes,
     skills,
@@ -3921,6 +3922,57 @@ function skillsFromAgent(agent: Record<string, unknown>, role: string, goal: str
     description: goal,
     tags: [skillTag(role)],
   }];
+}
+
+function capabilitiesWithServerExtensions(
+  capabilities: Record<string, unknown>,
+  serverExtensions: readonly unknown[],
+): Record<string, unknown> {
+  if (serverExtensions.length === 0) {
+    return capabilities;
+  }
+  const merged = { ...capabilities };
+  const extensionsValue: unknown = merged.extensions;
+  const existingExtensions: unknown[] = Array.isArray(extensionsValue)
+    ? extensionsValue.map((extension: unknown) => extension)
+    : [];
+  const existingUris = new Set(existingExtensions
+    .map((extension) => recordOrNullA2A(extension)?.uri)
+    .filter((uri): uri is string => typeof uri === "string"));
+  for (const extension of serverExtensions) {
+    const agentExtension = toAgentExtensionRecord(extension);
+    const uri = typeof agentExtension.uri === "string" ? agentExtension.uri : null;
+    if (!uri || existingUris.has(uri)) {
+      continue;
+    }
+    existingExtensions.push(agentExtension);
+    existingUris.add(uri);
+  }
+  if (existingExtensions.length > 0) {
+    merged.extensions = existingExtensions;
+  }
+  return merged;
+}
+
+function toAgentExtensionRecord(extension: unknown): Record<string, unknown> {
+  const record = recordOrNullA2A(extension);
+  if (!record) {
+    return {};
+  }
+  const agentExtension = record.agent_extension;
+  if (typeof agentExtension === "function") {
+    const generated: unknown = (agentExtension as (this: unknown) => unknown).call(extension);
+    if (recordOrNullA2A(generated)) {
+      return generated as Record<string, unknown>;
+    }
+  }
+  const required = record.required === true ? true : undefined;
+  return {
+    uri: record.uri,
+    ...(required === undefined ? {} : { required }),
+    ...("description" in record ? { description: record.description } : {}),
+    ...("params" in record ? { params: record.params } : {}),
+  };
 }
 
 function stringFromA2A(value: unknown, fallback: string): string {

@@ -264,6 +264,7 @@ import {
   agetAllFiles,
   beforeLlmCall,
   beforeToolCall,
+  agent_to_agent_card,
   agent,
   agentOptionsFromConfig,
   and_,
@@ -3194,6 +3195,53 @@ describe("a2a utilities", () => {
         id: "search_web",
         name: "Search Web",
       }],
+    });
+  });
+
+  it("advertises A2A server extensions in generated agent cards", () => {
+    class RequiredExtension extends ServerExtension {
+      readonly uri = "urn:test:required-card-extension";
+      readonly required = true;
+      readonly description = "Required extension";
+
+      get params(): Record<string, unknown> {
+        return { mode: "strict" };
+      }
+
+      on_request(): Promise<void> {
+        return Promise.resolve();
+      }
+
+      on_response(_context: ExtensionContext, result: unknown): Promise<unknown> {
+        return Promise.resolve(result);
+      }
+    }
+
+    const card = agent_to_agent_card({
+      role: "Researcher",
+      goal: "Find evidence",
+      a2a: new A2AServerConfig({
+        capabilities: {
+          streaming: true,
+          push_notifications: false,
+          extensions: [{ uri: "urn:test:existing" }],
+        },
+        server_extensions: [new RequiredExtension()],
+      }),
+    }, "https://runtime.example.com/a2a");
+
+    expect(card.capabilities).toMatchObject({
+      streaming: true,
+      push_notifications: false,
+      extensions: [
+        { uri: "urn:test:existing" },
+        {
+          uri: "urn:test:required-card-extension",
+          required: true,
+          description: "Required extension",
+          params: { mode: "strict" },
+        },
+      ],
     });
   });
 

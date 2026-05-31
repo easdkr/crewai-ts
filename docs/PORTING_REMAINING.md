@@ -11,7 +11,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `npm run lint`
   - `npm run smoke:pack`
   - `python3 scripts/check-export-parity.py`
-- Test suite: 441 passing tests.
+- Test suite: 442 passing tests.
 - Root export parity against upstream clone `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `5cdc420`: `total_missing=0`.
 - Public method parity has been tightened for core runtime classes:
   - `ConsoleFormatter`: `missing=0`
@@ -199,6 +199,7 @@ When more goal budget is available, continue from the behavioral parity audits b
   - A2A agent-card fetch failures now classify 401, timeout, connection, and request failures and emit upstream-style authentication/connection error events.
   - A2A task/tool to AgentSkill conversion helpers now mirror upstream id, tag, fallback-name, and examples semantics.
   - A2A server method injection now adds `to_agent_card`/`toAgentCard` for agents with server config and builds AgentCards from config, tool skills, and agent metadata.
+  - Generated A2A AgentCards now merge configured server extensions into `capabilities.extensions` without duplicating existing extension URIs.
 - Added A2UI compatibility behavior:
   - `A2UIClientExtension` now filters restored conversation surfaces by configured catalog ID and advertises both default and custom catalog capabilities for v0.8/v0.9 metadata, matching upstream client extension semantics.
   - `A2UIServerExtension` now activates request hooks only when clients declare the server extension URI, matching upstream A2A server extension activation semantics.
