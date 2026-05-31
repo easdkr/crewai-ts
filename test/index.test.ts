@@ -10059,6 +10059,38 @@ describe("LLM providers", () => {
 
   it("extracts OpenAI Responses API usage, function calls, and reasoning items", () => {
     const openai = new OpenAICompletion({ model: "gpt-4.1", api: "responses" });
+    class ResponsesUsageDetails {
+      constructor(private readonly values: Record<string, number>) {}
+
+      get cached_tokens(): number {
+        return this.values.cached_tokens ?? 0;
+      }
+
+      get reasoning_tokens(): number {
+        return this.values.reasoning_tokens ?? 0;
+      }
+    }
+    class ResponsesUsage {
+      get input_tokens(): number {
+        return 11;
+      }
+
+      get output_tokens(): number {
+        return 7;
+      }
+
+      get total_tokens(): number {
+        return 18;
+      }
+
+      get input_tokens_details(): ResponsesUsageDetails {
+        return new ResponsesUsageDetails({ cached_tokens: 4 });
+      }
+
+      get output_tokens_details(): ResponsesUsageDetails {
+        return new ResponsesUsageDetails({ reasoning_tokens: 3 });
+      }
+    }
     const reasoningItem = {
       type: "reasoning",
       id: "rs_1",
@@ -10081,10 +10113,20 @@ describe("LLM providers", () => {
         { type: "function_call", call_id: "call_1", name: "search_docs", arguments: "{\"query\":\"CrewAI\"}" },
       ],
     };
+    const sdkLikeResponse = { usage: new ResponsesUsage(), output: [] };
 
     expect((openai as unknown as {
       _extract_responses_token_usage(response: unknown): Record<string, number>;
     })._extract_responses_token_usage(response)).toEqual({
+      prompt_tokens: 11,
+      completion_tokens: 7,
+      total_tokens: 18,
+      cached_prompt_tokens: 4,
+      reasoning_tokens: 3,
+    });
+    expect((openai as unknown as {
+      _extract_responses_token_usage(response: unknown): Record<string, number>;
+    })._extract_responses_token_usage(sdkLikeResponse)).toEqual({
       prompt_tokens: 11,
       completion_tokens: 7,
       total_tokens: 18,
@@ -10103,6 +10145,11 @@ describe("LLM providers", () => {
 
   it("extracts OpenAI Responses API built-in tool outputs", () => {
     const openai = new OpenAICompletion({ model: "gpt-4.1", api: "responses" });
+    class ComputerAction {
+      model_dump(): Record<string, unknown> {
+        return { type: "click", x: 10, y: 20 };
+      }
+    }
     const parsed = (openai as unknown as {
       _extract_builtin_tool_outputs(response: unknown): ResponsesAPIResult;
     })._extract_builtin_tool_outputs({
@@ -10130,7 +10177,7 @@ describe("LLM providers", () => {
           id: "cu_1",
           status: "completed",
           call_id: "comp_1",
-          action: { type: "click", x: 10, y: 20 },
+          action: new ComputerAction(),
           pending_safety_checks: [{ id: "safe_1", code: "confirm", message: "Confirm action" }],
         },
         {

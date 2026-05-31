@@ -504,7 +504,7 @@ export class OpenAICompletion extends ConfiguredLLM {
 
   extractOpenAITokenUsage(response: unknown): Record<string, number> {
     const usage = readObject(readObject(response).usage);
-    if (Object.keys(usage).length === 0) {
+    if (!hasNumericField(usage, "prompt_tokens", "completion_tokens", "total_tokens")) {
       return { total_tokens: 0 };
     }
 
@@ -514,11 +514,11 @@ export class OpenAICompletion extends ConfiguredLLM {
       total_tokens: numberField(usage, "total_tokens"),
     };
     const promptDetails = readObject(usage.prompt_tokens_details);
-    if (Object.keys(promptDetails).length > 0) {
+    if (hasNumericField(promptDetails, "cached_tokens")) {
       result.cached_prompt_tokens = numberField(promptDetails, "cached_tokens");
     }
     const completionDetails = readObject(usage.completion_tokens_details);
-    if (Object.keys(completionDetails).length > 0) {
+    if (hasNumericField(completionDetails, "reasoning_tokens")) {
       result.reasoning_tokens = numberField(completionDetails, "reasoning_tokens");
     }
     return result;
@@ -538,7 +538,7 @@ export class OpenAICompletion extends ConfiguredLLM {
 
   extractResponsesTokenUsage(response: unknown): Record<string, number> {
     const usage = readObject(readObject(response).usage);
-    if (Object.keys(usage).length === 0) {
+    if (!hasNumericField(usage, "input_tokens", "output_tokens", "total_tokens")) {
       return { total_tokens: 0 };
     }
 
@@ -548,11 +548,11 @@ export class OpenAICompletion extends ConfiguredLLM {
       total_tokens: numberField(usage, "total_tokens"),
     };
     const inputDetails = readObject(usage.input_tokens_details);
-    if (Object.keys(inputDetails).length > 0) {
+    if (hasNumericField(inputDetails, "cached_tokens")) {
       result.cached_prompt_tokens = numberField(inputDetails, "cached_tokens");
     }
     const outputDetails = readObject(usage.output_tokens_details);
-    if (Object.keys(outputDetails).length > 0) {
+    if (hasNumericField(outputDetails, "reasoning_tokens")) {
       result.reasoning_tokens = numberField(outputDetails, "reasoning_tokens");
     }
     return result;
@@ -645,7 +645,7 @@ export class OpenAICompletion extends ConfiguredLLM {
           status: stringOrNull(item.status),
           type,
           call_id: stringOrNull(item.call_id),
-          action: readObject(item.action),
+          action: readSdkObject(item.action),
           pending_safety_checks: rawSafetyChecks.map((rawCheck) => {
             const check = readObject(rawCheck);
             return {
@@ -987,8 +987,21 @@ function readObject(value: unknown): Record<string, unknown> {
     : {};
 }
 
+function readSdkObject(value: unknown): Record<string, unknown> {
+  const record = readObject(value);
+  const dump = record.model_dump ?? record.modelDump ?? record.toJSON;
+  if (typeof dump === "function") {
+    return readObject(dump.call(value));
+  }
+  return record;
+}
+
 function numberField(record: Record<string, unknown>, key: string): number {
   return typeof record[key] === "number" ? record[key] : 0;
+}
+
+function hasNumericField(record: Record<string, unknown>, ...keys: string[]): boolean {
+  return keys.some((key) => typeof record[key] === "number");
 }
 
 function responseOutput(response: unknown): unknown[] {
