@@ -351,9 +351,16 @@ import {
   AzureCompletion,
   BedrockCompletion,
   GeminiCompletion,
+  GenerativeAiProvider,
+  HuggingFaceProvider,
+  InstructorProvider,
+  JinaProvider,
+  OllamaProvider,
+  OpenCLIPProvider,
   OpenAIProvider,
   OpenAICompletion,
   SentenceTransformerProvider,
+  Text2VecProvider,
   VertexAIProvider,
   VoyageAIProvider,
   ResponsesAPIResult,
@@ -4624,6 +4631,13 @@ describe("RAG configuration and factories", () => {
     const sentence = new SentenceTransformerProvider();
     const voyage = new VoyageAIProvider({ api_key: "voyage-test" });
     const vertex = new VertexAIProvider({ project_id: "gcp-project" });
+    const huggingface = new HuggingFaceProvider({ api_key: "hf-test" });
+    const instructor = new InstructorProvider();
+    const jina = new JinaProvider({ api_key: "jina-test" });
+    const ollama = new OllamaProvider({ model_name: "nomic-embed-text" });
+    const openclip = new OpenCLIPProvider();
+    const text2vec = new Text2VecProvider();
+    const generative = new GenerativeAiProvider({ api_key: "google-test" });
 
     expect(openai).toMatchObject({
       provider: "openai",
@@ -4664,6 +4678,43 @@ describe("RAG configuration and factories", () => {
       project_id: "gcp-project",
       model_name: "textembedding-gecko",
       location: "us-central1",
+      task_type: "RETRIEVAL_DOCUMENT",
+    });
+    expect(huggingface).toMatchObject({
+      provider: "huggingface",
+      api_key: "hf-test",
+      model_name: "sentence-transformers/all-MiniLM-L6-v2",
+    });
+    expect(instructor).toMatchObject({
+      provider: "instructor",
+      model_name: "hkunlp/instructor-base",
+      device: "cpu",
+      instruction: null,
+    });
+    expect(jina).toMatchObject({
+      provider: "jina",
+      api_key: "jina-test",
+      model_name: "jina-embeddings-v2-base-en",
+    });
+    expect(ollama).toMatchObject({
+      provider: "ollama",
+      url: "http://localhost:11434/api/embeddings",
+      model_name: "nomic-embed-text",
+    });
+    expect(openclip).toMatchObject({
+      provider: "openclip",
+      model_name: "ViT-B-32",
+      checkpoint: "laion2b_s34b_b79k",
+      device: "cpu",
+    });
+    expect(text2vec).toMatchObject({
+      provider: "text2vec",
+      model_name: "shibing624/text2vec-base-chinese",
+    });
+    expect(generative).toMatchObject({
+      provider: "google-generativeai",
+      api_key: "google-test",
+      model_name: "gemini-embedding-001",
       task_type: "RETRIEVAL_DOCUMENT",
     });
   });

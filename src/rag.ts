@@ -478,7 +478,12 @@ export class GenerativeAiProvider extends BaseEmbeddingsProvider {
   readonly provider = "google-generativeai";
 
   constructor(options: GenerativeAiProviderConfig = {}) {
-    super({ embeddingCallable: defaultEmbeddingCallable, ...options });
+    super({
+      embeddingCallable: defaultEmbeddingCallable,
+      model_name: "gemini-embedding-001",
+      task_type: "RETRIEVAL_DOCUMENT",
+      ...options,
+    });
   }
 }
 
@@ -500,7 +505,11 @@ export class HuggingFaceProvider extends BaseEmbeddingsProvider {
   readonly provider = "huggingface";
 
   constructor(options: HuggingFaceProviderConfig = {}) {
-    super({ embeddingCallable: defaultEmbeddingCallable, ...options });
+    super({
+      embeddingCallable: defaultEmbeddingCallable,
+      model_name: "sentence-transformers/all-MiniLM-L6-v2",
+      ...options,
+    });
   }
 }
 
@@ -522,7 +531,13 @@ export class InstructorProvider extends BaseEmbeddingsProvider {
   readonly provider = "instructor";
 
   constructor(options: InstructorProviderConfig = {}) {
-    super({ embeddingCallable: defaultEmbeddingCallable, ...options });
+    super({
+      embeddingCallable: defaultEmbeddingCallable,
+      model_name: "hkunlp/instructor-base",
+      device: "cpu",
+      instruction: null,
+      ...options,
+    });
   }
 }
 
@@ -530,7 +545,11 @@ export class JinaProvider extends BaseEmbeddingsProvider {
   readonly provider = "jina";
 
   constructor(options: JinaProviderConfig = {}) {
-    super({ embeddingCallable: defaultEmbeddingCallable, ...options });
+    super({
+      embeddingCallable: defaultEmbeddingCallable,
+      model_name: "jina-embeddings-v2-base-en",
+      ...options,
+    });
   }
 }
 
@@ -538,7 +557,11 @@ export class OllamaProvider extends BaseEmbeddingsProvider {
   readonly provider = "ollama";
 
   constructor(options: OllamaProviderConfig = {}) {
-    super({ embeddingCallable: defaultEmbeddingCallable, ...options });
+    super({
+      embeddingCallable: defaultEmbeddingCallable,
+      url: "http://localhost:11434/api/embeddings",
+      ...options,
+    });
   }
 }
 
@@ -566,7 +589,13 @@ export class OpenCLIPProvider extends BaseEmbeddingsProvider {
   readonly provider = "openclip";
 
   constructor(options: OpenCLIPProviderConfig = {}) {
-    super({ embeddingCallable: defaultEmbeddingCallable, ...options });
+    super({
+      embeddingCallable: defaultEmbeddingCallable,
+      model_name: "ViT-B-32",
+      checkpoint: "laion2b_s34b_b79k",
+      device: "cpu",
+      ...options,
+    });
   }
 }
 
@@ -596,7 +625,11 @@ export class Text2VecProvider extends BaseEmbeddingsProvider {
   readonly provider = "text2vec";
 
   constructor(options: Text2VecProviderConfig = {}) {
-    super({ embeddingCallable: defaultEmbeddingCallable, ...options });
+    super({
+      embeddingCallable: defaultEmbeddingCallable,
+      model_name: "shibing624/text2vec-base-chinese",
+      ...options,
+    });
   }
 }
 

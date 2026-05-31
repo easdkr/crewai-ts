@@ -42,7 +42,7 @@ When more goal budget is available, continue from the behavioral parity audits b
 - Added `KnowledgeStorage` tests for collection naming, save/search, async aliases, and reset through the RAG client wrapper.
 - Added upstream-style `KnowledgeStorage` save/asave error conversion for embedding dimension mismatches.
 - Added upstream-style `KnowledgeStorage._get_client` plus collection-name helper aliases for storage extension compatibility.
-- Added embedding provider config-field compatibility for OpenAI, Azure, SentenceTransformer, VoyageAI, and VertexAI defaults plus direct provider attribute access.
+- Added embedding provider config-field compatibility for OpenAI, Azure, SentenceTransformer, VoyageAI, VertexAI, HuggingFace, Instructor, Jina, Ollama, OpenCLIP, Text2Vec, and Google Generative AI defaults plus direct provider attribute access.
 
 ## Completed In Current Flow/Persistence Pass
 
