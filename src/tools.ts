@@ -174,6 +174,41 @@ export type ToolResultOptions = {
   result_as_answer?: boolean;
 };
 
+export class _ArgsSchemaPlaceholder {
+  readonly kind = "_ArgsSchemaPlaceholder";
+}
+
+export function _default_cache_function(_args: unknown = null, _result: unknown = null): boolean {
+  void _args;
+  void _result;
+  return true;
+}
+
+export function _is_async_callable(func: unknown): boolean {
+  return typeof func === "function" && func.constructor.name === "AsyncFunction";
+}
+
+export function _is_awaitable<T = unknown>(value: T | PromiseLike<T>): value is PromiseLike<T> {
+  return !!value
+    && (typeof value === "object" || typeof value === "function")
+    && "then" in value
+    && typeof (value as { then?: unknown }).then === "function";
+}
+
+export function _serialize_schema(schema: ToolArgsSchema | null | undefined): ToolArgsSchema | null {
+  return schema ? { ...schema } : null;
+}
+
+export function _deserialize_schema(value: unknown): ToolArgsSchema | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  if (isToolArgsSchema(value)) {
+    return { ...value };
+  }
+  return null;
+}
+
 export class ToolResult {
   readonly result: unknown;
   readonly resultAsAnswer: boolean;
@@ -325,7 +360,7 @@ export abstract class BaseTool implements Tool {
     this.resultAsAnswer = options.resultAsAnswer ?? options.result_as_answer ?? false;
     this.maxUsageCount = maxUsageCount;
     this.currentUsageCount = options.currentUsageCount ?? options.current_usage_count ?? 0;
-    this.cacheFunction = options.cacheFunction ?? options.cache_function ?? (() => true);
+    this.cacheFunction = options.cacheFunction ?? options.cache_function ?? _default_cache_function;
     this.cache = options.cache === false ? null : options.cache ?? new InMemoryToolCache();
   }
 
@@ -341,7 +376,7 @@ export abstract class BaseTool implements Tool {
   }
 
   static defaultArgsSchema(value: ToolArgsSchema | null | undefined): ToolArgsSchema {
-    return value ?? {};
+    return _deserialize_schema(value) ?? {};
   }
 
   static _default_args_schema(value: ToolArgsSchema | null | undefined): ToolArgsSchema {
@@ -403,6 +438,10 @@ export abstract class BaseTool implements Tool {
 
   _serialize_args_schema(schema: ToolArgsSchema | null = this.argsSchema): ToolArgsSchema | null {
     return this.serializeArgsSchema(schema);
+  }
+
+  _claim_usage(): void {
+    this.claimUsage();
   }
 
   validateKwargs(kwargs: Record<string, unknown>): Record<string, unknown> {
@@ -745,6 +784,33 @@ export class StructuredTool extends BaseTool {
 
   protected _run(args: Record<string, unknown>): MaybePromise<unknown> {
     return this.func(args);
+  }
+
+  _validate_func(): this {
+    this._validate_function_signature();
+    return this;
+  }
+
+  static _create_schema_from_function(name: string, func: ToolFunction): ToolArgsSchema {
+    void name;
+    const parameterNames = inferFunctionParameterNames(func);
+    return Object.fromEntries(parameterNames.map((parameterName) => [
+      parameterName,
+      { type: "unknown" as const, required: true },
+    ]));
+  }
+
+  _validate_function_signature(): void {
+    const parameterNames = inferFunctionParameterNames(this.func);
+    if (parameterNames.length === 1 && parameterNames[0] === "args" && !this.argsSchema.args) {
+      return;
+    }
+    for (const parameterName of parameterNames) {
+      const spec = this.argsSchema[parameterName];
+      if (!spec) {
+        throw new Error(`Required function parameter '${parameterName}' not found in args_schema`);
+      }
+    }
   }
 
   _parseArgs(input: ToolInvocationInput): Record<string, unknown> {
@@ -1664,6 +1730,35 @@ export const create_tool = createTool;
 export const createFunctionTool = functionTool;
 export const create_function_tool = functionTool;
 
+export function _make_tool<TArgs extends readonly unknown[]>(func: ToolFunction<TArgs>): StructuredTool {
+  return createToolFromFunction(func, {});
+}
+
+export function _make_with_name(name: string, options: Omit<ToolDecoratorOptions, "name"> = {}): <TArgs extends readonly unknown[]>(func: ToolFunction<TArgs>) => StructuredTool {
+  return <TArgs extends readonly unknown[]>(func: ToolFunction<TArgs>) => createToolFromFunction(func, { ...options, name });
+}
+
+export function _resolve_tool_dict(value: Record<string, unknown>): StructuredTool {
+  const name = typeof value.name === "string" ? value.name : "tool";
+  const description = typeof value.description === "string" ? value.description : "";
+  return new StructuredTool({
+    name,
+    description,
+    argsSchema: _deserialize_schema(value.argsSchema ?? value.args_schema) ?? {},
+    resultAsAnswer: Boolean(value.resultAsAnswer ?? value.result_as_answer),
+    maxUsageCount: typeof (value.maxUsageCount ?? value.max_usage_count) === "number" ? value.maxUsageCount as number : null,
+    currentUsageCount: typeof (value.currentUsageCount ?? value.current_usage_count) === "number" ? value.currentUsageCount as number : 0,
+    cacheFunction: typeof value.cacheFunction === "function"
+      ? value.cacheFunction as (args: Record<string, unknown>, result: unknown) => boolean
+      : typeof value.cache_function === "function"
+        ? value.cache_function as (args: Record<string, unknown>, result: unknown) => boolean
+        : _default_cache_function,
+    func: typeof value.func === "function"
+      ? value.func as (args: Record<string, unknown>) => MaybePromise<unknown>
+      : (args: Record<string, unknown>) => args,
+  });
+}
+
 function createToolFromFunction<TArgs extends readonly unknown[]>(
   func: ToolFunction<TArgs>,
   options: ToolDecoratorOptions,
@@ -1952,6 +2047,14 @@ function isToolResultOptions(value: unknown): value is ToolResultOptions {
   return value !== null
     && typeof value === "object"
     && "result" in value;
+}
+
+function isToolArgsSchema(value: unknown): value is ToolArgsSchema {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+  return Object.values(value as Record<string, unknown>).every((entry) =>
+    entry !== null && typeof entry === "object" && !Array.isArray(entry));
 }
 
 function baseToolPassthroughOptions(options: Partial<BaseToolOptions>): Partial<BaseToolOptions> {

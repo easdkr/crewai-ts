@@ -299,6 +299,15 @@ import {
   ToolUsage,
   ToolUsageStartedEvent,
   ToolUsageLimitExceededError,
+  _ArgsSchemaPlaceholder,
+  _default_cache_function,
+  _deserialize_schema,
+  _is_async_callable,
+  _is_awaitable,
+  _make_tool,
+  _make_with_name,
+  _resolve_tool_dict,
+  _serialize_schema,
   TodoItem,
   ToolSelectionErrorEvent,
   ToolsHandler,
@@ -12748,6 +12757,51 @@ describe("project config mapping", () => {
 });
 
 describe("tools", () => {
+  it("exposes upstream BaseTool and structured-tool helper functions", async () => {
+    function lookup(query: unknown): string {
+      return `found:${String(query)}`;
+    }
+    const schema = { query: { type: "string" as const, required: true } };
+    const generatedSchema = StructuredTool._create_schema_from_function("lookup", lookup);
+    const tool = _make_with_name("Lookup Tool", { description: "Lookup records", argsSchema: schema })(lookup);
+    const resolved = _resolve_tool_dict({
+      name: "Resolved Tool",
+      description: "Resolved",
+      args_schema: schema,
+      result_as_answer: true,
+      func: ({ query }: Record<string, unknown>) => `resolved:${String(query)}`,
+    });
+
+    expect(_default_cache_function({}, "result")).toBe(true);
+    expect(_is_async_callable(async () => await Promise.resolve("ok"))).toBe(true);
+    expect(_is_async_callable(() => "ok")).toBe(false);
+    expect(_is_awaitable(Promise.resolve("ok"))).toBe(true);
+    expect(_is_awaitable("ok")).toBe(false);
+    expect(new _ArgsSchemaPlaceholder()).toBeInstanceOf(_ArgsSchemaPlaceholder);
+    expect(_serialize_schema(schema)).toEqual(schema);
+    expect(_deserialize_schema(schema)).toEqual(schema);
+    expect(generatedSchema).toMatchObject({ query: { required: true } });
+    expect(tool.name).toBe("lookup_tool");
+    expect(tool._validate_func()).toBe(tool);
+    expect(tool.invoke({ query: "CrewAI" })).toBe("found:CrewAI");
+    expect(() => {
+      new StructuredTool({
+        name: "bad",
+        description: "Bad schema",
+        argsSchema: {},
+        func: lookup,
+      })._validate_function_signature();
+    }).toThrow("Required function parameter 'query'");
+    expect(resolved.result_as_answer).toBe(true);
+    await expect(resolved.ainvoke({ query: "CrewAI" })).resolves.toBe("resolved:CrewAI");
+
+    const direct = _make_tool(function echo(value: unknown): unknown {
+      return value;
+    });
+    direct._claim_usage();
+    expect(direct.current_usage_count).toBe(1);
+  });
+
   it("creates structured tools from plain functions with upstream-style tool helper", async () => {
     function add(a: unknown, b: unknown): number {
       return Number(a) + Number(b);
