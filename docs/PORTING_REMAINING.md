@@ -67,6 +67,7 @@ When more goal budget is available, continue from the behavioral parity audits b
   - OpenAI/Azure response-chain compatibility getters and reset methods (`last_response_id`, `last_reasoning_items`, `reset_chain`, `reset_reasoning_chain`)
   - Gemini completion shim with deterministic config, context-window, multimodal/text-formatting, token-usage extraction, response text extraction, property ordering, and content conversion helpers
   - Multimodal LLM message file handling now converts `files` into deterministic inline/upload content blocks, and native OpenAI/Azure/Anthropic/Bedrock/Gemini shims expose local provider file uploaders
+  - Streaming tool-call argument accumulation now preserves id/name/index and concatenates function argument deltas into upstream-style tool call payloads
 - Added evaluation compatibility behavior:
   - LLM-backed `GoalAlignmentEvaluator` and `SemanticQualityEvaluator` with upstream-style prompts and JSON score parsing
   - `EvaluationDisplayFormatter` aggregation helpers for per-agent metric averages, feedback summaries, and iteration display text
@@ -84,8 +85,8 @@ When more goal budget is available, continue from the behavioral parity audits b
 
 2. LLM providers
    - OpenAI, Azure, Anthropic, Bedrock, Gemini provider classes.
-   - `to_config_dict`, context window, adapter-level function-calling support, deterministic multimodal support flags, response-chain/reset compatibility, file input content-block conversion, local uploader compatibility, and Gemini adapter helpers are now covered for the native provider shims.
-   - Remaining: SDK-backed request/response translation details and streaming function-call accumulation.
+   - `to_config_dict`, context window, adapter-level function-calling support, deterministic multimodal support flags, response-chain/reset compatibility, file input content-block conversion, local uploader compatibility, streaming tool-call accumulation, and Gemini adapter helpers are now covered for the native provider shims.
+   - Remaining: SDK-backed request/response translation details.
    - Keep provider tests adapter-level and mock network calls. Do not introduce live API keys or provider-specific SDK side effects into the default test gate.
 
 3. Flow and persistence

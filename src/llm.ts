@@ -692,14 +692,122 @@ export class FunctionArgs {
   }
 }
 export class AccumulatedToolArgs {
+  id: string | null;
+  index: number;
+  type: string;
   function: FunctionArgs;
 
-  constructor(options: { function?: FunctionArgs | { name?: string; arguments?: string } } = {}) {
+  constructor(options: { id?: string | null; index?: number; type?: string; function?: FunctionArgs | { name?: string; arguments?: string } } = {}) {
+    this.id = options.id ?? null;
+    this.index = options.index ?? 0;
+    this.type = options.type ?? "function";
     this.function = options.function instanceof FunctionArgs
       ? options.function
       : new FunctionArgs(options.function);
   }
+
+  accumulate(delta: unknown): this {
+    const record = readLLMRecord(delta);
+    const deltaIndex = numberValue(record.index);
+    if (deltaIndex !== null) {
+      this.index = deltaIndex;
+    }
+    if (typeof record.id === "string" && !this.id) {
+      this.id = record.id;
+    }
+    if (typeof record.type === "string") {
+      this.type = record.type;
+    }
+    const functionDelta = readLLMRecord(record.function);
+    if (typeof functionDelta.name === "string" && functionDelta.name.length > 0) {
+      this.function.name = functionDelta.name;
+    }
+    if (typeof functionDelta.arguments === "string" && functionDelta.arguments.length > 0) {
+      this.function.arguments += functionDelta.arguments;
+    }
+    return this;
+  }
+
+  toToolCall(): Record<string, unknown> {
+    return {
+      id: this.id,
+      type: this.type,
+      index: this.index,
+      function: {
+        name: this.function.name,
+        arguments: this.function.arguments,
+      },
+    };
+  }
+
+  to_tool_call(): Record<string, unknown> {
+    return this.toToolCall();
+  }
+
+  static toToolCalls(toolCalls: Record<string | number, AccumulatedToolArgs | { id?: string | null; index?: number; type?: string; function?: { name?: string; arguments?: string } }>): Record<string, unknown>[] {
+    return Object.entries(toolCalls)
+      .map(([key, value]) => {
+        const accumulator = value instanceof AccumulatedToolArgs ? value : new AccumulatedToolArgs(value);
+        if (accumulator.index === 0) {
+          const keyIndex = Number(key);
+          if (Number.isInteger(keyIndex)) {
+            accumulator.index = keyIndex;
+          }
+        }
+        return accumulator;
+      })
+      .sort((left, right) => left.index - right.index)
+      .map((entry) => entry.toToolCall());
+  }
+
+  static to_tool_calls(toolCalls: Record<string | number, AccumulatedToolArgs | { id?: string | null; index?: number; type?: string; function?: { name?: string; arguments?: string } }>): Record<string, unknown>[] {
+    return AccumulatedToolArgs.toToolCalls(toolCalls);
+  }
+
+  static fromStreamingChunks(chunks: readonly unknown[]): Record<string, unknown>[] {
+    const accumulators: Record<number, AccumulatedToolArgs> = {};
+    for (const chunk of chunks) {
+      for (const toolCall of extractStreamingToolCallDeltas(chunk)) {
+        const index = numberValue(readLLMRecord(toolCall).index) ?? 0;
+        accumulators[index] ??= new AccumulatedToolArgs({ index });
+        accumulators[index].accumulate(toolCall);
+      }
+    }
+    return AccumulatedToolArgs.toToolCalls(accumulators);
+  }
+
+  static from_streaming_chunks(chunks: readonly unknown[]): Record<string, unknown>[] {
+    return AccumulatedToolArgs.fromStreamingChunks(chunks);
+  }
 }
+
+function extractStreamingToolCallDeltas(chunk: unknown): unknown[] {
+  const record = readLLMRecord(chunk);
+  const direct = readLLMRecord(record.delta).tool_calls ?? record.tool_calls;
+  if (Array.isArray(direct)) {
+    return direct;
+  }
+  const choices = Array.isArray(record.choices) ? record.choices : [];
+  const deltas: unknown[] = [];
+  for (const choice of choices) {
+    const toolCalls = readLLMRecord(readLLMRecord(choice).delta).tool_calls;
+    if (Array.isArray(toolCalls)) {
+      for (const toolCall of toolCalls as unknown[]) {
+        deltas.push(toolCall);
+      }
+    }
+  }
+  return deltas;
+}
+
+function readLLMRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function numberValue(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
 export const LLM_CONTEXT_WINDOW_SIZES: Readonly<Record<string, number>> = {
   "gpt-4": 8192,
   "gpt-4o": 128000,

@@ -25,6 +25,7 @@ import {
   AgentExecutor,
   BaseAgent,
   AuthenticatedUser,
+  AccumulatedToolArgs,
   BaseLLM,
   LLM,
   BaseTransport,
@@ -2466,6 +2467,53 @@ describe("llm events", () => {
       chunk: "reasoning",
       response_id: "resp-1",
     });
+  });
+
+  it("accumulates streaming tool-call chunks by index", () => {
+    const first = new AccumulatedToolArgs();
+    first.accumulate({
+      index: 0,
+      id: "call-1",
+      function: { name: "search", arguments: "{\"query\":" },
+    });
+    first.accumulate({
+      index: 0,
+      function: { arguments: "\"CrewAI\"}" },
+    });
+    const second = new AccumulatedToolArgs();
+    second.accumulate({
+      index: 1,
+      id: "call-2",
+      function: { name: "lookup", arguments: "{\"id\":\"42\"}" },
+    });
+
+    expect(first.toToolCall()).toEqual({
+      id: "call-1",
+      type: "function",
+      index: 0,
+      function: {
+        name: "search",
+        arguments: "{\"query\":\"CrewAI\"}",
+      },
+    });
+    expect(AccumulatedToolArgs.toToolCalls({ 1: second, 0: first })).toEqual([
+      first.toToolCall(),
+      second.toToolCall(),
+    ]);
+    expect(AccumulatedToolArgs.fromStreamingChunks([
+      { choices: [{ delta: { tool_calls: [{ index: 0, id: "call-3", function: { name: "summarize", arguments: "{\"topic\":" } }] } }] },
+      { choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: "\"CrewAI\"}" } }] } }] },
+    ])).toEqual([
+      {
+        id: "call-3",
+        type: "function",
+        index: 0,
+        function: {
+          name: "summarize",
+          arguments: "{\"topic\":\"CrewAI\"}",
+        },
+      },
+    ]);
   });
 
   it("exposes LLM guardrail events and normalizes function guardrails", () => {
