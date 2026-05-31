@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { validateJwtToken } from "./auth.js";
 import {
   A2AConnectionErrorEvent,
+  A2AContentTypeNegotiatedEvent,
   A2APollingStartedEvent,
   A2APollingStatusEvent,
   A2AStreamingChunkEvent,
@@ -2476,6 +2477,8 @@ export class ContentTypeNegotiationError extends Error {
 
 export function negotiateContentTypes(
   agentCard: {
+    name?: string | null;
+    url?: string;
     defaultInputModes?: readonly string[];
     default_input_modes?: readonly string[];
     defaultOutputModes?: readonly string[];
@@ -2485,14 +2488,11 @@ export function negotiateContentTypes(
   clientInputModes: readonly string[] = DEFAULT_CLIENT_INPUT_MODES,
   clientOutputModes: readonly string[] = DEFAULT_CLIENT_OUTPUT_MODES,
   skillName: string | null = null,
-  _emitEvent = true,
-  _endpoint: string | null = null,
-  _a2aAgentName: string | null = null,
+  emitEvent = true,
+  endpoint: string | null = null,
+  a2aAgentName: string | null = null,
   strict = false,
 ): NegotiatedContentTypes {
-  void _emitEvent;
-  void _endpoint;
-  void _a2aAgentName;
   const skill = skillName ? agentCard.skills?.find((item) => item.name === skillName || item.id === skillName) ?? null : null;
   const serverInputModes = skill?.inputModes ?? skill?.input_modes ?? agentCard.defaultInputModes ?? agentCard.default_input_modes ?? [TEXT_PLAIN];
   const serverOutputModes = skill?.outputModes ?? skill?.output_modes ?? agentCard.defaultOutputModes ?? agentCard.default_output_modes ?? [TEXT_PLAIN];
@@ -2509,13 +2509,28 @@ export function negotiateContentTypes(
       throw new ContentTypeNegotiationError({ clientInputModes, clientOutputModes, serverInputModes, serverOutputModes, direction: "output" });
     }
   }
-  return new NegotiatedContentTypes({
+  const result = new NegotiatedContentTypes({
     inputModes: compatibleInput,
     outputModes: compatibleOutput,
     effectiveInputModes: serverInputModes,
     effectiveOutputModes: serverOutputModes,
     skillName: skill?.name ?? null,
   });
+  if (emitEvent) {
+    crewaiEventBus.emit(null, new A2AContentTypeNegotiatedEvent({
+      endpoint: endpoint ?? agentCard.url ?? "",
+      a2a_agent_name: a2aAgentName ?? agentCard.name ?? null,
+      skill_name: skillName,
+      client_input_modes: clientInputModes,
+      client_output_modes: clientOutputModes,
+      server_input_modes: serverInputModes,
+      server_output_modes: serverOutputModes,
+      negotiated_input_modes: compatibleInput,
+      negotiated_output_modes: compatibleOutput,
+      negotiation_success: compatibleInput.length > 0 && compatibleOutput.length > 0,
+    }));
+  }
+  return result;
 }
 
 export const negotiate_content_types = negotiateContentTypes;

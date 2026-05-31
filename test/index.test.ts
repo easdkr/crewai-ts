@@ -14,6 +14,7 @@ import {
   A2AHTTPException,
   A2AEventBase,
   A2AAgentCardFetchedEvent,
+  A2AContentTypeNegotiatedEvent,
   A2AConnectionErrorEvent,
   A2AContextCompletedEvent,
   A2ADelegationStartedEvent,
@@ -553,6 +554,7 @@ import {
   parseRegistryRef,
   resolveRegistryRef,
   negotiateTransport,
+  negotiateContentTypes,
   processTaskState,
   renderA2ATemplate,
   sendMessageAndGetTaskId,
@@ -2830,6 +2832,40 @@ describe("a2a utilities", () => {
       negotiated_transport: A2ATransport.GRPC,
       negotiated_url: "https://remote.example.com/grpc",
       source: "client_preferred",
+    });
+  });
+
+  it("emits A2A content type negotiation events like upstream", () => {
+    const events: A2AContentTypeNegotiatedEvent[] = [];
+    crewaiEventBus.on("a2a_content_type_negotiated", (_source, event) => {
+      events.push(event);
+    });
+
+    const result = negotiateContentTypes({
+      name: "remote",
+      url: "https://remote.example.com/a2a",
+      default_input_modes: ["image/png", "application/json"],
+      default_output_modes: ["text/plain"],
+      skills: [{
+        id: "vision",
+        name: "Vision",
+        input_modes: ["image/png"],
+        output_modes: ["application/json"],
+      }],
+    }, ["image/*", "text/plain"], ["application/json"], "vision", true, null, null, false);
+
+    expect(result.input_modes).toEqual(["image/png"]);
+    expect(result.output_modes).toEqual(["application/json"]);
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      type: "a2a_content_type_negotiated",
+      endpoint: "https://remote.example.com/a2a",
+      a2a_agent_name: "remote",
+      skill_name: "vision",
+      client_input_modes: ["image/*", "text/plain"],
+      server_input_modes: ["image/png"],
+      negotiated_input_modes: ["image/png"],
+      negotiation_success: true,
     });
   });
 
