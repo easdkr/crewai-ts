@@ -676,6 +676,26 @@ export class CrewDoclingSource extends BaseFileKnowledgeSource {
     await this.asaveDoclingDocuments();
   }
 
+  _convert_source_to_docling_documents(): unknown[] {
+    return this.convertSourceToDoclingDocuments();
+  }
+
+  _chunk_doc(document: unknown): Iterable<string> {
+    return this.chunkDoc(document);
+  }
+
+  _save_documents(): void {
+    this.saveDoclingDocuments();
+  }
+
+  async _asave_documents(): Promise<void> {
+    await this.asaveDoclingDocuments();
+  }
+
+  _validate_url(url: string): boolean {
+    return isValidHttpUrl(url);
+  }
+
   private convertSourceToDoclingDocuments(): unknown[] {
     const converter = this.documentConverter;
     const results = typeof converter === "function"

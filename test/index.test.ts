@@ -19118,10 +19118,19 @@ describe("knowledge", () => {
       expect(source.safe_file_paths).toEqual([docPath, "https://docs.example.com/report.html"]);
       expect(source.validate_content()).toEqual([docPath, "https://docs.example.com/report.html"]);
       expect(source._load_content()).toHaveLength(2);
+      expect(source._convert_source_to_docling_documents()).toHaveLength(2);
+      expect([...source._chunk_doc({ path: docPath, text: "converted manual" })]).toEqual([
+        "converted manual chunk A",
+        "converted manual chunk B",
+      ]);
+      expect(source._validate_url("https://docs.example.com/report.html")).toBe(true);
+      expect(source._validate_url("ftp://docs.example.com/report.html")).toBe(false);
       source.add();
+      source._save_documents();
       await source.aadd();
+      await source._asave_documents();
 
-      expect(saved).toHaveLength(2);
+      expect(saved).toHaveLength(4);
       expect(saved[0]).toEqual([
         `converted ${docPath} chunk A`,
         `converted ${docPath} chunk B`,
