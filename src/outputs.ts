@@ -83,6 +83,10 @@ export class TaskOutput {
     }
     return this.raw;
   }
+
+  __str__(): string {
+    return this.toString();
+  }
 }
 
 export type CrewOutputOptions = {
@@ -151,6 +155,10 @@ export class CrewOutput {
     throw new Error(`Key '${key}' not found in CrewOutput.`);
   }
 
+  __getitem__(key: string): unknown {
+    return this.get(key);
+  }
+
   toString(): string {
     if (this.pydantic !== null && this.pydantic !== undefined) {
       return stringifyOutput(this.pydantic);
@@ -159,6 +167,10 @@ export class CrewOutput {
       return JSON.stringify(this.jsonDict);
     }
     return this.raw;
+  }
+
+  __str__(): string {
+    return this.toString();
   }
 }
 

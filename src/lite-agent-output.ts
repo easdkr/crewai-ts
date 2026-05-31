@@ -132,4 +132,8 @@ export class LiteAgentOutput {
   toString(): string {
     return this.raw;
   }
+
+  __str__(): string {
+    return this.toString();
+  }
 }

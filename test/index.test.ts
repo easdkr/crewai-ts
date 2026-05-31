@@ -975,10 +975,24 @@ describe("serialization and project utilities", () => {
     expect(output.json).toBe(JSON.stringify({ summary: "done" }));
     expect(output.toDict()).toEqual({ summary: "done" });
     expect(output.to_dict()).toEqual({ summary: "done" });
+    expect(output.__str__()).toBe(JSON.stringify({ summary: "done" }));
     expect(crewOutput.jsonDict).toBe(crewOutput.json_dict);
     expect(crewOutput.tasksOutput).toBe(crewOutput.tasks_output);
     expect(crewOutput.tokenUsage).toBe(crewOutput.token_usage);
     expect(crewOutput.to_dict()).toEqual({ summary: "done" });
+    expect(crewOutput.__getitem__("summary")).toBe("done");
+    expect(crewOutput.__str__()).toBe(JSON.stringify({ summary: "done" }));
+    expect(() => crewOutput.__getitem__("missing")).toThrow("Key 'missing' not found in CrewOutput.");
+  });
+
+  it("exposes upstream-style LiteAgentOutput string alias", () => {
+    const output = new LiteAgentOutput({
+      raw: "final answer",
+      agent_role: "Researcher",
+    });
+
+    expect(output.toString()).toBe("final answer");
+    expect(output.__str__()).toBe("final answer");
   });
 
   it("round-trips registered callable callbacks and blocks untrusted dotted imports", async () => {
