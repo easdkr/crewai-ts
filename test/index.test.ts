@@ -19066,7 +19066,9 @@ describe("knowledge", () => {
   it("exposes upstream file knowledge source path and content helpers", () => {
     const baseDirectory = mkdtempSync(join(tmpdir(), "crewai-ts-file-knowledge-"));
     const textPath = join(baseDirectory, "notes.txt");
+    const jsonPath = join(baseDirectory, "notes.json");
     writeFileSync(textPath, "File knowledge source content.", "utf8");
+    writeFileSync(jsonPath, JSON.stringify({ crew: ["alpha", "beta"] }), "utf8");
 
     try {
       const source = new TextFileKnowledgeSource({ file_path: textPath, chunkSize: 12, chunkOverlap: 0 });
@@ -19084,6 +19086,13 @@ describe("knowledge", () => {
       expect(source.convert_to_path("relative.txt")).toBe(join("knowledge", "relative.txt"));
       expect(source.chunks()).toEqual(["File knowled", "ge source co", "ntent."]);
       expect(source._chunk_text("abcdefghijkl")).toEqual(["abcdefghijkl"]);
+      const jsonSource = new JSONKnowledgeSource({ file_path: jsonPath });
+      expect(jsonSource._json_to_text({ crew: ["alpha", "beta"] })).toContain("crew:");
+      const save = vi.fn();
+      const storage = { save, asave: vi.fn() } as unknown as BaseKnowledgeStorage;
+      source.storage = storage;
+      source._save_documents();
+      expect(save).toHaveBeenCalledWith(["File knowled", "ge source co", "ntent."]);
     } finally {
       rmSync(baseDirectory, { recursive: true, force: true });
     }
@@ -19141,10 +19150,12 @@ describe("knowledge", () => {
     expect(pdfSource.chunks()[0]).toContain("fake pdf bytes");
     expect((pdfSource._load_content() as Record<string, string>)[pdfPath]).toContain("fake pdf bytes");
     expect(pdfSource._process_file_paths()).toEqual([pdfPath]);
+    expect(() => pdfSource._import_pdfplumber()).toThrow("pdfplumber is not available");
     expect(excelSource.chunks()[0]).toContain("Sheet: Sheet1");
     expect(excelSource.chunks()[0]).toContain("Decorators standard");
     expect((excelSource._load_content() as Record<string, string>)[xlsxPath]).toContain("Decorators standard");
     expect(excelSource._process_file_paths()).toEqual([xlsxPath]);
+    expect(excelSource._import_dependencies().readWorkbook).toBeTypeOf("function");
     expect(parsedExcelSource.chunks()[0]).toContain("Sheet: Crew Facts");
     expect(parsedExcelSource.chunks()[0]).toContain("CrewAI ported");
     await parsedPdfSource.aadd();

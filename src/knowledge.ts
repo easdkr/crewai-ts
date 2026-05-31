@@ -297,18 +297,26 @@ export class StringKnowledgeSource implements KnowledgeSource {
     return this.getEmbeddings();
   }
 
-  private saveDocuments(documents: readonly string[]): void {
+  saveDocuments(documents: readonly string[] = this.chunks()): void {
     if (!this.storage) {
       throw new Error("No storage found to save documents.");
     }
     this.storage.save(documents);
   }
 
-  private async asaveDocuments(documents: readonly string[]): Promise<void> {
+  _save_documents(): void {
+    this.saveDocuments();
+  }
+
+  async asaveDocuments(documents: readonly string[] = this.chunks()): Promise<void> {
     if (!this.storage) {
       throw new Error("No storage found to save documents.");
     }
     await this.storage.asave(documents);
+  }
+
+  async _asave_documents(): Promise<void> {
+    await this.asaveDocuments();
   }
 }
 
@@ -370,18 +378,26 @@ abstract class BaseTextKnowledgeSource implements KnowledgeSource {
 
   protected abstract loadText(): string;
 
-  private saveDocuments(documents: readonly string[]): void {
+  saveDocuments(documents: readonly string[] = this.chunks()): void {
     if (!this.storage) {
       throw new Error("No storage found to save documents.");
     }
     this.storage.save(documents);
   }
 
-  private async asaveDocuments(documents: readonly string[]): Promise<void> {
+  _save_documents(): void {
+    this.saveDocuments();
+  }
+
+  async asaveDocuments(documents: readonly string[] = this.chunks()): Promise<void> {
     if (!this.storage) {
       throw new Error("No storage found to save documents.");
     }
     await this.storage.asave(documents);
+  }
+
+  async _asave_documents(): Promise<void> {
+    await this.asaveDocuments();
   }
 }
 
@@ -499,8 +515,12 @@ export class JSONKnowledgeSource extends BaseFileKnowledgeSource {
   loadContent(): Record<string, string> {
     return Object.fromEntries(this.safeFilePaths.map((filePath) => [
       filePath,
-      jsonToText(JSON.parse(readFileSync(filePath, "utf8"))),
+      this._json_to_text(JSON.parse(readFileSync(filePath, "utf8"))),
     ]));
+  }
+
+  _json_to_text(data: unknown, level = 0): string {
+    return jsonToText(data, level);
   }
 }
 
@@ -543,6 +563,10 @@ export class PDFKnowledgeSource extends BaseFileKnowledgeSource {
   loadContent(): Record<string, string> {
     const extractor = this.extractor ?? defaultPDFTextExtractor;
     return Object.fromEntries(this.safeFilePaths.map((filePath) => [filePath, extractor(filePath, readFileSync(filePath))]));
+  }
+
+  _import_pdfplumber(): never {
+    throw new Error("pdfplumber is not available in the TypeScript runtime. Pass a PDF extractor or use aadd() for the built-in parser.");
   }
 
   override add(): void {
@@ -589,6 +613,10 @@ export class ExcelKnowledgeSource extends BaseFileKnowledgeSource {
       filePath,
       excelContentToText(extractor(filePath, readFileSync(filePath))),
     ]));
+  }
+
+  _import_dependencies(): { readWorkbook: typeof parseXlsxWorkbook } {
+    return { readWorkbook: parseXlsxWorkbook };
   }
 }
 
