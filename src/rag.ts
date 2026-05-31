@@ -447,7 +447,11 @@ export class CohereProvider extends BaseEmbeddingsProvider {
   readonly provider = "cohere";
 
   constructor(options: CohereProviderConfig = {}) {
-    super({ embeddingCallable: defaultEmbeddingCallable, ...options });
+    super({
+      embeddingCallable: defaultEmbeddingCallable,
+      model_name: "large",
+      ...options,
+    });
   }
 }
 
@@ -523,7 +527,22 @@ export class WatsonXProvider extends BaseEmbeddingsProvider {
   readonly provider = "watsonx";
 
   constructor(options: WatsonXProviderConfig = {}) {
-    super({ embeddingCallable: defaultEmbeddingCallable, ...options });
+    super({
+      embeddingCallable: defaultEmbeddingCallable,
+      persistent_connection: true,
+      batch_size: 100,
+      concurrency_limit: 10,
+      params: null,
+      credentials: null,
+      project_id: null,
+      space_id: null,
+      api_client: null,
+      verify: null,
+      max_retries: null,
+      delay_time: null,
+      retry_status_codes: null,
+      ...options,
+    });
   }
 }
 
@@ -569,7 +588,11 @@ export class ONNXProvider extends BaseEmbeddingsProvider {
   readonly provider = "onnx";
 
   constructor(options: ONNXProviderConfig = {}) {
-    super({ embeddingCallable: defaultEmbeddingCallable, ...options });
+    super({
+      embeddingCallable: defaultEmbeddingCallable,
+      preferred_providers: null,
+      ...options,
+    });
   }
 }
 
@@ -603,7 +626,12 @@ export class RoboflowProvider extends BaseEmbeddingsProvider {
   readonly provider = "roboflow";
 
   constructor(options: RoboflowProviderConfig = {}) {
-    super({ embeddingCallable: defaultEmbeddingCallable, ...options });
+    super({
+      embeddingCallable: defaultEmbeddingCallable,
+      api_key: "",
+      api_url: "https://infer.roboflow.com",
+      ...options,
+    });
   }
 }
 

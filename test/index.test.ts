@@ -349,13 +349,16 @@ import {
   ChromaDBConfig,
   AnthropicCompletion,
   AzureCompletion,
+  BedrockProvider,
   BedrockCompletion,
+  CohereProvider,
   GeminiCompletion,
   GenerativeAiProvider,
   HuggingFaceProvider,
   InstructorProvider,
   JinaProvider,
   OllamaProvider,
+  ONNXProvider,
   OpenCLIPProvider,
   OpenAIProvider,
   OpenAICompletion,
@@ -363,6 +366,8 @@ import {
   Text2VecProvider,
   VertexAIProvider,
   VoyageAIProvider,
+  RoboflowProvider,
+  WatsonXProvider,
   ResponsesAPIResult,
   EntraIdProvider,
   KeycloakProvider,
@@ -4638,6 +4643,15 @@ describe("RAG configuration and factories", () => {
     const openclip = new OpenCLIPProvider();
     const text2vec = new Text2VecProvider();
     const generative = new GenerativeAiProvider({ api_key: "google-test" });
+    const bedrock = new BedrockProvider();
+    const cohere = new CohereProvider({ api_key: "cohere-test" });
+    const onnx = new ONNXProvider();
+    const roboflow = new RoboflowProvider();
+    const watsonx = new WatsonXProvider({
+      api_key: "watson-test",
+      url: "https://watson.example",
+      model_id: "ibm/slate-125m-english-rtrvr",
+    });
 
     expect(openai).toMatchObject({
       provider: "openai",
@@ -4716,6 +4730,33 @@ describe("RAG configuration and factories", () => {
       api_key: "google-test",
       model_name: "gemini-embedding-001",
       task_type: "RETRIEVAL_DOCUMENT",
+    });
+    expect(bedrock).toMatchObject({
+      provider: "amazon-bedrock",
+      model_name: "amazon.titan-embed-text-v1",
+    });
+    expect(cohere).toMatchObject({
+      provider: "cohere",
+      api_key: "cohere-test",
+      model_name: "large",
+    });
+    expect(onnx).toMatchObject({
+      provider: "onnx",
+      preferred_providers: null,
+    });
+    expect(roboflow).toMatchObject({
+      provider: "roboflow",
+      api_key: "",
+      api_url: "https://infer.roboflow.com",
+    });
+    expect(watsonx).toMatchObject({
+      provider: "watsonx",
+      api_key: "watson-test",
+      url: "https://watson.example",
+      model_id: "ibm/slate-125m-english-rtrvr",
+      persistent_connection: true,
+      batch_size: 100,
+      concurrency_limit: 10,
     });
   });
 });
