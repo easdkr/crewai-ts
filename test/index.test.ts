@@ -15,6 +15,7 @@ import {
   A2UI_STANDARD_CATALOG_ID,
   A2UIServerExtension,
   A2UI_V09_BASIC_CATALOG_ID,
+  ExtensionContext,
   A2AServerConfig,
   A2ATransport,
   A2AHTTPException,
@@ -195,6 +196,8 @@ import {
   RPMController,
   SecurityConfig,
   ServerTransportConfig,
+  ServerExtension,
+  ServerExtensionRegistry,
   SQLiteFlowPersistence,
   SimpleTokenAuth,
   SkillActivatedEvent,
@@ -2835,6 +2838,50 @@ describe("a2a utilities", () => {
       a2ui_active: true,
       a2ui_catalog_id: "catalog-requested",
     });
+  });
+
+  it("isolates A2A server extension hook failures and tracks activated extensions", async () => {
+    class FailingExtension extends ServerExtension {
+      readonly uri = "urn:test:fail";
+
+      on_request(): Promise<void> {
+        return Promise.reject(new Error("request failed"));
+      }
+
+      on_response(): Promise<unknown> {
+        return Promise.reject(new Error("response failed"));
+      }
+    }
+
+    class PassingExtension extends ServerExtension {
+      readonly uri = "urn:test:pass";
+      readonly calls: string[] = [];
+
+      on_request(): Promise<void> {
+        this.calls.push("request");
+        return Promise.resolve();
+      }
+
+      on_response(context: ExtensionContext, result: unknown): Promise<unknown> {
+        void context;
+        this.calls.push("response");
+        return Promise.resolve(`${String(result)}:processed`);
+      }
+    }
+
+    const passing = new PassingExtension();
+    const registry = new ServerExtensionRegistry([new FailingExtension(), passing]);
+    const serverContext = { activated_extensions: new Set<string>() };
+    const context = ServerExtensionRegistry.create_context(
+      {},
+      new Set(["urn:test:fail", "urn:test:pass"]),
+      serverContext,
+    );
+
+    await expect(registry.invoke_on_request(context)).resolves.toBeUndefined();
+    await expect(registry.invoke_on_response(context, "result")).resolves.toBe("result:processed");
+    expect(passing.calls).toEqual(["request", "response"]);
+    expect([...serverContext.activated_extensions]).toEqual(["urn:test:pass"]);
   });
 
   it("exposes A2A lifecycle events with upstream-compatible payload names", () => {

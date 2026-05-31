@@ -595,7 +595,13 @@ export class ServerExtensionRegistry {
   async invoke_on_request(context: ExtensionContext): Promise<void> {
     for (const extension of this.extensions) {
       if (extension.is_active(context)) {
-        await extension.on_request(context);
+        try {
+          await extension.on_request(context);
+          addActivatedServerExtension(context.server_context, extension.uri);
+        } catch {
+          // Upstream isolates extension hook failures so one extension cannot
+          // break the entire A2A request path.
+        }
       }
     }
   }
@@ -604,7 +610,11 @@ export class ServerExtensionRegistry {
     let processed = result;
     for (const extension of this.extensions) {
       if (extension.is_active(context)) {
-        processed = await extension.on_response(context, processed);
+        try {
+          processed = await extension.on_response(context, processed);
+        } catch {
+          // Keep the last successful result when an extension fails.
+        }
       }
     }
     return processed;
@@ -4168,6 +4178,20 @@ function isA2ATaskState(state: string | undefined): state is A2ATaskState {
     || state === A2ATaskState.failed
     || state === A2ATaskState.rejected
     || state === A2ATaskState.canceled;
+}
+
+function addActivatedServerExtension(serverContext: unknown, uri: string): void {
+  if (!serverContext || typeof serverContext !== "object") {
+    return;
+  }
+  const activated = (serverContext as { activated_extensions?: unknown }).activated_extensions;
+  if (activated instanceof Set) {
+    activated.add(uri);
+  } else if (Array.isArray(activated)) {
+    activated.push(uri);
+  } else if (activated && typeof activated === "object" && "add" in activated && typeof (activated as { add?: unknown }).add === "function") {
+    (activated as { add: (value: string) => unknown }).add(uri);
+  }
 }
 
 function isSendTaskEvent(event: A2AMessageLike | readonly [A2ATaskLike, unknown]): event is readonly [A2ATaskLike, unknown] {
