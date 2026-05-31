@@ -4930,6 +4930,83 @@ describe("a2a utilities", () => {
     });
   });
 
+  it("exposes upstream A2A server auth initialization and OAuth2 validation helpers", async () => {
+    const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+    const publicJwk = publicKey.export({ format: "jwk" });
+    const now = Math.floor(Date.now() / 1000);
+    const jwt = createTestJwt({
+      header: { alg: "RS256", typ: "JWT", kid: "oauth-key" },
+      payload: {
+        exp: now + 60,
+        iat: now,
+        iss: "https://issuer.example.com",
+        aud: "api",
+        sub: "oauth-user",
+      },
+      privateKey,
+    });
+    const fetchImpl = vi.fn((url: string | URL | Request, init?: RequestInit) => {
+      const target = typeof url === "string" ? url : url instanceof URL ? url.toString() : url.url;
+      if (target.endsWith("/jwks.json")) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ keys: [{ ...publicJwk, kid: "oauth-key", alg: "RS256", use: "sig" }] }),
+        } as Response);
+      }
+      expect(target).toBe("https://issuer.example.com/introspect");
+      expect(init?.method).toBe("POST");
+      expect(init?.headers).toMatchObject({
+        Authorization: `Basic ${Buffer.from("client:secret").toString("base64")}`,
+      });
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ active: true, sub: "opaque-user", scope: "read" }),
+      } as Response);
+    });
+
+    const oidc = new OIDCAuth({
+      issuer: "https://issuer.example.com",
+      audience: "api",
+      jwks_cache_ttl: 120,
+      fetch: fetchImpl,
+    });
+    expect(oidc._init_jwk_client()).toBe(oidc);
+
+    const jwtAuth = new OAuth2ServerAuth({
+      issuer: "https://issuer.example.com",
+      audience: "api",
+      token_url: "https://issuer.example.com/token",
+      jwks_url: "https://issuer.example.com/jwks.json",
+      fetch: fetchImpl,
+    });
+    expect(jwtAuth._validate_and_init()).toBe(jwtAuth);
+    await expect(jwtAuth._authenticate_jwt(jwt)).resolves.toMatchObject({
+      scheme: "oauth2",
+      claims: { sub: "oauth-user" },
+    });
+
+    const introspectionAuth = new OAuth2ServerAuth({
+      issuer: "https://issuer.example.com",
+      audience: "api",
+      token_url: "https://issuer.example.com/token",
+      introspection_url: "https://issuer.example.com/introspect",
+      introspection_client_id: "client",
+      introspection_client_secret: "secret",
+      fetch: fetchImpl,
+    });
+    await expect(introspectionAuth._authenticate_introspection("opaque-token")).resolves.toMatchObject({
+      scheme: "oauth2",
+      claims: { sub: "opaque-user", active: true },
+    });
+    expect(() => new OAuth2ServerAuth({
+      issuer: "https://issuer.example.com",
+      audience: "api",
+      token_url: "https://issuer.example.com/token",
+      introspection_url: "https://issuer.example.com/introspect",
+      introspection_client_id: "client",
+    })).toThrow("introspection_client_id and introspection_client_secret");
+  });
+
   it("extracts and processes A2A task state results structurally", () => {
     const completedTask = {
       id: "task-1",

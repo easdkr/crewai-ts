@@ -1965,9 +1965,12 @@ export class OIDCAuth extends ServerAuthScheme {
   readonly algorithms: readonly string[];
   readonly requiredClaims: readonly string[];
   readonly required_claims: readonly string[];
+  readonly jwksCacheTtl: number;
+  readonly jwks_cache_ttl: number;
   readonly clockSkewSeconds: number;
   readonly clock_skew_seconds: number;
-  private readonly fetchImpl: typeof fetch;
+  protected readonly fetchImpl: typeof fetch;
+  private jwkClient: { jwksUrl: string; lifespan: number } | null = null;
 
   constructor(options: {
     issuer: string;
@@ -1977,6 +1980,8 @@ export class OIDCAuth extends ServerAuthScheme {
     algorithms?: readonly string[];
     requiredClaims?: readonly string[];
     required_claims?: readonly string[];
+    jwksCacheTtl?: number;
+    jwks_cache_ttl?: number;
     clockSkewSeconds?: number;
     clock_skew_seconds?: number;
     fetch?: typeof fetch;
@@ -1989,16 +1994,30 @@ export class OIDCAuth extends ServerAuthScheme {
     this.algorithms = [...(options.algorithms ?? ["RS256"])];
     this.requiredClaims = [...(options.requiredClaims ?? options.required_claims ?? ["exp", "iat", "iss", "aud", "sub"])];
     this.required_claims = this.requiredClaims;
+    this.jwksCacheTtl = options.jwksCacheTtl ?? options.jwks_cache_ttl ?? 3600;
+    this.jwks_cache_ttl = this.jwksCacheTtl;
     this.clockSkewSeconds = options.clockSkewSeconds ?? options.clock_skew_seconds ?? 30;
     this.clock_skew_seconds = this.clockSkewSeconds;
     this.fetchImpl = options.fetch ?? fetch;
+    this._init_jwk_client();
+  }
+
+  _init_jwk_client(): this {
+    this.jwkClient = {
+      jwksUrl: this.jwksUrl,
+      lifespan: this.jwksCacheTtl,
+    };
+    return this;
   }
 
   async authenticate(token: string): Promise<AuthenticatedUser> {
+    if (!this.jwkClient) {
+      throw new A2AHTTPException({ statusCode: 500, detail: "OIDC not initialized" });
+    }
     try {
       const claims = await validateJwtToken({
         jwtToken: token,
-        jwksUrl: this.jwksUrl,
+        jwksUrl: this.jwkClient.jwksUrl,
         issuer: this.issuer.replace(/\/+$/, ""),
         audience: this.audience,
         fetch: this.fetchImpl,
@@ -2033,6 +2052,11 @@ export class OAuth2ServerAuth extends OIDCAuth {
   readonly introspection_endpoint: string | null;
   readonly introspectionUrl: string | null;
   readonly introspection_url: string | null;
+  readonly introspectionClientId: string | null;
+  readonly introspection_client_id: string | null;
+  readonly introspectionClientSecret: SecretStr | null;
+  readonly introspection_client_secret: SecretStr | null;
+  private readonly oauthJwksConfigured: boolean;
 
   constructor(options: ConstructorParameters<typeof OIDCAuth>[0] & {
     tokenUrl?: string;
@@ -2046,8 +2070,13 @@ export class OAuth2ServerAuth extends OIDCAuth {
     introspection_endpoint?: string | null;
     introspectionUrl?: string | null;
     introspection_url?: string | null;
+    introspectionClientId?: string | null;
+    introspection_client_id?: string | null;
+    introspectionClientSecret?: SecretStr | string | null;
+    introspection_client_secret?: SecretStr | string | null;
   }) {
     super(options);
+    this.oauthJwksConfigured = Boolean(options.jwksUrl ?? options.jwks_url);
     this.tokenUrl = options.tokenUrl ?? options.token_url ?? "";
     this.token_url = this.tokenUrl;
     this.authorizationUrl = options.authorizationUrl ?? options.authorization_url ?? null;
@@ -2059,11 +2088,63 @@ export class OAuth2ServerAuth extends OIDCAuth {
     this.introspection_endpoint = this.introspectionEndpoint;
     this.introspectionUrl = this.introspectionEndpoint;
     this.introspection_url = this.introspectionEndpoint;
+    this.introspectionClientId = options.introspectionClientId ?? options.introspection_client_id ?? null;
+    this.introspection_client_id = this.introspectionClientId;
+    const secret = options.introspectionClientSecret ?? options.introspection_client_secret ?? null;
+    this.introspectionClientSecret = secret instanceof SecretStr ? secret : secret === null ? null : new SecretStr(secret);
+    this.introspection_client_secret = this.introspectionClientSecret;
+    this._validate_and_init();
   }
 
   override async authenticate(token: string): Promise<AuthenticatedUser> {
+    return this.oauthJwksConfigured
+      ? await this._authenticate_jwt(token)
+      : await this._authenticate_introspection(token);
+  }
+
+  _validate_and_init(): this {
+    if (!this.oauthJwksConfigured && !this.introspectionUrl) {
+      throw new Error("Either jwks_url or introspection_url must be provided for token validation");
+    }
+    if (this.introspectionUrl && (!this.introspectionClientId || !this.introspectionClientSecret)) {
+      throw new Error("introspection_client_id and introspection_client_secret are required when using token introspection");
+    }
+    return this;
+  }
+
+  async _authenticate_jwt(token: string): Promise<AuthenticatedUser> {
     const user = await super.authenticate(token);
     return new AuthenticatedUser({ token: user.token, scheme: "oauth2", claims: user.claims });
+  }
+
+  async _authenticate_introspection(token: string): Promise<AuthenticatedUser> {
+    if (!this.introspectionUrl) {
+      throw new A2AHTTPException({ statusCode: 500, detail: "OAuth2 introspection not configured" });
+    }
+    try {
+      const basic = Buffer.from(`${this.introspectionClientId ?? ""}:${this.introspectionClientSecret?.get_secret_value() ?? ""}`).toString("base64");
+      const response = await this.fetchImpl(this.introspectionUrl, {
+        method: "POST",
+        headers: {
+          Authorization: `Basic ${basic}`,
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: new URLSearchParams({ token }).toString(),
+      });
+      if (!response.ok) {
+        throw new A2AHTTPException({ statusCode: 503, detail: "Token introspection service unavailable" });
+      }
+      const claims = await response.json() as Record<string, unknown>;
+      if (claims.active !== true) {
+        throw new A2AHTTPException({ statusCode: 401, detail: "Token is not active" });
+      }
+      return new AuthenticatedUser({ token, scheme: "oauth2", claims });
+    } catch (error) {
+      if (error instanceof A2AHTTPException) {
+        throw error;
+      }
+      throw new A2AHTTPException({ statusCode: 503, detail: "Token introspection failed" });
+    }
   }
 
   toSecurityScheme(): Record<string, unknown> {
