@@ -370,12 +370,96 @@ export class MemoryConfig {
 }
 
 export class ItemState {
+  scope: string | null;
+  categories: readonly string[] | null;
+  metadata: Record<string, unknown> | null;
+  importance: number | null;
+  source: string | null;
+  private: boolean;
+  rootScope: string | null;
+  root_scope: string | null;
+  resolvedScope: string;
+  resolved_scope: string;
+  resolvedCategories: readonly string[];
+  resolved_categories: readonly string[];
+  resolvedMetadata: Record<string, unknown>;
+  resolved_metadata: Record<string, unknown>;
+  resolvedImportance: number;
+  resolved_importance: number;
+  resolvedSource: string | null;
+  resolved_source: string | null;
+  resolvedPrivate: boolean;
+  resolved_private: boolean;
   embedding: number[];
   dropped: boolean;
+  similarRecords: MemoryRecord[];
+  similar_records: MemoryRecord[];
+  topSimilarity: number;
+  top_similarity: number;
+  plan: ConsolidationPlan | null;
+  resultRecord: MemoryRecord | null;
+  result_record: MemoryRecord | null;
 
-  constructor(public readonly content = "", options: { embedding?: readonly number[]; dropped?: boolean } = {}) {
+  constructor(public readonly content = "", options: {
+    scope?: string | null;
+    categories?: readonly string[] | null;
+    metadata?: Record<string, unknown> | null;
+    importance?: number | null;
+    source?: string | null;
+    private?: boolean;
+    rootScope?: string | null;
+    root_scope?: string | null;
+    resolvedScope?: string;
+    resolved_scope?: string;
+    resolvedCategories?: readonly string[];
+    resolved_categories?: readonly string[];
+    resolvedMetadata?: Record<string, unknown>;
+    resolved_metadata?: Record<string, unknown>;
+    resolvedImportance?: number;
+    resolved_importance?: number;
+    resolvedSource?: string | null;
+    resolved_source?: string | null;
+    resolvedPrivate?: boolean;
+    resolved_private?: boolean;
+    embedding?: readonly number[];
+    dropped?: boolean;
+    similarRecords?: readonly MemoryRecord[];
+    similar_records?: readonly MemoryRecord[];
+    topSimilarity?: number;
+    top_similarity?: number;
+    plan?: ConsolidationPlan | null;
+    resultRecord?: MemoryRecord | null;
+    result_record?: MemoryRecord | null;
+  } = {}) {
+    this.scope = options.scope ?? null;
+    this.categories = options.categories ?? null;
+    this.metadata = options.metadata === undefined ? null : options.metadata;
+    this.importance = options.importance ?? null;
+    this.source = options.source ?? null;
+    this.private = options.private ?? false;
+    this.rootScope = options.rootScope ?? options.root_scope ?? null;
+    this.root_scope = this.rootScope;
+    this.resolvedScope = options.resolvedScope ?? options.resolved_scope ?? "/";
+    this.resolved_scope = this.resolvedScope;
+    this.resolvedCategories = [...(options.resolvedCategories ?? options.resolved_categories ?? [])];
+    this.resolved_categories = this.resolvedCategories;
+    this.resolvedMetadata = { ...(options.resolvedMetadata ?? options.resolved_metadata ?? {}) };
+    this.resolved_metadata = this.resolvedMetadata;
+    this.resolvedImportance = clamp01(options.resolvedImportance ?? options.resolved_importance ?? 0.5);
+    this.resolved_importance = this.resolvedImportance;
+    this.resolvedSource = options.resolvedSource ?? options.resolved_source ?? null;
+    this.resolved_source = this.resolvedSource;
+    this.resolvedPrivate = options.resolvedPrivate ?? options.resolved_private ?? false;
+    this.resolved_private = this.resolvedPrivate;
     this.embedding = [...(options.embedding ?? [])];
     this.dropped = options.dropped ?? false;
+    this.similarRecords = [...(options.similarRecords ?? options.similar_records ?? [])];
+    this.similar_records = this.similarRecords;
+    this.topSimilarity = options.topSimilarity ?? options.top_similarity ?? 0;
+    this.top_similarity = this.topSimilarity;
+    this.plan = options.plan ?? null;
+    this.resultRecord = options.resultRecord ?? options.result_record ?? null;
+    this.result_record = this.resultRecord;
   }
 }
 
@@ -439,6 +523,53 @@ export class EncodingFlow {
 
   intraBatchDedup(): void {
     this.intra_batch_dedup();
+  }
+
+  parallel_find_similar(): void {
+    const searchStorage = this.storage as {
+      search?: (embedding: readonly number[], options?: MemoryVectorSearchOptions) => Array<readonly [MemoryRecord, number]>;
+    } | null;
+    if (typeof searchStorage?.search !== "function") {
+      return;
+    }
+    for (const item of this.state.items) {
+      if (item.dropped || item.embedding.length === 0) {
+        continue;
+      }
+      let effectivePrefix: string | null = null;
+      const rootScope = item.root_scope;
+      if (rootScope) {
+        effectivePrefix = rootScope.replace(/\/+$/u, "");
+        const itemScope = item.scope?.replace(/^\/+|\/+$/gu, "");
+        if (itemScope) {
+          effectivePrefix = `${effectivePrefix}/${itemScope}`;
+        }
+      } else {
+        const itemScope = item.scope?.replace(/^\/+|\/+$/gu, "");
+        if (itemScope) {
+          effectivePrefix = item.scope;
+        }
+      }
+      let raw: Array<readonly [MemoryRecord, number]>;
+      try {
+        raw = searchStorage.search(item.embedding, {
+          scope_prefix: effectivePrefix,
+          categories: null,
+          limit: this.config.consolidationLimit,
+          min_score: 0,
+        });
+      } catch {
+        raw = [];
+      }
+      item.similarRecords = raw.map(([record]) => record);
+      item.similar_records = item.similarRecords;
+      item.topSimilarity = raw.length > 0 ? raw[0]?.[1] ?? 0 : 0;
+      item.top_similarity = item.topSimilarity;
+    }
+  }
+
+  parallelFindSimilar(): void {
+    this.parallel_find_similar();
   }
 }
 

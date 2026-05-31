@@ -12967,6 +12967,41 @@ describe("memory", () => {
     expect(flow.state.items_dropped_dedup).toBe(1);
   });
 
+  it("finds similar EncodingFlow records within the effective item scope", () => {
+    const record = new MemoryRecord({
+      id: "existing",
+      content: "CrewAI stores scoped memories",
+      scope: "/crew/project",
+      categories: ["memory"],
+      embedding: [1, 0, 0],
+    });
+    const search = vi.fn(() => [[record, 0.91] as const]);
+    const storage = { search };
+    const flow = new EncodingFlow(storage, null, null, new MemoryConfig({ consolidation_limit: 3 }));
+    const item = new ItemState("CrewAI scoped memory", {
+      embedding: [1, 0, 0],
+      root_scope: "/crew/",
+      scope: "/project",
+    });
+    flow.state.items.push(
+      item,
+      new ItemState("already dropped", { embedding: [0, 1, 0], dropped: true }),
+      new ItemState("missing embedding"),
+    );
+
+    flow.parallel_find_similar();
+
+    expect(search).toHaveBeenCalledTimes(1);
+    expect(search).toHaveBeenCalledWith([1, 0, 0], {
+      scope_prefix: "/crew/project",
+      categories: null,
+      limit: 3,
+      min_score: 0,
+    });
+    expect(item.similar_records).toEqual([record]);
+    expect(item.top_similarity).toBe(0.91);
+  });
+
   it("automatically appends relevant crew memories to task prompts", async () => {
     const memory = new Memory();
     memory.remember("Nest should consume crewai-ts as a normal TypeScript library", {
