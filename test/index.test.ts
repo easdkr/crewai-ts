@@ -10015,6 +10015,7 @@ describe("LLM providers", () => {
       "supports_function_calling",
       "supports_multimodal",
       "supports_stop_words",
+      "_extract_azure_token_usage",
       "to_config_dict",
     ]) {
       expect(Object.hasOwn(AzureCompletion.prototype, methodName)).toBe(true);
@@ -10024,6 +10025,32 @@ describe("LLM providers", () => {
     expect(azure.to_config_dict()).toMatchObject({ model: "gpt-4o", provider: "azure" });
     await expect(azure.aclose()).resolves.toBeUndefined();
     await expect(azure.acall([{ role: "user", content: "hello" }])).rejects.toThrow("No LLM provider registered");
+  });
+
+  it("extracts Azure token usage from SDK response shapes", () => {
+    const azure = new AzureCompletion({ model: "gpt-4o" });
+
+    expect((azure as unknown as {
+      _extract_azure_token_usage(response: unknown): Record<string, number>;
+    })._extract_azure_token_usage({
+      usage: {
+        prompt_tokens: 12,
+        completion_tokens: 8,
+        total_tokens: 20,
+        prompt_tokens_details: { cached_tokens: 5 },
+        completion_tokens_details: { reasoning_tokens: 3 },
+      },
+    })).toEqual({
+      prompt_tokens: 12,
+      completion_tokens: 8,
+      total_tokens: 20,
+      cached_prompt_tokens: 5,
+      reasoning_tokens: 3,
+    });
+
+    expect((azure as unknown as {
+      _extract_azure_token_usage(response: unknown): Record<string, number>;
+    })._extract_azure_token_usage({})).toEqual({ total_tokens: 0 });
   });
 
   it("exposes upstream AnthropicCompletion aliases directly on the provider class", async () => {

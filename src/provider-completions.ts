@@ -1968,6 +1968,34 @@ export class AzureCompletion extends ConfiguredLLM {
     return this.convertToolsForInterference(tools);
   }
 
+  extractAzureTokenUsage(response: unknown): Record<string, number> {
+    return AzureCompletion.extractAzureTokenUsage(response);
+  }
+
+  _extract_azure_token_usage(response: unknown): Record<string, number> {
+    return this.extractAzureTokenUsage(response);
+  }
+
+  static extractAzureTokenUsage(response: unknown): Record<string, number> {
+    const usage = readObject(readObject(response).usage);
+    if (!hasNumericField(usage, "prompt_tokens", "completion_tokens", "total_tokens")) {
+      return { total_tokens: 0 };
+    }
+    const promptDetails = readObject(usage.prompt_tokens_details);
+    const completionDetails = readObject(usage.completion_tokens_details);
+    return {
+      prompt_tokens: numberField(usage, "prompt_tokens"),
+      completion_tokens: numberField(usage, "completion_tokens"),
+      total_tokens: numberField(usage, "total_tokens"),
+      cached_prompt_tokens: numberField(promptDetails, "cached_tokens"),
+      reasoning_tokens: numberField(completionDetails, "reasoning_tokens"),
+    };
+  }
+
+  static extract_azure_token_usage(response: unknown): Record<string, number> {
+    return AzureCompletion.extractAzureTokenUsage(response);
+  }
+
   override getFileUploader(): LocalFileUploader {
     return new LocalFileUploader("azure", { llm: this, endpoint: this.endpoint, api_version: this.apiVersion });
   }
