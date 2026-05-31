@@ -710,10 +710,14 @@ import {
   StdioTransport,
   TransportType,
   _afetch_agent_card_impl,
+  _convert_a2a_files_to_file_inputs,
   _get_effective_modes,
   _get_tls_verify,
   _prepare_auth_headers,
   get_timestamp,
+  poll_for_cancel,
+  watch_for_cancel,
+  _execute_impl,
   isMCPServerConfig,
   isRetryableError,
   activateSkill,
@@ -4095,6 +4099,20 @@ describe("a2a utilities", () => {
         },
       },
     }]);
+    expect(_convert_a2a_files_to_file_inputs([
+      { bytes: Buffer.from("CrewAI bytes").toString("base64"), name: "bytes.txt", mimeType: "text/plain" },
+      { uri: "s3://bucket/source.pdf", name: "source.pdf" },
+    ])).toMatchObject({
+      "bytes.txt": {
+        source: Buffer.from("CrewAI bytes"),
+        filename: "bytes.txt",
+        mimeType: "text/plain",
+      },
+      "source.pdf": {
+        source: "s3://bucket/source.pdf",
+        filename: "source.pdf",
+      },
+    });
     expect(_create_result_artifact({ answer: "ok" }, "task-1")).toEqual({
       name: "result_task-1",
       parts: [{ root: { kind: "data", data: { answer: "ok" } } }],
@@ -4105,6 +4123,64 @@ describe("a2a utilities", () => {
     });
     expect(get_timestamp({ id: "task-1", status: { state: A2ATaskState.completed, timestamp: "2026-01-02T03:04:05Z" } }).toISOString())
       .toBe("2026-01-02T03:04:05.000Z");
+  });
+
+  it("exposes A2A task cancellation watchers and internal execute implementation", async () => {
+    let cancelled = false;
+    const cache = {
+      get: vi.fn(async () => {
+        await Promise.resolve();
+        return cancelled;
+      }),
+      delete: vi.fn(),
+    };
+    const pollPromise = poll_for_cancel("task-cancel", cache, 1);
+    cancelled = true;
+    await expect(pollPromise).resolves.toBe(true);
+    await expect(watch_for_cancel("task-cancel", cache, 1)).resolves.toBe(true);
+
+    const enqueued: unknown[] = [];
+    const agent = {
+      tools: [],
+      aexecute_task: vi.fn(async ({ task }: {
+        task: { description: string; input_files: Record<string, unknown> };
+        tools: readonly unknown[];
+      }) => {
+        await Promise.resolve();
+        return {
+          description: task.description,
+          files: Object.keys(task.input_files),
+        };
+      }),
+    };
+    await _execute_impl(agent, {
+      task_id: "task-a2a",
+      context_id: "ctx-a2a",
+      message: {
+        parts: [
+          { root: { kind: "text", text: "Summarize" } },
+          { root: { kind: "data", data: { topic: "CrewAI" } } },
+          { root: { kind: "file", file: { uri: "s3://bucket/notes.txt", name: "notes.txt" } } },
+        ],
+      },
+      get_user_input: () => "Summarize",
+    }, {
+      enqueue_event: (event) => {
+        enqueued.push(event);
+      },
+    });
+
+    expect(agent.aexecute_task).toHaveBeenCalledTimes(1);
+    const call = agent.aexecute_task.mock.calls[0]?.[0];
+    expect(call?.tools).toEqual([]);
+    expect(call?.task.description).toContain("Structured Data:");
+    expect(call?.task.input_files["notes.txt"]).toMatchObject({ source: "s3://bucket/notes.txt" });
+    expect(enqueued[0]).toMatchObject({
+      id: "task-a2a",
+      context_id: "ctx-a2a",
+      status: { state: A2ATaskState.completed },
+      artifacts: [{ name: "result_task-a2a" }],
+    });
   });
 
   it("wraps agent task and kickoff execution with A2A prompt augmentation", async () => {

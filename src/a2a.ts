@@ -389,10 +389,34 @@ export const PENDING_STATES: ReadonlySet<A2ATaskState> = new Set([
 export type A2ATextPartLike = {
   text?: string;
   kind?: string;
+  data?: Record<string, unknown>;
+  file?: A2AFileWithBytesLike | A2AFileWithUriLike;
+  metadata?: Record<string, unknown>;
   root?: {
     text?: string;
     kind?: string;
+    data?: Record<string, unknown>;
+    file?: A2AFileWithBytesLike | A2AFileWithUriLike;
+    metadata?: Record<string, unknown>;
   };
+};
+export type A2AFileWithBytesLike = {
+  bytes: string;
+  name?: string | null;
+  mimeType?: string | null;
+  mime_type?: string | null;
+};
+export type A2AFileWithUriLike = {
+  uri: string;
+  name?: string | null;
+  mimeType?: string | null;
+  mime_type?: string | null;
+};
+export type A2AFileInputLike = {
+  source: Buffer | string;
+  filename?: string | null;
+  mimeType?: string | null;
+  mime_type?: string | null;
 };
 export type A2AMessageLike = {
   role?: string;
@@ -433,6 +457,16 @@ export type A2AExecutionContext = {
 export type A2AEventQueue = {
   enqueueEvent?: (event: unknown) => Promise<void> | void;
   enqueue_event?: (event: unknown) => Promise<void> | void;
+};
+export type A2ACancelCache = {
+  get?: (key: string) => PromiseLike<boolean | string | null | undefined> | boolean | string | null | undefined;
+  delete?: (key: string) => PromiseLike<void> | void;
+  client?: {
+    pubsub?: () => {
+      subscribe?: (channel: string) => PromiseLike<void> | void;
+      listen?: () => AsyncIterable<Record<string, unknown>>;
+    };
+  };
 };
 export type A2AExtensionRegistry = {
   invokeOnRequest?: (context: unknown) => Promise<void> | void;
@@ -1269,6 +1303,12 @@ type CancellableContext = {
 };
 
 const canceledTaskIds = new Set<string>();
+const defaultCancelCache: A2ACancelCache = {
+  get: (key: string) => canceledTaskIds.has(cancelKeyTaskId(key)),
+  delete: (key: string) => {
+    canceledTaskIds.delete(cancelKeyTaskId(key));
+  },
+};
 
 export class JSONFormatter {
   format(record: { levelname?: string; level?: string; name?: string; msg?: unknown; message?: unknown; [key: string]: unknown }): string {
@@ -3788,18 +3828,68 @@ export function cancellable<TArgs extends unknown[], TResult>(
   return async (...args: TArgs): Promise<TResult> => {
     const context = findCancellableContext(args);
     const taskId = context?.taskId ?? context?.task_id ?? null;
-    if (taskId && canceledTaskIds.has(taskId)) {
-      canceledTaskIds.delete(taskId);
-      throw new Error(`Task ${taskId} was cancelled`);
-    }
-    try {
+    if (!taskId) {
       return await fn(...args);
-    } finally {
-      if (taskId) {
-        canceledTaskIds.delete(taskId);
+    }
+    const abort = new AbortController();
+    const execution = fn(...args);
+    const cancellation = watch_for_cancel(taskId, defaultCancelCache, 100, abort.signal);
+    try {
+      const result = await Promise.race([
+        execution.then((value) => ({ type: "result" as const, value })),
+        cancellation.then((cancelled) => ({ type: "cancelled" as const, cancelled })),
+      ]);
+      if (result.type === "cancelled" && result.cancelled) {
+        throw new Error(`Task ${taskId} was cancelled`);
       }
+      return await execution;
+    } finally {
+      abort.abort();
+      canceledTaskIds.delete(taskId);
     }
   };
+}
+
+export async function poll_for_cancel(
+  taskId: string,
+  cache: A2ACancelCache = defaultCancelCache,
+  intervalMs = 100,
+  signal?: AbortSignal,
+): Promise<boolean> {
+  const key = `cancel:${taskId}`;
+  while (!signal?.aborted) {
+    if (await cache.get?.(key)) {
+      return true;
+    }
+    await delayA2A(intervalMs, signal);
+  }
+  return false;
+}
+
+export async function watch_for_cancel(
+  taskId: string,
+  cache: A2ACancelCache = defaultCancelCache,
+  intervalMs = 100,
+  signal?: AbortSignal,
+): Promise<boolean> {
+  const pubsub = cache.client?.pubsub?.();
+  if (!pubsub?.listen) {
+    return await poll_for_cancel(taskId, cache, intervalMs, signal);
+  }
+  try {
+    await pubsub.subscribe?.(`cancel:${taskId}`);
+    for await (const message of pubsub.listen()) {
+      if (signal?.aborted) {
+        return false;
+      }
+      if (message.type === "message") {
+        return true;
+      }
+    }
+  } catch {
+    return await poll_for_cancel(taskId, cache, intervalMs, signal);
+  }
+  return false;
 }
 
 function findCancellableContext(args: readonly unknown[]): CancellableContext | null {
@@ -3812,8 +3902,18 @@ function findCancellableContext(args: readonly unknown[]): CancellableContext | 
 }
 
 export async function execute(agent: unknown, context: A2AExecutionContext, eventQueue: A2AEventQueue): Promise<void> {
-  await execute_with_extensions(agent, context, eventQueue, null, null);
+  await _execute_impl(agent, context, eventQueue, null, null);
 }
+
+export const _execute_impl = cancellable(async function executeImpl(
+  agent: unknown,
+  context: A2AExecutionContext,
+  eventQueue: A2AEventQueue,
+  extensionRegistry: A2AExtensionRegistry | null = null,
+  extensionContext: unknown = null,
+): Promise<void> {
+  await execute_with_extensions(agent, context, eventQueue, extensionRegistry, extensionContext);
+});
 
 export async function execute_with_extensions(
   agent: unknown,
@@ -3822,6 +3922,11 @@ export async function execute_with_extensions(
   extensionRegistry: A2AExtensionRegistry | null = null,
   extensionContext: unknown = null,
 ): Promise<void> {
+  const taskId = context.taskId ?? context.task_id ?? null;
+  const contextId = context.contextId ?? context.context_id ?? null;
+  if (!taskId || !contextId) {
+    throw new Error("task_id and context_id are required");
+  }
   await extensionRegistry?.invoke_on_request?.(extensionContext);
   await extensionRegistry?.invokeOnRequest?.(extensionContext);
   const result = await executeAgentTask(agent, context);
@@ -4718,6 +4823,31 @@ export function _create_file_parts(input_files: Record<string, { read?: () => Ui
   });
 }
 
+export function _convert_a2a_files_to_file_inputs(
+  a2a_files: readonly (A2AFileWithBytesLike | A2AFileWithUriLike)[],
+): Record<string, A2AFileInputLike> {
+  const fileInputs: Record<string, A2AFileInputLike> = {};
+  a2a_files.forEach((file, index) => {
+    const name = file.name || `file_${String(index)}`;
+    if ("bytes" in file) {
+      fileInputs[name] = {
+        source: Buffer.from(file.bytes, "base64"),
+        filename: file.name ?? name,
+        mimeType: file.mimeType ?? file.mime_type ?? null,
+        mime_type: file.mimeType ?? file.mime_type ?? null,
+      };
+      return;
+    }
+    fileInputs[name] = {
+      source: file.uri,
+      filename: file.name ?? name,
+      mimeType: file.mimeType ?? file.mime_type ?? null,
+      mime_type: file.mimeType ?? file.mime_type ?? null,
+    };
+  });
+  return fileInputs;
+}
+
 export function _create_result_artifact(result: unknown, task_id: string): Record<string, unknown> {
   const name = `result_${task_id}`;
   if (recordOrNullA2A(result)) {
@@ -4742,13 +4872,25 @@ async function executeAgentTask(agent: unknown, context: A2AExecutionContext): P
     aexecuteTask?: (options: Record<string, unknown>) => Promise<unknown>;
     aexecute_task?: (options: Record<string, unknown>) => Promise<unknown>;
     execute?: (input: unknown) => unknown;
+    tools?: readonly unknown[];
   };
+  const parts = context.message?.parts ?? [];
   const input = context.getUserInput?.() ?? context.get_user_input?.() ?? extractMessageTextParts(context.message ?? {}).join(" ");
+  const task = {
+    description: _build_task_description(input, getA2ADataParts(parts)),
+    expectedOutput: "Response to the user's request",
+    expected_output: "Response to the user's request",
+    agent,
+    inputFiles: _convert_a2a_files_to_file_inputs(getA2AFileParts(parts)),
+    input_files: _convert_a2a_files_to_file_inputs(getA2AFileParts(parts)),
+    responseModel: _extract_response_schema(parts),
+    response_model: _extract_response_schema(parts),
+  };
   if (agentRecord.aexecuteTask) {
-    return await agentRecord.aexecuteTask({ input, context });
+    return await agentRecord.aexecuteTask({ input, context, task, tools: agentRecord.tools ?? [] });
   }
   if (agentRecord.aexecute_task) {
-    return await agentRecord.aexecute_task({ input, context });
+    return await agentRecord.aexecute_task({ input, context, task, tools: agentRecord.tools ?? [] });
   }
   if (agentRecord.execute) {
     return await agentRecord.execute(input);
@@ -4803,7 +4945,7 @@ function createCompletedTask(context: A2AExecutionContext, result: unknown): A2A
         task_id: taskId,
       },
     ],
-    artifacts: [{ parts: [{ text: resultText }] }],
+    artifacts: [_create_result_artifact(result, taskId)],
   };
 }
 
@@ -4847,6 +4989,44 @@ function stringifyA2AValue(value: unknown): string {
     return String(value);
   }
   return JSON.stringify(value);
+}
+
+function getA2ADataParts(parts: readonly A2ATextPartLike[]): Record<string, unknown>[] {
+  return parts.flatMap((part) => {
+    const root = part.root ?? part;
+    return root.kind === "data" && root.data ? [root.data] : [];
+  });
+}
+
+function getA2AFileParts(parts: readonly A2ATextPartLike[]): Array<A2AFileWithBytesLike | A2AFileWithUriLike> {
+  return parts.flatMap((part) => {
+    const root = part.root ?? part;
+    const file = root.kind === "file" ? root.file : null;
+    if (!file) {
+      return [];
+    }
+    if ("bytes" in file || "uri" in file) {
+      return [file];
+    }
+    return [];
+  });
+}
+
+function delayA2A(intervalMs: number, signal?: AbortSignal): Promise<void> {
+  if (intervalMs <= 0 || signal?.aborted) {
+    return Promise.resolve();
+  }
+  return new Promise((resolve) => {
+    const timeout = setTimeout(resolve, intervalMs);
+    signal?.addEventListener("abort", () => {
+      clearTimeout(timeout);
+      resolve();
+    }, { once: true });
+  });
+}
+
+function cancelKeyTaskId(key: string): string {
+  return key.startsWith("cancel:") ? key.slice("cancel:".length) : key;
 }
 
 function isA2AExtension(value: unknown): value is A2AExtension {
