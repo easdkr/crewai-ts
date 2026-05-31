@@ -7899,6 +7899,34 @@ describe("flow runtime", () => {
     });
   });
 
+  it("rejects combining from_checkpoint and restore_from_state_id on kickoff", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "crewai-ts-flow-conflicting-restore-"));
+    const persistence = new JsonFlowPersistence(directory);
+
+    class ConflictingRestoreFlow extends Flow<{ id: string; events: string[] }> {
+      constructor() {
+        super({
+          initialState: { id: "conflicting-flow", events: [] },
+          persistence,
+        });
+      }
+
+      begin() {
+        this.state.events.push("begin");
+        return "ready";
+      }
+    }
+
+    const initializer = decorateMethod(ConflictingRestoreFlow, "begin", start() as unknown as Decorator);
+    const flow = new ConflictingRestoreFlow();
+    initializer.call(flow);
+
+    await expect(flow.kickoff({
+      from_checkpoint: new CheckpointConfig({ restore_from: join(directory, "checkpoint.json") }),
+      restore_from_state_id: "source-flow",
+    })).rejects.toThrow("Cannot combine from_checkpoint with restore_from_state_id");
+  });
+
   it("supports upstream-style @persist on a flow method", async () => {
     const directory = mkdtempSync(join(tmpdir(), "crewai-ts-flow-method-persist-"));
     const persistence = new JsonFlowPersistence(directory);

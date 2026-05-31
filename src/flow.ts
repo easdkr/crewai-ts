@@ -722,6 +722,10 @@ export class Flow<TState extends object = Record<string, unknown>> {
   ): Promise<unknown> {
     const options = normalizeFlowKickoffOptions(optionsOrInputs, inputFiles, fromCheckpoint, restoreFromStateId);
     const checkpointConfig = options.fromCheckpoint ?? options.from_checkpoint ?? null;
+    const effectiveRestoreFromStateId = options.restoreFromStateId ?? options.restore_from_state_id ?? null;
+    if (checkpointConfig && effectiveRestoreFromStateId) {
+      throw new Error("Cannot combine from_checkpoint with restore_from_state_id");
+    }
     if (checkpointConfig?.restoreFrom) {
       const restored = await Flow.fromCheckpoint.call(this.constructor as new () => Flow<object>, checkpointConfig);
       return await restored.kickoffAsync(withoutCheckpointOptions(options));
@@ -736,7 +740,6 @@ export class Flow<TState extends object = Record<string, unknown>> {
       ...(options.inputFiles ?? options.input_files ?? {}),
       ...extracted.inputFiles,
     };
-    const effectiveRestoreFromStateId = options.restoreFromStateId ?? options.restore_from_state_id ?? null;
     const restoredForkState = effectiveRestoreFromStateId && this.persistence
       ? await loadPersistedFlowState(this.persistence, effectiveRestoreFromStateId)
       : null;
