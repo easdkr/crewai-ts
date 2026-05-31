@@ -11019,6 +11019,70 @@ describe("tools", () => {
     expect(cache.read("final_answer_tool", JSON.stringify({ query: "CrewAI" }))).toBe("answer:CrewAI");
   });
 
+  it("passes agent task and crew context through BaseTool finality hooks", async () => {
+    const seen: Array<Record<string, unknown>> = [];
+    const agentContext = { role: "Researcher" };
+    const taskContext = { description: "Research CrewAI" };
+    const crewContext = { name: "Research Crew" };
+    beforeToolCall((context) => {
+      seen.push({
+        phase: "before",
+        agent: context.agent,
+        task: context.task,
+        crew: context.crew,
+        topic: context.toolInput.topic,
+      });
+    });
+    afterToolCall((context) => {
+      seen.push({
+        phase: "after",
+        agent: context.agent,
+        task: context.task,
+        crew: context.crew,
+        result: context.toolResult,
+      });
+      return `${String(context.toolResult)} [hooked]`;
+    });
+    const baseTool = new StructuredTool({
+      name: "context lookup",
+      description: "Lookup with context",
+      argsSchema: {
+        topic: { type: "string", required: true },
+      },
+      func: ({ topic }) => `found:${String(topic)}`,
+    });
+    const action = new AgentAction({
+      thought: "Lookup",
+      tool: "context lookup",
+      toolInput: "{\"topic\":\"CrewAI\"}",
+      text: "Thought: Lookup\nAction: context lookup\nAction Input: {\"topic\":\"CrewAI\"}",
+    });
+
+    const result = await aexecuteToolAndCheckFinality(action, [baseTool], {
+      agent: agentContext,
+      task: taskContext,
+      crew: crewContext,
+    });
+
+    expect(result.result).toBe("found:CrewAI [hooked]");
+    expect(seen).toEqual([
+      {
+        phase: "before",
+        agent: agentContext,
+        task: taskContext,
+        crew: crewContext,
+        topic: "CrewAI",
+      },
+      {
+        phase: "after",
+        agent: agentContext,
+        task: taskContext,
+        crew: crewContext,
+        result: "found:CrewAI",
+      },
+    ]);
+  });
+
   it("applies hooks for plain tools in upstream tool finality helper", async () => {
     const seen: string[] = [];
     beforeToolCall((context) => {

@@ -36,6 +36,12 @@ export type ToolArgsSchema = Record<string, ToolArgumentSpec>;
 
 export type ToolInvocationInput = string | Record<string, unknown> | ToolContext | undefined;
 
+export type ToolHookContextOptions = {
+  agent?: unknown;
+  task?: unknown;
+  crew?: unknown;
+};
+
 export type ToolCacheReadResult =
   | { hit: true; value: unknown }
   | { hit: false };
@@ -397,7 +403,7 @@ export abstract class BaseTool implements Tool {
     return this.cacheFunction;
   }
 
-  run(input?: ToolInvocationInput): MaybePromise<unknown> {
+  run(input?: ToolInvocationInput, hookContext: ToolHookContextOptions = {}): MaybePromise<unknown> {
     let args: Record<string, unknown>;
     try {
       args = this.parseArgs(input);
@@ -411,7 +417,7 @@ export abstract class BaseTool implements Tool {
       throw error;
     }
     if (getBeforeToolCallHooks().length > 0 || getAfterToolCallHooks().length > 0) {
-      return this.runWithHooks(args);
+      return this.runWithHooks(args, hookContext);
     }
     const startedAt = new Date();
     crewaiEventBus.emit(this, new ToolUsageStartedEvent({
@@ -449,11 +455,14 @@ export abstract class BaseTool implements Tool {
     }
   }
 
-  private async runWithHooks(args: Record<string, unknown>): Promise<unknown> {
+  private async runWithHooks(args: Record<string, unknown>, hookContext: ToolHookContextOptions): Promise<unknown> {
     await runBeforeToolCallHooks(new ToolCallHookContext({
       toolName: this.name,
       toolInput: args,
       tool: this,
+      agent: hookContext.agent,
+      task: hookContext.task,
+      crew: hookContext.crew,
     }));
     const startedAt = new Date();
     crewaiEventBus.emit(this, new ToolUsageStartedEvent({
@@ -474,6 +483,9 @@ export abstract class BaseTool implements Tool {
         toolName: this.name,
         toolInput: args,
         tool: this,
+        agent: hookContext.agent,
+        task: hookContext.task,
+        crew: hookContext.crew,
         toolResult: rawResult,
       }));
       this.writeCache(args, cacheInput, result);
@@ -1473,7 +1485,7 @@ export async function aexecuteToolAndCheckFinality(
 
   const toolInput = toolCalling.arguments ?? {};
   const output = tool instanceof BaseTool
-    ? await tool.run(toolInput)
+    ? await tool.run(toolInput, { agent: options.agent, task: options.task, crew: options.crew })
     : await runPlainToolWithHooks(tool, sanitizedToolName, toolInput, options);
   const result = new ToolResult({
     result: output,
