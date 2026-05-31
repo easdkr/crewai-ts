@@ -713,6 +713,8 @@ const flowMetadata = new WeakMap<FlowMetadataTarget, FlowMethodEntry[]>();
 const humanFeedbackMetadata = new WeakMap<FlowMetadataTarget, Map<string, HumanFeedbackConfig>>();
 
 export class Flow<TState extends object = Record<string, unknown>> {
+  readonly entityType = "flow";
+  readonly entity_type = "flow";
   readonly name: string | null;
   readonly maxMethodCalls: number;
   inputProvider: InputProvider | null;

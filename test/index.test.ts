@@ -17383,6 +17383,26 @@ describe("runtime state", () => {
     expect(state.event_record.get(event.eventId)?.event).toBe(event);
   });
 
+  it("registers event sources and avoids duplicating agents owned by registered crews", () => {
+    const bus = new EventBus();
+    const state = new RuntimeState();
+    const crew = new Crew({ name: "Runtime Crew" });
+    const agentInstance = new Agent({
+      role: "Researcher",
+      goal: "Research",
+      backstory: "Knows runtime state",
+      crew,
+    });
+    bus.set_runtime_state(state);
+
+    bus.emit(crew, new CrewKickoffStartedEvent({ crewName: "Runtime Crew", inputs: {} }));
+    bus.emit(agentInstance, new AgentExecutionStartedEvent({ agent: agentInstance, task: null }));
+
+    expect(crew.entity_type).toBe("crew");
+    expect(agentInstance.entity_type).toBe("agent");
+    expect(state.root).toEqual([crew]);
+  });
+
   it("runs event handlers in dependency order and validates cycles", () => {
     const bus = new EventBus();
     const order: string[] = [];

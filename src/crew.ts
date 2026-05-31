@@ -152,6 +152,8 @@ export type CrewOptions = {
 };
 
 export class Crew {
+  readonly entityType = "crew";
+  readonly entity_type = "crew";
   name: string | null;
   config: Record<string, unknown> | null;
   agents: Agent[];

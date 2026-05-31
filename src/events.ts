@@ -4081,8 +4081,7 @@ export class EventBus {
   }
 
   emit(source: unknown, event: CrewAIEvent): void {
-    applyEventContext(event);
-    this.recordEvent(event);
+    this.prepareEvent(source, event);
     this.dispatchPrepared(source, event);
   }
 
@@ -4093,8 +4092,7 @@ export class EventBus {
   }
 
   async aemit(source: unknown, event: CrewAIEvent): Promise<void> {
-    applyEventContext(event);
-    this.recordEvent(event);
+    this.prepareEvent(source, event);
     await this.dispatchPreparedAndWait(source, event);
   }
 
@@ -4304,6 +4302,12 @@ export class EventBus {
       return;
     }
     this.registeredEntityIds.add(entity);
+    if (getEntityType(entity) === "agent") {
+      const crew = (entity as { crew?: unknown }).crew;
+      if (crew && typeof crew === "object" && this.registeredEntityIds.has(crew)) {
+        return;
+      }
+    }
     this.currentRuntimeState ??= new RuntimeState({ root: [] });
     this.currentRuntimeState.root.push(entity);
   }
@@ -4314,6 +4318,19 @@ export class EventBus {
 
   private recordEvent(event: CrewAIEvent): void {
     this.currentRuntimeState?.eventRecord.add(event);
+  }
+
+  private prepareEvent(source: unknown, event: CrewAIEvent): void {
+    this.registerSource(source);
+    applyEventContext(event);
+    this.recordEvent(event);
+  }
+
+  private registerSource(source: unknown): void {
+    const entityType = getEntityType(source);
+    if (entityType === "flow" || entityType === "crew" || entityType === "agent") {
+      this.registerEntity(source);
+    }
   }
 
   validateDependencies(): void {
@@ -4377,6 +4394,15 @@ function cloneDependencyMap(
   source: Map<EventType, Map<EventHandler, readonly Depends[]>>,
 ): Map<EventType, Map<EventHandler, readonly Depends[]>> {
   return new Map([...source.entries()].map(([eventType, dependencies]) => [eventType, new Map(dependencies)]));
+}
+
+function getEntityType(entity: unknown): string | null {
+  if (!entity || typeof entity !== "object") {
+    return null;
+  }
+  const record = entity as { entity_type?: unknown; entityType?: unknown };
+  const value = record.entity_type ?? record.entityType;
+  return typeof value === "string" ? value : null;
 }
 
 export const crewaiEventBus = new EventBus();

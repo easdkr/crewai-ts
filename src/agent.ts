@@ -183,6 +183,8 @@ export type AgentExecutionOptions = {
 export type AgentKickoffInput = string | readonly LLMMessage[];
 
 export class Agent {
+  readonly entityType = "agent";
+  readonly entity_type = "agent";
   role: string;
   goal: string;
   backstory: string;
