@@ -104,9 +104,11 @@ export class MemoryMatch {
 
 export type MemoryOptions = {
   readOnly?: boolean;
+  read_only?: boolean;
   rootScope?: string | null;
+  root_scope?: string | null;
   llm?: LLM | null;
-};
+} & ConstructorParameters<typeof MemoryConfig>[0];
 
 export class ExtractedMetadata {
   readonly entities: readonly string[];
@@ -828,13 +830,15 @@ export class Memory {
   readonly readOnly: boolean;
   readonly rootScope: string | null;
   readonly llm: LLM | null;
+  private readonly config: MemoryConfig;
   private readonly records: MemoryRecord[] = [];
   private readonly pendingWrites: Array<() => MemoryRecord[]> = [];
 
   constructor(options: MemoryOptions = {}) {
-    this.readOnly = options.readOnly ?? false;
-    this.rootScope = options.rootScope ?? null;
+    this.readOnly = options.readOnly ?? options.read_only ?? false;
+    this.rootScope = options.rootScope ?? options.root_scope ?? null;
     this.llm = options.llm ?? null;
+    this.config = new MemoryConfig(options);
   }
 
   remember(
@@ -864,7 +868,7 @@ export class Memory {
         scope: this.scopePath(options.scope),
         categories: options.categories ?? [],
         metadata: options.metadata ?? {},
-        importance: options.importance ?? 0.5,
+        importance: options.importance ?? this.config.defaultImportance,
         source: options.source ?? null,
         private: options.private ?? false,
       });
@@ -945,13 +949,12 @@ export class Memory {
   private findSimilarRecords(content: string, scope: string | null | undefined): MemoryRecord[] {
     const terms = tokenize(content);
     const effectiveScope = scope ? this.scopePath(scope) : this.rootScope;
-    const config = new MemoryConfig();
     return this.records
       .filter((record) => !effectiveScope || record.scope.startsWith(effectiveScope))
       .map((record) => ({ record, score: scoreRecord(record, terms) }))
-      .filter(({ score }) => score >= config.consolidationThreshold)
+      .filter(({ score }) => score >= this.config.consolidationThreshold)
       .sort((left, right) => right.score - left.score)
-      .slice(0, config.consolidationLimit)
+      .slice(0, this.config.consolidationLimit)
       .map(({ record }) => record);
   }
 
@@ -1242,13 +1245,13 @@ export class Memory {
     }));
     const start = performance.now();
     try {
-      const activeItems = deduplicateMemoryBatch(items);
+      const activeItems = deduplicateMemoryBatch(items, this.config);
       const records = activeItems.map((item) => new MemoryRecord({
         content: item.content,
         scope: this.scopePath(item.options.scope),
         categories: item.options.categories ?? [],
         metadata: item.options.metadata ?? {},
-        importance: item.options.importance ?? 0.5,
+        importance: item.options.importance ?? this.config.defaultImportance,
         source: item.options.source ?? null,
         private: item.options.private ?? false,
       }));
@@ -1832,9 +1835,8 @@ function scoreRecord(record: MemoryRecord, queryTerms: Set<string>): number {
   return overlap / queryTerms.size + record.importance * 0.01;
 }
 
-function deduplicateMemoryBatch<T extends { content: string }>(items: readonly T[]): T[] {
+function deduplicateMemoryBatch<T extends { content: string }>(items: readonly T[], config = new MemoryConfig()): T[] {
   const active: T[] = [];
-  const config = new MemoryConfig();
   for (const item of items) {
     const duplicate = active.some((existing) =>
       tokenCosineSimilarity(existing.content, item.content) >= config.batchDedupThreshold,

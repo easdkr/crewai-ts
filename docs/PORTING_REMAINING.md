@@ -10,7 +10,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `npm run build`
   - `npm run lint`
   - `npm run smoke:pack`
-- Test suite: 324 passing tests.
+- Test suite: 325 passing tests.
 - Root export parity against upstream clone `/tmp/crewai-upstream.lPeuQi/crewAI` at commit `2148c7e`: `total_missing=0`.
 - Public method parity has been tightened for core runtime classes:
   - `ConsoleFormatter`: `missing=0`
@@ -55,6 +55,7 @@ When more goal budget is available, continue from the behavioral parity audits b
 - Added unified memory compatibility helpers used by Flow and scoped views:
   - `Memory.remember_many`, `extract_memories`, `update`, `drain_writes`, `close`
   - `Memory.list_records` / `listRecords` plus `aremember`, `aremember_many`, `arecall`, and `aextract_memories`
+  - `Memory` constructor now honors upstream snake_case `root_scope`, `read_only`, and memory scoring/consolidation config aliases
   - `Memory.aextract_memories` now routes through the configured LLM-backed extraction helper with safe fallback
   - `Memory.aremember` now uses configured LLM save analysis to infer missing scope, categories, importance, and extracted metadata
   - `Memory.aremember` now applies configured LLM consolidation plans for similar-record updates

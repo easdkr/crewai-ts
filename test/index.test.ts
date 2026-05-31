@@ -10730,6 +10730,50 @@ describe("memory", () => {
     expect(seen).toHaveLength(1);
   });
 
+  it("honors upstream snake_case memory constructor configuration", async () => {
+    const seen: string[] = [];
+    const memory = new Memory({
+      root_scope: "/crew",
+      consolidation_limit: 1,
+      llm: (messages, options) => {
+        seen.push(options?.responseModel === ConsolidationPlan ? "consolidation" : "analysis");
+        expect(messages.at(-1)?.content).toContain("id=existing-memory-a");
+        expect(messages.at(-1)?.content).not.toContain("id=existing-memory-b");
+        return JSON.stringify({
+          actions: [],
+          insert_new: true,
+        });
+      },
+    });
+    memory.update(new MemoryRecord({
+      id: "existing-memory-a",
+      content: "CrewAI memory constructor config",
+      scope: "/crew/research",
+      categories: ["architecture"],
+      importance: 0.7,
+    }));
+    memory.update(new MemoryRecord({
+      id: "existing-memory-b",
+      content: "CrewAI memory constructor config",
+      scope: "/crew/research",
+      categories: ["architecture"],
+      importance: 0.7,
+    }));
+
+    const record = await memory.aremember("CrewAI memory constructor config", {
+      scope: "/research",
+      categories: ["architecture"],
+      importance: 0.8,
+    });
+
+    expect(record).toMatchObject({
+      content: "CrewAI memory constructor config",
+      scope: "/crew/research",
+    });
+    expect(memory.allRecords()).toHaveLength(3);
+    expect(seen).toEqual(["consolidation"]);
+  });
+
   it("uses configured memory LLM consolidation plans to update similar records", async () => {
     const seen: string[] = [];
     const memory = new Memory({
