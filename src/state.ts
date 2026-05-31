@@ -305,6 +305,14 @@ export class RuntimeState {
     return await RuntimeState.fromCheckpoint(config, provider);
   }
 
+  static async afromCheckpoint(config: CheckpointConfig, provider: BaseProvider = config.provider): Promise<RuntimeState> {
+    return await RuntimeState.fromCheckpoint(config, provider);
+  }
+
+  static async afrom_checkpoint(config: CheckpointConfig, provider: BaseProvider = config.provider): Promise<RuntimeState> {
+    return await RuntimeState.afromCheckpoint(config, provider);
+  }
+
   private chainLineage(location: string): void {
     const checkpointId = this.provider.extractId(location);
     this.checkpointId = checkpointId;

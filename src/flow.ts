@@ -365,6 +365,14 @@ export class StateProxy<TState extends object = Record<string, unknown>> {
   toJSON(): TState {
     return this.state;
   }
+
+  modelDump(): TState {
+    return this.state;
+  }
+
+  model_dump(): TState {
+    return this.modelDump();
+  }
 }
 
 function compareSortValues(left: unknown, right: unknown): number {

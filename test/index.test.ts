@@ -7399,6 +7399,7 @@ describe("flow runtime", () => {
     proxy.dict("meta").set("b", 2);
 
     expect(state).toEqual({ items: [1, 2], meta: { a: 1, b: 2 }, done: true });
+    expect(proxy.model_dump()).toBe(state);
   });
 
   it("mirrors upstream collection helpers on locked flow proxies", () => {
@@ -13007,8 +13008,14 @@ describe("runtime state", () => {
       restore_from: second,
       provider,
     }));
+    const asyncRestored = await RuntimeState.afrom_checkpoint(new CheckpointConfig({
+      restore_from: second,
+      provider,
+    }));
     expect(restored.checkpoint_id).toBe(secondId);
     expect(restored.parent_id).toBe(secondId);
+    expect(asyncRestored.checkpoint_id).toBe(secondId);
+    expect(asyncRestored.parent_id).toBe(secondId);
   });
 
   it("forks runtime state branches with explicit and generated names", () => {
