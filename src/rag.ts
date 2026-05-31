@@ -235,6 +235,10 @@ export class BedrockProvider {
     this.model_name = options.model_name ?? "amazon.titan-embed-text-v1";
     this.session = options.session ?? create_aws_session();
   }
+
+  build(): TypedEmbeddingFunction {
+    return defaultEmbeddingCallable;
+  }
 }
 
 export type CohereProviderConfig = { api_key?: string; model_name?: string };
@@ -1640,15 +1644,95 @@ export function buildEmbedderFromDict(spec: ProviderSpec): TypedEmbeddingFunctio
     return callable;
   }
   const builder = embeddingProviderBuilders.get(providerName);
-  if (!builder) {
-    throw new Error(
-      `No embedding provider builder registered for provider '${providerName}'. Register one with registerEmbeddingProviderBuilder().`,
-    );
+  if (builder) {
+    return builder(spec);
   }
-  return builder(spec);
+  return buildEmbedderFromBuiltinProvider(providerName, spec.config ?? {});
 }
 
 export const build_embedder_from_dict = buildEmbedderFromDict;
+
+function buildEmbedderFromBuiltinProvider(
+  providerName: AllowedEmbeddingProvider,
+  config: Record<string, unknown>,
+): TypedEmbeddingFunction {
+  switch (providerName) {
+    case "azure":
+      return new AzureProvider(toAzureProviderConfig(config)).build();
+    case "amazon-bedrock":
+      return new BedrockProvider(config).build();
+    case "cohere":
+      return new CohereProvider(config).build();
+    case "google":
+    case "google-generativeai":
+      return new GenerativeAiProvider(config).build();
+    case "google-vertex":
+      return new VertexAIProvider(config).build();
+    case "huggingface":
+      return new HuggingFaceProvider(config).build();
+    case "instructor":
+      return new InstructorProvider(config).build();
+    case "jina":
+      return new JinaProvider(config).build();
+    case "ollama":
+      return new OllamaProvider(config).build();
+    case "onnx":
+      return new ONNXProvider(config).build();
+    case "openai":
+      return new OpenAIProvider(config).build();
+    case "openclip":
+      return new OpenCLIPProvider(config).build();
+    case "roboflow":
+      return new RoboflowProvider(config).build();
+    case "sentence-transformer":
+      return new SentenceTransformerProvider(config).build();
+    case "text2vec":
+      return new Text2VecProvider(config).build();
+    case "voyageai":
+      return new VoyageAIProvider(config).build();
+    case "watsonx":
+      return new WatsonXProvider(config).build();
+    case "custom":
+      throw new Error("Custom provider requires 'embedding_callable' in config");
+  }
+}
+
+function toAzureProviderConfig(config: Record<string, unknown>): AzureProviderConfig {
+  const options: AzureProviderConfig = {
+    deployment_id: optionalString(config.deployment_id) ?? "",
+  };
+  assignOptionalString(options, "api_key", config.api_key);
+  assignOptionalString(options, "api_base", config.api_base);
+  assignOptionalString(options, "api_type", config.api_type);
+  assignOptionalString(options, "api_version", config.api_version);
+  assignOptionalString(options, "model_name", config.model_name);
+  assignOptionalString(options, "organization_id", config.organization_id);
+  if (isRecord(config.default_headers)) {
+    options.default_headers = config.default_headers;
+  }
+  if (typeof config.dimensions === "number") {
+    options.dimensions = config.dimensions;
+  }
+  return options;
+}
+
+function assignOptionalString(
+  target: AzureProviderConfig,
+  key: "api_key" | "api_base" | "api_type" | "api_version" | "model_name" | "organization_id",
+  value: unknown,
+): void {
+  if (typeof value === "string") {
+    target[key] = value;
+  }
+}
+
+function optionalString(value: unknown): string | undefined {
+  return typeof value === "string" ? value : undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
 
 export function buildEmbedder(spec: EmbedderConfig): TypedEmbeddingFunction {
   if (typeof spec === "function") {

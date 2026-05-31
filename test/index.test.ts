@@ -4620,7 +4620,7 @@ describe("RAG configuration and factories", () => {
     });
     expect(await registered(["CrewAI"])).toEqual([[6, 3]]);
     expect(() => buildEmbedderFromDict({ provider: "custom", config: {} })).toThrow("embedding_callable");
-    expect(() => buildEmbedderFromDict({ provider: "ollama", config: { model_name: "nomic-embed-text" } })).toThrow("No embedding provider builder registered");
+    expect(buildEmbedderFromDict({ provider: "ollama", config: { model_name: "nomic-embed-text" } })(["CrewAI"])).toEqual([[0]]);
   });
 
   it("exposes upstream embedding provider config fields and defaults", () => {
