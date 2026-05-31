@@ -137,6 +137,8 @@ When more goal budget is available, continue from the behavioral parity audits b
   - `TaskMethod` now exposes upstream-style `ensure_task_name` and applies default task names on direct `call`/`invoke` paths.
 - Added planning compatibility behavior:
   - `StepObservation.coerce_single_refinement_to_list` now exposes the upstream validator helper for single refinement objects.
+- Added rate-limit compatibility behavior:
+  - `RPMController.reset_counter` now exposes the upstream reset helper and returns the controller instance.
 - Added A2A auth compatibility behavior:
   - `HTTPBasicAuth`, `HTTPDigestAuth`, and `APIKeyAuth` now expose upstream-style concrete `apply_auth` helpers.
   - `HTTPDigestAuth.configure_client` and `APIKeyAuth.configure_client` now idempotently configure digest auth and query-param request hooks.

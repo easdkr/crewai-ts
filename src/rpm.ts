@@ -55,6 +55,15 @@ export class RPMController extends RpmController {
     return this.checkOrWait();
   }
 
+  resetCounter(): this {
+    this.reset();
+    return this;
+  }
+
+  reset_counter(): this {
+    return this.resetCounter();
+  }
+
   stopRpmCounter(): void {
     this.reset();
   }

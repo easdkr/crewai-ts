@@ -165,6 +165,7 @@ import {
   persist,
   Prompts,
   RuntimeState,
+  RPMController,
   SecurityConfig,
   ServerTransportConfig,
   SQLiteFlowPersistence,
@@ -5845,6 +5846,15 @@ describe("core crew runtime", () => {
 });
 
 describe("agent planning", () => {
+  it("exposes upstream RPMController reset_counter helper", () => {
+    const controller = new RPMController({ max_rpm: 2 });
+
+    expect(controller.reset_counter()).toBe(controller);
+    expect(controller.resetCounter()).toBe(controller);
+    expect(controller.check_or_wait()).toBe(true);
+    controller.stop_rpm_counter();
+  });
+
   it("exposes upstream StepObservation refinement coercion helper", () => {
     const single = { step_number: 3, new_description: "Pick the best option" };
 
