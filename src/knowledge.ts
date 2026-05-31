@@ -724,8 +724,18 @@ export class CrewDoclingSource extends BaseFileKnowledgeSource {
 
 export class SourceHelper {
   static readonly SUPPORTED_FILE_TYPES = [".csv", ".pdf", ".json", ".txt", ".xlsx", ".xls"] as const;
+  static readonly _FILE_TYPE_MAP = {
+    ".csv": CSVKnowledgeSource,
+    ".pdf": PDFKnowledgeSource,
+    ".json": JSONKnowledgeSource,
+    ".txt": TextFileKnowledgeSource,
+    ".xlsx": ExcelKnowledgeSource,
+    ".xls": ExcelKnowledgeSource,
+  } as const;
 
   readonly supportedFileTypes = SourceHelper.SUPPORTED_FILE_TYPES;
+  readonly _fileTypeMap = SourceHelper._FILE_TYPE_MAP;
+  readonly _file_type_map = SourceHelper._FILE_TYPE_MAP;
 
   isSupportedFile(filePath: string): boolean {
     return SourceHelper.isSupportedFile(filePath);
@@ -745,25 +755,14 @@ export class SourceHelper {
 
   static getSource(filePath: string, metadata?: Record<string, unknown> | null): KnowledgeSource {
     const extension = extname(filePath).toLowerCase();
-    const options = {
-      filePaths: [filePath],
-      ...(metadata === undefined || metadata === null ? {} : { metadata }),
-    };
-    switch (extension) {
-      case ".csv":
-        return new CSVKnowledgeSource(options);
-      case ".json":
-        return new JSONKnowledgeSource(options);
-      case ".txt":
-        return new TextFileKnowledgeSource(options);
-      case ".pdf":
-        return new PDFKnowledgeSource(options);
-      case ".xlsx":
-      case ".xls":
-        return new ExcelKnowledgeSource(options);
-      default:
-        throw new Error(`Unsupported file type: ${filePath}`);
+    if (!this.isSupportedFile(filePath)) {
+      throw new Error(`Unsupported file type: ${filePath}`);
     }
+    const SourceClass = this._FILE_TYPE_MAP[extension as keyof typeof SourceHelper._FILE_TYPE_MAP];
+    return new SourceClass({
+      file_path: [filePath],
+      ...(metadata === undefined || metadata === null ? {} : { metadata }),
+    });
   }
 
   static get_source(filePath: string, metadata?: Record<string, unknown> | null): KnowledgeSource {
