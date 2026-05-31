@@ -13499,6 +13499,21 @@ describe("memory", () => {
     expect(memory.list_records().map((record) => record.content)).toEqual(["beta memory"]);
   });
 
+  it("rebinds MemoryScope and MemorySlice in place after restore", () => {
+    const original = new Memory();
+    const restored = new Memory();
+    const scope = original.scope("/team");
+    const slice = original.slice(["/team"], { readOnly: false });
+
+    expect(scope.bind(restored)).toBe(scope);
+    scope.remember("scoped rebound");
+    expect(restored.list_records().map((record) => record.content)).toEqual(["scoped rebound"]);
+
+    expect(slice.bind(restored)).toBe(slice);
+    slice.remember("slice rebound");
+    expect(restored.list_records().map((record) => record.content)).toEqual(["slice rebound", "scoped rebound"]);
+  });
+
   it("automatically appends relevant crew memories to task prompts", async () => {
     const memory = new Memory();
     memory.remember("Nest should consume crewai-ts as a normal TypeScript library", {

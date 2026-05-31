@@ -2376,7 +2376,7 @@ type MemoryRecallOptions = NonNullable<Parameters<Memory["recall"]>[1]>;
 type MemoryForgetOptions = NonNullable<Parameters<Memory["forget"]>[0]>;
 
 export class MemoryScope {
-  readonly memory: Memory;
+  memory: Memory;
   readonly rootPath: string;
 
   constructor(memory: Memory, rootPath = "/") {
@@ -2511,13 +2511,14 @@ export class MemoryScope {
     return new MemoryScope(this.memory, joinScopePaths(this.rootPath, path));
   }
 
-  bind(memory: Memory): MemoryScope {
-    return new MemoryScope(memory, this.rootPath);
+  bind(memory: Memory): this {
+    this.memory = memory;
+    return this;
   }
 }
 
 export class MemorySlice {
-  readonly memory: Memory;
+  memory: Memory;
   readonly scopes: readonly string[];
   readonly categories: readonly string[] | null;
   private readonly readOnlyValue: boolean;
@@ -2694,8 +2695,9 @@ export class MemorySlice {
     return treeForRecords(this.recordsInSlice(), full, maxDepth);
   }
 
-  bind(memory: Memory): MemorySlice {
-    return new MemorySlice(memory, this.scopes, { categories: this.categories, readOnly: this.readOnlyValue });
+  bind(memory: Memory): this {
+    this.memory = memory;
+    return this;
   }
 
   private recordsInSlice(): readonly MemoryRecord[] {
