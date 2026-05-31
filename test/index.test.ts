@@ -5009,6 +5009,88 @@ describe("telemetry compatibility", () => {
     expect(spans[8]?.attributes).toMatchObject({ crewai_version: "1.14.6", feature: "planning:creation" });
     expect(spans[9]?.attributes).toMatchObject({ crewai_version: "1.14.6", template_name: "starter" });
   });
+
+  it("records upstream share_crew platform and fingerprint telemetry details", () => {
+    const telemetry = new Telemetry();
+    telemetry.clearSpans();
+    const crew = {
+      id: "crew-share",
+      key: "share-key",
+      process: "sequential",
+      memory: true,
+      share_crew: true,
+      fingerprint: {
+        uuid_str: "crew-fp",
+        created_at: new Date("2026-05-31T00:00:00.000Z"),
+        metadata: { template: "starter" },
+      },
+      agents: [{
+        id: "agent-share",
+        key: "agent-key",
+        role: "Researcher",
+        goal: "Find facts",
+        backstory: "Careful",
+        verbose: true,
+        max_iter: 3,
+        max_rpm: 10,
+        allow_delegation: false,
+        allow_code_execution: true,
+        max_retry_limit: 2,
+        llm: { model: "gpt-test" },
+        tools: [{ name: "Search Tool" }],
+        fingerprint: {
+          uuid_str: "agent-fp",
+          created_at: new Date("2026-05-31T00:01:00.000Z"),
+        },
+      }],
+      tasks: [{
+        id: "task-share",
+        key: "task-key",
+        description: "Research CrewAI",
+        expected_output: "Summary",
+        async_execution: false,
+        human_input: true,
+        agent: { role: "Researcher", key: "agent-key" },
+        context: [{ description: "Context task" }],
+        tools: [{ name: "Write Report" }],
+        fingerprint: {
+          uuid_str: "task-fp",
+          created_at: new Date("2026-05-31T00:02:00.000Z"),
+        },
+      }],
+    };
+
+    telemetry.crew_creation(crew, { topic: "CrewAI" });
+
+    const span = telemetry.getSpans().at(-1);
+    expect(span?.name).toBe("Crew Created");
+    expect(span?.attributes).toMatchObject({
+      crew_fingerprint: "crew-fp",
+      crew_fingerprint_created_at: "2026-05-31T00:00:00.000Z",
+      crew_fingerprint_metadata: "{\"template\":\"starter\"}",
+      crew_inputs: "{\"topic\":\"CrewAI\"}",
+    });
+    expect(typeof span?.attributes.platform).toBe("string");
+    expect(typeof span?.attributes.platform_system).toBe("string");
+    const agents = JSON.parse(String(span?.attributes.crew_agents)) as Array<Record<string, unknown>>;
+    const tasks = JSON.parse(String(span?.attributes.crew_tasks)) as Array<Record<string, unknown>>;
+    expect(agents[0]).toMatchObject({
+      goal: "Find facts",
+      backstory: "Careful",
+      i18n: "en",
+      fingerprint: "agent-fp",
+      fingerprint_created_at: "2026-05-31T00:01:00.000Z",
+      tools_names: ["Search Tool"],
+    });
+    expect(tasks[0]).toMatchObject({
+      description: "Research CrewAI",
+      expected_output: "Summary",
+      context: ["Context task"],
+      fingerprint: "task-fp",
+      fingerprint_created_at: "2026-05-31T00:02:00.000Z",
+      tools_names: ["Write Report"],
+    });
+  });
 });
 
 describe("config and token counter utilities", () => {

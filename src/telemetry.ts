@@ -1,4 +1,5 @@
 import { __version__ } from "./version.js";
+import { cpus, platform, release, type, version as osVersion } from "node:os";
 
 export const CREWAI_TELEMETRY_BASE_URL = "https://telemetry.crewai.com:4319";
 export const CREWAI_TELEMETRY_SERVICE_NAME = "crewAI-telemetry";
@@ -162,8 +163,14 @@ export class Telemetry {
       this._add_attribute(span, "crew_number_of_agents", asArray(readProperty(crew, "agents")).length);
       this._add_attribute(span, "crew_agents", JSON.stringify(asArray(readProperty(crew, "agents")).map((agent) => publicAgentTelemetry(agent, isShareCrew(crew)))));
       this._add_attribute(span, "crew_tasks", JSON.stringify(asArray(readProperty(crew, "tasks")).map((task) => publicTaskTelemetry(task, isShareCrew(crew)))));
+      addCrewFingerprintDetails(span, crew, this._add_attribute.bind(this));
       if (isShareCrew(crew)) {
         this._add_attribute(span, "crew_inputs", JSON.stringify(inputs ?? {}));
+        this._add_attribute(span, "platform", platform());
+        this._add_attribute(span, "platform_release", release());
+        this._add_attribute(span, "platform_system", type());
+        this._add_attribute(span, "platform_version", osVersion());
+        this._add_attribute(span, "cpus", cpus().length);
       }
       closeSpan(span);
     });
@@ -535,6 +542,8 @@ function llmModel(llm: unknown): string | null {
 }
 
 function publicAgentTelemetry(agent: unknown, includePrivateFields: boolean): Record<string, unknown> {
+  const fingerprint = asRecord(readProperty(agent, "fingerprint"));
+  const fingerprintCreatedAt = fingerprint?.created_at ?? fingerprint?.createdAt;
   const output: Record<string, unknown> = {
     key: readProperty(agent, "key") ?? "",
     id: telemetryString(readProperty(agent, "id")),
@@ -552,11 +561,16 @@ function publicAgentTelemetry(agent: unknown, includePrivateFields: boolean): Re
   if (includePrivateFields) {
     output.goal = readProperty(agent, "goal") ?? "";
     output.backstory = readProperty(agent, "backstory") ?? "";
+    output.i18n = "en";
+    output.fingerprint = fingerprint?.uuid_str ?? fingerprint?.uuidStr ?? null;
+    output.fingerprint_created_at = dateLikeToISOString(fingerprintCreatedAt);
   }
   return output;
 }
 
 function publicTaskTelemetry(task: unknown, includePrivateFields: boolean): Record<string, unknown> {
+  const fingerprint = asRecord(readProperty(task, "fingerprint"));
+  const fingerprintCreatedAt = fingerprint?.created_at ?? fingerprint?.createdAt;
   const output: Record<string, unknown> = {
     key: readProperty(task, "key") ?? "",
     id: telemetryString(readProperty(task, "id")),
@@ -572,6 +586,35 @@ function publicTaskTelemetry(task: unknown, includePrivateFields: boolean): Reco
     output.context = Array.isArray(readProperty(task, "context"))
       ? asArray(readProperty(task, "context")).map((entry) => readProperty(entry, "description") ?? "")
       : null;
+    output.fingerprint = fingerprint?.uuid_str ?? fingerprint?.uuidStr ?? null;
+    output.fingerprint_created_at = dateLikeToISOString(fingerprintCreatedAt);
   }
   return output;
+}
+
+function addCrewFingerprintDetails(span: SpanLike, crew: unknown, addAttributeFn: AddAttributeFn): void {
+  const fingerprint = asRecord(readProperty(crew, "fingerprint"));
+  if (!fingerprint) {
+    return;
+  }
+  const createdAt = fingerprint.created_at ?? fingerprint.createdAt;
+  const metadata = fingerprint.metadata;
+  const createdAtIso = dateLikeToISOString(createdAt);
+  if (createdAtIso) {
+    addAttributeFn(span, "crew_fingerprint_created_at", createdAtIso);
+  }
+  if (metadata !== null && metadata !== undefined) {
+    addAttributeFn(span, "crew_fingerprint_metadata", JSON.stringify(metadata));
+  }
+}
+
+function dateLikeToISOString(value: unknown): string | null {
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+  if (typeof value === "string") {
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? value : parsed.toISOString();
+  }
+  return null;
 }

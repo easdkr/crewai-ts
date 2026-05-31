@@ -11,7 +11,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `npm run lint`
   - `npm run smoke:pack`
   - `python3 scripts/check-export-parity.py`
-- Test suite: 470 passing tests.
+- Test suite: 471 passing tests.
 - Root export parity against upstream clone `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `5cdc420`: `total_missing=0`.
 - Public method parity has been tightened for core runtime classes:
   - `ConsoleFormatter`: `missing=0`
@@ -150,6 +150,7 @@ When more goal budget is available, continue from the behavioral parity audits b
   - Agent execution lifecycle events now expose upstream-style `set_fingerprint_data` helpers for fingerprint metadata refresh.
   - `Telemetry` now exposes deterministic local span recording for upstream task/tool/test/crew/flow/environment/human-feedback/feature/template span methods without enabling network exporters
   - `Telemetry` now records upstream-style `crewai_version` metadata from the shared version export rather than a TypeScript package label.
+  - `Telemetry.crew_creation` now records upstream-style `share_crew` platform details plus crew/agent/task fingerprint timestamps and metadata in the deterministic local span.
   - `TraceBatch` now defaults its batch version from the shared CrewAI version export, matching upstream trace batch manager metadata.
   - `EventListener.setup_listeners` and `TraceCollectionListener.setup_listeners` now expose subclass-level upstream listener setup aliases.
   - `FirstTimeTraceHandler` now exposes upstream-style first-time trace collection state hooks and records local consent/completion without enabling cloud upload behavior.
@@ -292,7 +293,7 @@ When more goal budget is available, continue from the behavioral parity audits b
    - Agent evaluator now has behavior-bearing display aggregation and lifecycle event helper methods.
    - Goal-alignment and semantic-quality evaluator placeholders have been replaced with LLM-backed evaluators.
    - Evaluation trace callback now records event-bus-driven agent/lite-agent traces, tool uses, tool errors, validation errors, LLM calls, and final output.
-   - Telemetry span methods now record deterministic local `RecordedSpan` objects for task/tool/test/crew/flow/environment/human-feedback/feature/template telemetry without external OTLP side effects.
+   - Telemetry span methods now record deterministic local `RecordedSpan` objects for task/tool/test/crew/flow/environment/human-feedback/feature/template telemetry, including `share_crew` platform/fingerprint payload details, without external OTLP side effects.
    - Remaining: deeper OpenTelemetry exporter integration can stay outside the default gate unless the project decides to carry SDK-backed telemetry coverage.
 
 ## Suggested Next Order
