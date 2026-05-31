@@ -686,7 +686,10 @@ import {
   StaticToolFilter,
   StdioTransport,
   TransportType,
+  _afetch_agent_card_impl,
   _get_effective_modes,
+  _get_tls_verify,
+  _prepare_auth_headers,
   isMCPServerConfig,
   isRetryableError,
   activateSkill,
@@ -3992,18 +3995,42 @@ describe("a2a utilities", () => {
       }),
     } as Response);
 
-    const card = await fetch_agent_card("https://remote.example.com/a2a");
+    const card = await fetch_agent_card("https://cards.example.com/a2a");
 
-    expect(fetchMock).toHaveBeenCalledWith("https://remote.example.com/a2a", expect.objectContaining({ method: "GET" }));
+    expect(fetchMock).toHaveBeenCalledWith("https://cards.example.com/a2a", expect.objectContaining({ method: "GET" }));
     expect(card).toMatchObject({ name: "remote", protocol_version: "0.3.0" });
     expect(events).toHaveLength(1);
     expect(events[0]).toMatchObject({
-      endpoint: "https://remote.example.com/a2a",
+      endpoint: "https://cards.example.com/a2a",
       a2a_agent_name: "remote",
       protocol_version: "0.3.0",
       provider: { organization: "Example" },
       cached: false,
     });
+    fetchMock.mockRestore();
+  });
+
+  it("uses upstream-style A2A agent-card auth helpers and cache controls", async () => {
+    const tls = new TLSConfig({ verify: false });
+    const auth = new APIKeyAuth({ api_key: "query-secret", location: "query", name: "api_key", tls });
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ name: "cached", url: "https://cache.example.com/a2a" }),
+    } as Response);
+
+    await expect(_prepare_auth_headers(auth, 10)).resolves.toEqual([{}, false]);
+    expect(_get_tls_verify(auth)).toBe(false);
+
+    const first = await fetch_agent_card("https://cache.example.com/a2a", auth, 30, true, 300);
+    const second = await fetch_agent_card("https://cache.example.com/a2a", auth, 30, true, 300);
+    const uncached = await _afetch_agent_card_impl("https://cache.example.com/a2a", auth, 30);
+
+    expect(first).toEqual(second);
+    expect(uncached).toMatchObject({ name: "cached" });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenNthCalledWith(1, "https://cache.example.com/a2a?api_key=query-secret", expect.objectContaining({ method: "GET" }));
+    expect(fetchMock).toHaveBeenNthCalledWith(2, "https://cache.example.com/a2a?api_key=query-secret", expect.objectContaining({ method: "GET" }));
+    fetchMock.mockRestore();
   });
 
   it("wraps agent task and kickoff execution with A2A prompt augmentation", async () => {
@@ -4045,7 +4072,7 @@ describe("a2a utilities", () => {
     expect(taskPrompts[0]).toContain("Remote research agent");
     expect(kickoffPrompts[0]).toContain("Summarize CrewAI");
     expect(kickoffPrompts[0]).toContain("<AVAILABLE_A2A_AGENTS>");
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
     fetchMock.mockRestore();
   });
 

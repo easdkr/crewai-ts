@@ -3720,10 +3720,36 @@ export async function aexecute_a2a_delegation(options: Record<string, unknown> |
   return execute_a2a_delegation(options, ...args);
 }
 
-export async function fetch_agent_card(endpoint: string, auth: unknown = null, timeout = 30): Promise<Record<string, unknown>> {
+const agentCardCache = new Map<string, { expiresAt: number; value: Record<string, unknown> }>();
+
+export async function fetch_agent_card(endpoint: string, auth: unknown = null, timeout = 30, use_cache = true, cache_ttl = 300): Promise<Record<string, unknown>> {
+  if (use_cache) {
+    const authHash = auth ? authStoreKey(authTypeName(auth) ?? "auth", stableStringifyAuth(auth)) : authStoreKey("none", "");
+    return await _fetch_agent_card_cached(endpoint, authHash, timeout, Math.floor(Date.now() / Math.max(1, cache_ttl * 1000)), auth, cache_ttl);
+  }
+  return await _afetch_agent_card_impl(endpoint, auth, timeout);
+}
+
+export async function _fetch_agent_card_cached(endpoint: string, authHash: string, timeout: number, _ttlHash: number, auth: unknown = null, cacheTtl = 300): Promise<Record<string, unknown>> {
+  const key = `${endpoint}|${authHash}|${String(timeout)}|${String(_ttlHash)}`;
+  const cached = agentCardCache.get(key);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.value;
+  }
+  const value = await _afetch_agent_card_impl(endpoint, auth, timeout);
+  agentCardCache.set(key, { expiresAt: Date.now() + Math.max(1, cacheTtl) * 1000, value });
+  return value;
+}
+
+export async function _afetch_agent_card_cached(endpoint: string, authHash: string, timeout: number, auth: unknown = null): Promise<Record<string, unknown>> {
+  return await _fetch_agent_card_cached(endpoint, authHash, timeout, Math.floor(Date.now() / 300_000), auth, 300);
+}
+
+export async function _afetch_agent_card_impl(endpoint: string, auth: unknown = null, timeout = 30): Promise<Record<string, unknown>> {
   const start = Date.now();
-  const agentCardUrl = resolveAgentCardUrl(endpoint);
-  const headers = await prepareA2AAuthHeaders(auth);
+  let agentCardUrl = resolveAgentCardUrl(endpoint);
+  const [headers] = await _prepare_auth_headers(auth, timeout);
+  agentCardUrl = applyA2AAuthToUrl(auth, agentCardUrl);
   let response: Response;
   try {
     response = await fetch(agentCardUrl, {
@@ -3748,6 +3774,21 @@ export async function fetch_agent_card(endpoint: string, auth: unknown = null, t
     fetch_time_ms: Date.now() - start,
   }));
   return agentCard;
+}
+
+export function _get_tls_verify(auth: unknown): unknown {
+  if (auth && typeof auth === "object" && "tls" in auth) {
+    const tls = (auth as { tls?: { get_httpx_ssl_context?: () => unknown; getHttpxSslContext?: () => unknown } | null }).tls;
+    return tls?.get_httpx_ssl_context?.() ?? tls?.getHttpxSslContext?.() ?? true;
+  }
+  return true;
+}
+
+export async function _prepare_auth_headers(auth: unknown, timeout = 30): Promise<[Record<string, string>, unknown]> {
+  const headers = await prepareA2AAuthHeaders(auth);
+  const verify = _get_tls_verify(auth);
+  void timeout;
+  return [headers, verify];
 }
 
 async function handleAgentCardFetchError(options: {
@@ -3848,8 +3889,12 @@ function authTypeName(auth: unknown): string | null {
   return constructorName && constructorName !== "Object" ? constructorName : null;
 }
 
-export async function afetch_agent_card(endpoint: string, auth: unknown = null, timeout = 30): Promise<Record<string, unknown>> {
-  return fetch_agent_card(endpoint, auth, timeout);
+export async function afetch_agent_card(endpoint: string, auth: unknown = null, timeout = 30, use_cache = true): Promise<Record<string, unknown>> {
+  if (use_cache) {
+    const authHash = auth ? authStoreKey(authTypeName(auth) ?? "auth", stableStringifyAuth(auth)) : authStoreKey("none", "");
+    return await _afetch_agent_card_cached(endpoint, authHash, timeout, auth);
+  }
+  return await _afetch_agent_card_impl(endpoint, auth, timeout);
 }
 
 export type A2AAgentSkill = {
@@ -3917,14 +3962,52 @@ async function prepareA2AAuthHeaders(auth: unknown): Promise<Record<string, stri
     apply_auth?: (client: unknown, headers: Record<string, string>) => unknown;
     applyAuth?: (client: unknown, headers: Record<string, string>) => unknown;
   };
-  const applyAuth = authLike.apply_auth ?? authLike.applyAuth;
-  if (!applyAuth) {
+  if (authLike.apply_auth) {
+    const headers: unknown = await authLike.apply_auth.call(auth, null, {});
+    return typeof headers === "object" && headers !== null
+      ? Object.fromEntries(Object.entries(headers).map(([key, value]) => [key, String(value)]))
+      : {};
+  }
+  if (!authLike.applyAuth) {
     return {};
   }
-  const headers: unknown = await applyAuth(null, {});
+  const headers: unknown = await authLike.applyAuth.call(auth, null, {});
   return typeof headers === "object" && headers !== null
     ? Object.fromEntries(Object.entries(headers).map(([key, value]) => [key, String(value)]))
     : {};
+}
+
+function applyA2AAuthToUrl(auth: unknown, url: string): string {
+  if (!auth || typeof auth !== "object") {
+    return url;
+  }
+  const authLike = auth as { apply_to_url?: (url: string) => string; applyToUrl?: (url: string) => string };
+  return authLike.apply_to_url?.(url) ?? authLike.applyToUrl?.(url) ?? url;
+}
+
+function stableStringifyAuth(auth: unknown): string {
+  if (auth === null || auth === undefined) {
+    return "";
+  }
+  if (typeof auth === "string" || typeof auth === "number" || typeof auth === "boolean" || typeof auth === "bigint") {
+    return auth.toString();
+  }
+  if (typeof auth !== "object") {
+    return typeof auth;
+  }
+  const entries = Object.entries(auth as Record<string, unknown>)
+    .filter(([key]) => !key.startsWith("_") && !["accessToken", "refreshToken", "authorizationCallback", "authorizationPromise", "tokenPromise"].includes(key))
+    .sort(([left], [right]) => left.localeCompare(right));
+  return JSON.stringify(Object.fromEntries(entries.map(([key, value]) => [key, typeof value === "function" ? "[function]" : value])));
+}
+
+function authStoreKey(kind: string, value: string): string {
+  let hash = 0;
+  const input = `${kind}:${value}`;
+  for (let index = 0; index < input.length; index += 1) {
+    hash = (hash * 31 + input.charCodeAt(index)) >>> 0;
+  }
+  return `${kind}:${hash.toString(16)}`;
 }
 
 function stringOrNull(value: unknown): string | null {
