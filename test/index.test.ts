@@ -2918,6 +2918,58 @@ describe("a2a utilities", () => {
     expect(state.last_a2ui_messages[0]).not.toHaveProperty("begin_rendering");
   });
 
+  it("restores A2UI data model history with v0.8 contents flattened", () => {
+    const extension = new A2UIClientExtension();
+    const state = extension.extract_state_from_history([{
+      parts: [
+        {
+          root: {
+            kind: "data",
+            metadata: { mimeType: A2UI_MIME_TYPE },
+            data: {
+              beginRendering: { surfaceId: "surface", root: "root" },
+            },
+          },
+        },
+        {
+          root: {
+            kind: "data",
+            metadata: { mimeType: A2UI_MIME_TYPE },
+            data: {
+              dataModelUpdate: {
+                surfaceId: "surface",
+                path: "/",
+                contents: [
+                  { key: "name", valueString: "Ada" },
+                  { key: "score", valueNumber: 10 },
+                ],
+              },
+            },
+          },
+        },
+        {
+          root: {
+            kind: "data",
+            metadata: { mimeType: A2UI_MIME_TYPE },
+            data: {
+              updateDataModel: {
+                surfaceId: "surface",
+                path: "/score",
+                value: 11,
+              },
+            },
+          },
+        },
+      ],
+    }]);
+
+    expect(state?.data_models.surface).toEqual([
+      { key: "name", valueString: "Ada" },
+      { key: "score", valueNumber: 10 },
+      { surfaceId: "surface", path: "/score", value: 11 },
+    ]);
+  });
+
   it("activates A2UI server hooks only for declared client extensions", async () => {
     const extension = new A2UIServerExtension(["catalog-supported"]);
     const inactiveContext = {

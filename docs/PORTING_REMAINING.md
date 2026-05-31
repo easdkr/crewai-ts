@@ -11,7 +11,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `npm run lint`
   - `npm run smoke:pack`
   - `python3 scripts/check-export-parity.py`
-- Test suite: 446 passing tests.
+- Test suite: 447 passing tests.
 - Root export parity against upstream clone `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `5cdc420`: `total_missing=0`.
 - Public method parity has been tightened for core runtime classes:
   - `ConsoleFormatter`: `missing=0`
@@ -207,6 +207,7 @@ When more goal budget is available, continue from the behavioral parity audits b
   - A2UI standard/basic catalog validation now skips unknown custom components and validates required fields for known v0.8/v0.9 components.
   - A2UI server response DataParts now serialize validated payloads without null fields or duplicate snake_case aliases, matching upstream `model_dump(by_alias=True, exclude_none=True)` behavior.
   - A2UI client response processing now stores extracted messages with the same alias-only non-null serialization used by upstream.
+  - A2UI conversation history restore now flattens v0.8 `dataModelUpdate.contents` while preserving v0.9 `updateDataModel` objects, matching upstream state aggregation.
 - Added security compatibility behavior:
   - `SecurityConfig.validate_fingerprint` now exposes upstream-style fingerprint coercion for null, seed strings, dicts, and `Fingerprint` instances.
 - Added guardrail compatibility behavior:

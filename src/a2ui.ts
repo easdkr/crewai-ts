@@ -537,12 +537,16 @@ export class A2UIClientExtension {
         }
       }
     }
-    for (const key of ["dataModelUpdate", "updateDataModel"]) {
-      const value = data[key];
-      if (isRecord(value)) {
-        state.dataModels[surfaceId] ??= [];
-        state.dataModels[surfaceId].push(value);
-      }
+    const dataModelUpdate = data.dataModelUpdate;
+    if (isRecord(dataModelUpdate)) {
+      const contents = Array.isArray(dataModelUpdate.contents) ? dataModelUpdate.contents : [];
+      state.dataModels[surfaceId] ??= [];
+      state.dataModels[surfaceId].push(...contents.filter(isRecord));
+    }
+    const updateDataModel = data.updateDataModel;
+    if (isRecord(updateDataModel)) {
+      state.dataModels[surfaceId] ??= [];
+      state.dataModels[surfaceId].push(updateDataModel);
     }
   }
 
