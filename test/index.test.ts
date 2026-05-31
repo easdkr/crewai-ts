@@ -17848,6 +17848,8 @@ describe("memory", () => {
       new ItemState("missing embedding"),
     );
 
+    expect(flow._search_one(item)).toEqual([[record, 0.91]]);
+    search.mockClear();
     flow.parallel_find_similar();
 
     expect(search).toHaveBeenCalledTimes(1);
@@ -18075,7 +18077,10 @@ describe("memory", () => {
     flow.state.include_private = false;
     flow.state.source = "self";
 
-    const findings = flow.search_chunks();
+    expect(flow._merged_categories()).toEqual(["memory"]);
+    expect(flow._search_one([1, 0, 0], "/crew")).toEqual(["/crew", [[visible, 0.8]]]);
+    search.mockClear();
+    const findings = flow._do_search();
 
     expect(search).toHaveBeenCalledWith([1, 0, 0], {
       scope_prefix: "/crew",
@@ -18087,6 +18092,7 @@ describe("memory", () => {
     expect(findings[0]?.results).toEqual([[visible, 0.8]]);
     expect(flow.state.chunk_findings).toBe(findings);
     expect(flow.state.confidence).toBeGreaterThan(0);
+    expect(flow.search_chunks()[0]?.results).toEqual(findings[0]?.results);
   });
 
   it("synthesizes RecallFlow results by deduping ranking and attaching evidence gaps", () => {

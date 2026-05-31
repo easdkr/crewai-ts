@@ -529,38 +529,13 @@ export class EncodingFlow {
   }
 
   parallel_find_similar(): void {
-    const searchStorage = this.storage as {
-      search?: (embedding: readonly number[], options?: MemoryVectorSearchOptions) => Array<readonly [MemoryRecord, number]>;
-    } | null;
-    if (typeof searchStorage?.search !== "function") {
-      return;
-    }
     for (const item of this.state.items) {
       if (item.dropped || item.embedding.length === 0) {
         continue;
       }
-      let effectivePrefix: string | null = null;
-      const rootScope = item.root_scope;
-      if (rootScope) {
-        effectivePrefix = rootScope.replace(/\/+$/u, "");
-        const itemScope = item.scope?.replace(/^\/+|\/+$/gu, "");
-        if (itemScope) {
-          effectivePrefix = `${effectivePrefix}/${itemScope}`;
-        }
-      } else {
-        const itemScope = item.scope?.replace(/^\/+|\/+$/gu, "");
-        if (itemScope) {
-          effectivePrefix = item.scope;
-        }
-      }
       let raw: Array<readonly [MemoryRecord, number]>;
       try {
-        raw = searchStorage.search(item.embedding, {
-          scope_prefix: effectivePrefix,
-          categories: null,
-          limit: this.config.consolidationLimit,
-          min_score: 0,
-        });
+        raw = this._search_one(item);
       } catch {
         raw = [];
       }
@@ -573,6 +548,35 @@ export class EncodingFlow {
 
   parallelFindSimilar(): void {
     this.parallel_find_similar();
+  }
+
+  _search_one(item: ItemState): Array<readonly [MemoryRecord, number]> {
+    const searchStorage = this.storage as {
+      search?: (embedding: readonly number[], options?: MemoryVectorSearchOptions) => Array<readonly [MemoryRecord, number]>;
+    } | null;
+    if (typeof searchStorage?.search !== "function") {
+      return [];
+    }
+    let effectivePrefix: string | null = null;
+    const rootScope = item.root_scope;
+    if (rootScope) {
+      effectivePrefix = rootScope.replace(/\/+$/u, "");
+      const itemScope = item.scope?.replace(/^\/+|\/+$/gu, "");
+      if (itemScope) {
+        effectivePrefix = `${effectivePrefix}/${itemScope}`;
+      }
+    } else {
+      const itemScope = item.scope?.replace(/^\/+|\/+$/gu, "");
+      if (itemScope) {
+        effectivePrefix = item.scope;
+      }
+    }
+    return searchStorage.search(item.embedding, {
+      scope_prefix: effectivePrefix,
+      categories: null,
+      limit: this.config.consolidationLimit,
+      min_score: 0,
+    });
   }
 
   async parallel_analyze(): Promise<void> {
@@ -1696,32 +1700,41 @@ export class RecallFlow {
     return this.filter_and_chunk();
   }
 
-  private mergedCategories(): readonly string[] | null {
+  _merged_categories(): readonly string[] | null {
     return this.state.categories && this.state.categories.length > 0 ? this.state.categories : null;
   }
 
-  private doSearch(): Array<{ scope: string; results: Array<readonly [MemoryRecord, number]>; top_score: number }> {
+  private mergedCategories(): readonly string[] | null {
+    return this._merged_categories();
+  }
+
+  _search_one(embedding: readonly number[], scope: string): [string, Array<readonly [MemoryRecord, number]>] {
+    let results = this.storage.search(embedding, {
+      scope_prefix: scope,
+      categories: this._merged_categories(),
+      limit: this.state.limit * this.config.recallOversampleFactor,
+      min_score: 0,
+    });
+    const timeCutoff = this.state.time_cutoff;
+    if (timeCutoff) {
+      results = results.filter(([record]) => record.createdAt >= timeCutoff);
+    }
+    if (!this.state.include_private) {
+      results = results.filter(([record]) => !record.private || record.source === this.state.source);
+    }
+    return [scope, results];
+  }
+
+  _do_search(): Array<{ scope: string; results: Array<readonly [MemoryRecord, number]>; top_score: number }> {
     const findings: Array<{ scope: string; results: Array<readonly [MemoryRecord, number]>; top_score: number }> = [];
     const scopes = this.state.candidate_scopes.length > 0 ? this.state.candidate_scopes : [this.state.scope ?? "/"];
     for (const [, embedding] of this.state.query_embeddings) {
       for (const scope of scopes) {
         let results: Array<readonly [MemoryRecord, number]>;
         try {
-          results = this.storage.search(embedding, {
-            scope_prefix: scope,
-            categories: this.mergedCategories(),
-            limit: this.state.limit * this.config.recallOversampleFactor,
-            min_score: 0,
-          });
+          [, results] = this._search_one(embedding, scope);
         } catch {
           continue;
-        }
-        const timeCutoff = this.state.time_cutoff;
-        if (timeCutoff) {
-          results = results.filter(([record]) => record.createdAt >= timeCutoff);
-        }
-        if (!this.state.include_private) {
-          results = results.filter(([record]) => !record.private || record.source === this.state.source);
         }
         const firstResult = results[0];
         if (firstResult) {
@@ -1734,6 +1747,10 @@ export class RecallFlow {
     this.state.chunk_findings = findings;
     this.state.confidence = findings.reduce((max, finding) => Math.max(max, finding.top_score), 0);
     return findings;
+  }
+
+  private doSearch(): Array<{ scope: string; results: Array<readonly [MemoryRecord, number]>; top_score: number }> {
+    return this._do_search();
   }
 
   search_chunks(): Array<{ scope: string; results: Array<readonly [MemoryRecord, number]>; top_score: number }> {
