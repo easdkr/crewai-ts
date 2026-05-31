@@ -465,6 +465,10 @@ export class CustomEmbeddingFunction {
   call(input: Embeddable): unknown {
     return this.embeddingCallable(input);
   }
+
+  __call__(input: Embeddable): unknown {
+    return this.call(input);
+  }
 }
 
 export class CustomProvider extends BaseEmbeddingsProvider {
@@ -483,6 +487,10 @@ export class GoogleGenAIVertexEmbeddingFunction {
 
   call(input: Embeddable): unknown {
     return defaultEmbeddingCallable(input);
+  }
+
+  __call__(input: Embeddable): unknown {
+    return this.call(input);
   }
 }
 
@@ -532,6 +540,10 @@ export class WatsonXEmbeddingFunction {
 
   call(input: Embeddable): unknown {
     return defaultEmbeddingCallable(input);
+  }
+
+  __call__(input: Embeddable): unknown {
+    return this.call(input);
   }
 }
 
@@ -691,6 +703,10 @@ export class VoyageAIEmbeddingFunction {
 
   call(input: Embeddable): unknown {
     return defaultEmbeddingCallable(input);
+  }
+
+  __call__(input: Embeddable): unknown {
+    return this.call(input);
   }
 }
 

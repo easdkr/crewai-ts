@@ -409,6 +409,7 @@ import {
   BedrockProvider,
   BedrockCompletion,
   CohereProvider,
+  CustomEmbeddingFunction,
   GeminiCompletion,
   GenerativeAiProvider,
   GoogleGenAIVertexEmbeddingFunction,
@@ -6107,6 +6108,14 @@ describe("RAG configuration and factories", () => {
       project_id: "project",
     }).validate_space_or_project()).toBeInstanceOf(WatsonXProvider);
     expect(() => watsonx.validateSpaceOrProject()).toThrow("One of 'space_id' or 'project_id' must be provided");
+  });
+
+  it("exposes upstream __call__ aliases on embedding functions", () => {
+    const custom = new CustomEmbeddingFunction((input) => input.map((value) => [String(value).length]));
+    expect(custom.__call__(["CrewAI"])).toEqual([[6]]);
+    expect(new VoyageAIEmbeddingFunction().__call__(["CrewAI"])).toEqual([[0]]);
+    expect(new GoogleGenAIVertexEmbeddingFunction().__call__(["CrewAI"])).toEqual([[0]]);
+    expect(new WatsonXEmbeddingFunction().__call__(["CrewAI"])).toEqual([[0]]);
   });
 });
 
