@@ -12587,12 +12587,18 @@ describe("tools", () => {
     expect(addTool.max_usage_count).toBeNull();
     expect(addTool.description_updated).toBe(false);
     expect(addTool.env_vars).toEqual([]);
+    expect(addTool._parse_args(JSON.stringify({ a: 5, b: 6 }))).toEqual({ a: 5, b: 6 });
+    expect(addTool.__repr__()).toBe("CrewStructuredTool(name='add_numbers', description='Add two numbers')");
+    expect(addTool.toString()).toBe(addTool.__repr__());
     expect(addTool.invoke({ a: 2, b: 4 })).toBe(6);
     await expect(addTool.ainvoke(JSON.stringify({ a: 3, b: 4 }))).resolves.toBe(7);
     expect(addTool.current_usage_count).toBe(2);
 
     addTool.reset_usage_count();
     expect(addTool.currentUsageCount).toBe(0);
+    addTool._increment_usage_count();
+    expect(addTool.current_usage_count).toBe(1);
+    addTool.reset_usage_count();
     expect(addTool.has_reached_max_usage_count()).toBe(false);
   });
 

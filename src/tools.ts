@@ -706,6 +706,31 @@ export class StructuredTool extends BaseTool {
     return this.func(args);
   }
 
+  _parseArgs(input: ToolInvocationInput): Record<string, unknown> {
+    return this.parseArgs(input);
+  }
+
+  _parse_args(input: ToolInvocationInput): Record<string, unknown> {
+    return this._parseArgs(input);
+  }
+
+  _incrementUsageCount(): void {
+    this.currentUsageCount += 1;
+    this.onUsageClaimed();
+  }
+
+  _increment_usage_count(): void {
+    this._incrementUsageCount();
+  }
+
+  __repr__(): string {
+    return `CrewStructuredTool(name='${sanitizeToolName(this.name)}', description='${this.description}')`;
+  }
+
+  toString(): string {
+    return this.__repr__();
+  }
+
   protected onUsageClaimed(): void {
     if (this.originalTool) {
       this.originalTool.current_usage_count = this.currentUsageCount;
