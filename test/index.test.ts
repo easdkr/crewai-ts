@@ -2873,6 +2873,28 @@ describe("a2a utilities", () => {
     }).toThrow(A2UIValidationError);
   });
 
+  it("wraps A2UI server responses with alias-only non-null DataPart payloads", async () => {
+    const extension = new A2UIServerExtension();
+    const response = await extension.on_response({ state: { a2ui_active: true } }, JSON.stringify({
+      beginRendering: {
+        surfaceId: "surface",
+        root: "root",
+        catalogId: null,
+      },
+    }));
+
+    const parts = (response as { a2ui_parts?: { data?: Record<string, unknown> }[] }).a2ui_parts;
+
+    expect(parts).toHaveLength(1);
+    expect(parts?.[0]?.data).toEqual({
+      beginRendering: {
+        surfaceId: "surface",
+        root: "root",
+      },
+    });
+    expect(parts?.[0]?.data).not.toHaveProperty("begin_rendering");
+  });
+
   it("activates A2UI server hooks only for declared client extensions", async () => {
     const extension = new A2UIServerExtension(["catalog-supported"]);
     const inactiveContext = {

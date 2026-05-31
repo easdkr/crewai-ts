@@ -732,7 +732,7 @@ function missingRequiredFieldGroups(fieldGroups: readonly (readonly string[])[],
 
 function buildDataPart(message: A2UIRecord): A2UIRecord | null {
   try {
-    return { kind: "data", data: validateA2UIMessage(message).modelDump(), metadata: { mimeType: A2UI_MIME_TYPE } };
+    return { kind: "data", data: serializeA2UIDataPartPayload(validateA2UIMessage(message).modelDump()), metadata: { mimeType: A2UI_MIME_TYPE } };
   } catch {
     return null;
   }
@@ -740,10 +740,45 @@ function buildDataPart(message: A2UIRecord): A2UIRecord | null {
 
 function buildDataPartV09(message: A2UIRecord): A2UIRecord | null {
   try {
-    return { kind: "data", data: validateA2UIMessageV09(message).modelDump(), metadata: { mimeType: A2UI_MIME_TYPE } };
+    return { kind: "data", data: serializeA2UIDataPartPayload(validateA2UIMessageV09(message).modelDump()), metadata: { mimeType: A2UI_MIME_TYPE } };
   } catch {
     return null;
   }
+}
+
+function serializeA2UIDataPartPayload(value: A2UIRecord): A2UIRecord {
+  return compactA2UIRecord(value);
+}
+
+function compactA2UIRecord(value: A2UIRecord): A2UIRecord {
+  const result: A2UIRecord = {};
+  const keys = new Set(Object.keys(value));
+  for (const [key, child] of Object.entries(value)) {
+    if (child === null || child === undefined) {
+      continue;
+    }
+    if (key.includes("_") && keys.has(snakeToCamelA2UI(key))) {
+      continue;
+    }
+    result[key] = compactA2UIValue(child);
+  }
+  return result;
+}
+
+function compactA2UIValue(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value
+      .filter((entry) => entry !== null && entry !== undefined)
+      .map((entry) => compactA2UIValue(entry));
+  }
+  if (isRecord(value)) {
+    return compactA2UIRecord(value);
+  }
+  return value;
+}
+
+function snakeToCamelA2UI(value: string): string {
+  return value.replaceAll(/_([a-z])/g, (_match, letter: string) => letter.toUpperCase());
 }
 
 function extractJsonObjectsWithKeys(text: string, keys: readonly string[]): A2UIRecord[] {
