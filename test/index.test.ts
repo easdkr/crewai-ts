@@ -68,6 +68,7 @@ import {
   GoalAchievedEarlyEvent,
   GRPCServerConfig,
   HTTPBasicAuth,
+  HTTPDigestAuth,
   HumanFeedbackPending,
   InvalidParamsError,
   InMemoryToolCache,
@@ -2774,6 +2775,25 @@ describe("a2a utilities", () => {
 
     const queryKey = new APIKeyAuth({ apiKey: "query-secret", location: "query", name: "api_key" });
     expect(queryKey.applyToUrl("https://remote.example.com/a2a?x=1")).toBe("https://remote.example.com/a2a?x=1&api_key=query-secret");
+    const queryClient = { event_hooks: { request: [] as Array<(request: { url: string }) => Promise<void> | void> } };
+    queryKey.configure_client(queryClient);
+    queryKey.configure_client(queryClient);
+    expect(queryClient.event_hooks.request).toHaveLength(1);
+    const request = { url: "https://remote.example.com/a2a?x=1" };
+    await queryClient.event_hooks.request[0]?.(request);
+    expect(request.url).toBe("https://remote.example.com/a2a?x=1&api_key=query-secret");
+
+    const digest = new HTTPDigestAuth({ username: "digest-user", password: "digest-pass" });
+    const digestClient: { auth?: unknown } = {};
+    await expect(digest.apply_auth(digestClient, { Accept: "application/json" }))
+      .resolves.toEqual({ Accept: "application/json" });
+    digest.configure_client(digestClient);
+    digest.configure_client(digestClient);
+    expect(digestClient.auth).toEqual({
+      type: "digest",
+      username: "digest-user",
+      password: "digest-pass",
+    });
 
     const tls = new TLSConfig({ client_cert_path: "/cert.pem", client_key_path: "/key.pem", ca_cert_path: "/ca.pem" });
     expect(tls.get_httpx_ssl_context()).toEqual({

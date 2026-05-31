@@ -709,6 +709,14 @@ export type A2AStreamingClient = {
 };
 export type A2AHeaders = Record<string, string>;
 export type APIKeyLocation = "header" | "query" | "cookie";
+type A2ARequestLike = { url: string | URL };
+type A2ARequestHook = (request: A2ARequestLike) => void | Promise<void>;
+type A2AHookClient = {
+  event_hooks?: {
+    request?: A2ARequestHook[];
+  };
+};
+type MutableClient = Record<string, unknown>;
 export type JWTAlgorithm =
   | "RS256"
   | "RS384"
@@ -970,11 +978,17 @@ export class HTTPBasicAuth extends ClientAuthScheme {
     const encoded = Buffer.from(`${this.username}:${this.password}`).toString("base64");
     return Promise.resolve({ ...headers, Authorization: `Basic ${encoded}` });
   }
+
+  async apply_auth(_client: unknown, headers: A2AHeaders = {}): Promise<A2AHeaders> {
+    void _client;
+    return await this.applyAuth(headers);
+  }
 }
 
 export class HTTPDigestAuth extends ClientAuthScheme {
   readonly username: string;
   readonly password: string;
+  private readonly configuredClients = new WeakSet<object>();
 
   constructor(options: { username: string; password: string; tls?: TLSConfig | null }) {
     super(options);
@@ -985,6 +999,27 @@ export class HTTPDigestAuth extends ClientAuthScheme {
   applyAuth(headers: A2AHeaders = {}): Promise<A2AHeaders> {
     return Promise.resolve({ ...headers });
   }
+
+  async apply_auth(_client: unknown, headers: A2AHeaders = {}): Promise<A2AHeaders> {
+    void _client;
+    return await this.applyAuth(headers);
+  }
+
+  configureClient(client: unknown): void {
+    if (!isObjectClient(client) || this.configuredClients.has(client)) {
+      return;
+    }
+    (client as MutableClient).auth = {
+      type: "digest",
+      username: this.username,
+      password: this.password,
+    };
+    this.configuredClients.add(client);
+  }
+
+  configure_client(client: unknown): void {
+    this.configureClient(client);
+  }
 }
 
 export class APIKeyAuth extends ClientAuthScheme {
@@ -992,6 +1027,7 @@ export class APIKeyAuth extends ClientAuthScheme {
   readonly api_key: string;
   readonly location: APIKeyLocation;
   readonly name: string;
+  private readonly configuredClients = new WeakSet<object>();
 
   constructor(options: {
     apiKey?: string;
@@ -1019,6 +1055,28 @@ export class APIKeyAuth extends ClientAuthScheme {
       return Promise.resolve({ ...headers, Cookie: `${this.name}=${this.apiKey}` });
     }
     return Promise.resolve({ ...headers });
+  }
+
+  async apply_auth(_client: unknown, headers: A2AHeaders = {}): Promise<A2AHeaders> {
+    void _client;
+    return await this.applyAuth(headers);
+  }
+
+  configureClient(client: unknown): void {
+    if (this.location !== "query" || !isObjectClient(client) || this.configuredClients.has(client)) {
+      return;
+    }
+    const hookClient = client as A2AHookClient;
+    hookClient.event_hooks ??= {};
+    hookClient.event_hooks.request ??= [];
+    hookClient.event_hooks.request.push((request) => {
+      request.url = this.applyToUrl(request.url.toString());
+    });
+    this.configuredClients.add(client);
+  }
+
+  configure_client(client: unknown): void {
+    this.configureClient(client);
   }
 
   applyToUrl(url: string): string {
@@ -2949,6 +3007,10 @@ function stringifyA2AValue(value: unknown): string {
 }
 
 function isA2AExtension(value: unknown): value is A2AExtension {
+  return Boolean(value && typeof value === "object");
+}
+
+function isObjectClient(value: unknown): value is object {
   return Boolean(value && typeof value === "object");
 }
 
