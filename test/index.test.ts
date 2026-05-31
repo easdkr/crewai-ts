@@ -39,6 +39,8 @@ import {
   AgentCardSigningConfig,
   AgentExecutor,
   PlannerObserver,
+  StepExecutor,
+  StepExecutionContext,
   OpenAIAgentAdapter,
   LangGraphAgentAdapter,
   BaseAgent,
@@ -6211,6 +6213,34 @@ describe("core crew runtime", () => {
     const invoked = executor.invoke({ input: "Summarize CrewAI" });
     expect(invoked).toEqual({ output: "Summarize CrewAI" });
     await expect(executor.ainvoke({ input: "Async CrewAI" })).resolves.toEqual({ output: "Async CrewAI" });
+  });
+
+  it("exposes upstream StepExecutor execute alias for todo items", async () => {
+    const prompts: string[] = [];
+    const agentInstance = new Agent({
+      role: "Researcher",
+      goal: "Find facts",
+      backstory: "Careful analyst",
+      llm: (messages) => {
+        prompts.push(messages.map((message) => message.content).join("\n"));
+        return "step complete";
+      },
+    });
+    const executor = new StepExecutor({ agent: agentInstance });
+    const todo = new TodoItem({ step_number: 2, description: "Collect pricing facts" });
+
+    const result = await executor.execute(todo, new StepExecutionContext({
+      taskDescription: "Research CrewAI",
+      taskGoal: "Produce a concise brief",
+    }));
+
+    expect(result).toMatchObject({
+      success: true,
+      result: "step complete",
+    });
+    expect(prompts[0]).toContain("Research CrewAI");
+    expect(prompts[0]).toContain("Produce a concise brief");
+    expect(prompts[0]).toContain("Collect pricing facts");
   });
 
   it("exposes upstream Agent and BaseAgent compatibility methods", async () => {

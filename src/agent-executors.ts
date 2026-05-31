@@ -913,6 +913,17 @@ export class StepExecutor {
   execute_step(step: string, context?: StepExecutionContext): Promise<StepResult> {
     return this.executeStep(step, context);
   }
+
+  execute(
+    todo: string | TodoItem,
+    context: StepExecutionContext = new StepExecutionContext({}),
+    _maxStepIterations = 15,
+    _stepTimeout: number | null = null,
+  ): Promise<StepResult> {
+    void _maxStepIterations;
+    void _stepTimeout;
+    return this.executeStep(typeof todo === "string" ? todo : todo.description, context);
+  }
 }
 
 export class PlannerObserver {
