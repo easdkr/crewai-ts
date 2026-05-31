@@ -371,6 +371,7 @@ export type VoyageAIProviderConfig = {
   output_dimension?: number;
   max_retries?: number;
   timeout?: number;
+  api_url?: string;
 };
 export const VoyageAIProviderConfig = Object.freeze({ kind: "VoyageAIProviderConfig" });
 export type VoyageAIProviderSpec = BaseProviderSpec<"voyageai", VoyageAIProviderConfig>;
@@ -1008,29 +1009,105 @@ export class Text2VecProvider extends BaseEmbeddingsProvider {
 }
 
 export class VoyageAIEmbeddingFunction {
+  readonly api_key: string | null;
+  readonly model: string;
+  readonly input_type: string | null;
+  readonly truncation: boolean;
+  readonly output_dtype: string | null;
+  readonly output_dimension: number | null;
+  readonly max_retries: number;
+  readonly timeout: number | null;
+  readonly api_url: string;
+
+  constructor(options: VoyageAIProviderConfig & { api_url?: string } = {}) {
+    this.api_key = options.api_key ?? null;
+    this.model = options.model ?? "voyage-2";
+    this.input_type = options.input_type ?? null;
+    this.truncation = options.truncation ?? true;
+    this.output_dtype = options.output_dtype ?? null;
+    this.output_dimension = options.output_dimension ?? null;
+    this.max_retries = options.max_retries ?? 0;
+    this.timeout = options.timeout ?? null;
+    this.api_url = options.api_url ?? "https://api.voyageai.com/v1/embeddings";
+  }
+
   static name(): string {
     return "voyageai";
   }
 
-  call(input: Embeddable): unknown {
-    return defaultEmbeddingCallable(input);
+  async call(input: Embeddable): Promise<Embeddings> {
+    const values = Array.isArray(input) ? input.map((value) => String(value)) : [String(input)];
+    const response = await fetch(this.api_url, {
+      method: "POST",
+      headers: this.requestHeaders(),
+      body: JSON.stringify(this.requestBody(values)),
+    });
+    if (!response.ok) {
+      throw new Error(`VoyageAI embeddings request failed with status ${String(response.status)}`);
+    }
+    return extractVoyageAIEmbeddings(await response.json());
   }
 
-  __call__(input: Embeddable): unknown {
+  async __call__(input: Embeddable): Promise<Embeddings> {
     return this.call(input);
   }
+
+  asCallable(): TypedEmbeddingFunction {
+    const callable: TypedEmbeddingFunction = (input: Embeddable) => this.call(input);
+    callable.embedQuery = callable;
+    callable.embed_query = callable;
+    return callable;
+  }
+
+  private requestHeaders(): Record<string, string> {
+    const headers: Record<string, string> = {
+      "content-type": "application/json",
+    };
+    if (this.api_key) {
+      headers.authorization = `Bearer ${this.api_key}`;
+    }
+    return headers;
+  }
+
+  private requestBody(input: readonly string[]): Record<string, unknown> {
+    const body: Record<string, unknown> = {
+      input,
+      model: this.model,
+      truncation: this.truncation,
+    };
+    if (this.input_type) {
+      body.input_type = this.input_type;
+    }
+    if (this.output_dtype) {
+      body.output_dtype = this.output_dtype;
+    }
+    if (typeof this.output_dimension === "number") {
+      body.output_dimension = this.output_dimension;
+    }
+    return body;
+  }
+}
+
+function extractVoyageAIEmbeddings(payload: unknown): Embeddings {
+  if (isRecord(payload) && Array.isArray(payload.embeddings) && payload.embeddings.every(isNumberArray)) {
+    return payload.embeddings;
+  }
+  return extractOpenAIEmbeddings(payload);
 }
 
 export class VoyageAIProvider extends BaseEmbeddingsProvider {
   readonly provider = "voyageai";
 
   constructor(options: VoyageAIProviderConfig = {}) {
-    super({
-      embeddingCallable: defaultEmbeddingCallable,
+    const config = {
       model: "voyage-2",
       truncation: true,
       max_retries: 0,
       ...options,
+    };
+    super({
+      embeddingCallable: new VoyageAIEmbeddingFunction(config).asCallable(),
+      ...config,
     });
   }
 }

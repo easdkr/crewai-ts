@@ -7418,6 +7418,45 @@ describe("RAG configuration and factories", () => {
     fetchMock.mockRestore();
   });
 
+  it("calls VoyageAI's embeddings API for VoyageAI providers", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({
+        data: [
+          { index: 1, embedding: [0.61, 0.62] },
+          { index: 0, embedding: [0.51, 0.52] },
+        ],
+      }),
+    } as Response);
+
+    const voyageEmbedder = new VoyageAIEmbeddingFunction({
+      api_key: "voyage-test",
+      model: "voyage-3",
+      input_type: "document",
+      output_dtype: "float",
+      output_dimension: 1024,
+      api_url: "https://voyage.example/v1/embeddings",
+    }).asCallable();
+    await expect(voyageEmbedder(["first", "second"])).resolves.toEqual([[0.51, 0.52], [0.61, 0.62]]);
+
+    const fetchCall = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(fetchCall[0]).toBe("https://voyage.example/v1/embeddings");
+    expect(fetchCall[1].method).toBe("POST");
+    expect(fetchCall[1].headers).toMatchObject({
+      authorization: "Bearer voyage-test",
+      "content-type": "application/json",
+    });
+    expect(fetchCall[1].body).toBe(JSON.stringify({
+      input: ["first", "second"],
+      model: "voyage-3",
+      truncation: true,
+      input_type: "document",
+      output_dtype: "float",
+      output_dimension: 1024,
+    }));
+    fetchMock.mockRestore();
+  });
+
   it("calls Ollama's embeddings API for local embedding providers", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch")
       .mockResolvedValueOnce({
@@ -7457,7 +7496,6 @@ describe("RAG configuration and factories", () => {
   it("exposes upstream __call__ aliases on embedding functions", () => {
     const custom = new CustomEmbeddingFunction((input) => input.map((value) => [String(value).length]));
     expect(custom.__call__(["CrewAI"])).toEqual([[6]]);
-    expect(new VoyageAIEmbeddingFunction().__call__(["CrewAI"])).toEqual([[0]]);
     expect(new GoogleGenAIVertexEmbeddingFunction().__call__(["CrewAI"])).toEqual([[0]]);
     expect(new WatsonXEmbeddingFunction().__call__(["CrewAI"])).toEqual([[0]]);
   });
