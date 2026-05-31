@@ -551,6 +551,9 @@ import {
   getProjectDescription,
   getProjectName,
   getProjectVersion,
+  extractAvailableExports,
+  extractToolsMetadata,
+  extract_available_exports,
   isValidTool,
   is_valid_tool,
   getCrewaiVersion,
@@ -1038,6 +1041,77 @@ describe("serialization and project utilities", () => {
     expect(isValidTool(ProjectSearchTool)).toBe(true);
     expect(is_valid_tool(ProjectSearchTool)).toBe(true);
     expect(isValidTool(instance)).toBe(true);
+  });
+
+  it("extracts upstream-style project tool exports and metadata", () => {
+    class ProjectSearchTool extends BaseTool {
+      constructor() {
+        super({
+          name: "project_search",
+          description: "Search project data",
+          argsSchema: {
+            query: { type: "string", required: true },
+          },
+          envVars: [
+            new EnvVar({
+              name: "PROJECT_SEARCH_TOKEN",
+              description: "Search API token",
+              required: false,
+              default: "demo-token",
+            }),
+          ],
+        });
+      }
+
+      protected _run(): string {
+        return "found";
+      }
+    }
+
+    const decoratedTool = StructuredTool.from_function(
+      (query: unknown) => `found ${String(query)}`,
+      "decorated search",
+      "Decorated search",
+    );
+    const moduleLike = {
+      ProjectSearchTool,
+      decoratedTool,
+      unrelated: "not a tool",
+      missing: null,
+    };
+
+    expect(extractAvailableExports(moduleLike)).toEqual([
+      { name: "decoratedTool" },
+      { name: "ProjectSearchTool" },
+    ]);
+    expect(extract_available_exports(moduleLike)).toEqual(extractAvailableExports(moduleLike));
+
+    expect(extractToolsMetadata(moduleLike)).toEqual([
+      expect.objectContaining({
+        name: "ProjectSearchTool",
+        humanized_name: "project_search",
+        description: "Search project data",
+        run_params_schema: {
+          query: { type: "string", required: true },
+        },
+        env_vars: [
+          {
+            name: "PROJECT_SEARCH_TOKEN",
+            description: "Search API token",
+            required: false,
+            default: "demo-token",
+          },
+        ],
+        args_schema: {
+          query: { type: "string", required: true },
+        },
+      }),
+      expect.objectContaining({
+        name: "StructuredTool",
+        humanized_name: "decorated_search",
+        description: "Decorated search",
+      }),
+    ]);
   });
 
   it("parses pyproject TOML and reads CrewAI project metadata", () => {

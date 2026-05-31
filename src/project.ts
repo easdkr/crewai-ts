@@ -10,6 +10,7 @@ import type { AgentStepCallback, LLM, TaskCallback, Tool } from "./types.js";
 import { BaseTool, type CacheHandler } from "./tools.js";
 import type { EmbedderConfig } from "./rag.js";
 import { getCrewMetadata } from "./metadata.js";
+import type { AvailableExport, EnvVarEntry } from "./plus-api.js";
 
 export type ConfigRecord = Record<string, unknown>;
 export type ProjectConfig = Record<string, ConfigRecord>;
@@ -497,43 +498,99 @@ export const get_flows = getFlows;
 
 export function isValidTool(value: unknown): value is Tool {
   if (typeof value === "function") {
-    return value.prototype instanceof BaseTool;
+    return value === BaseTool || value.prototype instanceof BaseTool;
   }
   return isRecord(value) && typeof value.name === "string" && typeof value.run === "function";
 }
 
 export const is_valid_tool = isValidTool;
 
-export function extractAvailableExports(moduleLike: ProjectModuleLike): string[] {
+export function extractAvailableExports(moduleLike: ProjectModuleLike): AvailableExport[] {
   return Object.entries(moduleLike)
-    .filter(([, value]) => value !== undefined && value !== null)
-    .map(([name]) => name)
-    .sort();
+    .filter(([, value]) => isValidTool(value))
+    .map(([name]) => ({ name }))
+    .sort((left, right) => left.name.localeCompare(right.name));
 }
 
 export const extract_available_exports = extractAvailableExports;
 
 export type ToolMetadata = {
   name: string;
+  module: string;
+  humanized_name: string;
   description: string;
+  run_params_schema: Record<string, unknown>;
+  init_params_schema: Record<string, unknown>;
+  env_vars: readonly EnvVarEntry[];
   argsSchema?: unknown;
   args_schema?: unknown;
 };
 
-export function extractToolsMetadata(tools: readonly unknown[]): ToolMetadata[] {
-  return tools.filter(isValidTool).map((tool) => {
-    const argsSchema = (tool as { argsSchema?: unknown; args_schema?: unknown }).argsSchema
-      ?? (tool as { args_schema?: unknown }).args_schema;
-    return {
-      name: tool.name,
-      description: tool.description ?? "",
-      argsSchema,
-      args_schema: argsSchema,
-    };
-  });
+export function extractToolsMetadata(tools: readonly unknown[] | ProjectModuleLike): ToolMetadata[] {
+  return extractValues(tools)
+    .map((value) => toolMetadataFromValue(value))
+    .filter((value): value is ToolMetadata => value !== null);
 }
 
 export const extract_tools_metadata = extractToolsMetadata;
+
+function toolMetadataFromValue(value: unknown): ToolMetadata | null {
+  const tool = resolveToolInstance(value);
+  if (!tool) {
+    return null;
+  }
+
+  const argsSchema = (tool as { argsSchema?: unknown; args_schema?: unknown }).argsSchema
+    ?? (tool as { args_schema?: unknown }).args_schema
+    ?? {};
+  const envVars = (tool as { envVars?: unknown; env_vars?: unknown }).envVars
+    ?? (tool as { env_vars?: unknown }).env_vars
+    ?? [];
+  const constructorName = tool.constructor.name && tool.constructor.name !== "Object"
+    ? tool.constructor.name
+    : tool.name;
+
+  return {
+    name: constructorName,
+    module: tool.constructor.name && tool.constructor.name !== "Object" ? tool.constructor.name : "",
+    humanized_name: tool.name,
+    description: tool.description ?? "",
+    run_params_schema: isRecord(argsSchema) ? argsSchema : {},
+    init_params_schema: {},
+    env_vars: normalizeEnvVars(envVars),
+    argsSchema,
+    args_schema: argsSchema,
+  };
+}
+
+function resolveToolInstance(value: unknown): Tool | null {
+  if (typeof value === "function") {
+    if (value !== BaseTool && !(value.prototype instanceof BaseTool)) {
+      return null;
+    }
+    try {
+      const instance = new (value as new () => Tool)();
+      return isValidTool(instance) ? instance : null;
+    } catch {
+      return null;
+    }
+  }
+  return isValidTool(value) ? value : null;
+}
+
+function normalizeEnvVars(value: unknown): EnvVarEntry[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .filter((entry): entry is Record<string, unknown> => isRecord(entry) && typeof entry.name === "string")
+    .map((entry) => ({
+      name: entry.name as string,
+      description: typeof entry.description === "string" ? entry.description : "",
+      required: typeof entry.required === "boolean" ? entry.required : true,
+      default: typeof entry.default === "string" || entry.default === null ? entry.default : null,
+    }));
+}
 
 function getMethodsByKind(instance: object, kind: Parameters<typeof filterEntries>[1]): Map<string, () => unknown> {
   const entries = filterEntries(instance, kind);
