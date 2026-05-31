@@ -39,6 +39,15 @@ When more goal budget is available, continue from the behavioral parity audits b
 - Added fake-client-backed RAG tests for ChromaDB and Qdrant collection create/delete/reset, upsert overwrite behavior, search, metadata filters, and async aliases.
 - Added `KnowledgeStorage` tests for collection naming, save/search, async aliases, and reset through the RAG client wrapper.
 
+## Completed In Current Flow/Persistence Pass
+
+- Added upstream snake_case method compatibility for `JsonFlowPersistence` and `SQLiteFlowPersistence`:
+  - `save_state` / `load_state`
+  - `save_pending_feedback` / `load_pending_feedback`
+  - `clear_pending_feedback`
+- Added `persistence_type` metadata on `JsonFlowPersistence` to match the persistence backend convention already present on SQLite.
+- Added focused JSON and SQLite tests for these aliases, including pending-feedback round trip and clear semantics.
+
 1. Storage backends
    - `memory/storage/backend.py`
    - `memory/storage/lancedb_storage.py`
@@ -57,6 +66,8 @@ When more goal budget is available, continue from the behavioral parity audits b
    - `SQLiteFlowPersistence` method parity and real persistence behavior.
    - Locked dict/list proxy behavior.
    - Prioritize persistence replay and resume behavior because it affects user-visible workflow recovery.
+   - Flow persistence backends now expose upstream snake_case aliases for state and pending-feedback lifecycle methods.
+   - Remaining: audit `Flow` memory helpers (`remember`, `recall`, `extract_memories`), checkpoint restoration/fork API parity, and locked proxy semantics against upstream `flow.py`.
 
 4. Unified memory
    - Async aliases and record/scope/category listing.

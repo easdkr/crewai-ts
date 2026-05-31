@@ -16,15 +16,26 @@ export type PendingFeedbackRecord = {
 };
 
 export type FlowPersistence = {
+  persistenceType?: string;
+  persistence_type?: string;
   saveState?(flowId: string, methodName: string, state: Record<string, unknown>): Promise<void>;
+  save_state?(flowId: string, methodName: string, state: Record<string, unknown>): Promise<void>;
   loadState?(flowId: string): Promise<Record<string, unknown> | null>;
+  load_state?(flowId: string): Promise<Record<string, unknown> | null>;
   savePendingFeedback(
     flowId: string,
     context: PendingFeedbackContext,
     state: Record<string, unknown>,
   ): Promise<void>;
+  save_pending_feedback(
+    flowId: string,
+    context: PendingFeedbackContext,
+    state: Record<string, unknown>,
+  ): Promise<void>;
   loadPendingFeedback(flowId: string): Promise<PendingFeedbackRecord | null>;
+  load_pending_feedback(flowId: string): Promise<PendingFeedbackRecord | null>;
   clearPendingFeedback(flowId: string): Promise<void>;
+  clear_pending_feedback(flowId: string): Promise<void>;
 };
 export const FlowPersistence = Object.freeze({ kind: "FlowPersistence" });
 export const LOG_MESSAGES = Object.freeze({
@@ -64,6 +75,9 @@ type MethodDecoratorFactory = <
 ) => ((this: This, ...args: Args) => Return) | undefined;
 
 export class JsonFlowPersistence implements FlowPersistence {
+  readonly persistenceType = "JsonFlowPersistence";
+  readonly persistence_type = "JsonFlowPersistence";
+
   constructor(readonly location = ".flows") {}
 
   async saveState(flowId: string, methodName: string, state: Record<string, unknown>): Promise<void> {
@@ -73,6 +87,10 @@ export class JsonFlowPersistence implements FlowPersistence {
       JSON.stringify({ flowId, methodName, state }, null, 2),
       "utf8",
     );
+  }
+
+  async save_state(flowId: string, methodName: string, state: Record<string, unknown>): Promise<void> {
+    await this.saveState(flowId, methodName, state);
   }
 
   async loadState(flowId: string): Promise<Record<string, unknown> | null> {
@@ -86,6 +104,10 @@ export class JsonFlowPersistence implements FlowPersistence {
       }
       throw error;
     }
+  }
+
+  async load_state(flowId: string): Promise<Record<string, unknown> | null> {
+    return await this.loadState(flowId);
   }
 
   async savePendingFeedback(
@@ -103,6 +125,14 @@ export class JsonFlowPersistence implements FlowPersistence {
       }, null, 2),
       "utf8",
     );
+  }
+
+  async save_pending_feedback(
+    flowId: string,
+    context: PendingFeedbackContext,
+    state: Record<string, unknown>,
+  ): Promise<void> {
+    await this.savePendingFeedback(flowId, context, state);
   }
 
   async loadPendingFeedback(flowId: string): Promise<PendingFeedbackRecord | null> {
@@ -124,8 +154,16 @@ export class JsonFlowPersistence implements FlowPersistence {
     }
   }
 
+  async load_pending_feedback(flowId: string): Promise<PendingFeedbackRecord | null> {
+    return await this.loadPendingFeedback(flowId);
+  }
+
   async clearPendingFeedback(flowId: string): Promise<void> {
     await rm(this.pendingPath(flowId), { force: true });
+  }
+
+  async clear_pending_feedback(flowId: string): Promise<void> {
+    await this.clearPendingFeedback(flowId);
   }
 
   private async ensureDirectory(): Promise<void> {
@@ -187,6 +225,10 @@ export class SQLiteFlowPersistence implements FlowPersistence {
     return Promise.resolve();
   }
 
+  save_state(flowId: string, methodName: string, state: Record<string, unknown>): Promise<void> {
+    return this.saveState(flowId, methodName, state);
+  }
+
   loadState(flowId: string): Promise<Record<string, unknown> | null> {
     return Promise.resolve(this.withDb((db) => {
       const row = db.prepare(`
@@ -201,6 +243,10 @@ export class SQLiteFlowPersistence implements FlowPersistence {
       }
       return parseJsonRecord(row.state_json);
     }));
+  }
+
+  load_state(flowId: string): Promise<Record<string, unknown> | null> {
+    return this.loadState(flowId);
   }
 
   savePendingFeedback(
@@ -227,6 +273,14 @@ export class SQLiteFlowPersistence implements FlowPersistence {
     return Promise.resolve();
   }
 
+  save_pending_feedback(
+    flowId: string,
+    context: PendingFeedbackContext,
+    state: Record<string, unknown>,
+  ): Promise<void> {
+    return this.savePendingFeedback(flowId, context, state);
+  }
+
   loadPendingFeedback(flowId: string): Promise<PendingFeedbackRecord | null> {
     return Promise.resolve(this.withDb((db) => {
       const row = db.prepare(`
@@ -249,11 +303,19 @@ export class SQLiteFlowPersistence implements FlowPersistence {
     }));
   }
 
+  load_pending_feedback(flowId: string): Promise<PendingFeedbackRecord | null> {
+    return this.loadPendingFeedback(flowId);
+  }
+
   clearPendingFeedback(flowId: string): Promise<void> {
     this.withDb((db) => {
       db.prepare("DELETE FROM pending_feedback WHERE flow_uuid = ?").run(flowId);
     });
     return Promise.resolve();
+  }
+
+  clear_pending_feedback(flowId: string): Promise<void> {
+    return this.clearPendingFeedback(flowId);
   }
 
   private insertState(db: DatabaseSyncType, flowId: string, methodName: string, state: Record<string, unknown>): void {

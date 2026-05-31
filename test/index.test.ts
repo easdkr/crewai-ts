@@ -6259,6 +6259,51 @@ describe("flow runtime", () => {
     });
   });
 
+  it("supports upstream snake_case flow persistence methods for JSON and SQLite backends", async () => {
+    const jsonDirectory = mkdtempSync(join(tmpdir(), "crewai-ts-flow-json-snake-"));
+    const sqliteDirectory = mkdtempSync(join(tmpdir(), "crewai-ts-flow-sqlite-snake-"));
+    const backends = [
+      new JsonFlowPersistence(jsonDirectory),
+      new SQLiteFlowPersistence(join(sqliteDirectory, "flows.db")),
+    ];
+    const context = {
+      flowName: "SnakeFlow",
+      flowClass: "SnakeFlow",
+      flowId: "snake-flow",
+      methodName: "review",
+      output: "draft",
+      message: "Review draft",
+      requestedAt: new Date("2026-05-31T00:00:00.000Z"),
+      emit: ["approved"],
+      defaultOutcome: null,
+      metadata: {},
+    };
+
+    for (const backend of backends) {
+      expect(backend.persistence_type).toBeDefined();
+      await backend.save_state("snake-flow", "begin", { id: "snake-flow", events: ["begin"] });
+      await expect(backend.load_state("snake-flow")).resolves.toEqual({
+        id: "snake-flow",
+        events: ["begin"],
+      });
+
+      await backend.save_pending_feedback("snake-flow", context, {
+        id: "snake-flow",
+        events: ["begin", "review"],
+      });
+      await expect(backend.load_pending_feedback("snake-flow")).resolves.toMatchObject({
+        state: { id: "snake-flow", events: ["begin", "review"] },
+        context: {
+          flowId: "snake-flow",
+          methodName: "review",
+          emit: ["approved"],
+        },
+      });
+      await backend.clear_pending_feedback("snake-flow");
+      await expect(backend.load_pending_feedback("snake-flow")).resolves.toBeNull();
+    }
+  });
+
   it("persists flow state after method completion and restores it with fromState", async () => {
     const directory = mkdtempSync(join(tmpdir(), "crewai-ts-flow-state-"));
     const persistence = new JsonFlowPersistence(directory);
