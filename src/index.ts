@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 export {
   A2AConfig,
   A2AConfigTypes,
@@ -2553,11 +2555,71 @@ export class PollingConfig {
 
 export const http_url_adapter = Object.freeze({ kind: "http_url_adapter" });
 
+export type AgentCardSigningAlgorithm =
+  | "RS256"
+  | "RS384"
+  | "RS512"
+  | "ES256"
+  | "ES384"
+  | "ES512"
+  | "PS256"
+  | "PS384"
+  | "PS512";
+
+export type AgentCardSigningConfigOptions = {
+  enabled?: boolean;
+  privateKeyPath?: string | null;
+  private_key_path?: string | null;
+  privateKeyPem?: string | null;
+  private_key_pem?: string | null;
+  keyId?: string | null;
+  key_id?: string | null;
+  algorithm?: AgentCardSigningAlgorithm;
+};
+
 export class AgentCardSigningConfig {
   readonly enabled: boolean;
+  readonly privateKeyPath: string | null;
+  readonly private_key_path: string | null;
+  readonly privateKeyPem: string | null;
+  readonly private_key_pem: string | null;
+  readonly keyId: string | null;
+  readonly key_id: string | null;
+  readonly algorithm: AgentCardSigningAlgorithm;
 
-  constructor(enabled = true) {
-    this.enabled = enabled;
+  constructor(options: AgentCardSigningConfigOptions | boolean = {}) {
+    const config = typeof options === "boolean" ? { enabled: options } : options;
+    this.enabled = config.enabled ?? true;
+    this.privateKeyPath = config.privateKeyPath ?? config.private_key_path ?? null;
+    this.private_key_path = this.privateKeyPath;
+    this.privateKeyPem = config.privateKeyPem ?? config.private_key_pem ?? null;
+    this.private_key_pem = this.privateKeyPem;
+    this.keyId = config.keyId ?? config.key_id ?? null;
+    this.key_id = this.keyId;
+    this.algorithm = config.algorithm ?? "RS256";
+
+    const hasPath = this.privateKeyPath !== null;
+    const hasPem = this.privateKeyPem !== null;
+    if (!hasPath && !hasPem) {
+      throw new Error("Either private_key_path or private_key_pem must be provided");
+    }
+    if (hasPath && hasPem) {
+      throw new Error("Only one of private_key_path or private_key_pem should be provided");
+    }
+  }
+
+  getPrivateKey(): string {
+    if (this.privateKeyPem !== null) {
+      return this.privateKeyPem;
+    }
+    if (this.privateKeyPath !== null) {
+      return readFileSync(this.privateKeyPath, "utf8");
+    }
+    throw new Error("No private key configured");
+  }
+
+  get_private_key(): string {
+    return this.getPrivateKey();
   }
 }
 

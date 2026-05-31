@@ -23,6 +23,7 @@ import {
   A2ATaskState,
   APIKeyAuth,
   Agent,
+  AgentCardSigningConfig,
   AgentExecutor,
   BaseAgent,
   AuthenticatedUser,
@@ -3043,6 +3044,32 @@ describe("a2a utilities", () => {
       sourceFingerprint: "agent-1",
       fingerprintMetadata: { existing: true },
     });
+  });
+
+  it("loads AgentCard signing private keys from PEM strings or files", () => {
+    const pem = "-----BEGIN PRIVATE KEY-----\ninline\n-----END PRIVATE KEY-----";
+    const inline = new AgentCardSigningConfig({
+      private_key_pem: pem,
+      key_id: "kid-1",
+      algorithm: "ES256",
+    });
+    expect(inline.get_private_key()).toBe(pem);
+    expect(inline.key_id).toBe("kid-1");
+    expect(inline.algorithm).toBe("ES256");
+
+    const keyDir = mkdtempSync(join(tmpdir(), "crewai-ts-agent-card-key-"));
+    const keyPath = join(keyDir, "agent-card.pem");
+    writeFileSync(keyPath, "file-key", "utf8");
+    try {
+      expect(new AgentCardSigningConfig({ private_key_path: keyPath }).getPrivateKey()).toBe("file-key");
+      expect(() => new AgentCardSigningConfig()).toThrow("Either private_key_path or private_key_pem must be provided");
+      expect(() => new AgentCardSigningConfig({
+        private_key_path: keyPath,
+        private_key_pem: pem,
+      })).toThrow("Only one of private_key_path or private_key_pem should be provided");
+    } finally {
+      rmSync(keyDir, { recursive: true, force: true });
+    }
   });
 
   it("authenticates A2A simple server tokens", async () => {
