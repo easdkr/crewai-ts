@@ -312,6 +312,10 @@ export class LockedListProxy<TValue = unknown> {
     return this.value.includes(item);
   }
 
+  __contains__(item: TValue): boolean {
+    return this.includes(item);
+  }
+
   indexOf(item: TValue): number {
     return this.value.indexOf(item);
   }

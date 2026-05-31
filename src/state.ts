@@ -161,6 +161,10 @@ export class EventRecord {
     return eventId in this.nodes;
   }
 
+  __contains__(eventId: string): boolean {
+    return this.has(eventId);
+  }
+
   get size(): number {
     return Object.keys(this.nodes).length;
   }

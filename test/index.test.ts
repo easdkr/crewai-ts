@@ -9911,6 +9911,8 @@ describe("flow runtime", () => {
     expect([...list]).toEqual(["a", "b"]);
     expect(list.length).toBe(2);
     expect(list.includes("a")).toBe(true);
+    expect(list.__contains__("a")).toBe(true);
+    expect(list.__contains__("missing")).toBe(false);
     list.push("c");
     list[1] = "B";
     expect(list.pop()).toBe("c");
@@ -16929,6 +16931,8 @@ describe("event record", () => {
     expect(record.descendants(root.eventId).map((node) => node.event.eventId)).toEqual([childA.eventId, childB.eventId]);
     expect(record.all_nodes()).toHaveLength(4);
     expect(record.has(childA.eventId)).toBe(true);
+    expect(record.__contains__(childA.eventId)).toBe(true);
+    expect(record.__contains__("missing")).toBe(false);
     expect(JSON.stringify(record)).toContain("crew_kickoff_started");
 
     record.clear();
