@@ -1,7 +1,7 @@
 import { Agent, type AgentExecutionOptions, type AgentOptions } from "./agent.js";
 import type { CheckpointConfig } from "./state.js";
 import type { Crew } from "./crew.js";
-import { StepObservation, TodoList, TodoStatus } from "./agent-planning.js";
+import { StepObservation, TodoItem, TodoList, TodoStatus } from "./agent-planning.js";
 import { AgentAction, AgentFinish, parseAgentOutput } from "./agent-parser.js";
 import { Converter } from "./converter.js";
 import { UsageMetrics } from "./llm.js";
@@ -930,6 +930,29 @@ export class PlannerObserver {
 
   heuristic_observation(step: string, result: unknown): StepObservation {
     return this.heuristicObservation(step, result);
+  }
+
+  applyRefinements(observation: StepObservation, remainingTodos: TodoItem[]): TodoItem[] {
+    if (!observation.suggestedRefinements || observation.suggestedRefinements.length === 0) {
+      return remainingTodos;
+    }
+    const todoByStep = new Map(remainingTodos.map((todo) => [todo.stepNumber, todo]));
+    for (const refinement of observation.suggestedRefinements) {
+      const todo = todoByStep.get(refinement.stepNumber);
+      if (todo && refinement.newDescription) {
+        Object.defineProperty(todo, "description", {
+          value: refinement.newDescription,
+          writable: false,
+          enumerable: true,
+          configurable: true,
+        });
+      }
+    }
+    return remainingTodos;
+  }
+
+  apply_refinements(observation: StepObservation, remaining_todos: TodoItem[]): TodoItem[] {
+    return this.applyRefinements(observation, remaining_todos);
   }
 }
 

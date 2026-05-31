@@ -38,6 +38,7 @@ import {
   Agent,
   AgentCardSigningConfig,
   AgentExecutor,
+  PlannerObserver,
   OpenAIAgentAdapter,
   LangGraphAgentAdapter,
   BaseAgent,
@@ -7135,6 +7136,35 @@ describe("agent planning", () => {
     const observation = new StepObservation({ suggested_refinements: single });
     expect(observation.suggested_refinements?.[0]).toBeInstanceOf(StepRefinement);
     expect(observation.suggested_refinements?.[0]?.step_number).toBe(3);
+  });
+
+  it("applies planner observation refinements to remaining todos in place", () => {
+    const observer = new PlannerObserver();
+    const remainingTodos = [
+      new TodoItem({ step_number: 1, description: "Keep this step" }),
+      new TodoItem({ step_number: 2, description: "Pick a product" }),
+      new TodoItem({ step_number: 3, description: "Write summary" }),
+    ];
+    const observation = new StepObservation({
+      step_completed_successfully: true,
+      key_information_learned: "Product B has the highest rating",
+      remaining_plan_still_valid: true,
+      suggested_refinements: [
+        { step_number: 2, new_description: "Pick product B because it has the highest rating" },
+        { step_number: 99, new_description: "Ignore missing step" },
+        { step_number: 3, new_description: "" },
+      ],
+    });
+
+    const result = observer.apply_refinements(observation, remainingTodos);
+
+    expect(result).toBe(remainingTodos);
+    expect(remainingTodos.map((todo) => todo.description)).toEqual([
+      "Keep this step",
+      "Pick product B because it has the highest rating",
+      "Write summary",
+    ]);
+    expect(observer.applyRefinements(new StepObservation({ step_completed_successfully: true }), remainingTodos)).toBe(remainingTodos);
   });
 
   it("creates a default bounded low-effort PlanningConfig for planning true", () => {
