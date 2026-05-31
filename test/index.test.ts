@@ -9149,6 +9149,65 @@ describe("LLM providers", () => {
     ]);
   });
 
+  it("accumulates Anthropic streaming events", () => {
+    const anthropic = new AnthropicCompletion({ model: "claude-3-5-sonnet-20241022" });
+    const finalMessage = {
+      id: "msg_final",
+      usage: {
+        input_tokens: 5,
+        output_tokens: 4,
+        cache_read_input_tokens: 2,
+      },
+      content: [
+        { type: "thinking", thinking: "reasoning", signature: "sig" },
+        { type: "text", text: "Hello world" },
+      ],
+    };
+
+    const accumulated = (anthropic as unknown as {
+      _accumulate_stream_events(events: unknown[], finalMessage?: unknown): {
+        text: string;
+        response_id: string | null;
+        tool_calls: Record<string, unknown>[];
+        usage: Record<string, number> | null;
+        thinking_blocks: Record<string, unknown>[];
+      };
+    })._accumulate_stream_events([
+      { type: "message_start", message: { id: "msg_1" } },
+      { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "Hel" } },
+      { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "lo" } },
+      { type: "content_block_start", index: 1, content_block: { type: "tool_use", id: "toolu_1", name: "search_docs" } },
+      { type: "content_block_delta", index: 1, delta: { type: "input_json_delta", partial_json: "{\"query\":" } },
+      { type: "content_block_delta", index: 1, delta: { type: "input_json_delta", partial_json: "\"CrewAI\"}" } },
+    ], finalMessage);
+
+    expect(accumulated).toEqual({
+      text: "Hello",
+      response_id: "msg_1",
+      tool_calls: [{
+        id: "toolu_1",
+        type: "function",
+        function: { name: "search_docs", arguments: "{\"query\":\"CrewAI\"}" },
+        index: 1,
+      }],
+      usage: {
+        input_tokens: 5,
+        output_tokens: 4,
+        total_tokens: 9,
+        cached_prompt_tokens: 2,
+        cache_creation_tokens: 0,
+      },
+      thinking_blocks: [{ type: "thinking", thinking: "reasoning", signature: "sig" }],
+    });
+    expect(anthropic.get_token_usage_summary()).toMatchObject({
+      promptTokens: 5,
+      completionTokens: 4,
+      totalTokens: 9,
+      cachedPromptTokens: 2,
+      successfulRequests: 1,
+    });
+  });
+
   it("prepares Bedrock Converse request bodies with tools and provider fields", () => {
     const search = new StructuredTool({
       name: "search docs",

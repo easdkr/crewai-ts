@@ -85,6 +85,8 @@ export class AnthropicCompletion extends ConfiguredLLM {
   readonly is_claude_3: boolean;
   readonly supportsTools: boolean;
   readonly supports_tools: boolean;
+  previousThinkingBlocks: Record<string, unknown>[];
+  _previous_thinking_blocks: Record<string, unknown>[];
 
   constructor(options: AnthropicCompletionOptions = { model: "claude-3-5-sonnet-20241022" }) {
     const model = options.model;
@@ -120,6 +122,8 @@ export class AnthropicCompletion extends ConfiguredLLM {
     this.is_claude_3 = this.isClaude3;
     this.supportsTools = true;
     this.supports_tools = true;
+    this.previousThinkingBlocks = [];
+    this._previous_thinking_blocks = this.previousThinkingBlocks;
   }
 
   override call(messages: readonly LLMMessage[], options?: LLMCallOptions): Promise<LLMResponse> {
@@ -273,6 +277,117 @@ export class AnthropicCompletion extends ConfiguredLLM {
 
   static extract_structured_output_from_response(response: unknown): Record<string, unknown> | null {
     return AnthropicCompletion.extractStructuredOutputFromResponse(response);
+  }
+
+  static extractThinkingBlocksFromResponse(response: unknown): Record<string, unknown>[] {
+    const blocks: Record<string, unknown>[] = [];
+    for (const rawBlock of anthropicResponseContent(response)) {
+      const block = readObject(rawBlock);
+      const type = scalarToString(block.type) ?? "";
+      if (type === "thinking") {
+        const thinking = scalarToString(block.thinking);
+        const signature = scalarToString(block.signature);
+        blocks.push({
+          type,
+          ...(thinking === null ? {} : { thinking }),
+          ...(signature === null ? {} : { signature }),
+        });
+      } else if (type === "redacted_thinking") {
+        blocks.push({ ...block, type });
+      }
+    }
+    return blocks;
+  }
+
+  static extract_thinking_blocks_from_response(response: unknown): Record<string, unknown>[] {
+    return AnthropicCompletion.extractThinkingBlocksFromResponse(response);
+  }
+
+  accumulateStreamEvents(events: readonly unknown[], finalMessage: unknown = null): {
+    text: string;
+    response_id: string | null;
+    tool_calls: Record<string, unknown>[];
+    usage: Record<string, number> | null;
+    thinking_blocks: Record<string, unknown>[];
+  } {
+    let text = "";
+    let responseId: string | null = null;
+    let usage: Record<string, number> | null = null;
+    const toolCallsByIndex = new Map<number, { id: string; name: string; arguments: string; index: number }>();
+
+    for (const rawEvent of events) {
+      const event = readObject(rawEvent);
+      const messageId = scalarToString(readObject(event.message).id);
+      if (messageId !== null) {
+        responseId = messageId;
+      }
+
+      const type = scalarToString(event.type) ?? "";
+      const index = typeof event.index === "number" && Number.isFinite(event.index) ? event.index : null;
+      const delta = readObject(event.delta);
+      const deltaType = scalarToString(delta.type) ?? "";
+
+      if (deltaType === "text_delta" || (type === "content_block_delta" && typeof delta.text === "string")) {
+        text += scalarToString(delta.text) ?? "";
+      }
+
+      if (type === "content_block_start" && index !== null) {
+        const block = readObject(event.content_block ?? event.contentBlock);
+        if ((scalarToString(block.type) ?? "") === "tool_use") {
+          toolCallsByIndex.set(index, {
+            id: scalarToString(block.id) ?? "",
+            name: scalarToString(block.name) ?? "",
+            arguments: "",
+            index,
+          });
+        }
+      } else if (type === "content_block_delta" && index !== null && deltaType === "input_json_delta") {
+        const partialJson = scalarToString(delta.partial_json ?? delta.partialJson) ?? "";
+        const existing = toolCallsByIndex.get(index);
+        if (existing && partialJson) {
+          existing.arguments += partialJson;
+        }
+      }
+    }
+
+    const thinkingBlocks = AnthropicCompletion.extractThinkingBlocksFromResponse(finalMessage);
+    if (thinkingBlocks.length > 0) {
+      this.previousThinkingBlocks = thinkingBlocks;
+      this._previous_thinking_blocks = this.previousThinkingBlocks;
+    }
+
+    if (Object.keys(readObject(readObject(finalMessage).usage)).length > 0) {
+      usage = this.extractAnthropicTokenUsage(finalMessage);
+      this.trackTokenUsageInternal(usage);
+    }
+
+    return {
+      text,
+      response_id: responseId,
+      tool_calls: [...toolCallsByIndex.values()]
+        .sort((left, right) => left.index - right.index)
+        .map((toolCall) => ({
+          id: toolCall.id,
+          type: "function",
+          function: {
+            name: toolCall.name,
+            arguments: toolCall.arguments,
+          },
+          index: toolCall.index,
+        })),
+      usage,
+      thinking_blocks: thinkingBlocks,
+    };
+  }
+
+  _accumulate_stream_events(events: readonly unknown[], finalMessage: unknown = null): {
+    text: string;
+    response_id: string | null;
+    tool_calls: Record<string, unknown>[];
+    usage: Record<string, number> | null;
+    thinking_blocks: Record<string, unknown>[];
+  } {
+    return this.accumulateStreamEvents(events, finalMessage);
   }
 
   override supportsFunctionCalling(): boolean {
