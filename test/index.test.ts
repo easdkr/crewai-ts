@@ -10610,6 +10610,33 @@ describe("memory", () => {
       "Batch memory B",
     ]);
   });
+
+  it("exposes upstream async memory aliases and paginated record listing", async () => {
+    const memory = new Memory({ rootScope: "/root" });
+    const first = await memory.aremember("Async first memory", {
+      scope: "/alpha",
+      categories: ["async"],
+      metadata: { order: 1 },
+    });
+    expect(first?.scope).toBe("/root/alpha");
+
+    await expect(memory.aremember_many([
+      "Async second memory",
+      "Async third memory",
+    ], { scope: "/alpha", categories: ["async"] })).resolves.toEqual([]);
+    expect(memory.list_records("/alpha")).toHaveLength(1);
+
+    const recalled = await memory.arecall("third", { scope: "/alpha", categories: ["async"], scoreThreshold: null });
+    expect(recalled[0]?.record.content).toBe("Async third memory");
+
+    expect(memory.list_records("/alpha").map((record) => record.content)).toEqual([
+      "Async third memory",
+      "Async second memory",
+      "Async first memory",
+    ]);
+    expect(memory.listRecords("/alpha", 1, 1)[0]?.content).toBe("Async second memory");
+    await expect(memory.aextract_memories("  Async extracted memory  ")).resolves.toEqual(["Async extracted memory"]);
+  });
 });
 
 describe("knowledge", () => {

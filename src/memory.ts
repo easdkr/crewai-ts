@@ -900,6 +900,16 @@ export class Memory {
     return this.rememberMany(contents, options);
   }
 
+  async aremember(content: string, options: Parameters<Memory["remember"]>[1] = {}): Promise<MemoryRecord | null> {
+    await Promise.resolve();
+    return this.remember(content, options);
+  }
+
+  async aremember_many(contents: readonly string[], options: Parameters<Memory["remember"]>[1] = {}): Promise<MemoryRecord[]> {
+    await Promise.resolve();
+    return this.rememberMany(contents, options);
+  }
+
   extractMemories(content: string): readonly string[] {
     const trimmed = content.trim();
     if (!trimmed) {
@@ -909,6 +919,11 @@ export class Memory {
   }
 
   extract_memories(content: string): readonly string[] {
+    return this.extractMemories(content);
+  }
+
+  async aextract_memories(content: string): Promise<readonly string[]> {
+    await Promise.resolve();
     return this.extractMemories(content);
   }
 
@@ -952,6 +967,11 @@ export class Memory {
       crewaiEventBus.emit(this, new MemoryQueryFailedEvent({ query, limit, scoreThreshold, error }));
       throw error;
     }
+  }
+
+  async arecall(query: string, options: Parameters<Memory["recall"]>[1] = {}): Promise<MemoryMatch[]> {
+    await Promise.resolve();
+    return this.recall(query, options);
   }
 
   forget(options: { scope?: string | null; categories?: readonly string[] | null; recordIds?: readonly string[] | null } = {}): number {
@@ -1048,6 +1068,20 @@ export class Memory {
 
   list_categories(full = false): Record<string, number> | Record<string, { count: number; scopes: readonly string[] }> {
     return this.listCategories(full);
+  }
+
+  listRecords(scope: string | null = null, limit = 200, offset = 0): MemoryRecord[] {
+    const effectiveScope = scope ? this.scopePath(scope) : this.rootScope;
+    return this.records
+      .map((record, index) => ({ record, index }))
+      .filter(({ record }) => !effectiveScope || record.scope.startsWith(effectiveScope))
+      .sort((left, right) => right.record.createdAt.getTime() - left.record.createdAt.getTime() || right.index - left.index)
+      .map(({ record }) => record)
+      .slice(offset, offset + limit);
+  }
+
+  list_records(scope: string | null = null, limit = 200, offset = 0): MemoryRecord[] {
+    return this.listRecords(scope, limit, offset);
   }
 
   info(full = false): MemoryInfo {
