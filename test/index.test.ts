@@ -11800,6 +11800,38 @@ describe("memory", () => {
     expect(storage.count()).toBe(0);
   });
 
+  it.each([
+    ["QdrantEdgeStorage", () => new QdrantEdgeStorage({ vectorDim: 3 })],
+    ["LanceDBStorage", () => new LanceDBStorage({ vectorDim: 3 })],
+  ])("%s filters scope prefixes on path segment boundaries", (_name, createStorage) => {
+    const storage = createStorage();
+    storage.save([
+      new MemoryRecord({
+        id: "crew",
+        content: "Crew note",
+        scope: "/crew/research",
+        categories: ["scope"],
+        createdAt: "2026-05-01T00:00:00.000Z",
+        embedding: [1, 0, 0],
+      }),
+      new MemoryRecord({
+        id: "crewish",
+        content: "Sibling prefix note",
+        scope: "/crewish/research",
+        categories: ["scope"],
+        createdAt: "2026-05-02T00:00:00.000Z",
+        embedding: [1, 0, 0],
+      }),
+    ]);
+
+    expect(storage.search([1, 0, 0], "/crew", null, null, 10, 0).map(([record]) => record.id)).toEqual(["crew"]);
+    expect(storage.list_records("/crew").map((record) => record.id)).toEqual(["crew"]);
+    expect(storage.count("/crew")).toBe(1);
+    expect(storage.list_categories("/crew")).toEqual({ scope: 1 });
+    expect(storage.delete("/crew")).toBe(1);
+    expect(storage.get_record("crewish")?.scope).toBe("/crewish/research");
+  });
+
   it("analyzes memory content, recall queries, saves, and consolidation with safe fallbacks", async () => {
     const llm = (messages: readonly LLMMessage[], options?: LLMCallOptions) => {
       if (options?.responseModel === QueryAnalysis) {

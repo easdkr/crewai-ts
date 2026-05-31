@@ -11,7 +11,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `npm run lint`
   - `npm run smoke:pack`
   - `python3 scripts/check-export-parity.py`
-- Test suite: 365 passing tests.
+- Test suite: 367 passing tests.
 - Root export parity against upstream clone `/tmp/crewai-upstream.lPeuQi/crewAI` at commit `2148c7e`: `total_missing=0`.
 - Public method parity has been tightened for core runtime classes:
   - `ConsoleFormatter`: `missing=0`
@@ -34,7 +34,7 @@ When more goal budget is available, continue from the behavioral parity audits b
 - Added deterministic storage backend lifecycle parity for the TypeScript in-memory `QdrantEdgeStorage` and `LanceDBStorage` shims:
   - batch `save`/`asave`
   - positional and object-style `search`/`asearch`
-  - metadata filters, category filters, scope filters, min score, and limits
+  - metadata filters, category filters, segment-boundary-safe scope filters, min score, and limits
   - `delete`/`adelete`, `update`, `get_record`, `list_records`, `get_scope_info`, `list_scopes`, `list_categories`, `count`, and scoped/global `reset`
   - `touch_records`/`touchRecords`, `optimize`, `flush_to_central`/`flushToCentral`, `close`, and `aclose` maintenance hooks
 - Replaced root placeholder exports for `ChromaDBClient`, `KnowledgeStorage`, and `BaseKnowledgeStorage` with behavior-bearing implementations.

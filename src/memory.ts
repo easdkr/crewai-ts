@@ -542,7 +542,7 @@ export class QdrantEdgeStorage implements MemoryVectorStorageLike {
     const limit = options.limit ?? 10;
     const minScore = options.minScore ?? options.min_score ?? Number.NEGATIVE_INFINITY;
     return [...this.records.values()]
-      .filter((record) => !scopePrefix || !scopePrefix.trim().replaceAll("/", "") || record.scope.startsWith(normalize_scope_path(scopePrefix)))
+      .filter((record) => is_scope_within_prefix(record.scope, scopePrefix))
       .filter((record) => !categories || categories.some((category) => record.categories.includes(category)))
       .filter((record) => !metadataFilter || Object.entries(metadataFilter).every(([key, value]) => record.metadata[key] === value))
       .map((record) => [record, cosineSimilarity(embedding, record.embedding ?? [])] as const)
@@ -599,7 +599,7 @@ export class QdrantEdgeStorage implements MemoryVectorStorageLike {
 
   list_records(scope_prefix: string | null = null, limit = 200, offset = 0): MemoryRecord[] {
     return [...this.records.values()]
-      .filter((record) => !scope_prefix || record.scope.startsWith(normalize_scope_path(scope_prefix)))
+      .filter((record) => is_scope_within_prefix(record.scope, scope_prefix))
       .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime())
       .slice(offset, offset + limit);
   }
@@ -620,7 +620,7 @@ export class QdrantEdgeStorage implements MemoryVectorStorageLike {
     const ids = new Set(record_ids ?? []);
     const cutoff = coerceDate(older_than);
     for (const record of [...this.records.values()]) {
-      if (normalizedScope && !record.scope.startsWith(normalizedScope)) {
+      if (!is_scope_within_prefix(record.scope, normalizedScope)) {
         continue;
       }
       if (categories && !categories.some((category) => record.categories.includes(category))) {
@@ -1489,6 +1489,15 @@ export function normalize_scope_path(path: string): string {
   const normalized = path.replace(/\/+/g, "/");
   const prefixed = normalized.startsWith("/") ? normalized : `/${normalized}`;
   return prefixed.length > 1 ? prefixed.replace(/\/+$/g, "") : "/";
+}
+
+function is_scope_within_prefix(scope: string, scopePrefix: string | null | undefined): boolean {
+  if (!scopePrefix || !scopePrefix.trim().replaceAll("/", "")) {
+    return true;
+  }
+  const normalizedScope = normalize_scope_path(scope);
+  const normalizedPrefix = normalize_scope_path(scopePrefix);
+  return normalizedScope === normalizedPrefix || normalizedScope.startsWith(`${normalizedPrefix}/`);
 }
 
 export const join_scope_paths = joinScopePaths;
