@@ -1048,6 +1048,20 @@ describe("serialization and project utilities", () => {
     expect(crewOutput.__getitem__("summary")).toBe("done");
     expect(crewOutput.__str__()).toBe(JSON.stringify({ summary: "done" }));
     expect(() => crewOutput.__getitem__("missing")).toThrow("Key 'missing' not found in CrewOutput.");
+
+    const pydanticLike = {
+      summary: "attribute should not win",
+      model_dump: () => ({ summary: "dumped", score: 9 }),
+    };
+    const pydanticTaskOutput = new TaskOutput({
+      description: "Use pydantic model dump for dictionaries",
+      pydantic: pydanticLike,
+      agent: "Researcher",
+    });
+    const pydanticCrewOutput = new CrewOutput({ pydantic: pydanticLike });
+
+    expect(pydanticTaskOutput.to_dict()).toEqual({ summary: "dumped", score: 9 });
+    expect(pydanticCrewOutput.to_dict()).toEqual({ summary: "dumped", score: 9 });
   });
 
   it("exposes upstream-style LiteAgentOutput string alias", () => {

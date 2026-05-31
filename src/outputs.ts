@@ -64,8 +64,9 @@ export class TaskOutput {
     if (this.jsonDict) {
       return { ...this.jsonDict };
     }
-    if (this.pydantic && typeof this.pydantic === "object") {
-      return { ...(this.pydantic as Record<string, unknown>) };
+    const dumped = dumpPydanticLike(this.pydantic);
+    if (dumped) {
+      return dumped;
     }
     return {};
   }
@@ -135,8 +136,9 @@ export class CrewOutput {
     if (this.jsonDict) {
       return { ...this.jsonDict };
     }
-    if (this.pydantic && typeof this.pydantic === "object") {
-      return { ...(this.pydantic as Record<string, unknown>) };
+    const dumped = dumpPydanticLike(this.pydantic);
+    if (dumped) {
+      return dumped;
     }
     return {};
   }
@@ -182,4 +184,19 @@ function stringifyOutput(value: unknown): string {
     return value.toString();
   }
   return JSON.stringify(value);
+}
+
+function dumpPydanticLike(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const record = value as Record<string, unknown>;
+  const dump = record.model_dump ?? record.modelDump;
+  if (typeof dump === "function") {
+    const dumped = (dump as (this: unknown) => unknown).call(value);
+    return dumped && typeof dumped === "object"
+      ? { ...(dumped as Record<string, unknown>) }
+      : {};
+  }
+  return { ...record };
 }
