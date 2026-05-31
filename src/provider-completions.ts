@@ -1434,6 +1434,10 @@ export class GeminiCompletion extends ConfiguredLLM {
     return GeminiCompletion.extractTokenUsage(response);
   }
 
+  static _extract_token_usage(response: unknown): Record<string, number> {
+    return GeminiCompletion.extractTokenUsage(response);
+  }
+
   static extractTextFromResponse(response: unknown): string {
     const candidates = readObject(response).candidates;
     if (!Array.isArray(candidates)) {

@@ -11068,6 +11068,19 @@ describe("LLM providers", () => {
       cached_prompt_tokens: 2,
       reasoning_tokens: 3,
     });
+    expect((GeminiCompletion as unknown as {
+      _extract_token_usage(response: unknown): Record<string, number>;
+    })._extract_token_usage({
+      usage_metadata: new GeminiUsageMetadata(),
+    })).toEqual({
+      prompt_token_count: 10,
+      candidates_token_count: 7,
+      completion_tokens: 10,
+      total_token_count: 20,
+      total_tokens: 20,
+      cached_prompt_tokens: 2,
+      reasoning_tokens: 3,
+    });
     expect(GeminiCompletion.extract_text_from_response({
       candidates: [{
         content: {
