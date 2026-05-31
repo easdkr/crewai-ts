@@ -13768,6 +13768,7 @@ describe("streaming output", () => {
     expect(streaming.is_completed).toBe(true);
     expect(streaming.get_full_text()).toContain("stream final");
     expect(streaming.result.raw).toContain("stream final");
+    expect(streaming.results.map((result) => result.raw)).toEqual(["stream final"]);
     expect([...streaming].map((chunk) => chunk.content)).toEqual(["stream final"]);
   });
 

@@ -184,6 +184,19 @@ export abstract class StreamingOutputBase<TResult> implements AsyncIterable<Stre
 }
 
 export class CrewStreamingOutput extends StreamingOutputBase<CrewOutput> {
+  get results(): readonly CrewOutput[] {
+    if (!this.completed) {
+      throw new Error("Streaming has not completed yet. Iterate over all chunks before accessing results.");
+    }
+    if (this.error) {
+      throw this.error instanceof Error ? this.error : new Error(formatThrownValue(this.error));
+    }
+    if (this.hasResult) {
+      return [this.resultValue as CrewOutput];
+    }
+    throw new Error("No results available.");
+  }
+
   protected chunksFromResult(result: CrewOutput): readonly StreamChunk[] {
     return result.raw
       ? [new StreamChunk({
