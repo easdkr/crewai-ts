@@ -7396,10 +7396,12 @@ describe("core crew runtime", () => {
     const warningSpy = vi.spyOn(process, "emitWarning").mockImplementation(() => undefined);
     try {
       expect(agentInstance.get_code_execution_tools()).toEqual([]);
+      agentInstance._validate_docker_installation();
       expect(warningSpy).toHaveBeenCalledWith(
         "CodeInterpreterTool is no longer available. Use dedicated sandbox services like E2B or Modal.",
         "DeprecationWarning",
       );
+      expect(warningSpy).toHaveBeenCalledTimes(2);
     } finally {
       warningSpy.mockRestore();
     }

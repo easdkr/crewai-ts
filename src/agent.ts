@@ -658,15 +658,27 @@ export class Agent {
   }
 
   getCodeExecutionTools(): readonly Tool[] {
-    process.emitWarning(
-      "CodeInterpreterTool is no longer available. Use dedicated sandbox services like E2B or Modal.",
-      "DeprecationWarning",
-    );
+    this.emitCodeInterpreterDeprecationWarning();
     return [];
   }
 
   get_code_execution_tools(): readonly Tool[] {
     return this.getCodeExecutionTools();
+  }
+
+  _validateDockerInstallation(): void {
+    this.emitCodeInterpreterDeprecationWarning();
+  }
+
+  _validate_docker_installation(): void {
+    this._validateDockerInstallation();
+  }
+
+  private emitCodeInterpreterDeprecationWarning(): void {
+    process.emitWarning(
+      "CodeInterpreterTool is no longer available. Use dedicated sandbox services like E2B or Modal.",
+      "DeprecationWarning",
+    );
   }
 
   static getOutputConverter(
