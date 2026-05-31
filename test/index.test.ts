@@ -11814,6 +11814,20 @@ describe("memory", () => {
     });
   });
 
+  it("returns upstream formatted memory trees for path arguments", () => {
+    const memory = new Memory({ rootScope: "/root" });
+    memory.remember("Alpha parent", { scope: "/projects/alpha" });
+    memory.remember("Alpha child", { scope: "/projects/alpha/notes" });
+    memory.remember("Beta parent", { scope: "/projects/beta" });
+
+    expect(memory.tree("/projects", 1)).toBe([
+      "/root/projects (3 records)",
+      "  /root/projects/alpha (2 records)",
+      "  /root/projects/beta (1 records)",
+    ].join("\n"));
+    expect(memory.tree(true).children.root?.children.projects?.children.alpha?.count).toBe(2);
+  });
+
   it("uses configured memory LLM for async extraction and falls back safely", async () => {
     const seen: string[] = [];
     const memory = new Memory({

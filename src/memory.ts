@@ -1281,7 +1281,13 @@ export class Memory {
     };
   }
 
-  tree(full = false, maxDepth = Number.POSITIVE_INFINITY): MemoryTreeNode {
+  tree(full?: boolean, maxDepth?: number): MemoryTreeNode;
+  tree(path: string | null, maxDepth?: number): string;
+  tree(pathOrFull: string | null | boolean = false, maxDepth = Number.POSITIVE_INFINITY): MemoryTreeNode | string {
+    if (typeof pathOrFull === "string" || pathOrFull === null) {
+      return this.formatTree(this.effectivePath(pathOrFull), maxDepth);
+    }
+    const full = pathOrFull;
     const root: MemoryTreeNode = { path: "/", count: 0, children: {} };
     for (const record of this.records) {
       addRecordToTree(root, record, full, maxDepth);
@@ -1395,6 +1401,22 @@ export class Memory {
       lastUpdated: newestRecord,
       childScopes: this.immediateChildScopes(normalized),
     });
+  }
+
+  private formatTree(path: string, maxDepth = 3): string {
+    const lines: string[] = [];
+    const walk = (currentPath: string, depth: number, prefix: string): void => {
+      if (depth > maxDepth) {
+        return;
+      }
+      const info = this.scopeInfoForPath(currentPath);
+      lines.push(`${prefix}${info.path} (${String(info.recordCount)} records)`);
+      for (const child of info.childScopes.slice(0, 20)) {
+        walk(child, depth + 1, `${prefix}  `);
+      }
+    };
+    walk(normalize_scope_path(path), 0, "");
+    return lines.length > 0 ? lines.join("\n") : `${path || "/"} (0 records)`;
   }
 
   private scopeInfos(scopePrefix: string | null = null): ScopeInfo[] {

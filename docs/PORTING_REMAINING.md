@@ -10,7 +10,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `npm run build`
   - `npm run lint`
   - `npm run smoke:pack`
-- Test suite: 349 passing tests.
+- Test suite: 350 passing tests.
 - Root export parity against upstream clone `/tmp/crewai-upstream.lPeuQi/crewAI` at commit `2148c7e`: `total_missing=0`.
 - Public method parity has been tightened for core runtime classes:
   - `ConsoleFormatter`: `missing=0`
@@ -62,6 +62,7 @@ When more goal budget is available, continue from the behavioral parity audits b
   - `Memory.update` now supports upstream-style partial updates by record ID, preserving created timestamps, refreshing access time, and raising on missing records
   - `Memory.reset` now honors `root_scope` by resetting only that subtree when no explicit scope is provided
   - `Memory.list_scopes`, `list_categories`, and `info` now accept upstream-style path arguments while preserving existing boolean full-detail calls
+  - `Memory.tree` now accepts upstream-style path arguments and returns formatted scope trees while preserving existing object-tree calls
   - consolidation plan execution now deduplicates actions by record so the first update/delete wins, matching upstream batch execution semantics
   - background batch memory writes now perform deterministic intra-batch duplicate dropping before persistence
   - `Memory.aremember_many` now applies configured LLM save analysis per batch item before pending background writes
