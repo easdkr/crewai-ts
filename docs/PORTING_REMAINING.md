@@ -11,7 +11,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `npm run lint`
   - `npm run smoke:pack`
   - `python3 scripts/check-export-parity.py`
-- Test suite: 467 passing tests.
+- Test suite: 468 passing tests.
 - Root export parity against upstream clone `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `5cdc420`: `total_missing=0`.
 - Public method parity has been tightened for core runtime classes:
   - `ConsoleFormatter`: `missing=0`
@@ -57,6 +57,7 @@ When more goal budget is available, continue from the behavioral parity audits b
   - `clear_pending_feedback`
 - Added `persistence_type` metadata on `JsonFlowPersistence` to match the persistence backend convention already present on SQLite.
 - Added focused JSON and SQLite tests for these aliases, including pending-feedback round trip and clear semantics.
+- `SQLiteFlowPersistence` now accepts upstream-style model dump state objects through `_to_state_dict` and exposes `_save_state_sql` for internal method parity.
 - Added Flow memory helper parity for auto-created flow memory plus explicit/disabled memory configuration:
   - `Flow.remember`
   - `Flow.recall`
@@ -269,7 +270,8 @@ When more goal budget is available, continue from the behavioral parity audits b
    - Flow persistence backends now expose upstream snake_case aliases for state and pending-feedback lifecycle methods.
    - Flow now supports auto memory plus `remember`, `recall`, and `extract_memories` delegation.
    - Flow checkpoint snapshots now restore/fork completed methods, method outputs/counts, and state through `from_checkpoint`/`fork`; kickoff-time `from_checkpoint` delegates to the restored flow and does not replay completed methods; restored checkpoint RuntimeState is wired through the event bus and handlers can receive it as a third argument; locked dict/list proxies now mutate the backing values.
-   - Remaining: any Pydantic/BaseModel-only state behavior that has no direct TypeScript equivalent yet.
+   - SQLite persistence now accepts upstream-style `model_dump` / `modelDump` state objects for saved flow state and pending feedback state.
+   - Remaining: any additional Pydantic/BaseModel-only state behavior that has no direct TypeScript equivalent yet.
 
 4. Unified memory
    - Async aliases and record/scope/category listing.

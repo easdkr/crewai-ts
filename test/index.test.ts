@@ -8931,6 +8931,46 @@ describe("flow runtime", () => {
     });
   });
 
+  it("persists SQLite flow state from upstream-style model dump objects", async () => {
+    const sqliteDirectory = mkdtempSync(join(tmpdir(), "crewai-ts-flow-sqlite-model-"));
+    const backend = new SQLiteFlowPersistence(join(sqliteDirectory, "flows.db"));
+    const stateModel = {
+      model_dump: () => ({ id: "model-flow", events: ["begin"], nested: { ok: true } }),
+    };
+    const pendingContext = {
+      flowName: "ModelFlow",
+      flowClass: "ModelFlow",
+      flowId: "model-flow",
+      methodName: "review",
+      output: "draft",
+      message: "Review draft",
+      requestedAt: new Date("2026-05-31T00:00:00.000Z"),
+      emit: [],
+      defaultOutcome: null,
+      metadata: {},
+    };
+
+    expect(typeof (SQLiteFlowPersistence as unknown as { _to_state_dict?: unknown })._to_state_dict).toBe("function");
+    expect(Object.hasOwn(SQLiteFlowPersistence.prototype, "_save_state_sql")).toBe(true);
+    await backend.save_state("model-flow", "begin", stateModel);
+    await expect(backend.load_state("model-flow")).resolves.toEqual({
+      id: "model-flow",
+      events: ["begin"],
+      nested: { ok: true },
+    });
+
+    await backend.save_pending_feedback(
+      "model-flow",
+      pendingContext,
+      { modelDump: () => ({ id: "model-flow", events: ["review"] }) },
+    );
+
+    await expect(backend.load_pending_feedback("model-flow")).resolves.toMatchObject({
+      state: { id: "model-flow", events: ["review"] },
+      context: { flowId: "model-flow", methodName: "review" },
+    });
+  });
+
   it("persists flow state after method completion and restores it with fromState", async () => {
     const directory = mkdtempSync(join(tmpdir(), "crewai-ts-flow-state-"));
     const persistence = new JsonFlowPersistence(directory);

@@ -18,19 +18,19 @@ export type PendingFeedbackRecord = {
 export type FlowPersistence = {
   persistenceType?: string;
   persistence_type?: string;
-  saveState?(flowId: string, methodName: string, state: Record<string, unknown>): Promise<void>;
-  save_state?(flowId: string, methodName: string, state: Record<string, unknown>): Promise<void>;
+  saveState?(flowId: string, methodName: string, state: unknown): Promise<void>;
+  save_state?(flowId: string, methodName: string, state: unknown): Promise<void>;
   loadState?(flowId: string): Promise<Record<string, unknown> | null>;
   load_state?(flowId: string): Promise<Record<string, unknown> | null>;
   savePendingFeedback(
     flowId: string,
     context: PendingFeedbackContext,
-    state: Record<string, unknown>,
+    state: unknown,
   ): Promise<void>;
   save_pending_feedback(
     flowId: string,
     context: PendingFeedbackContext,
-    state: Record<string, unknown>,
+    state: unknown,
   ): Promise<void>;
   loadPendingFeedback(flowId: string): Promise<PendingFeedbackRecord | null>;
   load_pending_feedback(flowId: string): Promise<PendingFeedbackRecord | null>;
@@ -222,14 +222,15 @@ export class SQLiteFlowPersistence implements FlowPersistence {
     this.initDb();
   }
 
-  saveState(flowId: string, methodName: string, state: Record<string, unknown>): Promise<void> {
+  saveState(flowId: string, methodName: string, state: unknown): Promise<void> {
+    const stateDict = SQLiteFlowPersistence._to_state_dict(state);
     this.withDb((db) => {
-      this.insertState(db, flowId, methodName, state);
+      this._save_state_sql(db, flowId, methodName, stateDict);
     });
     return Promise.resolve();
   }
 
-  save_state(flowId: string, methodName: string, state: Record<string, unknown>): Promise<void> {
+  save_state(flowId: string, methodName: string, state: unknown): Promise<void> {
     return this.saveState(flowId, methodName, state);
   }
 
@@ -256,10 +257,11 @@ export class SQLiteFlowPersistence implements FlowPersistence {
   savePendingFeedback(
     flowId: string,
     context: PendingFeedbackContext,
-    state: Record<string, unknown>,
+    state: unknown,
   ): Promise<void> {
+    const stateDict = SQLiteFlowPersistence._to_state_dict(state);
     this.withDb((db) => {
-      this.insertState(db, flowId, context.methodName, state);
+      this._save_state_sql(db, flowId, context.methodName, stateDict);
       db.prepare(`
         INSERT OR REPLACE INTO pending_feedback (
           flow_uuid,
@@ -270,7 +272,7 @@ export class SQLiteFlowPersistence implements FlowPersistence {
       `).run(
         flowId,
         JSON.stringify(serializePendingFeedbackContext(context)),
-        JSON.stringify(state),
+        JSON.stringify(stateDict),
         new Date().toISOString(),
       );
     });
@@ -280,7 +282,7 @@ export class SQLiteFlowPersistence implements FlowPersistence {
   save_pending_feedback(
     flowId: string,
     context: PendingFeedbackContext,
-    state: Record<string, unknown>,
+    state: unknown,
   ): Promise<void> {
     return this.savePendingFeedback(flowId, context, state);
   }
@@ -322,7 +324,27 @@ export class SQLiteFlowPersistence implements FlowPersistence {
     return this.clearPendingFeedback(flowId);
   }
 
-  private insertState(db: DatabaseSyncType, flowId: string, methodName: string, state: Record<string, unknown>): void {
+  static _to_state_dict(stateData: unknown): Record<string, unknown> {
+    const modelDump = (stateData as { model_dump?: unknown; modelDump?: unknown } | null)?.model_dump
+      ?? (stateData as { modelDump?: unknown } | null)?.modelDump;
+    if (typeof modelDump === "function") {
+      const dumped: unknown = modelDump.call(stateData);
+      if (isRecord(dumped)) {
+        return dumped;
+      }
+    }
+    if (isRecord(stateData)) {
+      return stateData;
+    }
+    throw new Error(`state_data must be either a model_dump/modelDump object or plain object, got ${typeof stateData}`);
+  }
+
+  _to_state_dict(stateData: unknown): Record<string, unknown> {
+    return SQLiteFlowPersistence._to_state_dict(stateData);
+  }
+
+  _save_state_sql(db: DatabaseSyncType, flowId: string, methodName: string, state: unknown): void {
+    const stateDict = SQLiteFlowPersistence._to_state_dict(state);
     db.prepare(`
       INSERT INTO flow_states (
         flow_uuid,
@@ -330,7 +352,7 @@ export class SQLiteFlowPersistence implements FlowPersistence {
         timestamp,
         state_json
       ) VALUES (?, ?, ?, ?)
-    `).run(flowId, methodName, new Date().toISOString(), JSON.stringify(state));
+    `).run(flowId, methodName, new Date().toISOString(), JSON.stringify(stateDict));
   }
 
   private withDb<T>(fn: (db: DatabaseSyncType) => T): T {
