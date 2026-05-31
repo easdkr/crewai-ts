@@ -849,6 +849,51 @@ export class BedrockCompletion extends ConfiguredLLM {
     return BedrockCompletion.extractStructuredOutputFromResponse(response);
   }
 
+  async executeToolUseAndPrepareMessages(
+    messages: readonly Record<string, unknown>[],
+    toolUse: unknown,
+    availableFunctions: Record<string, LLMAvailableFunction>,
+  ): Promise<{ result: string | null; messages: Record<string, unknown>[] }> {
+    const toolUseBlock = readObject(toolUse);
+    const toolUseId = scalarToString(toolUseBlock.toolUseId) ?? "";
+    const functionName = scalarToString(toolUseBlock.name) ?? "";
+    const result = await this.handleToolExecution({
+      functionName,
+      functionArgs: readObject(toolUseBlock.input),
+      availableFunctions,
+    });
+    if (result === null) {
+      return { result, messages: [...messages] };
+    }
+    return {
+      result,
+      messages: [
+        ...messages,
+        {
+          role: "assistant",
+          content: [{ toolUse: toolUseBlock }],
+        },
+        {
+          role: "user",
+          content: [{
+            toolResult: {
+              toolUseId,
+              content: [{ text: result }],
+            },
+          }],
+        },
+      ],
+    };
+  }
+
+  async _execute_tool_use_and_prepare_messages(
+    messages: readonly Record<string, unknown>[],
+    toolUse: unknown,
+    availableFunctions: Record<string, LLMAvailableFunction>,
+  ): Promise<{ result: string | null; messages: Record<string, unknown>[] }> {
+    return await this.executeToolUseAndPrepareMessages(messages, toolUse, availableFunctions);
+  }
+
   accumulateConverseStreamEvents(events: readonly unknown[]): {
     text: string;
     tool_calls: Record<string, unknown>[];

@@ -9363,6 +9363,43 @@ describe("LLM providers", () => {
     ]);
   });
 
+  it("executes Bedrock tool uses into Converse follow-up messages", async () => {
+    const bedrock = new BedrockCompletion({ model: "anthropic.claude-3-5-sonnet-20241022-v2:0" });
+    const toolUse = { toolUseId: "tooluse-1", name: "search_docs", input: { query: "CrewAI" } };
+
+    const prepared = await (bedrock as unknown as {
+      _execute_tool_use_and_prepare_messages(
+        messages: Record<string, unknown>[],
+        toolUse: Record<string, unknown>,
+        availableFunctions: Record<string, unknown>,
+      ): Promise<{
+        result: string | null;
+        messages: Record<string, unknown>[];
+      }>;
+    })._execute_tool_use_and_prepare_messages(
+      [{ role: "user", content: [{ text: "Find docs" }] }],
+      toolUse,
+      { search_docs: ({ query }: { query: string }) => ({ result: `found ${query}` }) },
+    );
+
+    expect(prepared).toEqual({
+      result: "{\"result\":\"found CrewAI\"}",
+      messages: [
+        { role: "user", content: [{ text: "Find docs" }] },
+        { role: "assistant", content: [{ toolUse }] },
+        {
+          role: "user",
+          content: [{
+            toolResult: {
+              toolUseId: "tooluse-1",
+              content: [{ text: "{\"result\":\"found CrewAI\"}" }],
+            },
+          }],
+        },
+      ],
+    });
+  });
+
   it("accumulates Bedrock Converse streaming events", () => {
     const bedrock = new BedrockCompletion({ model: "anthropic.claude-3-5-sonnet-20241022-v2:0" });
 
