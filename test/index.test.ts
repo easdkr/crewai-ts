@@ -9513,12 +9513,19 @@ describe("core crew runtime", () => {
 });
 
 describe("agent planning", () => {
-  it("exposes upstream RPMController reset_counter helper", () => {
+  it("exposes upstream RPMController reset_counter helper", async () => {
+    vi.useFakeTimers();
     const controller = new RPMController({ max_rpm: 2 });
 
     expect(controller.reset_counter()).toBe(controller);
     expect(controller.resetCounter()).toBe(controller);
     expect(controller.check_or_wait()).toBe(true);
+    expect(controller._current_rpm).toBe(1);
+    controller._reset_request_count();
+    expect(controller._current_rpm).toBe(0);
+    const wait = controller._wait_for_next_minute();
+    await vi.advanceTimersByTimeAsync(60_000);
+    await expect(wait).resolves.toBeUndefined();
     controller.stop_rpm_counter();
   });
 

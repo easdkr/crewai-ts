@@ -37,6 +37,9 @@ export class RpmController {
 
 export class RPMController extends RpmController {
   readonly max_rpm: number | null;
+  _current_rpm = 0;
+  private rpmResetTimer: ReturnType<typeof setTimeout> | null = null;
+  private rpmShutdownFlag = false;
 
   constructor(options: number | { maxRpm?: number | null; max_rpm?: number | null } = {}) {
     const maxRpm = typeof options === "number"
@@ -44,10 +47,23 @@ export class RPMController extends RpmController {
       : options.maxRpm ?? options.max_rpm ?? null;
     super(maxRpm ?? Number.MAX_SAFE_INTEGER);
     this.max_rpm = maxRpm;
+    if (this.max_rpm !== null) {
+      this._reset_request_count();
+    }
   }
 
   checkOrWait(): boolean {
-    void this.waitForSlot();
+    if (this.max_rpm === null) {
+      return true;
+    }
+    if (this._current_rpm < this.max_rpm) {
+      this._current_rpm += 1;
+      void this.waitForSlot();
+      return true;
+    }
+    void this._wait_for_next_minute().then(() => {
+      this._current_rpm = 1;
+    });
     return true;
   }
 
@@ -56,7 +72,7 @@ export class RPMController extends RpmController {
   }
 
   resetCounter(): this {
-    this.reset();
+    this._reset_request_count();
     return this;
   }
 
@@ -65,11 +81,36 @@ export class RPMController extends RpmController {
   }
 
   stopRpmCounter(): void {
+    this.rpmShutdownFlag = true;
+    if (this.rpmResetTimer) {
+      clearTimeout(this.rpmResetTimer);
+      this.rpmResetTimer = null;
+    }
     this.reset();
   }
 
   stop_rpm_counter(): void {
     this.stopRpmCounter();
+  }
+
+  async _wait_for_next_minute(): Promise<void> {
+    await delay(60_000);
+    this._current_rpm = 0;
+  }
+
+  _reset_request_count(): void {
+    this._current_rpm = 0;
+    this.reset();
+    if (this.rpmResetTimer) {
+      clearTimeout(this.rpmResetTimer);
+      this.rpmResetTimer = null;
+    }
+    if (!this.rpmShutdownFlag && this.max_rpm !== null) {
+      this.rpmResetTimer = setTimeout(() => {
+        this._reset_request_count();
+      }, 60_000);
+      this.rpmResetTimer.unref();
+    }
   }
 }
 
