@@ -20206,6 +20206,14 @@ describe("lite agent", () => {
     expect(Object.hasOwn(LiteAgent.prototype, "key")).toBe(true);
     expect(agent.key).toHaveLength(36);
     expect(agent._original_role).toBe("Helper Agent");
+    expect(agent._format_messages("hello")).toEqual([{ role: "user", content: "hello" }]);
+    agent._append_message({ role: "system", content: "System prompt" });
+    agent._append_message({ role: "user", content: "Latest question" });
+    expect(agent._get_last_user_content()).toBe("Latest question");
+    expect(agent.messages).toEqual([
+      { role: "system", content: "System prompt" },
+      { role: "user", content: "Latest question" },
+    ]);
     expect(() => LiteAgent.validate_guardrail_function(() => [true, "ok"]))
       .toThrow("Guardrail function must accept exactly 1 parameter");
   });

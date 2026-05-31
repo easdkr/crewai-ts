@@ -304,6 +304,45 @@ export class LiteAgent {
     this.usageMetrics = emptyUsageMetrics();
   }
 
+  _formatMessages(
+    messages: LiteAgentKickoffInput,
+    responseFormat?: unknown,
+    inputFiles?: InputFiles,
+  ): LLMMessage[] {
+    void responseFormat;
+    return formatLiteAgentMessages(messages, inputFiles).messages;
+  }
+
+  _format_messages(
+    messages: LiteAgentKickoffInput,
+    response_format?: unknown,
+    input_files?: InputFiles,
+  ): LLMMessage[] {
+    return this._formatMessages(messages, response_format, input_files);
+  }
+
+  _getLastUserContent(): string {
+    for (let index = this.currentMessages.length - 1; index >= 0; index -= 1) {
+      const message = this.currentMessages[index];
+      if (message?.role === "user" && typeof message.content === "string") {
+        return message.content;
+      }
+    }
+    return "";
+  }
+
+  _get_last_user_content(): string {
+    return this._getLastUserContent();
+  }
+
+  _appendMessage(message: LLMMessage): void {
+    this.currentMessages.push({ ...message });
+  }
+
+  _append_message(message: LLMMessage): void {
+    this._appendMessage(message);
+  }
+
   private toAgent(): Agent {
     return new Agent({
       role: this.role,
