@@ -7853,6 +7853,37 @@ describe("core crew runtime", () => {
 
     expect(prompts[0]).toContain("Current Date: 02/01/2025");
     expect(taskInstance.description).toBe("Research");
+
+    const dateTask = { description: "Manual date injection" };
+    researcher._inject_date_to_task(dateTask);
+    expect(dateTask.description).toContain("Current Date: 02/01/2025");
+
+    const invalidLogger = { log: vi.fn() };
+    const invalidAgent = new Agent({
+      role: "Invalid date",
+      goal: "Warn",
+      backstory: "Tests invalid date formats",
+      injectDate: true,
+      dateFormat: "literal-date",
+      llm: () => "done",
+    }) as Agent & { _logger?: typeof invalidLogger };
+    invalidAgent._logger = invalidLogger;
+    const unchangedTask = { description: "No date" };
+    invalidAgent._inject_date_to_task(unchangedTask);
+    expect(unchangedTask.description).toBe("No date");
+    expect(invalidLogger.log).toHaveBeenCalledWith("warning", "Failed to inject date: Invalid date format: literal-date");
+
+    const timeAgent = new Agent({
+      role: "Time",
+      goal: "Format",
+      backstory: "Tests extended date formats",
+      injectDate: true,
+      dateFormat: "%Y-%m-%d %H:%M:%S %b %A",
+      llm: () => "done",
+    });
+    const timeTask = { description: "Extended date" };
+    timeAgent._inject_date_to_task(timeTask);
+    expect(timeTask.description).toMatch(/Current Date: 2025-01-0[12] \d{2}:\d{2}:\d{2} (Jan|Dec) (Thursday|Wednesday)/);
   });
 
   it("retries agent task execution up to maxRetryLimit", async () => {

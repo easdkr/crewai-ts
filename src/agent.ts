@@ -775,6 +775,30 @@ export class Agent {
       : taskPrompt;
   }
 
+  _injectDateToTask(task: Record<string, unknown>): void {
+    if (!this.injectDate) {
+      return;
+    }
+    try {
+      const currentDate = formatDate(new Date(), this.dateFormat);
+      if (!currentDate) {
+        throw new Error(`Invalid date format: ${this.dateFormat}`);
+      }
+      const description = typeof task.description === "string" ? task.description : "";
+      task.description = `${description}\n\nCurrent Date: ${currentDate}`;
+    } catch (error) {
+      const logger = readRecordValue(this, "_logger") ?? readRecordValue(this, "logger");
+      const log = isRecord(logger) ? logger.log : null;
+      if (typeof log === "function") {
+        log.call(logger, "warning", `Failed to inject date: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+  }
+
+  _inject_date_to_task(task: Record<string, unknown>): void {
+    this._injectDateToTask(task);
+  }
+
   createAgentExecutor(): unknown {
     return this.agentExecutor;
   }
@@ -1734,7 +1758,7 @@ async function withExecutionTimeout<T>(promise: Promise<T>, timeoutSeconds: numb
 }
 
 function formatDate(date: Date, format: string): string | null {
-  if (!/%[YymdB]/.test(format)) {
+  if (!/%[YymdHMSBbAa]/.test(format)) {
     return null;
   }
   const replacements: Record<string, string> = {
@@ -1742,7 +1766,13 @@ function formatDate(date: Date, format: string): string | null {
     "%y": String(date.getFullYear()).slice(-2),
     "%m": String(date.getMonth() + 1).padStart(2, "0"),
     "%d": String(date.getDate()).padStart(2, "0"),
+    "%H": String(date.getHours()).padStart(2, "0"),
+    "%M": String(date.getMinutes()).padStart(2, "0"),
+    "%S": String(date.getSeconds()).padStart(2, "0"),
     "%B": MONTH_NAMES[date.getMonth()] ?? "",
+    "%b": SHORT_MONTH_NAMES[date.getMonth()] ?? "",
+    "%A": WEEKDAY_NAMES[date.getDay()] ?? "",
+    "%a": SHORT_WEEKDAY_NAMES[date.getDay()] ?? "",
   };
   return Object.entries(replacements).reduce(
     (formatted, [token, value]) => formatted.replaceAll(token, value),
@@ -1763,4 +1793,39 @@ const MONTH_NAMES = [
   "October",
   "November",
   "December",
+];
+
+const SHORT_MONTH_NAMES = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+];
+
+const WEEKDAY_NAMES = [
+  "Sunday",
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+];
+
+const SHORT_WEEKDAY_NAMES = [
+  "Sun",
+  "Mon",
+  "Tue",
+  "Wed",
+  "Thu",
+  "Fri",
+  "Sat",
 ];
