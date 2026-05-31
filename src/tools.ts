@@ -151,8 +151,10 @@ export const ToolCalling = class ToolCalling {
 export const InstructorToolCalling = ToolCalling;
 export type InstructorToolCalling = ToolCalling;
 
-export type ToolCallingLike = ToolCalling & {
+export type ToolCallingLike = {
+  toolName?: string;
   tool_name?: string;
+  arguments?: Record<string, unknown> | null;
 };
 
 export type ToolResultOptions = {
@@ -1144,6 +1146,8 @@ export type ToolUsageOptions = {
 };
 
 export class ToolUsage {
+  private readonly runAttempts = 1;
+  private readonly run_attempts = this.runAttempts;
   readonly toolsHandler: ToolsHandler | null;
   readonly tools_handler: ToolsHandler | null;
   readonly tools: readonly Tool[];
@@ -1199,6 +1203,66 @@ export class ToolUsage {
 
   async ause(calling: ToolCalling | ToolUsageError, toolString = ""): Promise<string> {
     return await this.use(calling, toolString);
+  }
+
+  onToolError(tool: unknown, toolCalling: ToolCallingLike, error: unknown): void {
+    const eventData = this.prepareEventData(tool, toolCalling);
+    crewaiEventBus.emit(this, new ToolUsageErrorEvent({
+      ...eventData,
+      task_id: getStringProperty(this.task, "id"),
+      task_name: getTaskDisplayName(this.task),
+      error,
+    }));
+  }
+
+  on_tool_error(tool: unknown, toolCalling: ToolCallingLike, error: unknown): void {
+    this.onToolError(tool, toolCalling, error);
+  }
+
+  onToolUseFinished(
+    tool: unknown,
+    toolCalling: ToolCallingLike,
+    fromCache: boolean,
+    startedAt: number,
+    result: unknown,
+  ): void {
+    const finishedAt = Date.now() / 1000;
+    crewaiEventBus.emit(this, new ToolUsageFinishedEvent({
+      ...this.prepareEventData(tool, toolCalling),
+      started_at: new Date(startedAt * 1000),
+      finished_at: new Date(finishedAt * 1000),
+      from_cache: fromCache,
+      output: result,
+      ...(this.task
+        ? {
+          task_id: getStringProperty(this.task, "id"),
+          task_name: getTaskDisplayName(this.task),
+        }
+        : {}),
+    }));
+  }
+
+  on_tool_use_finished(
+    tool: unknown,
+    toolCalling: ToolCallingLike,
+    fromCache: boolean,
+    startedAt: number,
+    result: unknown,
+  ): void {
+    this.onToolUseFinished(tool, toolCalling, fromCache, startedAt, result);
+  }
+
+  private prepareEventData(tool: unknown, toolCalling: ToolCallingLike): Record<string, unknown> {
+    return {
+      run_attempts: this.run_attempts,
+      delegations: getNumberProperty(this.task, "delegations") ?? 0,
+      tool_name: sanitizeToolName(getStringProperty(tool, "name") ?? toolCalling.toolName ?? toolCalling.tool_name ?? ""),
+      tool_args: toolCalling.arguments ?? {},
+      tool_class: getConstructorName(tool),
+      agent_key: getStringProperty(this.agent, "key") ?? "unknown",
+      agent_role: getStringProperty(this.agent, "_original_role") ?? getStringProperty(this.agent, "role") ?? "unknown",
+      ...this.fingerprintContext,
+    };
   }
 }
 
@@ -1564,7 +1628,7 @@ function toolCacheKey(toolName: string, input: string): string {
 }
 
 function sanitizedCallingName(calling: ToolCallingLike): string {
-  return sanitizeToolName(calling.toolName);
+  return sanitizeToolName(calling.toolName ?? calling.tool_name ?? "");
 }
 
 function stringifyToolCallingArguments(args: Record<string, unknown> | null | undefined): string {
@@ -1572,6 +1636,32 @@ function stringifyToolCallingArguments(args: Record<string, unknown> | null | un
     return "";
   }
   return JSON.stringify(args);
+}
+
+function getRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" ? value as Record<string, unknown> : null;
+}
+
+function getStringProperty(value: unknown, key: string): string | null {
+  const property = getRecord(value)?.[key];
+  return typeof property === "string" ? property : null;
+}
+
+function getNumberProperty(value: unknown, key: string): number | null {
+  const property = getRecord(value)?.[key];
+  return typeof property === "number" ? property : null;
+}
+
+function getTaskDisplayName(task: unknown): string | null {
+  const name = getStringProperty(task, "name");
+  if (name) {
+    return name;
+  }
+  return getStringProperty(task, "description");
+}
+
+function getConstructorName(value: unknown): string | null {
+  return value && typeof value === "object" ? value.constructor.name : null;
 }
 
 function inferFunctionParameterNames(func: unknown): string[] {

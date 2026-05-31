@@ -199,6 +199,7 @@ import {
   ToolUsageFinishedEvent,
   ToolValidateInputErrorEvent,
   TextFileKnowledgeSource,
+  ToolUsage,
   ToolUsageStartedEvent,
   ToolUsageLimitExceededError,
   TodoItem,
@@ -7838,6 +7839,55 @@ describe("tools", () => {
 
     await expect(add.arun({ a: 2, b: 3 })).resolves.toBe(5);
     expect(() => add.run({ a: 1, b: 1 })).toThrow(ToolUsageLimitExceededError);
+  });
+
+  it("emits upstream-style ToolUsage error and finished events", () => {
+    const seen: Array<ToolUsageErrorEvent | ToolUsageFinishedEvent> = [];
+    crewaiEventBus.on("tool_usage_error", (_source, event) => {
+      seen.push(event);
+    });
+    crewaiEventBus.on("tool_usage_finished", (_source, event) => {
+      seen.push(event);
+    });
+    const usage = new ToolUsage({
+      task: { id: "task-1", name: "", description: "Investigate", delegations: 2 },
+      agent: { key: "agent-key", role: "Researcher" },
+      fingerprint_context: { trace_id: "trace-1" },
+    });
+    const tool = { name: "Search Tool" };
+    const calling = { tool_name: "Search Tool", arguments: { query: "CrewAI" } };
+    const startedAt = Date.now() / 1000 - 1;
+
+    usage.on_tool_error(tool, calling, new Error("failed lookup"));
+    usage.on_tool_use_finished(tool, calling, true, startedAt, { result: "ok" });
+
+    expect(seen[0]).toBeInstanceOf(ToolUsageErrorEvent);
+    expect(seen[0]).toMatchObject({
+      toolName: "search_tool",
+      tool_name: "search_tool",
+      toolArgs: { query: "CrewAI" },
+      tool_args: { query: "CrewAI" },
+      toolClass: "Object",
+      tool_class: "Object",
+      task_id: "task-1",
+      task_name: "Investigate",
+      run_attempts: 1,
+      delegations: 2,
+      agent_key: "agent-key",
+      agent_role: "Researcher",
+      trace_id: "trace-1",
+    });
+    expect((seen[0] as ToolUsageErrorEvent).error).toContain("failed lookup");
+    expect(seen[1]).toBeInstanceOf(ToolUsageFinishedEvent);
+    expect(seen[1]).toMatchObject({
+      toolName: "search_tool",
+      tool_name: "search_tool",
+      fromCache: true,
+      from_cache: true,
+      output: { result: "ok" },
+      task_id: "task-1",
+      task_name: "Investigate",
+    });
   });
 
   it("supports upstream structured tool invocation and snake_case aliases", async () => {

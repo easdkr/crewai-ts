@@ -773,58 +773,135 @@ export class HumanFeedbackReceivedEvent extends BaseEvent {
 
 export class ToolUsageStartedEvent extends BaseEvent {
   readonly toolName: string;
+  readonly tool_name: string;
   readonly toolArgs: Record<string, unknown> | string;
+  readonly tool_args: Record<string, unknown> | string;
   readonly toolClass: string | null;
+  readonly tool_class: string | null;
 
-  constructor(options: { toolName: string; toolArgs: Record<string, unknown> | string; toolClass?: string | null }) {
+  constructor(options: {
+    toolName: string;
+    tool_name?: string;
+    toolArgs: Record<string, unknown> | string;
+    tool_args?: Record<string, unknown> | string;
+    toolClass?: string | null;
+    tool_class?: string | null;
+  } & Record<string, unknown>) {
     super({ type: "tool_usage_started", sourceType: "tool" });
     this.toolName = options.toolName;
+    this.tool_name = this.toolName;
     this.toolArgs = options.toolArgs;
-    this.toolClass = options.toolClass ?? null;
+    this.tool_args = this.toolArgs;
+    this.toolClass = options.toolClass ?? options.tool_class ?? null;
+    this.tool_class = this.toolClass;
+    Object.assign(this, extraEventOptions(options, [
+      "toolName",
+      "tool_name",
+      "toolArgs",
+      "tool_args",
+      "toolClass",
+      "tool_class",
+    ]));
   }
 }
 
 export class ToolUsageFinishedEvent extends BaseEvent {
   readonly toolName: string;
+  readonly tool_name: string;
   readonly toolArgs: Record<string, unknown> | string;
+  readonly tool_args: Record<string, unknown> | string;
   readonly toolClass: string | null;
+  readonly tool_class: string | null;
   readonly startedAt: Date;
+  readonly started_at: Date;
   readonly finishedAt: Date;
+  readonly finished_at: Date;
   readonly fromCache: boolean;
+  readonly from_cache: boolean;
   readonly output: unknown;
 
   constructor(options: {
-    toolName: string;
-    toolArgs: Record<string, unknown> | string;
+    toolName?: string;
+    tool_name?: string;
+    toolArgs?: Record<string, unknown> | string;
+    tool_args?: Record<string, unknown> | string;
     toolClass?: string | null;
-    startedAt: Date;
+    tool_class?: string | null;
+    startedAt?: Date;
+    started_at?: Date;
     finishedAt?: Date;
+    finished_at?: Date;
     fromCache?: boolean;
+    from_cache?: boolean;
     output: unknown;
-  }) {
+  } & Record<string, unknown>) {
     super({ type: "tool_usage_finished", sourceType: "tool" });
-    this.toolName = options.toolName;
-    this.toolArgs = options.toolArgs;
-    this.toolClass = options.toolClass ?? null;
-    this.startedAt = options.startedAt;
-    this.finishedAt = options.finishedAt ?? new Date();
-    this.fromCache = options.fromCache ?? false;
+    this.toolName = options.toolName ?? options.tool_name ?? "";
+    this.tool_name = this.toolName;
+    this.toolArgs = options.toolArgs ?? options.tool_args ?? {};
+    this.tool_args = this.toolArgs;
+    this.toolClass = options.toolClass ?? options.tool_class ?? null;
+    this.tool_class = this.toolClass;
+    this.startedAt = options.startedAt ?? options.started_at ?? new Date();
+    this.started_at = this.startedAt;
+    this.finishedAt = options.finishedAt ?? options.finished_at ?? new Date();
+    this.finished_at = this.finishedAt;
+    this.fromCache = options.fromCache ?? options.from_cache ?? false;
+    this.from_cache = this.fromCache;
     this.output = options.output;
+    Object.assign(this, extraEventOptions(options, [
+      "toolName",
+      "tool_name",
+      "toolArgs",
+      "tool_args",
+      "toolClass",
+      "tool_class",
+      "startedAt",
+      "started_at",
+      "finishedAt",
+      "finished_at",
+      "fromCache",
+      "from_cache",
+      "output",
+    ]));
   }
 }
 
 export class ToolUsageErrorEvent extends BaseEvent {
   readonly toolName: string;
+  readonly tool_name: string;
   readonly toolArgs: Record<string, unknown> | string;
+  readonly tool_args: Record<string, unknown> | string;
   readonly toolClass: string | null;
+  readonly tool_class: string | null;
   readonly error: string;
 
-  constructor(options: { toolName: string; toolArgs: Record<string, unknown> | string; toolClass?: string | null; error: unknown }) {
+  constructor(options: {
+    toolName?: string;
+    tool_name?: string;
+    toolArgs?: Record<string, unknown> | string;
+    tool_args?: Record<string, unknown> | string;
+    toolClass?: string | null;
+    tool_class?: string | null;
+    error: unknown;
+  } & Record<string, unknown>) {
     super({ type: "tool_usage_error", sourceType: "tool" });
-    this.toolName = options.toolName;
-    this.toolArgs = options.toolArgs;
-    this.toolClass = options.toolClass ?? null;
+    this.toolName = options.toolName ?? options.tool_name ?? "";
+    this.tool_name = this.toolName;
+    this.toolArgs = options.toolArgs ?? options.tool_args ?? {};
+    this.tool_args = this.toolArgs;
+    this.toolClass = options.toolClass ?? options.tool_class ?? null;
+    this.tool_class = this.toolClass;
     this.error = formatError(options.error);
+    Object.assign(this, extraEventOptions(options, [
+      "toolName",
+      "tool_name",
+      "toolArgs",
+      "tool_args",
+      "toolClass",
+      "tool_class",
+      "error",
+    ]));
   }
 }
 
@@ -4444,6 +4521,11 @@ export function resetEmissionSequence(): void {
 
 function formatError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function extraEventOptions(options: Record<string, unknown>, knownKeys: readonly string[]): Record<string, unknown> {
+  const known = new Set(knownKeys);
+  return Object.fromEntries(Object.entries(options).filter(([key]) => !known.has(key)));
 }
 
 function getCrewSourceFingerprint(crew: unknown): string | null {
