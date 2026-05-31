@@ -767,6 +767,54 @@ export class Flow<TState extends object = Record<string, unknown>> {
     this.model_post_init(context);
   }
 
+  _flowPostInit(): void {
+    this.flowPostInit();
+  }
+
+  _flow_post_init(): void {
+    this._flowPostInit();
+  }
+
+  _copyState(): TState {
+    return cloneFlowState(this.state);
+  }
+
+  _copy_state(): TState {
+    return this._copyState();
+  }
+
+  _initializeState(inputs: Record<string, unknown>): void {
+    this.applyStateUpdates(inputs, { preserveExistingId: true });
+  }
+
+  _initialize_state(inputs: Record<string, unknown>): void {
+    this._initializeState(inputs);
+  }
+
+  _restoreState(state: Record<string, unknown>): void {
+    this.state = cloneFlowState(state) as TState;
+  }
+
+  _restore_state(state: Record<string, unknown>): void {
+    this._restoreState(state);
+  }
+
+  _updateStateField(key: string, value: unknown): void {
+    (this.state as Record<string, unknown>)[key] = value;
+  }
+
+  _update_state_field(key: string, value: unknown): void {
+    this._updateStateField(key, value);
+  }
+
+  _applyStateUpdates(updates: Record<string, unknown>): void {
+    this.applyStateUpdates(updates, { preserveExistingId: true });
+  }
+
+  _apply_state_updates(updates: Record<string, unknown>): void {
+    this._applyStateUpdates(updates);
+  }
+
   private flowPostInit(): void {
     if (this.flowPostInitDone) {
       return;
@@ -776,6 +824,16 @@ export class Flow<TState extends object = Record<string, unknown>> {
       this.memory = new Memory({ rootScope: `/flow/${sanitize_scope_name(this.flowName())}` });
     }
     crewaiEventBus.emit(this, new FlowCreatedEvent({ flowName: this.flowName() }));
+  }
+
+  private applyStateUpdates(updates: Record<string, unknown>, options: { preserveExistingId: boolean }): void {
+    const state = this.state as Record<string, unknown>;
+    const currentId = state.id;
+    const updatesHaveId = Object.hasOwn(updates, "id");
+    Object.assign(state, updates);
+    if (options.preserveExistingId && !updatesHaveId && currentId !== undefined && currentId !== null) {
+      state.id = currentId;
+    }
   }
 
   async kickoff(
@@ -2882,6 +2940,17 @@ function nestedIncludesTrigger(condition: FlowConditionInput, triggerName: strin
 function flowStateId(state: object): string | null {
   const id = (state as Record<string, unknown>).id;
   return typeof id === "string" ? id : null;
+}
+
+function cloneFlowState<TState extends object>(state: TState): TState {
+  if (typeof structuredClone === "function") {
+    try {
+      return structuredClone(state);
+    } catch {
+      // Fall through for non-cloneable values.
+    }
+  }
+  return JSON.parse(JSON.stringify(state)) as TState;
 }
 
 function stringifyRouterOutput(output: unknown): string {

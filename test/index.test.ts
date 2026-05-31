@@ -10175,6 +10175,31 @@ describe("flow runtime", () => {
     }
   });
 
+  it("exposes upstream Flow state helper aliases", () => {
+    const flow = new Flow<{ id: string; topic?: string; nested?: { count: number }; status?: string }>({
+      initialState: { id: "flow-state", nested: { count: 1 } },
+    });
+
+    flow._initialize_state({ topic: "CrewAI" });
+    expect(flow.state).toMatchObject({ id: "flow-state", topic: "CrewAI" });
+
+    const copied = flow._copy_state();
+    expect(copied.nested).toEqual({ count: 1 });
+    copied.nested = { count: 99 };
+    expect(flow.state.nested).toEqual({ count: 1 });
+
+    flow._update_state_field("status", "running");
+    expect(flow.state.status).toBe("running");
+
+    flow._apply_state_updates({ topic: "CrewAI TS" });
+    expect(flow.state).toMatchObject({ id: "flow-state", topic: "CrewAI TS" });
+
+    flow._restore_state({ id: "restored-flow", topic: "Restored" });
+    expect(flow.state).toEqual({ id: "restored-flow", topic: "Restored" });
+
+    expect(Object.hasOwn(Flow.prototype, "_flow_post_init")).toBe(true);
+  });
+
   it("supports routers plus and/or flow conditions", async () => {
     class RoutingFlow extends Flow<{ events: string[] }> {
       constructor() {
