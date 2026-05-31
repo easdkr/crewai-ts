@@ -877,17 +877,60 @@ export type MemoryVectorStorageLike = {
   search(embedding: readonly number[], options?: MemoryVectorSearchOptions): Array<readonly [MemoryRecord, number]>;
 };
 
+export type QdrantEdgeConfig = {
+  vectors: Record<string, { size: number; distance: "Cosine" }>;
+};
+
+export type QdrantScopeFilter = {
+  must: readonly [{ key: "scope_ancestors"; match: { value: string } }];
+};
+
+export type QdrantPoint = {
+  id: number;
+  vector: Record<typeof VECTOR_NAME, readonly number[]>;
+  payload: {
+    record_id: string;
+    content: string;
+    scope: string;
+    scope_ancestors: readonly string[];
+    categories: readonly string[];
+    metadata: Record<string, unknown>;
+    importance: number;
+    created_at: string;
+    last_accessed: string;
+    source: string;
+    private: boolean;
+  };
+};
+
+export type QdrantShardHandle = {
+  path: string;
+  points: QdrantPoint[];
+  closed: boolean;
+  close: () => void;
+  flush: () => void;
+};
+
 export class QdrantEdgeStorage implements MemoryVectorStorageLike {
   private readonly records = new Map<string, MemoryRecord>();
   readonly path: string | null;
   readonly vectorDim: number;
   readonly vector_dim: number;
+  readonly _base_path: string | null;
+  readonly _central_path: string | null;
+  readonly _local_path: string | null;
+  _local_has_data = false;
+  _closed = false;
+  _indexes_created = false;
 
   constructor(options: string | { path?: string | null; vectorDim?: number | null; vector_dim?: number | null } | null = null) {
     const config = typeof options === "string" || options === null ? { path: options } : options;
     this.path = config.path ?? null;
     this.vectorDim = config.vectorDim ?? config.vector_dim ?? DEFAULT_VECTOR_DIM;
     this.vector_dim = this.vectorDim;
+    this._base_path = this.path;
+    this._central_path = this.path ? `${this.path.replace(/\/+$/u, "")}/central` : null;
+    this._local_path = this.path ? `${this.path.replace(/\/+$/u, "")}/worker-0` : null;
   }
 
   save(records: MemoryRecord | MemoryRecordOptions | readonly (MemoryRecord | MemoryRecordOptions)[]): void {
@@ -897,6 +940,9 @@ export class QdrantEdgeStorage implements MemoryVectorStorageLike {
     for (const record of memoryRecords) {
       const memoryRecord = record instanceof MemoryRecord ? record : new MemoryRecord(record);
       this.records.set(memoryRecord.id, memoryRecord);
+    }
+    if (memoryRecords.length > 0) {
+      this._local_has_data = true;
     }
   }
 
@@ -1146,6 +1192,7 @@ export class QdrantEdgeStorage implements MemoryVectorStorageLike {
   }
 
   flush_to_central(): void {
+    this._local_has_data = false;
   }
 
   flushToCentral(): void {
@@ -1153,12 +1200,171 @@ export class QdrantEdgeStorage implements MemoryVectorStorageLike {
   }
 
   close(): void {
+    if (this._closed) {
+      return;
+    }
+    this._closed = true;
     this.flush_to_central();
   }
 
   async aclose(): Promise<void> {
     await Promise.resolve();
     this.close();
+  }
+
+  _build_config(dim: number): QdrantEdgeConfig {
+    return {
+      vectors: {
+        [VECTOR_NAME]: {
+          size: dim,
+          distance: "Cosine",
+        },
+      },
+    };
+  }
+
+  _open_shard(path: string): QdrantShardHandle {
+    return {
+      path,
+      points: [],
+      closed: false,
+      close() {
+        this.closed = true;
+      },
+      flush() {
+      },
+    };
+  }
+
+  _ensure_indexes(_shard: QdrantShardHandle): void {
+    void _shard;
+    this._indexes_created = true;
+  }
+
+  _record_to_point(record: MemoryRecord): QdrantPoint {
+    return {
+      id: uuidToPointId(record.id),
+      vector: {
+        [VECTOR_NAME]: record.embedding && record.embedding.length > 0
+          ? record.embedding
+          : Array.from({ length: this.vectorDim }, () => 0),
+      },
+      payload: {
+        record_id: record.id,
+        content: record.content,
+        scope: record.scope,
+        scope_ancestors: buildScopeAncestors(record.scope),
+        categories: record.categories,
+        metadata: record.metadata,
+        importance: record.importance,
+        created_at: record.createdAt.toISOString(),
+        last_accessed: (record.lastAccessed ?? record.createdAt).toISOString(),
+        source: record.source ?? "",
+        private: record.private,
+      },
+    };
+  }
+
+  _payload_to_record(
+    payload: QdrantPoint["payload"] | Record<string, unknown>,
+    vector: Record<typeof VECTOR_NAME, readonly number[]> | null = null,
+  ): MemoryRecord {
+    const fallbackId = "id" in payload ? payload.id : "";
+    const content = typeof payload.content === "string" ? payload.content : "";
+    const scope = typeof payload.scope === "string" ? payload.scope : "/";
+    return new MemoryRecord({
+      id: String(payload.record_id ?? fallbackId),
+      content,
+      scope,
+      categories: Array.isArray(payload.categories)
+        ? payload.categories.filter((category): category is string => typeof category === "string")
+        : [],
+      metadata: isRecord(payload.metadata) ? payload.metadata : {},
+      importance: typeof payload.importance === "number" ? payload.importance : Number(payload.importance ?? 0.5),
+      createdAt: typeof payload.created_at === "string" ? payload.created_at : new Date(),
+      lastAccessed: typeof payload.last_accessed === "string" ? payload.last_accessed : new Date(),
+      embedding: vector?.[VECTOR_NAME] ?? null,
+      source: typeof payload.source === "string" && payload.source ? payload.source : null,
+      private: Boolean(payload.private),
+    });
+  }
+
+  _build_scope_filter(scope_prefix: string | null): QdrantScopeFilter | null {
+    if (!scope_prefix || !scope_prefix.trim().replaceAll("/", "")) {
+      return null;
+    }
+    return {
+      must: [{
+        key: "scope_ancestors",
+        match: { value: normalize_scope_path(scope_prefix) },
+      }],
+    };
+  }
+
+  _scroll_all(shard: QdrantShardHandle, _filter: QdrantScopeFilter | null = null, _with_vector = false): QdrantPoint[] {
+    void _filter;
+    void _with_vector;
+    return [...shard.points];
+  }
+
+  _delete_from_shard(
+    shard: QdrantShardHandle,
+    scope_prefix: string | null,
+    categories: readonly string[] | null,
+    record_ids: readonly string[] | null,
+    older_than: Date | string | null,
+    metadata_filter: Record<string, unknown> | null,
+  ): number {
+    const before = shard.points.length;
+    const cutoff = coerceDate(older_than);
+    const ids = new Set(record_ids ?? []);
+    shard.points = shard.points.filter((point) => {
+      const record = this._payload_to_record(point.payload, point.vector);
+      if (!is_scope_within_prefix(record.scope, scope_prefix)) {
+        return true;
+      }
+      if (ids.size > 0 && !ids.has(record.id)) {
+        return true;
+      }
+      if (categories && !categories.some((category) => record.categories.includes(category))) {
+        return true;
+      }
+      if (metadata_filter && !Object.entries(metadata_filter).every(([key, value]) => record.metadata[key] === value)) {
+        return true;
+      }
+      if (cutoff && record.createdAt >= cutoff) {
+        return true;
+      }
+      return false;
+    });
+    return before - shard.points.length;
+  }
+
+  _delete_from_shard_path(
+    shard_path: string,
+    scope_prefix: string | null,
+    categories: readonly string[] | null,
+    record_ids: readonly string[] | null,
+    older_than: Date | string | null,
+    metadata_filter: Record<string, unknown> | null,
+  ): number {
+    const shard = this._open_shard(shard_path);
+    try {
+      const deleted = this._delete_from_shard(shard, scope_prefix, categories, record_ids, older_than, metadata_filter);
+      shard.flush();
+      return deleted;
+    } finally {
+      shard.close();
+    }
+  }
+
+  _upsert_to_central(points: readonly QdrantPoint[]): void {
+    for (const point of points) {
+      this.records.set(point.payload.record_id, this._payload_to_record(point.payload, point.vector));
+    }
+  }
+
+  _cleanup_orphaned_shards(): void {
   }
 }
 
@@ -2494,6 +2700,33 @@ function is_scope_within_prefix(scope: string, scopePrefix: string | null | unde
   const normalizedScope = normalize_scope_path(scope);
   const normalizedPrefix = normalize_scope_path(scopePrefix);
   return normalizedScope === normalizedPrefix || normalizedScope.startsWith(`${normalizedPrefix}/`);
+}
+
+function buildScopeAncestors(scope: string): string[] {
+  const normalizedScope = normalize_scope_path(scope);
+  if (normalizedScope === "/") {
+    return ["/"];
+  }
+  const ancestors = ["/"];
+  let current = "";
+  for (const part of normalizedScope.split("/").filter(Boolean)) {
+    current = `${current}/${part}`;
+    ancestors.push(current);
+  }
+  return ancestors;
+}
+
+function uuidToPointId(value: string): number {
+  const normalized = value.replaceAll("-", "");
+  if (/^[\da-f]{32}$/iu.test(normalized)) {
+    const parsed = Number.parseInt(normalized.slice(-13), 16);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+  let hash = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = (hash * 31 + value.charCodeAt(index)) >>> 0;
+  }
+  return hash;
 }
 
 export const join_scope_paths = joinScopePaths;

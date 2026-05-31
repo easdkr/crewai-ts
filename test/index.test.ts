@@ -14378,6 +14378,69 @@ describe("memory", () => {
     expect(storage.get_record("crewish")?.scope).toBe("/crewish/research");
   });
 
+  it("exposes deterministic Qdrant Edge point conversion and shard helper aliases", () => {
+    const storage = new QdrantEdgeStorage({ path: "/tmp/crewai-ts-memory-qdrant", vector_dim: 3 });
+    const record = new MemoryRecord({
+      id: "qdrant-row",
+      content: "Qdrant point note",
+      scope: "/crew/research/agent",
+      categories: ["storage", "qdrant"],
+      metadata: { owner: "team" },
+      importance: 0.7,
+      source: "test",
+      private: true,
+      createdAt: "2026-05-31T00:00:00.000Z",
+      lastAccessed: "2026-05-31T00:02:00.000Z",
+      embedding: [0.1, 0.2, 0.3],
+    });
+
+    expect(storage._base_path).toBe("/tmp/crewai-ts-memory-qdrant");
+    expect(storage._local_has_data).toBe(false);
+    expect(storage._build_config(4)).toEqual({
+      vectors: { memory: { size: 4, distance: "Cosine" } },
+    });
+    expect(storage._build_scope_filter("crew/research")).toEqual({
+      must: [{ key: "scope_ancestors", match: { value: "/crew/research" } }],
+    });
+    expect(storage._build_scope_filter("/")).toBeNull();
+
+    const point = storage._record_to_point(record);
+    expect(typeof point.id).toBe("number");
+    expect(point).toMatchObject({
+      vector: { memory: [0.1, 0.2, 0.3] },
+      payload: {
+        record_id: "qdrant-row",
+        scope_ancestors: ["/", "/crew", "/crew/research", "/crew/research/agent"],
+        categories: ["storage", "qdrant"],
+      },
+    });
+    expect(storage._payload_to_record(point.payload, point.vector)).toMatchObject({
+      id: "qdrant-row",
+      scope: "/crew/research/agent",
+      categories: ["storage", "qdrant"],
+      metadata: { owner: "team" },
+      private: true,
+    });
+
+    const shard = storage._open_shard("/tmp/local-shard");
+    storage._ensure_indexes(shard);
+    storage._upsert_to_central([point]);
+    expect(storage._scroll_all(shard)).toEqual([]);
+    expect(storage._delete_from_shard(shard, null, null, ["missing"], null, null)).toBe(0);
+    expect(storage._delete_from_shard_path("/tmp/local-shard", null, null, ["missing"], null, null)).toBe(0);
+    expect(() => {
+      storage._cleanup_orphaned_shards();
+    }).not.toThrow();
+
+    storage.save([record]);
+
+    expect(storage._local_has_data).toBe(true);
+    storage.flush_to_central();
+    expect(storage._local_has_data).toBe(false);
+    storage.close();
+    expect(storage._closed).toBe(true);
+  });
+
   it("exposes deterministic LanceDB row conversion and compaction helpers", () => {
     const storage = new LanceDBStorage({
       path: "/tmp/crewai-ts-memory-lance",
