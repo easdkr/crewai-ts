@@ -635,6 +635,31 @@ export class BedrockCompletion extends ConfiguredLLM {
     return BedrockCompletion.extractBedrockTokenUsage(usage);
   }
 
+  static extractToolUsesFromResponse(response: unknown): Record<string, unknown>[] {
+    return bedrockResponseContent(response)
+      .map((block) => readObject(readObject(block).toolUse))
+      .filter((toolUse) => Object.keys(toolUse).length > 0)
+      .filter((toolUse) => (scalarToString(toolUse.name) ?? "") !== STRUCTURED_OUTPUT_TOOL_NAME);
+  }
+
+  static extract_tool_uses_from_response(response: unknown): Record<string, unknown>[] {
+    return BedrockCompletion.extractToolUsesFromResponse(response);
+  }
+
+  static extractStructuredOutputFromResponse(response: unknown): Record<string, unknown> | null {
+    for (const block of bedrockResponseContent(response)) {
+      const toolUse = readObject(readObject(block).toolUse);
+      if ((scalarToString(toolUse.name) ?? "") === STRUCTURED_OUTPUT_TOOL_NAME) {
+        return readObject(toolUse.input);
+      }
+    }
+    return null;
+  }
+
+  static extract_structured_output_from_response(response: unknown): Record<string, unknown> | null {
+    return BedrockCompletion.extractStructuredOutputFromResponse(response);
+  }
+
   override trackTokenUsageInternal(usageData: Record<string, unknown>): void {
     super.trackTokenUsageInternal(BedrockCompletion.extractBedrockTokenUsage(usageData));
   }
@@ -1410,6 +1435,12 @@ function geminiResponseSchema(value: unknown): Record<string, unknown> | null {
   return schema && typeof schema === "object" && !Array.isArray(schema)
     ? schema as Record<string, unknown>
     : null;
+}
+
+function bedrockResponseContent(response: unknown): unknown[] {
+  const output = readObject(readObject(response).output);
+  const message = readObject(output.message);
+  return Array.isArray(message.content) ? message.content : [];
 }
 
 function isAzureOpenAIEndpoint(endpoint: string | null): boolean {

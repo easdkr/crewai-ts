@@ -9048,6 +9048,32 @@ describe("LLM providers", () => {
     });
   });
 
+  it("extracts Bedrock tool uses and structured output from Converse responses", () => {
+    const response = {
+      output: {
+        message: {
+          content: [
+            { text: "Need search" },
+            { toolUse: { toolUseId: "tool-1", name: "search_docs", input: { query: "CrewAI" } } },
+            { toolUse: { toolUseId: "tool-2", name: "structured_output", input: { answer: "done", confidence: 0.92 } } },
+          ],
+        },
+      },
+    };
+
+    expect(BedrockCompletion.extract_structured_output_from_response(response)).toEqual({
+      answer: "done",
+      confidence: 0.92,
+    });
+    expect(BedrockCompletion.extract_tool_uses_from_response(response)).toEqual([
+      {
+        toolUseId: "tool-1",
+        name: "search_docs",
+        input: { query: "CrewAI" },
+      },
+    ]);
+  });
+
   it("exposes Gemini completion provider parity helpers", () => {
     const gemini = new GeminiCompletion({
       model: "gemini-2.5-pro",
