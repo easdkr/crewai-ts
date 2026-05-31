@@ -350,6 +350,7 @@ import {
   getCurrentFlowId,
   getCurrentFlowMethodName,
   getCurrentFlowRequestId,
+  setCurrentFlowContext,
   getFlowMetadata,
   getPossibleReturnConstants,
   getChildIndex,
@@ -11975,12 +11976,17 @@ describe("flow runtime", () => {
 
       begin() {
         const tracked = new TrackedThing();
+        const resetTracked = new TrackedThing();
+        setCurrentFlowContext({ flowRequestId: null, flowId: null });
+        resetTracked._set_flow_context();
+        setCurrentFlowContext({ flowRequestId: tracked._request_id, flowId: tracked._flow_id });
         this.state.seen = {
           flowRequestId: getCurrentFlowRequestId(),
           flowId: getCurrentFlowId(),
           methodName: getCurrentFlowMethodName(),
           trackedRequestId: tracked._request_id,
           trackedFlowId: tracked._flow_id,
+          resetTrackedRequestId: resetTracked._request_id,
         };
         return this.state.seen;
       }
@@ -11999,6 +12005,7 @@ describe("flow runtime", () => {
     });
     expect((output as Record<string, unknown>).flowRequestId).toEqual(expect.any(String));
     expect((output as Record<string, unknown>).trackedRequestId).toBe((output as Record<string, unknown>).flowRequestId);
+    expect((output as Record<string, unknown>).resetTrackedRequestId).toBeNull();
     expect(getCurrentFlowRequestId()).toBeNull();
     expect(getCurrentFlowId()).toBeNull();
     expect(getCurrentFlowMethodName()).toBe("unknown");

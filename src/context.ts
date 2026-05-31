@@ -407,17 +407,26 @@ export const currentFlowMethodName: FlowContextVariable<string> = {
 export const current_flow_method_name = currentFlowMethodName;
 
 export class FlowTrackable {
-  readonly _requestId: string | null;
-  readonly _request_id: string | null;
-  readonly _flowId: string | null;
-  readonly _flow_id: string | null;
+  _requestId: string | null;
+  _request_id: string | null;
+  _flowId: string | null;
+  _flow_id: string | null;
 
   constructor() {
+    this._requestId = null;
+    this._request_id = null;
+    this._flowId = null;
+    this._flow_id = null;
+    this._set_flow_context();
+  }
+
+  _set_flow_context(): this {
     const requestId = getCurrentFlowRequestId();
     this._requestId = requestId;
     this._request_id = requestId;
     this._flowId = requestId ? getCurrentFlowId() : null;
     this._flow_id = this._flowId;
+    return this;
   }
 }
 
