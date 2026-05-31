@@ -923,8 +923,11 @@ export class Memory {
   }
 
   async aextract_memories(content: string): Promise<readonly string[]> {
-    await Promise.resolve();
-    return this.extractMemories(content);
+    if (!this.llm) {
+      await Promise.resolve();
+      return this.extractMemories(content);
+    }
+    return await extractMemoriesFromContent(content, this.llm);
   }
 
   recall(
@@ -1577,7 +1580,8 @@ export async function extractMemoriesFromContent(content: string, llm: LLM): Pro
     const response = await callMemoryLLM(llm, messages, ExtractedMemories);
     return coerceExtractedMemories(response).memories;
   } catch {
-    return [content];
+    const trimmed = content.trim();
+    return trimmed ? [trimmed] : [];
   }
 }
 

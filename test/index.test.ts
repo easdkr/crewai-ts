@@ -141,6 +141,7 @@ import {
   analyzeQuery,
   mark_cache_breakpoint,
   ConsolidationPlan,
+  ExtractedMemories,
   extractMemoriesFromContent,
   LiteAgentOutput,
   Memory,
@@ -10636,6 +10637,30 @@ describe("memory", () => {
     ]);
     expect(memory.listRecords("/alpha", 1, 1)[0]?.content).toBe("Async second memory");
     await expect(memory.aextract_memories("  Async extracted memory  ")).resolves.toEqual(["Async extracted memory"]);
+  });
+
+  it("uses configured memory LLM for async extraction and falls back safely", async () => {
+    const seen: string[] = [];
+    const memory = new Memory({
+      llm: (messages, options) => {
+        seen.push(`${options?.responseModel === ExtractedMemories ? "true" : "false"}:${messages.at(-1)?.content ?? ""}`);
+        return JSON.stringify({ memories: ["First durable fact", "Second durable fact"] });
+      },
+    });
+
+    await expect(memory.aextract_memories("first. second.")).resolves.toEqual([
+      "First durable fact",
+      "Second durable fact",
+    ]);
+    expect(seen[0]).toContain("true:Content:\nfirst. second.");
+
+    const fallback = new Memory({
+      llm: () => {
+        throw new Error("offline");
+      },
+    });
+    await expect(fallback.aextract_memories("  fallback fact  ")).resolves.toEqual(["fallback fact"]);
+    expect(fallback.extract_memories("  sync fallback fact  ")).toEqual(["sync fallback fact"]);
   });
 });
 
