@@ -1447,6 +1447,32 @@ export class LanceDBStorage extends QdrantEdgeStorage {
     return this;
   }
 
+  _create_table(vector_dim: number): this {
+    if (Number.isFinite(vector_dim) && vector_dim > 0) {
+      (this as { vectorDim: number; vector_dim: number }).vectorDim = vector_dim;
+      (this as { vectorDim: number; vector_dim: number }).vector_dim = vector_dim;
+    }
+    return this;
+  }
+
+  _do_write(op: string, ...args: unknown[]): unknown {
+    if (op === "add") {
+      const rows = Array.isArray(args[0]) ? args[0] : [];
+      const records = rows.map((row) => this._row_to_record(row as Record<string, unknown>));
+      this.save(records);
+      return null;
+    }
+    if (op === "delete") {
+      const where = typeof args[0] === "string" ? args[0] : "";
+      const id = /^id = '(.+)'$/u.exec(where)?.[1]?.replaceAll("''", "'");
+      return id ? this.delete(null, null, [id]) : 0;
+    }
+    if (op === "update") {
+      return null;
+    }
+    throw new Error(`Unsupported LanceDB write operation: ${op}`);
+  }
+
   _ensure_scope_index(): void {
   }
 
@@ -1498,6 +1524,16 @@ export class LanceDBStorage extends QdrantEdgeStorage {
       embedding: Array.isArray(row.vector) ? row.vector.filter((value): value is number => typeof value === "number") : null,
       source: typeof row.source === "string" && row.source ? row.source : null,
       private: Boolean(row.private),
+    });
+  }
+
+  _scan_rows(scope_prefix: string | null = null, limit = 10_000, columns: readonly string[] | null = null): Record<string, unknown>[] {
+    return this.list_records(scope_prefix, limit).map((record) => {
+      const row = this._record_to_row(record);
+      if (!columns) {
+        return row;
+      }
+      return Object.fromEntries(columns.map((column) => [column, (row as unknown as Record<string, unknown>)[column]]));
     });
   }
 }

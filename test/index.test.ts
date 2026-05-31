@@ -11436,6 +11436,7 @@ describe("flow runtime", () => {
     const backend = new SQLiteFlowPersistence(join(sqliteDirectory, "flows.db"));
 
     expect(Object.hasOwn(SQLiteFlowPersistence.prototype, "init_db")).toBe(true);
+    expect(backend._setup()).toBe(backend);
     backend.init_db();
     await backend.save_state("init-flow", "begin", { id: "init-flow", events: ["begin"] });
 
@@ -17511,6 +17512,7 @@ describe("memory", () => {
     expect(storage.compact_every).toBe(1);
     expect(storage._infer_dim_from_table({ schema: [{ name: "vector", type: { list_size: 7 } }] })).toBe(7);
     expect(storage._ensure_table(3)).toBe(storage);
+    expect(storage._create_table(3)).toBe(storage);
     expect(() => {
       storage._ensure_scope_index();
     }).not.toThrow();
@@ -17529,8 +17531,14 @@ describe("memory", () => {
     });
 
     storage.save([record]);
+    expect(storage._scan_rows("/crew", 5, ["id", "scope"])).toEqual([{ id: "lance-row", scope: "/crew/research" }]);
+    expect(() => {
+      storage._do_write("add", [row]);
+    }).not.toThrow();
+    expect(storage._do_write("delete", "id = 'lance-row'")).toBe(1);
+    storage.save([record]);
 
-    expect(storage._save_count).toBe(1);
+    expect(storage._save_count).toBe(3);
     expect(() => {
       storage._compact_if_needed();
     }).not.toThrow();

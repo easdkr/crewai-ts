@@ -222,6 +222,11 @@ export class SQLiteFlowPersistence implements FlowPersistence {
     this.initDb();
   }
 
+  _setup(): this {
+    this.initDb();
+    return this;
+  }
+
   saveState(flowId: string, methodName: string, state: unknown): Promise<void> {
     const stateDict = SQLiteFlowPersistence._to_state_dict(state);
     this.withDb((db) => {
