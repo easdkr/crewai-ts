@@ -23,6 +23,7 @@ import { interpolateOnly } from "./string-utils.js";
 import { OutputFormat, type AgentStepCallback, type InputValues, type LLM, type MaybePromise, type TaskCallback, type Tool } from "./types.js";
 import type { AgentStep } from "./types.js";
 import type { InputFile, InputFiles } from "./input-files.js";
+import { storeTaskFiles } from "./file-store.js";
 
 export type GuardrailResult = readonly [boolean, unknown] | { success: boolean; result: unknown };
 
@@ -505,6 +506,17 @@ export class Task {
     this.incrementDelegations(agentName);
   }
 
+  storeInputFiles(): void {
+    if (Object.keys(this.inputFiles).length === 0) {
+      return;
+    }
+    storeTaskFiles(this.id, this.inputFiles);
+  }
+
+  _store_input_files(): void {
+    this.storeInputFiles();
+  }
+
   copy(agents: readonly Agent[] = [], taskMapping: Record<string, Task> = {}): Task {
     const clonedContext = Array.isArray(this.context)
       ? this.context.map((contextTask: Task) => taskMapping[contextTask.key] ?? contextTask)
@@ -570,6 +582,7 @@ export class Task {
       executionOptions.triggerPayload,
       executionOptions.inputFiles,
     );
+    this.storeInputFiles();
     this.promptContext = this.renderContext(executionOptions.context) || null;
     this.prompt_context = this.promptContext;
     crewaiEventBus.emit(this, new TaskStartedEvent({

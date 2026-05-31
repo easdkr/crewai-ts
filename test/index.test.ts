@@ -14541,6 +14541,36 @@ describe("task input files", () => {
     expect(prompts[0]).toContain("    File notes");
     expect(prompts[0]).toContain('"inline" (inline.md, text/markdown)');
     expect(prompts[0]).toContain("    # Inline notes");
+    expect(getTaskFiles(taskInstance.id)).toEqual({
+      notes: notesFile,
+      inline: {
+        filename: "inline.md",
+        contentType: "text/markdown",
+        content: "# Inline notes",
+      },
+    });
+  });
+
+  it("stores task input files through the upstream compatibility method", () => {
+    const taskInstance = new Task({
+      description: "Read",
+      expectedOutput: "Summary",
+      inputFiles: {
+        notes: {
+          filename: "notes.txt",
+          content: "Manual task notes",
+        },
+      },
+    });
+
+    taskInstance._store_input_files();
+
+    expect(getTaskFiles(taskInstance.id)).toEqual({
+      notes: {
+        filename: "notes.txt",
+        content: "Manual task notes",
+      },
+    });
   });
 
   it("exposes task input files through read_file during task execution", async () => {
