@@ -8814,6 +8814,96 @@ describe("LLM providers", () => {
     });
   });
 
+  it("prepares Anthropic completion request parameters with thinking and tool search", () => {
+    const search = new StructuredTool({
+      name: "search docs",
+      description: "Search documentation",
+      argsSchema: {
+        query: { type: "string", description: "Search query" },
+      },
+      func: () => "result",
+    });
+    const lookup = new StructuredTool({
+      name: "lookup docs",
+      description: "Lookup documentation",
+      argsSchema: {
+        id: { type: "string", description: "Document id" },
+      },
+      func: () => "result",
+    });
+    const anthropic = new AnthropicCompletion({
+      model: "claude-sonnet-4-5",
+      temperature: 0.3,
+      top_p: 0.7,
+      max_tokens: 2048,
+      stop: ["STOP"],
+      stream: true,
+      thinking: { type: "enabled", budget_tokens: 1024 },
+      tool_search: { type: "regex" },
+    });
+
+    const params = (anthropic as unknown as {
+      _prepare_completion_params(
+        messages: LLMMessage[],
+        systemMessage?: string | null,
+        tools?: StructuredTool[] | null,
+        availableFunctions?: Record<string, unknown> | null,
+      ): Record<string, unknown>;
+    })._prepare_completion_params(
+      [{ role: "user", content: "Find CrewAI" }],
+      "System prompt",
+      [search, lookup],
+      { search_docs: search, lookup_docs: lookup },
+    );
+
+    expect(params).toMatchObject({
+      model: "claude-sonnet-4-5",
+      messages: [{ role: "user", content: "Find CrewAI" }],
+      system: "System prompt",
+      max_tokens: 2048,
+      stream: true,
+      temperature: 0.3,
+      top_p: 0.7,
+      stop_sequences: ["STOP"],
+      thinking: { type: "enabled", budget_tokens: 1024 },
+      tools: [
+        { type: "tool_search_tool_regex_20251119", name: "tool_search_tool_regex" },
+        {
+          name: "search_docs",
+          description: "Search documentation",
+          defer_loading: true,
+        },
+        {
+          name: "lookup_docs",
+          description: "Lookup documentation",
+          defer_loading: true,
+        },
+      ],
+    });
+    expect(params).not.toHaveProperty("tool_choice");
+
+    const singleTool = new AnthropicCompletion({ model: "claude-3-5-sonnet-20241022" });
+    expect((singleTool as unknown as {
+      _prepare_completion_params(
+        messages: LLMMessage[],
+        systemMessage?: string | null,
+        tools?: StructuredTool[] | null,
+        availableFunctions?: Record<string, unknown> | null,
+      ): Record<string, unknown>;
+    })._prepare_completion_params(
+      [{ role: "user", content: "Find CrewAI" }],
+      null,
+      [search],
+      { search_docs: search },
+    )).toMatchObject({
+      tools: [{
+        name: "search_docs",
+        description: "Search documentation",
+      }],
+      tool_choice: { type: "tool", name: "search_docs" },
+    });
+  });
+
   it("exposes Gemini completion provider parity helpers", () => {
     const gemini = new GeminiCompletion({
       model: "gemini-2.5-pro",

@@ -126,6 +126,102 @@ export class AnthropicCompletion extends ConfiguredLLM {
     return super.call(messages, options);
   }
 
+  prepareCompletionParams(
+    messages: readonly LLMMessage[],
+    systemMessage: string | readonly Record<string, unknown>[] | null = null,
+    tools: readonly Tool[] | null = null,
+    availableFunctions: Record<string, unknown> | null = null,
+  ): Record<string, unknown> {
+    const params: Record<string, unknown> = {
+      model: this.model,
+      messages: [...messages],
+      max_tokens: this.maxTokens,
+      stream: this.stream,
+    };
+    if (systemMessage) {
+      params.system = systemMessage;
+    }
+    if (this.temperature !== null) {
+      params.temperature = this.temperature;
+    }
+    if (this.topP !== null) {
+      params.top_p = this.topP;
+    }
+    if (this.stop.length > 0) {
+      params.stop_sequences = [...this.stop];
+    }
+    if (tools && tools.length > 0 && this.supportsTools) {
+      let convertedTools = this.convertToolsForInterference(tools);
+      const regularTools = convertedTools.filter((tool) => !TOOL_SEARCH_TOOL_TYPES.includes(String(tool.type) as (typeof TOOL_SEARCH_TOOL_TYPES)[number]));
+      if (this.toolSearch && regularTools.length >= 2) {
+        convertedTools = this.applyToolSearch(convertedTools);
+      }
+      params.tools = convertedTools;
+      if (availableFunctions && regularTools.length === 1) {
+        const toolName = regularTools[0]?.name;
+        if (typeof toolName === "string" && toolName in availableFunctions) {
+          params.tool_choice = { type: "tool", name: toolName };
+        }
+      }
+    }
+    if (this.thinking) {
+      params.thinking = {
+        type: this.thinking.type,
+        ...(this.thinking.budget_tokens === null ? {} : { budget_tokens: this.thinking.budget_tokens }),
+      };
+    }
+    return params;
+  }
+
+  _prepare_completion_params(
+    messages: readonly LLMMessage[],
+    systemMessage: string | readonly Record<string, unknown>[] | null = null,
+    tools: readonly Tool[] | null = null,
+    availableFunctions: Record<string, unknown> | null = null,
+  ): Record<string, unknown> {
+    return this.prepareCompletionParams(messages, systemMessage, tools, availableFunctions);
+  }
+
+  convertToolsForInterference(tools: readonly Tool[]): Record<string, unknown>[] {
+    const [schemas] = convertToolsToOpenAISchema(tools);
+    return schemas.map((tool) => ({
+      name: tool.function.name,
+      description: tool.function.description,
+      input_schema: tool.function.parameters,
+      strict: true,
+    }));
+  }
+
+  _convert_tools_for_interference(tools: readonly Tool[]): Record<string, unknown>[] {
+    return this.convertToolsForInterference(tools);
+  }
+
+  applyToolSearch(tools: readonly Record<string, unknown>[]): Record<string, unknown>[] {
+    if (!this.toolSearch) {
+      return [...tools];
+    }
+    const result: Record<string, unknown>[] = [];
+    const hasSearchTool = tools.some((tool) => TOOL_SEARCH_TOOL_TYPES.includes(String(tool.type) as (typeof TOOL_SEARCH_TOOL_TYPES)[number]));
+    if (!hasSearchTool) {
+      const type = this.toolSearch.type === "regex"
+        ? "tool_search_tool_regex_20251119"
+        : "tool_search_tool_bm25_20251119";
+      result.push({ type, name: `tool_search_tool_${this.toolSearch.type}` });
+    }
+    for (const tool of tools) {
+      if (TOOL_SEARCH_TOOL_TYPES.includes(String(tool.type) as (typeof TOOL_SEARCH_TOOL_TYPES)[number])) {
+        result.push({ ...tool });
+      } else {
+        result.push("defer_loading" in tool ? { ...tool } : { ...tool, defer_loading: true });
+      }
+    }
+    return result;
+  }
+
+  _apply_tool_search(tools: readonly Record<string, unknown>[]): Record<string, unknown>[] {
+    return this.applyToolSearch(tools);
+  }
+
   override supportsFunctionCalling(): boolean {
     return true;
   }
