@@ -570,6 +570,10 @@ export class PDFKnowledgeSource extends BaseFileKnowledgeSource {
     throw new Error("pdfplumber is not available in the TypeScript runtime. Pass a PDF extractor or use aadd() for the built-in parser.");
   }
 
+  override _chunk_text(text: string): string[] {
+    return [...chunkText(text, this.chunkSize, this.chunkOverlap)];
+  }
+
   override add(): void {
     if (!this.extractor && Object.keys(this.content).length === 0) {
       throw new Error("PDFKnowledgeSource default parsing is asynchronous. Use aadd() or pass a synchronous extractor.");

@@ -23246,6 +23246,7 @@ describe("knowledge", () => {
     expect(SourceHelper._FILE_TYPE_MAP[".pdf"]).toBe(PDFKnowledgeSource);
     expect(new SourceHelper()._file_type_map[".xlsx"]).toBe(ExcelKnowledgeSource);
     expect(pdfSource.chunks()[0]).toContain("fake pdf bytes");
+    expect(pdfSource._chunk_text("abcdef")).toEqual(["abcdef"]);
     expect((pdfSource._load_content() as Record<string, string>)[pdfPath]).toContain("fake pdf bytes");
     expect(pdfSource._process_file_paths()).toEqual([pdfPath]);
     expect(() => pdfSource._import_pdfplumber()).toThrow("pdfplumber is not available");
