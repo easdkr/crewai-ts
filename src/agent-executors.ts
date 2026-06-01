@@ -1789,12 +1789,42 @@ export class StepExecutor {
   execute(
     todo: string | TodoItem,
     context: StepExecutionContext = new StepExecutionContext({}),
-    _maxStepIterations = 15,
-    _stepTimeout: number | null = null,
+    maxStepIterations = 15,
+    stepTimeout: number | null = null,
   ): Promise<StepResult> {
-    void _maxStepIterations;
-    void _stepTimeout;
-    return this.executeStep(typeof todo === "string" ? todo : todo.description, context);
+    if (typeof todo === "string") {
+      return this.executeStep(todo, context);
+    }
+    return this.executeTodoItem(todo, context, maxStepIterations, stepTimeout);
+  }
+
+  private async executeTodoItem(
+    todo: TodoItem,
+    context: StepExecutionContext,
+    maxStepIterations: number,
+    stepTimeout: number | null,
+  ): Promise<StepResult> {
+    const started = Date.now();
+    const toolCallsMade: string[] = [];
+    try {
+      const messages = this._buildIsolatedMessages(todo, context);
+      const result = await this._executeTextParsed(messages, toolCallsMade, maxStepIterations, stepTimeout, started);
+      this._validate_expected_tool_usage(todo, toolCallsMade);
+      return new StepResult({
+        success: true,
+        result,
+        toolCallsMade,
+        executionTime: Date.now() - started,
+      });
+    } catch (error) {
+      return new StepResult({
+        success: false,
+        result: "",
+        error: error instanceof Error ? error.message : String(error),
+        toolCallsMade,
+        executionTime: Date.now() - started,
+      });
+    }
   }
 
   private _buildObservationMessage(toolResult: string): LLMMessage {

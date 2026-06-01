@@ -10369,6 +10369,33 @@ describe("core crew runtime", () => {
     expect(prompts[0]).toContain("Collect pricing facts");
   });
 
+  it("fails StepExecutor todo execution when the expected tool is not called", async () => {
+    const searchTool = new StructuredTool({
+      name: "Search Tool",
+      description: "Search",
+      func: () => "searched",
+    });
+    const agentInstance = new Agent({
+      role: "Researcher",
+      goal: "Find facts",
+      backstory: "Careful analyst",
+      llm: () => "No tool used.",
+    });
+    const executor = new StepExecutor({
+      agent: agentInstance,
+      tools: [searchTool],
+    });
+
+    const result = await executor.execute(
+      new TodoItem({ step_number: 1, description: "Search docs", tool_to_use: "Search Tool" }),
+      new StepExecutionContext({ taskDescription: "Research CrewAI", taskGoal: "Use sources" }),
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("Expected tool 'search_tool' was not used");
+    expect(result.tool_calls_made).toEqual([]);
+  });
+
   it("exposes upstream StepExecutor parsing and observation helpers", () => {
     const searchTool = new StructuredTool({
       name: "Search Tool",
