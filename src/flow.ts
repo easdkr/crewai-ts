@@ -1432,8 +1432,18 @@ export class Flow<TState extends object = Record<string, unknown>> {
         : randomUUID();
       this.state = { ...restoredForkState, id: nextStateId } as TState;
     }
+    const restoredInputState = !restoredForkState && this.persistence && typeof inputs.id === "string" && inputs.id.length > 0
+      ? await loadPersistedFlowState(this.persistence, inputs.id)
+      : null;
+    if (restoredInputState) {
+      this.state = { ...restoredInputState } as TState;
+    }
     this.lastInputs = inputs;
     if (restoredForkState) {
+      const { id: _id, ...filteredInputs } = inputs;
+      void _id;
+      Object.assign(this.state, filteredInputs);
+    } else if (restoredInputState) {
       const { id: _id, ...filteredInputs } = inputs;
       void _id;
       Object.assign(this.state, filteredInputs);

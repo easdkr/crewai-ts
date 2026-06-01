@@ -15163,6 +15163,54 @@ describe("flow runtime", () => {
       .rejects.toThrow("No persisted state found");
   });
 
+  it("loads persisted state from kickoff inputs id before applying default overrides", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "crewai-ts-flow-default-override-"));
+    const persistence = new JsonFlowPersistence(directory);
+
+    class DefaultOverrideFlow extends Flow<{ id: string; sentenceCount: number; hasSetCount: boolean }> {
+      constructor() {
+        super({
+          initialState: {
+            id: "poem-flow",
+            sentenceCount: 1000,
+            hasSetCount: false,
+          },
+          persistence,
+        });
+      }
+
+      setSentenceCount() {
+        if (this.state.hasSetCount && this.state.sentenceCount === 2) {
+          this.state.sentenceCount = 3;
+        } else if (this.state.hasSetCount && this.state.sentenceCount === 1000) {
+          this.state.sentenceCount = 1000;
+        } else if (this.state.hasSetCount && this.state.sentenceCount === 5) {
+          this.state.sentenceCount = 5;
+        } else {
+          this.state.sentenceCount = 2;
+          this.state.hasSetCount = true;
+        }
+      }
+    }
+
+    const initializer = decorateMethod(DefaultOverrideFlow, "setSentenceCount", start() as unknown as Decorator);
+    const first = new DefaultOverrideFlow();
+    initializer.call(first);
+    await first.kickoff();
+
+    expect(first.state.sentenceCount).toBe(2);
+    await expect(persistence.loadState("poem-flow")).resolves.toMatchObject({
+      sentenceCount: 2,
+      hasSetCount: true,
+    });
+
+    const second = new DefaultOverrideFlow();
+    initializer.call(second);
+    await second.kickoff({ inputs: { id: "poem-flow" } });
+
+    expect(second.state.sentenceCount).toBe(3);
+  });
+
   it("forks kickoff state from restore_from_state_id without reusing the source id", async () => {
     const directory = mkdtempSync(join(tmpdir(), "crewai-ts-flow-fork-state-"));
     const persistence = new JsonFlowPersistence(directory);
