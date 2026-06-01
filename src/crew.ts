@@ -20,7 +20,7 @@ import {
 import { FileHandler } from "./file-handler.js";
 import type { HumanInputProvider } from "./human-input.js";
 import { Knowledge, type KnowledgeSource } from "./knowledge.js";
-import { addUsageMetrics, emptyUsageMetrics, subtractUsageMetrics, type UsageMetrics } from "./llm.js";
+import { addUsageMetrics, createLLM, emptyUsageMetrics, subtractUsageMetrics, type UsageMetrics } from "./llm.js";
 import { Memory, MemoryScope, createMemoryTools } from "./memory.js";
 import { CrewOutput, TaskOutput } from "./outputs.js";
 import { CrewPlanner } from "./planning.js";
@@ -223,6 +223,7 @@ export class Crew {
   managerAgent: Agent | null;
   managerLlm: LLM | string | null;
   functionCallingLlm: LLM | string | null;
+  function_calling_llm: LLM | string | null;
   planning: boolean;
   stream: boolean;
   planningLlm: LLM | string | null;
@@ -281,7 +282,10 @@ export class Crew {
     this.knowledge = options.knowledge ?? null;
     this.managerAgent = options.managerAgent ?? options.manager_agent ?? null;
     this.managerLlm = options.managerLlm ?? options.manager_llm ?? null;
-    this.functionCallingLlm = options.functionCallingLlm ?? options.function_calling_llm ?? null;
+    this.functionCallingLlm = normalizeCrewFunctionCallingLlm(
+      options.functionCallingLlm ?? options.function_calling_llm ?? null,
+    );
+    this.function_calling_llm = this.functionCallingLlm;
     this.planning = options.planning ?? false;
     this.stream = options.stream ?? false;
     this.planningLlm = options.planningLlm ?? options.planning_llm ?? null;
@@ -2608,6 +2612,10 @@ function missingCoworkerMessage(agents: readonly Agent[], coworker: string): str
 
 function copyAgent(agent: Agent): Agent {
   return agent.copy();
+}
+
+function normalizeCrewFunctionCallingLlm(llm: LLM | string | null): LLM | null {
+  return typeof llm === "string" ? createLLM(llm) : llm;
 }
 
 function resolveCrewSkills(skills: readonly unknown[]): unknown[] {

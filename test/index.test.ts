@@ -10600,6 +10600,15 @@ describe("core crew runtime", () => {
     expect(crewInstance.check_config()).toBe(crewInstance);
     expect(crewInstance.validate_tasks()).toBe(crewInstance);
     expect(() => new Crew()).toThrow("Either 'agents' and 'tasks' need to be set or 'config'.");
+    const functionCallingCrew = new Crew({
+      agents: [researcher],
+      tasks: [taskInstance],
+      function_calling_llm: "openai/gpt-4o-mini",
+    });
+    expect(functionCallingCrew.function_calling_llm).toMatchObject({
+      model: "openai/gpt-4o-mini",
+    });
+    expect(functionCallingCrew.functionCallingLlm).toBe(functionCallingCrew.function_calling_llm);
     expect(crewInstance.query_knowledge(["collaborative"])?.[0]?.content).toContain("collaborative agents");
     expect(crewInstance.knowledge?.collection_name).toBe("crew");
     await expect(crewInstance.aquery_knowledge(["CrewAI"])).resolves.toHaveLength(1);
