@@ -767,6 +767,8 @@ import {
   restoreEventScope,
   resolveRefs,
   resetEmissionCounter,
+  join_scope_paths,
+  normalize_scope_path,
   sanitize_scope_name,
   setCreatePlusClientHook,
   setPlatformIntegrationToken,
@@ -25794,6 +25796,19 @@ describe("memory", () => {
     expect(sanitize_scope_name("test_agent")).toBe("test_agent");
     expect(sanitize_scope_name("@#$%")).toBe("unknown");
     expect(sanitize_scope_name(null)).toBe("unknown");
+  });
+
+  it("normalizes and joins upstream memory scope paths", () => {
+    expect(normalize_scope_path("/crew//test//agent")).toBe("/crew/test/agent");
+    expect(normalize_scope_path("crew/test")).toBe("/crew/test");
+    expect(normalize_scope_path("/crew///")).toBe("/crew");
+    expect(join_scope_paths("/crew//test/", "/market-trends")).toBe("/crew/test/market-trends");
+    expect(join_scope_paths("/crew/test", "market-trends")).toBe("/crew/test/market-trends");
+    expect(join_scope_paths("/crew/test", "/")).toBe("/crew/test");
+    expect(join_scope_paths("/crew/test", null)).toBe("/crew/test");
+    expect(join_scope_paths(null, "/market-trends")).toBe("/market-trends");
+    expect(join_scope_paths(null, null)).toBe("/");
+    expect(join_scope_paths("", "inner")).toBe("/inner");
   });
 
   it("limits memory slice recall after merging scoped oversampled results", () => {

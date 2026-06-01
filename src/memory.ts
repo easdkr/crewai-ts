@@ -3693,11 +3693,7 @@ export function joinScopePaths(root: string | null | undefined, child: string | 
 }
 
 function normalizeScope(scope: string): string {
-  const trimmed = scope.trim();
-  if (!trimmed || trimmed === "/") {
-    return "/";
-  }
-  return `/${trimmed.replaceAll(/^\/+|\/+$/g, "")}`;
+  return normalize_scope_path(scope);
 }
 
 function tokenize(value: string): Set<string> {
