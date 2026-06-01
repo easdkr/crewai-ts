@@ -27,6 +27,7 @@ import type { AgentStep } from "./types.js";
 import type { InputFile, InputFiles } from "./input-files.js";
 import { storeTaskFiles } from "./file-store.js";
 import { serializeModelClass, type JsonSchema } from "./schema-utils.js";
+import { I18N_DEFAULT } from "./i18n.js";
 
 export type GuardrailResult = readonly [boolean, unknown] | { success: boolean; result: unknown };
 
@@ -665,7 +666,7 @@ export class Task {
       .map((message) => `${capitalize(message.role)}: ${message.content}`)
       .join("\n");
     if (conversationHistory) {
-      this.description += `\n\nConversation history:\n\n${conversationHistory}`;
+      this.description += `\n\n${I18N_DEFAULT.slice("conversation_history_instruction")}\n\n${conversationHistory}`;
     }
   }
 

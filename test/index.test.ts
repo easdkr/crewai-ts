@@ -9844,6 +9844,7 @@ describe("core crew runtime", () => {
     });
 
     expect(taskInstance.description).toContain("Research CrewAI");
+    expect(taskInstance.description).toContain(I18N_DEFAULT.slice("conversation_history_instruction"));
     expect(taskInstance.description).toContain("User: Use TS examples");
     expect(taskInstance.expected_output).toBe("Brief about CrewAI");
     expect(taskInstance.output_file).toBe("reports/CrewAI.txt");
