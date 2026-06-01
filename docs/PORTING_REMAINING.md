@@ -375,6 +375,7 @@ When more goal budget is available, continue from the behavioral parity audits b
   - `CrewDoclingSource` now supports upstream-style document conversion/chunking through injected local converter and chunker adapters while preserving the optional-dependency error when no converter is provided.
   - File-backed knowledge sources now expose upstream-style `_load_content` and `_process_file_paths` helper aliases used by PDF/Excel/Text/JSON/CSV source implementations.
   - `StringKnowledgeSource` and file-backed text sources now expose upstream-style `source_type`, `model_post_init`, and `_chunk_text` helpers where applicable.
+  - `extractKnowledgeContext` / `extract_knowledge_context` now filter empty, null, missing-content, and non-object search results before building upstream-style additional-information context.
 - Added tool compatibility behavior:
   - `BaseTool` / `StructuredTool` now expose upstream-style `tool_type`, `model_post_init`, `validate_max_usage_count`, and `from_langchain` helpers.
   - `ToolUsage` now exposes upstream-style `on_tool_error` and `on_tool_use_finished` event helpers, including snake_case event payload aliases and fingerprint metadata passthrough.

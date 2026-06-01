@@ -1157,9 +1157,15 @@ export class KnowledgeStorage extends BaseKnowledgeStorage {
   }
 }
 
-export function extractKnowledgeContext(results: readonly KnowledgeSearchResult[]): string {
+export function extractKnowledgeContext(results: readonly unknown[]): string {
   const content = results
-    .map((result) => result.content.trim())
+    .map((result) => {
+      if (!result || typeof result !== "object" || Array.isArray(result)) {
+        return "";
+      }
+      const content = (result as { content?: unknown }).content;
+      return typeof content === "string" ? content.trim() : "";
+    })
     .filter(Boolean)
     .join("\n");
   return content ? `Additional Information:\n${content}` : "";

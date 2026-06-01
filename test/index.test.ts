@@ -217,6 +217,7 @@ import {
   KnowledgeRetrievalStartedEvent,
   KnowledgeSearchQueryFailedEvent,
   Knowledge,
+  extractKnowledgeContext,
   extract_knowledge_context,
   LiteAgent,
   _kickoff_with_a2a_support,
@@ -10118,21 +10119,28 @@ describe("RAG configuration and factories", () => {
   });
 
   it("formats upstream SearchResult-like objects as knowledge context", () => {
-    expect(extract_knowledge_context([
+    const searchResults = [
       { content: "Python is great for AI", score: 0.95, metadata: {} },
       { content: "Machine learning algorithms", score: 0.88, metadata: {} },
       { content: "", score: 0.5, metadata: {} },
       { score: 0.3, metadata: {} },
       null,
       { content: "Deep learning frameworks", score: 0.82, metadata: {} },
-    ])).toBe([
+    ];
+    const expectedContext = [
       "Additional Information:",
       "Python is great for AI",
       "Machine learning algorithms",
       "Deep learning frameworks",
-    ].join("\n"));
+    ].join("\n");
 
+    expect(extract_knowledge_context(searchResults)).toBe(expectedContext);
+    expect(extractKnowledgeContext(searchResults)).toBe(expectedContext);
     expect(extract_knowledge_context([
+      { content: "", score: 0.5, metadata: {} },
+      { content: null, score: 0.4, metadata: {} },
+    ])).toBe("");
+    expect(extractKnowledgeContext([
       { content: "", score: 0.5, metadata: {} },
       { content: null, score: 0.4, metadata: {} },
     ])).toBe("");
