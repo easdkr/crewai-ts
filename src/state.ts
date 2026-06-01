@@ -654,6 +654,27 @@ function migrateRuntimeStateData(data: Record<string, unknown>): Record<string, 
   return data;
 }
 
+function normalizeRuntimeStateData(data: unknown): Record<string, unknown> {
+  if (Array.isArray(data)) {
+    for (const entity of data) {
+      _backfill_discriminators(entity);
+    }
+    return { entities: data };
+  }
+  return isRecord(data) ? migrateRuntimeStateData(data) : {};
+}
+
+function deserializeEventRecord(data: Record<string, unknown>): EventRecord {
+  const record = data.event_record ?? data.eventRecord;
+  if (record instanceof EventRecord) {
+    return record;
+  }
+  if (!record) {
+    return new EventRecord();
+  }
+  return EventRecord.modelValidateJson(JSON.stringify(record));
+}
+
 export class RuntimeState {
   root: unknown[];
   private provider: BaseProvider;
@@ -775,10 +796,11 @@ export class RuntimeState {
   }
 
   static fromJSONText(raw: string, provider: BaseProvider = new JsonProvider()): RuntimeState {
-    const parsed = migrateRuntimeStateData(JSON.parse(raw) as Record<string, unknown>);
+    const parsed = normalizeRuntimeStateData(JSON.parse(raw) as unknown);
     const state = new RuntimeState({
       entities: Array.isArray(parsed.entities) ? parsed.entities : [],
       provider,
+      eventRecord: deserializeEventRecord(parsed),
       parentId: typeof parsed.parent_id === "string" ? parsed.parent_id : null,
       branch: typeof parsed.branch === "string" ? parsed.branch : "main",
     });
@@ -789,10 +811,11 @@ export class RuntimeState {
     if (typeof data === "string") {
       return RuntimeState.fromJSONText(data, provider);
     }
-    const record = isRecord(data) ? migrateRuntimeStateData(data) : {};
+    const record = normalizeRuntimeStateData(data);
     return new RuntimeState({
       entities: Array.isArray(record.entities) ? record.entities : Array.isArray(record.root) ? record.root : [],
       provider,
+      eventRecord: deserializeEventRecord(record),
       parentId: typeof record.parent_id === "string" ? record.parent_id : typeof record.parentId === "string" ? record.parentId : null,
       branch: typeof record.branch === "string" ? record.branch : "main",
     });

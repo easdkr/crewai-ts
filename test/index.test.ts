@@ -25631,6 +25631,37 @@ describe("runtime state", () => {
     expect(JSON.stringify(dumped.event_record)).toContain(event.eventId);
   });
 
+  it("restores event records and old-format entity lists from runtime state JSON", () => {
+    const record = new EventRecord();
+    const kickoff = new BaseEvent({ type: "crew_kickoff_started" });
+    const task = new BaseEvent({
+      type: "task_started",
+      parentEventId: kickoff.eventId,
+    });
+    record.add(kickoff);
+    record.add(task);
+    const state = new RuntimeState({
+      root: [{ type: "mock" }],
+      eventRecord: record,
+      parentId: "parent-1",
+      branch: "experiment",
+    });
+
+    const restored = RuntimeState.from_json(state.to_json());
+
+    expect(restored.root).toEqual([{ type: "Object" }]);
+    expect(restored.parent_id).toBe("parent-1");
+    expect(restored.branch).toBe("experiment");
+    expect(restored.event_record.__len__()).toBe(2);
+    expect(restored.event_record.__contains__(kickoff.eventId)).toBe(true);
+    expect(restored.event_record.__contains__(task.eventId)).toBe(true);
+    expect(restored.event_record.get(task.eventId)?.neighbors("parent")).toEqual([kickoff.eventId]);
+
+    const oldFormat = RuntimeState.from_json(JSON.stringify([{ type: "legacy" }]));
+    expect(oldFormat.root).toEqual([{ type: "legacy" }]);
+    expect(oldFormat.event_record.__len__()).toBe(0);
+  });
+
   it("exposes upstream RuntimeState serialization and checkpoint helper methods", () => {
     const provider = new JsonProvider();
     const state = new RuntimeState({
