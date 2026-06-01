@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 726 passing tests.
+- Test suite: 727 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -143,7 +143,7 @@ When more goal budget is available, continue from the behavioral parity audits b
 - `AgentExecutor.handle_goal_achieved` now preserves pending todo status while routing to finalization, matching upstream early-goal state semantics.
 - `AgentExecutor.handle_refine_and_continue` now applies the latest planner observation refinements to pending todos before continuing.
 - `PlannerObserver.observe` now builds upstream-style observation prompts, parses deterministic LLM JSON responses into `StepObservation`, and falls back conservatively when observation LLM calls fail.
-- `AgentExecutor.execute_todo_sequential` now falls back to upstream-style todo prompt injection when planning is disabled instead of pretending isolated step execution occurred.
+- `AgentExecutor.execute_todo_sequential` now executes planning-enabled todos through isolated `StepExecutor` context, records upstream-style step execution audit fields, and falls back to upstream-style todo prompt injection only when planning is disabled.
 - `AgentExecutor.execute_tool_action` now records non-final tool observations and appends the upstream post-tool reasoning prompt before continuing.
 - `AgentExecutor.check_todo_completion` now requires ReAct tool actions to match the running todo's expected tool when one is specified, while still accepting final answers and todos without a specified tool.
 - `AgentExecutor.execute_native_tool` now records the upstream assistant `tool_calls` message and named tool result messages before continuing or short-circuiting.

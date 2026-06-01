@@ -10644,6 +10644,57 @@ describe("core crew runtime", () => {
     expect(executor.state.messages.at(-1)?.content).toContain("Suggested tool: Search Tool");
   });
 
+  it("executes AgentExecutor planning todos through isolated StepExecutor context", async () => {
+    const prompts: string[] = [];
+    const agentInstance = new Agent({
+      role: "Researcher",
+      goal: "Find facts",
+      backstory: "Careful analyst",
+      planningConfig: new PlanningConfig({ max_step_iterations: 4, step_timeout: 2 }),
+      llm: (messages) => {
+        prompts.push(messages.map((message) => message.content).join("\n"));
+        return "isolated step result";
+      },
+    });
+    const executor = new AgentExecutor({
+      agent: agentInstance,
+      task: {
+        description: "Research CrewAI",
+        expected_output: "Concise brief",
+      },
+    });
+    executor.state.todos.items = [
+      new TodoItem({
+        stepNumber: 1,
+        description: "Collect docs",
+        status: TodoStatus.COMPLETED,
+        result: "Docs found",
+      }),
+      new TodoItem({
+        stepNumber: 2,
+        description: "Summarize docs",
+        status: TodoStatus.RUNNING,
+        dependsOn: [1],
+      }),
+    ];
+
+    await expect(executor.execute_todo_sequential()).resolves.toBe("step_executed");
+
+    expect(executor.state.todos.get_by_step_number(2)?.result).toBe("isolated step result");
+    expect(prompts[0]).toContain("Research CrewAI");
+    expect(prompts[0]).toContain("Concise brief");
+    expect(prompts[0]).toContain("Summarize docs");
+    expect(prompts[0]).toContain("Step 1: Docs found");
+    expect(executor.state.execution_log.at(-1)).toMatchObject({
+      type: "step_execution",
+      step_number: 2,
+      success: true,
+      result_preview: "isolated step result",
+      tool_calls: [],
+    });
+    expect(executor.state.todos.get_by_step_number(2)?.status).toBe(TodoStatus.RUNNING);
+  });
+
   it("routes AgentExecutor dynamic replanning from upstream error signals", () => {
     const executor = new AgentExecutor();
     executor.state.todos.items = [

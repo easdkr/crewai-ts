@@ -472,6 +472,7 @@ export class AgentExecutor extends BaseAgentExecutor {
   private isExecuting = false;
   private kickoffInput = "";
   private plannerObserver: PlannerObserver | null = null;
+  private stepExecutor: StepExecutor | null = null;
 
   constructor(options: BaseAgentExecutorOptions & { state?: AgentExecutorState } = {}) {
     super(options);
@@ -675,7 +676,7 @@ export class AgentExecutor extends BaseAgentExecutor {
     return this.getReadyTodosMethod();
   }
 
-  executeTodoSequential(): "step_executed" | "todo_injected" {
+  executeTodoSequential(): MaybePromise<"step_executed" | "todo_injected"> {
     const current = this.state.todos.currentTodo;
     if (!current) {
       return "todo_injected";
@@ -684,9 +685,19 @@ export class AgentExecutor extends BaseAgentExecutor {
       this.injectTodoContext(current);
       return "todo_injected";
     }
-    current.result ??= current.description;
-    this.state.execution_log.push({ type: "step_execution", step_number: current.stepNumber, success: true });
-    return "step_executed";
+    return this._executePlanningTodo(current).then((result) => {
+      current.result = result.result;
+      this.state.execution_log.push({
+        type: "step_execution",
+        step_number: current.stepNumber,
+        success: result.success,
+        result_preview: result.result.slice(0, 200),
+        error: result.error,
+        tool_calls: result.toolCallsMade,
+        execution_time: result.executionTime,
+      });
+      return "step_executed";
+    });
   }
 
   execute_todo_sequential(): ReturnType<AgentExecutor["executeTodoSequential"]> {
@@ -1431,6 +1442,47 @@ export class AgentExecutor extends BaseAgentExecutor {
     return this._observeCompletedStep(options);
   }
 
+  _ensureStepExecutor(): StepExecutor {
+    this.stepExecutor ??= new StepExecutor({
+      agent: this.agent,
+      tools: this.tools,
+      availableFunctions: this.availableNativeFunctions(),
+    });
+    return this.stepExecutor;
+  }
+
+  _ensure_step_executor(): StepExecutor {
+    return this._ensureStepExecutor();
+  }
+
+  _buildContextForTodo(todo: TodoItem): StepExecutionContext {
+    const dependencyResults: Record<number, string> = {};
+    for (const stepNumber of todo.dependsOn) {
+      const dependency = this.state.todos.getByStepNumber(stepNumber);
+      if (dependency?.result) {
+        dependencyResults[stepNumber] = dependency.result;
+      }
+    }
+    const taskRecord = this.task && typeof this.task === "object" ? this.task as Record<string, unknown> : null;
+    return new StepExecutionContext({
+      taskDescription: typeof taskRecord?.description === "string" ? taskRecord.description : this.kickoffInput,
+      taskGoal: typeof taskRecord?.expectedOutput === "string"
+        ? taskRecord.expectedOutput
+        : typeof taskRecord?.expected_output === "string" ? taskRecord.expected_output : "Complete the task successfully",
+      dependencyResults,
+    });
+  }
+
+  _build_context_for_todo(todo: TodoItem): StepExecutionContext {
+    return this._buildContextForTodo(todo);
+  }
+
+  private async _executePlanningTodo(todo: TodoItem): Promise<StepResult> {
+    const executor = this._ensureStepExecutor();
+    const context = this._buildContextForTodo(todo);
+    return await executor.execute(todo, context, this.getMaxStepIterations(), this.getStepTimeout());
+  }
+
   private routeFinishWithTodos<T extends string>(defaultRoute: T): T | "todo_satisfied" {
     return this.state.todos.currentTodo ? "todo_satisfied" : defaultRoute;
   }
@@ -1493,6 +1545,18 @@ export class AgentExecutor extends BaseAgentExecutor {
       ? config.maxReplans ?? config.max_replans
       : null;
     return typeof value === "number" && Number.isFinite(value) ? Math.max(0, Math.trunc(value)) : 3;
+  }
+
+  private getMaxStepIterations(): number {
+    const config = this.planningConfigRecord();
+    const value = config?.maxStepIterations ?? config?.max_step_iterations;
+    return typeof value === "number" && Number.isFinite(value) ? Math.max(1, Math.trunc(value)) : 15;
+  }
+
+  private getStepTimeout(): number | null {
+    const config = this.planningConfigRecord();
+    const value = config?.stepTimeout ?? config?.step_timeout;
+    return typeof value === "number" && Number.isFinite(value) ? Math.max(0, value) : null;
   }
 
   private executeNativeToolCall(name: string, args: Record<string, unknown>): unknown {
