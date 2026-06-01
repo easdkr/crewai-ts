@@ -578,7 +578,7 @@ export class Agent {
       functionCallingLlm: this.functionCallingLlm,
       memory: this.memory,
       knowledge: this.knowledge,
-      knowledgeSources: this.knowledgeSources,
+      knowledgeSources: copyKnowledgeSourcesForAgent(this.knowledgeSources),
       knowledgeStorage: this.knowledgeStorage,
       knowledgeConfig: this.knowledgeConfig,
       embedder: this.embedder,
@@ -2468,6 +2468,31 @@ function resolveAgentSkills(skills: readonly unknown[]): unknown[] {
     resolved.push(skill);
   }
   return resolved;
+}
+
+function copyKnowledgeSourcesForAgent(sources: readonly KnowledgeSource[]): KnowledgeSource[] {
+  if (sources.length === 0) {
+    return [];
+  }
+  const sharedStorage = sources[0]?.storage ?? null;
+  return sources.map((source) => {
+    const copied = copyKnowledgeSource(source);
+    copied.storage = sharedStorage;
+    return copied;
+  });
+}
+
+function copyKnowledgeSource(source: KnowledgeSource): KnowledgeSource {
+  const modelCopy = (source as { model_copy?: unknown }).model_copy;
+  if (typeof modelCopy === "function") {
+    return modelCopy.call(source) as KnowledgeSource;
+  }
+  const copy = (source as { copy?: unknown }).copy;
+  if (typeof copy === "function") {
+    return copy.call(source) as KnowledgeSource;
+  }
+  const prototype = Object.getPrototypeOf(source) as object | null;
+  return Object.assign(Object.create(prototype) as KnowledgeSource, source);
 }
 
 function skillDedupeKey(skill: unknown): string {

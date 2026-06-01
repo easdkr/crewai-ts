@@ -12185,6 +12185,30 @@ describe("agent planning", () => {
     expect(copy.agent_knowledge_context).toBe("Agent context");
     expect(copy.execution_context).not.toBe(executionContext);
     expect(copy.execution_context?.currentTaskId).toBe("agent-task");
+
+    const sharedStorage = {
+      search: () => [],
+      asearch: () => Promise.resolve([]),
+      save: () => undefined,
+      asave: () => Promise.resolve(),
+      reset: () => undefined,
+      areset: () => Promise.resolve(),
+    };
+    const knowledgeSource = new StringKnowledgeSource({
+      content: "Copied agent knowledge source.",
+      storage: sharedStorage,
+    });
+    const knowledgeCopy = new Agent({
+      role: "Knowledge Copier",
+      goal: "Copy sources",
+      backstory: "Preserves shared storage",
+      knowledgeSources: [knowledgeSource],
+    }).copy();
+    expect(knowledgeCopy.knowledge_sources).toHaveLength(1);
+    expect(knowledgeCopy.knowledge_sources[0]).not.toBe(knowledgeSource);
+    expect(knowledgeCopy.knowledge_sources[0]?.storage).toBe(sharedStorage);
+    expect((knowledgeCopy.knowledge_sources[0] as StringKnowledgeSource | undefined)?.content)
+      .toBe("Copied agent knowledge source.");
   });
 
   it("merges agent repository attributes through the PlusAPI-compatible hook", () => {
