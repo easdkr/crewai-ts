@@ -353,8 +353,49 @@ export async function asyncConvertWithInstructions<T>(
 
 export const async_convert_with_instructions = asyncConvertWithInstructions;
 
-export function createConverter<T>(options: ConverterOptions<T>): Converter<T> {
-  return new Converter(options);
+type OutputConverterAgent<T> = {
+  getOutputConverter?: (...args: unknown[]) => Converter<T> | null;
+  get_output_converter?: (...args: unknown[]) => Converter<T> | null;
+};
+
+type ConverterClass<T> = new (...args: unknown[]) => Converter<T>;
+
+export function createConverter<T>(options: ConverterOptions<T>): Converter<T>;
+export function createConverter<T>(
+  agent: OutputConverterAgent<T> | null,
+  converterClass?: ConverterClass<T> | null,
+  ...args: unknown[]
+): Converter<T>;
+export function createConverter<T>(
+  first: ConverterOptions<T> | OutputConverterAgent<T> | null,
+  converterClass?: ConverterClass<T> | null,
+  ...args: unknown[]
+): Converter<T> {
+  if (isConverterOptions(first) && converterClass === undefined && args.length === 0) {
+    const options = first as ConverterOptions<T>;
+    return new Converter<T>(options);
+  }
+
+  let converter: Converter<T> | null | undefined;
+  if (first && !converterClass) {
+    const agent = first as OutputConverterAgent<T>;
+    const factory = typeof agent.getOutputConverter === "function"
+      ? agent.getOutputConverter
+      : agent.get_output_converter;
+    if (!factory) {
+      throw new Error("Agent does not have a 'get_output_converter' method");
+    }
+    converter = factory(...args);
+  } else if (converterClass) {
+    converter = new converterClass(...args);
+  } else {
+    throw new Error("Either agent or converter_cls must be provided");
+  }
+
+  if (!converter) {
+    throw new Error("No output converter found or set.");
+  }
+  return converter;
 }
 
 export const create_converter = createConverter;
@@ -515,6 +556,17 @@ function dumpStructuredModel<T>(value: T, model: StructuredModel<T>): Record<str
 
 function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
   return Boolean(value && typeof value === "object" && "then" in value && typeof (value as { then?: unknown }).then === "function");
+}
+
+function isConverterOptions<T>(value: unknown): value is ConverterOptions<T> {
+  return Boolean(
+    value
+    && typeof value === "object"
+    && "llm" in value
+    && "text" in value
+    && "model" in value
+    && "instructions" in value,
+  );
 }
 
 function describeModel<T>(model: StructuredModel<T>): unknown {

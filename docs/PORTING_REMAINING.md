@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 760 passing tests.
+- Test suite: 761 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -353,6 +353,7 @@ When more goal budget is available, continue from the behavioral parity audits b
 - Added converter compatibility behavior:
   - `asyncConvertToModel` / `asyncHandlePartialJson` now use the agent LLM fallback path for non-JSON or malformed partial JSON results, matching upstream async conversion dispatch.
   - `convertToModel` / `handlePartialJson` and `convert_with_instructions` now use an upstream-style synchronous agent LLM fallback for non-JSON or malformed partial JSON results when the configured LLM returns synchronously.
+  - `createConverter` now mirrors upstream converter selection behavior: agent-provided output converter first, explicit converter class construction, and upstream-style error cases when no converter can be resolved.
   - `OutputConverter` now explicitly exposes upstream-style `to_pydantic` and `to_json` methods while preserving the shared converter implementation.
 - Added output compatibility behavior:
   - `Task.prompt` and task execution prompts now use the upstream markdown instruction block when `markdown` is enabled.

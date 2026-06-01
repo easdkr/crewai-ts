@@ -659,6 +659,7 @@ import {
   convertToolsToOpenAISchema,
   convertToModel,
   convertWithInstructions,
+  createConverter,
   convertOneOfToAnyOf,
   checkConversationalCrewsVersion,
   chatLoop,
@@ -8648,6 +8649,33 @@ describe("converter utilities", () => {
       { async: false, options: undefined },
       { async: true, options: undefined },
     ]);
+  });
+
+  it("creates converters through upstream agent and converter class behavior", () => {
+    const llm = { call: () => "{\"summary\":\"converted\"}" };
+    const options = {
+      llm,
+      text: "summarize",
+      model: summaryModel,
+      instructions: "Return JSON",
+    };
+    class CustomConverter extends Converter<typeof summaryModel> {}
+
+    const direct = createConverter(options);
+    expect(direct).toBeInstanceOf(Converter);
+    expect(direct).toMatchObject({ text: "summarize", instructions: "Return JSON" });
+
+    const agentConverter = new Converter(options);
+    const agent = {
+      get_output_converter: vi.fn(() => agentConverter),
+    };
+    expect(createConverter(agent, null, llm, "raw", summaryModel, "Convert")).toBe(agentConverter);
+    expect(agent.get_output_converter).toHaveBeenCalledWith(llm, "raw", summaryModel, "Convert");
+
+    expect(createConverter(null, CustomConverter, options)).toBeInstanceOf(CustomConverter);
+    expect(() => createConverter(null)).toThrow("Either agent or converter_cls must be provided");
+    expect(() => createConverter({})).toThrow("Agent does not have a 'get_output_converter' method");
+    expect(() => createConverter({ get_output_converter: () => null })).toThrow("No output converter found or set.");
   });
 
   it("exposes OutputConverter structured conversion methods directly", async () => {
