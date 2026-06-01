@@ -2531,6 +2531,16 @@ describe("schema utilities", () => {
     expect(() => Model.model_validate({ birthday: "2026-06-01", created_at: "not-a-date-time", alarm: "08:30:00" })).toThrow(/format/);
     expect(() => Model.model_validate({ birthday: "2026-06-01", created_at: "2026-06-01T12:30:00Z", alarm: "25:30:00" })).toThrow(/format/);
   });
+
+  it("rejects unsupported JSON schema types while creating schema models", () => {
+    expect(() => create_model_from_schema({
+      type: "object",
+      properties: {
+        weird: { type: "hyperspace" },
+      },
+      required: ["weird"],
+    })).toThrow(/Unsupported JSON schema type: hyperspace/);
+  });
 });
 
 describe("i18n and prompt utilities", () => {

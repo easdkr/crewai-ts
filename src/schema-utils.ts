@@ -643,6 +643,54 @@ function effectiveSchema(schema: JsonSchema, rootSchema: JsonSchema): JsonSchema
   return schema;
 }
 
+const SUPPORTED_SCHEMA_TYPES = new Set(["null", "string", "integer", "number", "boolean", "array", "object"]);
+
+function validateSupportedSchemaTypes(schema: JsonSchema, rootSchema: JsonSchema, seen = new WeakSet<object>()): void {
+  if (seen.has(schema)) {
+    return;
+  }
+  seen.add(schema);
+  const resolved = effectiveSchema(schema, rootSchema);
+  if (resolved !== schema) {
+    validateSupportedSchemaTypes(resolved, rootSchema, seen);
+    return;
+  }
+
+  const typeValue = resolved.type;
+  if (typeof typeValue === "string" && !SUPPORTED_SCHEMA_TYPES.has(typeValue)) {
+    throw new Error(`Unsupported JSON schema type: ${typeValue} from ${JSON.stringify(resolved)}`);
+  }
+  if (Array.isArray(typeValue)) {
+    for (const entry of typeValue) {
+      if (typeof entry === "string" && !SUPPORTED_SCHEMA_TYPES.has(entry)) {
+        throw new Error(`Unsupported JSON schema type: ${entry} from ${JSON.stringify(resolved)}`);
+      }
+    }
+  }
+
+  for (const key of ["anyOf", "oneOf", "allOf"] as const) {
+    const variants = resolved[key];
+    if (!Array.isArray(variants)) {
+      continue;
+    }
+    for (const variant of variants) {
+      if (isSchemaRecord(variant)) {
+        validateSupportedSchemaTypes(variant, rootSchema, seen);
+      }
+    }
+  }
+  if (isSchemaRecord(resolved.items)) {
+    validateSupportedSchemaTypes(resolved.items, rootSchema, seen);
+  }
+  if (isSchemaRecord(resolved.properties)) {
+    for (const value of Object.values(resolved.properties)) {
+      if (isSchemaRecord(value)) {
+        validateSupportedSchemaTypes(value, rootSchema, seen);
+      }
+    }
+  }
+}
+
 function validateSchemaValue(schema: JsonSchema, value: unknown, path: string, rootSchema: JsonSchema, seen = new Set<JsonSchema>()): unknown {
   const resolved = effectiveSchema(schema, rootSchema);
   if (seen.has(resolved)) {
@@ -821,6 +869,7 @@ export function createModelFromSchema(
   const enrichDescriptions = options.enrichDescriptions ?? options.enrich_descriptions ?? false;
   const resolvedSchema = forceAdditionalPropertiesFalse(resolveRefs(cloneSchema(schema)));
   const normalizedSchema = Array.isArray(resolvedSchema.allOf) ? _merge_all_of_schemas(resolvedSchema.allOf.filter(isSchemaRecord), resolvedSchema) : resolvedSchema;
+  validateSupportedSchemaTypes(normalizedSchema, normalizedSchema);
   const modelFields = buildModelFields(normalizedSchema, normalizedSchema, enrichDescriptions);
   return {
     name: modelName,
