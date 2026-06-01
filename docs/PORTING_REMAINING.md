@@ -218,6 +218,7 @@ When more goal budget is available, continue from the behavioral parity audits b
   - agent messages containing upstream replan indicators route to `needs_replan`
   - configured `max_replans` / `maxReplans` stops further dynamic replanning
 - `AgentExecutor` observation routing now reads upstream `planning_config.reasoning_effort` as well as the TypeScript camelCase config shape.
+- `CrewAgentExecutor.invoke` / `ainvoke` now mirror upstream object-style invocation state handling: normal invocations reset messages and iterations between tasks, while `_resuming` invocations preserve in-flight messages and iteration counts for replay before clearing the resume flag.
 - `AgentExecutor.execute_native_tool` now executes pending native tool calls against deterministic available-function/tool fixtures, appends tool messages, clears pending calls, and short-circuits remaining calls for `result_as_answer` tools.
 - `AgentExecutor.invoke` / `invoke_async` object-style execution now honors provided kickoff routines and requires them to produce an `AgentFinish`, raising when execution ends on an action instead of a final answer.
 - `AgentExecutor.invoke` setup now formats upstream-style `prompt.system` / `prompt.user` or `prompt.prompt` templates into state messages before kickoff.

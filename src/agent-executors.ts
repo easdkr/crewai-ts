@@ -1788,21 +1788,52 @@ export class CrewAgentExecutor extends BaseAgentExecutor {
     return typeof supports === "function" ? Boolean((supports as () => unknown).call(llm)) : false;
   }
 
-  invoke(input: string | readonly LLMMessage[] = ""): MaybePromise<unknown> {
+  invoke(input: string | readonly LLMMessage[] | Record<string, unknown> = ""): MaybePromise<unknown> {
+    if (typeof input === "object" && !Array.isArray(input) && "input" in input) {
+      const resumingRecord = this as unknown as { _resuming?: boolean };
+      const resuming = Boolean(resumingRecord._resuming);
+      try {
+        if (!resuming) {
+          this.messages = [];
+          this.iterations = 0;
+        }
+        this._setup_messages(input);
+        this._inject_multimodal_files(input);
+        const result = this._invoke_loop();
+        if (isPromiseLike<AgentFinish>(result)) {
+          throw new Error("CrewAgentExecutor.invoke received an async loop result; use ainvoke instead.");
+        }
+        return { output: result.output };
+      } finally {
+        if (resuming) {
+          resumingRecord._resuming = false;
+        }
+      }
+    }
     if (this.agent && typeof input === "string") {
       return this.agent.kickoff(input, { task: this.task } satisfies AgentExecutionOptions);
     }
-    return super.invoke(input);
+    return super.invoke(input as string | readonly LLMMessage[]);
   }
 
   async ainvoke(input: string | readonly LLMMessage[] | Record<string, unknown> = ""): Promise<unknown> {
     if (typeof input === "object" && !Array.isArray(input) && "input" in input) {
-      this.messages = [];
-      this.iterations = 0;
-      this._setup_messages(input);
-      await this._ainject_multimodal_files(input);
-      const result = await this._ainvoke_loop();
-      return { output: result.output };
+      const resumingRecord = this as unknown as { _resuming?: boolean };
+      const resuming = Boolean(resumingRecord._resuming);
+      try {
+        if (!resuming) {
+          this.messages = [];
+          this.iterations = 0;
+        }
+        this._setup_messages(input);
+        await this._ainject_multimodal_files(input);
+        const result = await this._ainvoke_loop();
+        return { output: result.output };
+      } finally {
+        if (resuming) {
+          resumingRecord._resuming = false;
+        }
+      }
     }
     return await Promise.resolve(this.invoke(input as string | readonly LLMMessage[]));
   }

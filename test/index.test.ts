@@ -12725,6 +12725,33 @@ describe("core crew runtime", () => {
     expect(trainingOutputs).toEqual([{ result: "ok", human_feedback: "Needs citations" }]);
     await expect(executor.ainvoke({ input: "Async prompt" })).resolves.toHaveProperty("output");
 
+    const resetExecutor = new CrewAgentExecutor({
+      prompt: { prompt: "Prompt {input}" },
+      messages: [{ role: "assistant", content: "leftover from previous task" }],
+    });
+    resetExecutor.iterations = 7;
+    expect(resetExecutor.invoke({ input: "fresh" })).toEqual({ output: "Prompt fresh" });
+    expect(resetExecutor.iterations).toBe(0);
+    expect(resetExecutor.messages.some((message) => message.content === "leftover from previous task")).toBe(false);
+
+    const resumingExecutor = new CrewAgentExecutor({
+      prompt: { prompt: "Prompt {input}" },
+      messages: [{ role: "assistant", content: "in-flight context" }],
+    });
+    Object.assign(resumingExecutor, { _resuming: true });
+    resumingExecutor.iterations = 4;
+    expect(resumingExecutor.invoke({ input: "resumed" })).toEqual({ output: "Prompt resumed" });
+    expect(resumingExecutor.iterations).toBe(4);
+    expect(resumingExecutor.messages.some((message) => message.content === "in-flight context")).toBe(true);
+    expect((resumingExecutor as unknown as { _resuming?: boolean })._resuming).toBe(false);
+
+    Object.assign(resumingExecutor, { _resuming: true });
+    resumingExecutor.iterations = 6;
+    await expect(resumingExecutor.ainvoke({ input: "async resumed" })).resolves.toEqual({ output: "Prompt async resumed" });
+    expect(resumingExecutor.iterations).toBe(6);
+    expect(resumingExecutor.messages.some((message) => message.content === "in-flight context")).toBe(true);
+    expect((resumingExecutor as unknown as { _resuming?: boolean })._resuming).toBe(false);
+
     class TestProvider extends SyncHumanInputProvider {
       override handleFeedback(formattedAnswer: unknown): unknown {
         return formattedAnswer;
