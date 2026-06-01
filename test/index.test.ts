@@ -15565,6 +15565,46 @@ describe("tools", () => {
     ]);
   });
 
+  it("sets upstream fingerprint context before executing finality tools", async () => {
+    let fingerprint: Fingerprint | null = null;
+    const agent = {
+      set_fingerprint(value: Fingerprint) {
+        fingerprint = value;
+      },
+    };
+    const lookup = new StructuredTool({
+      name: "fingerprint lookup",
+      description: "Lookup with fingerprint",
+      argsSchema: {
+        topic: { type: "string", required: true },
+      },
+      func: ({ topic }) => `found:${String(topic)}`,
+    });
+    const action = new AgentAction({
+      thought: "Lookup",
+      tool: "fingerprint lookup",
+      toolInput: "{\"topic\":\"CrewAI\"}",
+      text: "Thought: Lookup\nAction: fingerprint lookup\nAction Input: {\"topic\":\"CrewAI\"}",
+    });
+
+    await expect(aexecuteToolAndCheckFinality(action, [lookup], {
+      agent_key: "agent-key",
+      agent_role: "Researcher",
+      agent,
+      fingerprint_context: {
+        uuid_str: "123e4567-e89b-12d3-a456-426614174000",
+        created_at: "2026-06-01T00:00:00.000Z",
+      },
+    })).resolves.toMatchObject({ result: "found:CrewAI" });
+
+    expect(fingerprint).toBeInstanceOf(Fingerprint);
+    if (!(fingerprint instanceof Fingerprint)) {
+      throw new Error("Expected fingerprint to be set.");
+    }
+    expect(fingerprint.uuid_str).toBe("123e4567-e89b-12d3-a456-426614174000");
+    expect(String(fingerprint)).toBe("123e4567-e89b-12d3-a456-426614174000");
+  });
+
   it("applies hooks for plain tools in upstream tool finality helper", async () => {
     const seen: string[] = [];
     beforeToolCall((context) => {

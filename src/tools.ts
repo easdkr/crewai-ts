@@ -18,6 +18,7 @@ import { sanitizeToolName } from "./string-utils.js";
 import { AgentAction, OutputParserError, parseAgentOutput } from "./agent-parser.js";
 import { I18N_DEFAULT } from "./i18n.js";
 import { Converter } from "./converter.js";
+import { Fingerprint } from "./security.js";
 import type { LLMClient } from "./llm.js";
 
 export const OPENAI_BIGGER_MODELS = Object.freeze([
@@ -1997,14 +1998,13 @@ export async function aexecuteToolAndCheckFinality(
     crew?: unknown;
   } = {},
 ): Promise<ToolResult> {
-  void options.agentKey;
-  void options.agent_key;
-  void options.agentRole;
-  void options.agent_role;
   void options.functionCallingLlm;
   void options.function_calling_llm;
-  void options.fingerprintContext;
-  void options.fingerprint_context;
+  const agentKey = options.agentKey ?? options.agent_key ?? null;
+  const agentRole = options.agentRole ?? options.agent_role ?? null;
+  if (agentKey && agentRole && options.agent) {
+    setAgentFingerprintFromContext(options.agent, options.fingerprintContext ?? options.fingerprint_context ?? {});
+  }
   const toolNameToToolMap = new Map(tools.map((tool) => [sanitizeToolName(tool.name), tool] as const));
   const toolCalling = normalizeToolCalling(agentAction.text) ?? {
     toolName: agentAction.tool,
@@ -2343,6 +2343,26 @@ function fingerprintToRecord(value: unknown): unknown {
     return (record.toDict as () => unknown).call(value);
   }
   return record;
+}
+
+function setAgentFingerprintFromContext(agent: unknown, fingerprintContext: Record<string, unknown>): void {
+  const record = getRecord(agent);
+  if (!record) {
+    return;
+  }
+  const setter = typeof record.set_fingerprint === "function"
+    ? record.set_fingerprint
+    : typeof record.setFingerprint === "function"
+      ? record.setFingerprint
+      : null;
+  if (!setter) {
+    return;
+  }
+  try {
+    setter.call(agent, Fingerprint.fromDict(fingerprintContext));
+  } catch (error) {
+    throw new Error(`Failed to set fingerprint: ${stringifyToolError(error)}`, { cause: error });
+  }
 }
 
 function toolNameSimilarity(toolName: string, sanitizedInput: string): number {
