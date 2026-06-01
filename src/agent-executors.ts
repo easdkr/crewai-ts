@@ -8,6 +8,7 @@ import {
   extractTaskSection,
   extractToolCallInfo,
   formatMessageForLLM,
+  isToolCallList,
 } from "./agent-utils.js";
 import { Converter } from "./converter.js";
 import { UsageMetrics, type LLMResponse } from "./llm.js";
@@ -1347,6 +1348,42 @@ export class StepExecutor {
     toolCallsMade: string[],
   ): Promise<string> {
     return await this._executeNativeToolCalls(toolCalls, messages, toolCallsMade);
+  }
+
+  async _executeNative(
+    messages: LLMMessage[],
+    toolCallsMade: string[],
+    maxStepIterations = 15,
+    stepTimeout: number | null = null,
+    startTime: number | null = null,
+  ): Promise<string> {
+    const accumulatedResults: string[] = [];
+    for (let index = 0; index < maxStepIterations; index += 1) {
+      if (stepTimeout !== null && startTime !== null && Date.now() - startTime >= stepTimeout * 1000) {
+        return accumulatedResults.length > 0 ? accumulatedResults.join("\n\n") : `Step timed out after ${String(stepTimeout)}s`;
+      }
+      const answer = await this.callStepLlm(messages);
+      if (!answer) {
+        throw new Error("Empty response from LLM");
+      }
+      if (isToolCallList(answer)) {
+        const result = await this._executeNativeToolCalls(answer, messages, toolCallsMade);
+        accumulatedResults.push(result);
+        continue;
+      }
+      return stringifyStepResult(answer);
+    }
+    return accumulatedResults.join("\n\n");
+  }
+
+  async _execute_native(
+    messages: LLMMessage[],
+    toolCallsMade: string[],
+    maxStepIterations = 15,
+    stepTimeout: number | null = null,
+    startTime: number | null = null,
+  ): Promise<string> {
+    return await this._executeNative(messages, toolCallsMade, maxStepIterations, stepTimeout, startTime);
   }
 
   async executeStep(step: string, context: StepExecutionContext = new StepExecutionContext({})): Promise<StepResult> {

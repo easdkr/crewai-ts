@@ -10192,6 +10192,29 @@ describe("core crew runtime", () => {
       content: "lookup:CrewAI",
       tool_call_id: "call-1",
     });
+
+    const nativeLoopResponses: unknown[] = [
+      [{ id: "call-2", function: { name: "lookup", arguments: "{\"query\":\"Agents\"}" } }],
+      "native final",
+    ];
+    const nativeLoop = new StepExecutor({
+      agent: new Agent({
+        role: "Native",
+        goal: "Use tools",
+        backstory: "Executor",
+        llm: (): LLMResponse => nativeLoopResponses.shift() as LLMResponse,
+      }),
+      available_functions: { lookup: (args: { query?: string }) => `lookup:${args.query ?? ""}` },
+    });
+    const loopMessages: LLMMessage[] = [];
+    const loopCalls: string[] = [];
+    await expect(nativeLoop._execute_native(loopMessages, loopCalls)).resolves.toBe("native final");
+    expect(loopCalls).toEqual(["lookup"]);
+    expect(loopMessages.at(-1)).toMatchObject({
+      role: "tool",
+      content: "lookup:Agents",
+      tool_call_id: "call-2",
+    });
   });
 
   it("exposes upstream Agent and BaseAgent compatibility methods", async () => {
