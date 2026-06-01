@@ -162,6 +162,8 @@ export type LLMEmitCallCompletedOptions = {
   from_agent?: unknown;
 };
 
+export type LLMHandleEmitCallEventsOptions = LLMEmitCallCompletedOptions;
+
 export type LLMEmitCallFailedOptions = {
   error: unknown;
   fromTask?: unknown;
@@ -212,6 +214,14 @@ export type LLMHandleToolExecutionOptions = {
 };
 
 export type LLMMessageInput = string | readonly (Partial<LLMMessage> & Record<string, unknown>)[];
+
+export type NativeLLMProviderName =
+  | "openai"
+  | "anthropic"
+  | "azure"
+  | "bedrock"
+  | "gemini"
+  | "openai_compatible";
 
 export type CreateLLMValue = string | LLM | BaseLLMOptions | (Record<string, unknown> & {
   model?: unknown;
@@ -1453,6 +1463,38 @@ export abstract class BaseLLM implements LLMClient {
     this.emitCallCompletedEvent(options);
   }
 
+  handleEmitCallEvents(
+    responseOrOptions: unknown,
+    callType: LLMCallType = LLMCallType.LLM_CALL,
+    fromTask: unknown = null,
+    fromAgent: unknown = null,
+    messages: string | readonly LLMMessage[] | null = null,
+    usage: Record<string, unknown> | null = null,
+  ): void {
+    const options = isRecord(responseOrOptions) && ("response" in responseOrOptions || "call_type" in responseOrOptions || "callType" in responseOrOptions)
+      ? responseOrOptions as LLMHandleEmitCallEventsOptions
+      : {
+          response: responseOrOptions,
+          callType,
+          fromTask,
+          fromAgent,
+          messages,
+          usage,
+        };
+    this.emitCallCompletedEvent(options);
+  }
+
+  _handle_emit_call_events(
+    responseOrOptions: unknown,
+    callType: LLMCallType = LLMCallType.LLM_CALL,
+    fromTask: unknown = null,
+    fromAgent: unknown = null,
+    messages: string | readonly LLMMessage[] | null = null,
+    usage: Record<string, unknown> | null = null,
+  ): void {
+    this.handleEmitCallEvents(responseOrOptions, callType, fromTask, fromAgent, messages, usage);
+  }
+
   emitCallFailedEvent(options: LLMEmitCallFailedOptions): void {
     crewaiEventBus.emit(this, new LLMCallFailedEvent({
       call_id: getCurrentCallId(),
@@ -1584,6 +1626,35 @@ export abstract class BaseLLM implements LLMClient {
     return this.formatMessages(messages);
   }
 
+  formatMessagesForProvider(messages: readonly LLMMessage[]): LLMMessage[] {
+    for (const message of messages) {
+      if (!isLLMRole(message.role) || typeof message.content !== "string") {
+        throw new TypeError("Invalid message format. Each message must be a dict with 'role' and 'content' keys");
+      }
+    }
+
+    const model = this.model.toLowerCase();
+    if (model.includes("o1")) {
+      return messages.map((message) => message.role === "system"
+        ? { ...message, role: "assistant" }
+        : { ...message });
+    }
+    if ((model.includes("mistral") || model.includes("ollama")) && messages.at(-1)?.role === "assistant") {
+      return [...messages.map((message) => ({ ...message })), { role: "user", content: model.includes("mistral") ? "Please continue." : "" }];
+    }
+    if (!BaseLLM.isAnthropicModel(this.model)) {
+      return messages.map((message) => ({ ...message }));
+    }
+    if (messages.length === 0 || messages[0]?.role === "system") {
+      return [{ role: "user", content: "." }, ...messages.map((message) => ({ ...message }))];
+    }
+    return messages.map((message) => ({ ...message }));
+  }
+
+  _format_messages_for_provider(messages: readonly LLMMessage[]): LLMMessage[] {
+    return this.formatMessagesForProvider(messages);
+  }
+
   processMessageFiles(messages: readonly LLMMessage[]): LLMMessage[] {
     if (!this.supportsMultimodal() && messages.some((message) => message.files && Object.keys(message.files).length > 0)) {
       throw new Error(`Model '${this.model}' does not support multimodal input, but files were provided via 'input_files'.`);
@@ -1617,6 +1688,36 @@ export abstract class BaseLLM implements LLMClient {
 
   _process_message_files(messages: readonly LLMMessage[]): LLMMessage[] {
     return this.processMessageFiles(messages);
+  }
+
+  async aprocessMessageFiles(messages: readonly LLMMessage[]): Promise<LLMMessage[]> {
+    return await Promise.resolve(this.processMessageFiles(messages));
+  }
+
+  async _aprocess_message_files(messages: readonly LLMMessage[]): Promise<LLMMessage[]> {
+    return await this.aprocessMessageFiles(messages);
+  }
+
+  getCustomLlmProvider(): string | null {
+    const index = this.model.indexOf("/");
+    return index === -1 ? null : this.model.slice(0, index);
+  }
+
+  _get_custom_llm_provider(): string | null {
+    return this.getCustomLlmProvider();
+  }
+
+  validateCallParams(): void {
+    if (this.responseFormat === null) {
+      return;
+    }
+    if (!isJsonResponseFormat(this.responseFormat) && !isStructuredOutputValidator(this.responseFormat)) {
+      throw new Error(`The model ${this.model} received an unsupported response_format value.`);
+    }
+  }
+
+  _validate_call_params(): void {
+    this.validateCallParams();
   }
 
   toConfigDict(): Record<string, unknown> {
@@ -1827,6 +1928,93 @@ export abstract class BaseLLM implements LLMClient {
 
   static _validate_init_fields(data: unknown): unknown {
     return this.validateInitFields(data);
+  }
+
+  static validateLLMFields<T>(data: T): T | (T & { is_anthropic: boolean }) {
+    if (!isRecord(data)) {
+      return data;
+    }
+    const model = typeof data.model === "string" ? data.model : "";
+    return { ...data, is_anthropic: this.isAnthropicModel(model) };
+  }
+
+  static _validate_llm_fields<T>(data: T): T | (T & { is_anthropic: boolean }) {
+    return this.validateLLMFields(data);
+  }
+
+  initLitellm(): this {
+    (this as { isLitellm: boolean; is_litellm: boolean }).isLitellm = true;
+    (this as { isLitellm: boolean; is_litellm: boolean }).is_litellm = true;
+    return this;
+  }
+
+  _init_litellm(): this {
+    return this.initLitellm();
+  }
+
+  static isAnthropicModel(model: string): boolean {
+    const normalized = model.toLowerCase();
+    return ANTHROPIC_PREFIXES.some((prefix) => normalized.includes(prefix));
+  }
+
+  static _is_anthropic_model(model: string): boolean {
+    return this.isAnthropicModel(model);
+  }
+
+  isAnthropicModel(model: string = this.model): boolean {
+    return BaseLLM.isAnthropicModel(model);
+  }
+
+  _is_anthropic_model(model: string = this.model): boolean {
+    return this.isAnthropicModel(model);
+  }
+
+  static getNativeProvider(provider: string): NativeLLMProviderName | null {
+    const normalized = canonicalLLMProvider(provider);
+    if (normalized === "openai" || normalized === "anthropic" || normalized === "azure" || normalized === "bedrock" || normalized === "gemini") {
+      return normalized;
+    }
+    if (["openrouter", "deepseek", "ollama", "ollama_chat", "hosted_vllm", "cerebras", "dashscope"].includes(normalized)) {
+      return "openai_compatible";
+    }
+    return null;
+  }
+
+  static _get_native_provider(provider: string): NativeLLMProviderName | null {
+    return this.getNativeProvider(provider);
+  }
+
+  static usageToDict(usage: unknown): Record<string, unknown> | null {
+    if (usage === null || usage === undefined) {
+      return null;
+    }
+    if (isRecord(usage)) {
+      const modelDump = usage.model_dump;
+      if (typeof modelDump === "function") {
+        const dumped = (modelDump as () => unknown)();
+        return isRecord(dumped) ? dumped : null;
+      }
+      const result: Record<string, unknown> = {};
+      for (const [key, value] of Object.entries(usage)) {
+        if (!key.startsWith("_")) {
+          result[key] = value;
+        }
+      }
+      return result;
+    }
+    return null;
+  }
+
+  static _usage_to_dict(usage: unknown): Record<string, unknown> | null {
+    return this.usageToDict(usage);
+  }
+
+  usageToDict(usage: unknown): Record<string, unknown> | null {
+    return BaseLLM.usageToDict(usage);
+  }
+
+  _usage_to_dict(usage: unknown): Record<string, unknown> | null {
+    return this.usageToDict(usage);
   }
 
   static extractProvider(model: string): string {

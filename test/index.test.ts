@@ -16561,6 +16561,11 @@ describe("LLM providers", () => {
 
     expect(BaseLLM._validate_model_in_constants("claude-future-5", "claude")).toBe(true);
     expect(BaseLLM._infer_provider_from_model("claude-opus-4-0")).toBe("anthropic");
+    expect(BaseLLM._get_native_provider("claude")).toBe("anthropic");
+    expect(BaseLLM._get_native_provider("openrouter")).toBe("openai_compatible");
+    expect(BaseLLM._is_anthropic_model("anthropic/claude-sonnet-4")).toBe(true);
+    expect(BaseLLM._validate_llm_fields({ model: "claude-3-haiku" })).toMatchObject({ is_anthropic: true });
+    expect(BaseLLM._usage_to_dict({ total_tokens: 12, _hidden: true })).toEqual({ total_tokens: 12 });
     expect(BaseLLM.resolve_llm_model_spec("gemini/gemini-2.5-pro")).toEqual({
       provider: "gemini",
       model: "gemini-2.5-pro",
@@ -16597,6 +16602,16 @@ describe("LLM providers", () => {
       api_key: "anthropic-key",
       is_litellm: false,
     });
+
+    const llm = new ConfiguredLLM({ model: "anthropic/claude-sonnet-4" });
+    expect(llm._get_custom_llm_provider()).toBe("anthropic");
+    expect(llm._format_messages_for_provider([{ role: "system", content: "rules" }]))
+      .toEqual([{ role: "user", content: "." }, { role: "system", content: "rules" }]);
+    expect(llm._init_litellm()).toBe(llm);
+    expect(llm.to_config_dict()).toMatchObject({ is_litellm: true });
+    expect(() => {
+      llm._validate_call_params();
+    }).not.toThrow();
   });
 
   it("calls object providers with tools and aggregates usage metrics", async () => {
