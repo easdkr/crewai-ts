@@ -281,9 +281,12 @@ import {
   MemoryRecord,
   MemoryScope,
   MemorySlice,
+  _build_scope_ancestors,
   _default_embedder,
   _ensure_memory_kind,
   _passthrough,
+  _parse_dt,
+  _uuid_to_point_id,
   _walk,
   ScopeInfo,
   EncodingFlow,
@@ -18806,9 +18809,16 @@ describe("memory", () => {
       must: [{ key: "scope_ancestors", match: { value: "/crew/research" } }],
     });
     expect(storage._build_scope_filter("/")).toBeNull();
+    expect(_build_scope_ancestors("/crew/research/agent")).toEqual([
+      "/",
+      "/crew",
+      "/crew/research",
+      "/crew/research/agent",
+    ]);
+    expect(_uuid_to_point_id("00000000-0000-0000-0000-000000000001")).toBe(1);
 
     const point = storage._record_to_point(record);
-    expect(typeof point.id).toBe("number");
+    expect(point.id).toBe(_uuid_to_point_id("qdrant-row"));
     expect(point).toMatchObject({
       vector: { memory: [0.1, 0.2, 0.3] },
       payload: {
@@ -18824,6 +18834,7 @@ describe("memory", () => {
       metadata: { owner: "team" },
       private: true,
     });
+    expect(_parse_dt("2026-05-31T00:02:00Z").toISOString()).toBe("2026-05-31T00:02:00.000Z");
 
     const shard = storage._open_shard("/tmp/local-shard");
     storage._ensure_indexes(shard);
@@ -18886,6 +18897,11 @@ describe("memory", () => {
       metadata: { owner: "team" },
       private: true,
     });
+    expect(storage._row_to_record({
+      ...row,
+      created_at: null,
+      last_accessed: new Date("2026-05-31T00:03:00.000Z"),
+    }).lastAccessed.toISOString()).toBe("2026-05-31T00:03:00.000Z");
 
     storage.save([record]);
     expect(storage._scan_rows("/crew", 5, ["id", "scope"])).toEqual([{ id: "lance-row", scope: "/crew/research" }]);
@@ -20967,6 +20983,9 @@ describe("crew replay", () => {
       });
 
       await crewInstance.kickoff({ inputs: { topic: "original" } });
+      expect(() => {
+        (handler.storage as KickoffTaskOutputsSQLiteStorage)._initialize_db();
+      }).not.toThrow();
       expect(handler.load()?.map((record) => record.output.raw)).toEqual(["output 1", "output 2"]);
 
       await crewInstance.replay("second", { topic: "replayed" });

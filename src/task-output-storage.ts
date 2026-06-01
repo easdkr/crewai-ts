@@ -56,7 +56,7 @@ export class KickoffTaskOutputsSQLiteStorage implements KickoffTaskOutputsStorag
   constructor(dbPath: string | null = null) {
     this.dbPath = dbPath ?? join(dbStoragePath(), "latest_kickoff_task_outputs.db");
     this.db_path = this.dbPath;
-    this.initializeDb();
+    this._initialize_db();
   }
 
   add(
@@ -143,6 +143,10 @@ export class KickoffTaskOutputsSQLiteStorage implements KickoffTaskOutputsStorag
   }
 
   private initializeDb(): void {
+    this._initialize_db();
+  }
+
+  _initialize_db(): void {
     try {
       mkdirSync(dirname(this.dbPath), { recursive: true });
       this.withDb((db) => {

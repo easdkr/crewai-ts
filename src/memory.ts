@@ -1264,7 +1264,7 @@ export class QdrantEdgeStorage implements MemoryVectorStorageLike {
 
   _record_to_point(record: MemoryRecord): QdrantPoint {
     return {
-      id: uuidToPointId(record.id),
+      id: _uuid_to_point_id(record.id),
       vector: {
         [VECTOR_NAME]: record.embedding && record.embedding.length > 0
           ? record.embedding
@@ -1274,7 +1274,7 @@ export class QdrantEdgeStorage implements MemoryVectorStorageLike {
         record_id: record.id,
         content: record.content,
         scope: record.scope,
-        scope_ancestors: buildScopeAncestors(record.scope),
+        scope_ancestors: _build_scope_ancestors(record.scope),
         categories: record.categories,
         metadata: record.metadata,
         importance: record.importance,
@@ -1302,8 +1302,8 @@ export class QdrantEdgeStorage implements MemoryVectorStorageLike {
         : [],
       metadata: isRecord(payload.metadata) ? payload.metadata : {},
       importance: typeof payload.importance === "number" ? payload.importance : Number(payload.importance ?? 0.5),
-      createdAt: typeof payload.created_at === "string" ? payload.created_at : new Date(),
-      lastAccessed: typeof payload.last_accessed === "string" ? payload.last_accessed : new Date(),
+      createdAt: _parse_dt(payload.created_at),
+      lastAccessed: _parse_dt(payload.last_accessed),
       embedding: vector?.[VECTOR_NAME] ?? null,
       source: typeof payload.source === "string" && payload.source ? payload.source : null,
       private: Boolean(payload.private),
@@ -1533,8 +1533,8 @@ export class LanceDBStorage extends QdrantEdgeStorage {
       categories,
       metadata,
       importance: typeof row.importance === "number" ? row.importance : Number(row.importance ?? 0.5),
-      createdAt: typeof row.created_at === "string" ? row.created_at : new Date(),
-      lastAccessed: typeof row.last_accessed === "string" ? row.last_accessed : new Date(),
+      createdAt: _parse_dt(row.created_at),
+      lastAccessed: _parse_dt(row.last_accessed),
       embedding: Array.isArray(row.vector) ? row.vector.filter((value): value is number => typeof value === "number") : null,
       source: typeof row.source === "string" && row.source ? row.source : null,
       private: Boolean(row.private),
@@ -2980,17 +2980,33 @@ function buildScopeAncestors(scope: string): string[] {
   return ancestors;
 }
 
-function uuidToPointId(value: string): number {
-  const normalized = value.replaceAll("-", "");
-  if (/^[\da-f]{32}$/iu.test(normalized)) {
-    const parsed = Number.parseInt(normalized.slice(-13), 16);
-    return Number.isFinite(parsed) ? parsed : 0;
+export const _build_scope_ancestors = buildScopeAncestors;
+
+export function _uuid_to_point_id(value: string): number {
+  const modulo = (1n << 63n) - 1n;
+  try {
+    return Number(BigInt(`0x${value.replaceAll("-", "")}`) % modulo);
+  } catch {
+    const bytes = Buffer.from(value, "utf8").subarray(0, 8);
+    let padded = 0n;
+    for (let index = 0; index < 8; index += 1) {
+      padded = (padded << 8n) + BigInt(bytes[index] ?? 0);
+    }
+    return Number(padded % modulo);
   }
-  let hash = 0;
-  for (let index = 0; index < value.length; index += 1) {
-    hash = (hash * 31 + value.charCodeAt(index)) >>> 0;
+}
+
+export function _parse_dt(value: unknown): Date {
+  if (value instanceof Date) {
+    return value;
   }
-  return hash;
+  if (value === null || value === undefined) {
+    return new Date();
+  }
+  if (typeof value === "string" || typeof value === "number" || typeof value === "bigint" || typeof value === "boolean") {
+    return new Date(String(value).replace(/Z$/u, "+00:00"));
+  }
+  return new Date();
 }
 
 export const join_scope_paths = joinScopePaths;
