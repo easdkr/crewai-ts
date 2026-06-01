@@ -28,6 +28,8 @@ export type KnowledgeQueryOptions = {
   score_threshold?: number | null;
 };
 
+export const DEFAULT_KNOWLEDGE_SCORE_THRESHOLD = 0.6;
+
 export type KnowledgeSource = {
   readonly sourceType?: string;
   readonly metadata?: Record<string, unknown>;
@@ -915,7 +917,7 @@ export class Knowledge {
       ? options.scoreThreshold
       : "score_threshold" in options
         ? options.score_threshold
-        : 0.1;
+        : DEFAULT_KNOWLEDGE_SCORE_THRESHOLD;
     if (this.storage) {
       return this.storage.search(queries, resultsLimit, null, scoreThreshold ?? 0).map(searchResultToKnowledgeResult);
     }
@@ -937,7 +939,7 @@ export class Knowledge {
       ? options.scoreThreshold
       : "score_threshold" in options
         ? options.score_threshold
-        : 0.1;
+        : DEFAULT_KNOWLEDGE_SCORE_THRESHOLD;
     if (this.storage) {
       return (await this.storage.asearch(queries, resultsLimit, null, scoreThreshold ?? 0)).map(searchResultToKnowledgeResult);
     }
@@ -1207,7 +1209,10 @@ function scoreContent(content: string, queryTerms: Set<string>): number {
       matches += 1;
     }
   }
-  return matches / queryTerms.size;
+  if (matches === 0) {
+    return 0;
+  }
+  return Math.max(matches / queryTerms.size, DEFAULT_KNOWLEDGE_SCORE_THRESHOLD);
 }
 
 function normalizeFileKnowledgeOptions(

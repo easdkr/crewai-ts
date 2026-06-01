@@ -10249,6 +10249,22 @@ describe("RAG configuration and factories", () => {
     expect(await asyncKnowledge.aquery(["knowledge"], { scoreThreshold: 0.1 })).toHaveLength(1);
   });
 
+  it("uses upstream default knowledge score threshold while preserving deterministic in-memory recall", () => {
+    const knowledge = new Knowledge({
+      sources: [new StringKnowledgeSource("Nest should instantiate ResearchCrew inside a service.")],
+    });
+
+    expect(knowledge.query(["Nest integration"])).toEqual([
+      {
+        content: "Nest should instantiate ResearchCrew inside a service.",
+        score: 0.6,
+        source: "string",
+        metadata: {},
+      },
+    ]);
+    expect(knowledge.query(["unrelated topic"])).toEqual([]);
+  });
+
   it("passes upstream snake_case Knowledge query options to storage search", async () => {
     const storage = {
       save: vi.fn(),
@@ -10274,11 +10290,15 @@ describe("RAG configuration and factories", () => {
       { content: "Machine learning rocks", score: 0.8, source: "doc2", metadata: { source: "doc2" } },
     ]);
     expect(storage.search).toHaveBeenCalledWith(["AI technology"], 5, null, 0.3);
+    knowledge.query(["default threshold"]);
+    expect(storage.search).toHaveBeenLastCalledWith(["default threshold"], 5, null, 0.6);
 
     await expect(knowledge.aquery(["AI async"], { results_limit: 2, score_threshold: null })).resolves.toEqual([
       { content: "Async AI", score: 0.7, source: "doc3", metadata: { source: "doc3" } },
     ]);
     expect(storage.asearch).toHaveBeenCalledWith(["AI async"], 2, null, 0);
+    await knowledge.aquery(["default async threshold"]);
+    expect(storage.asearch).toHaveBeenLastCalledWith(["default async threshold"], 5, null, 0.6);
   });
 
   it("delegates Knowledge source add hooks through configured storage", async () => {
