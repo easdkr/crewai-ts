@@ -8990,6 +8990,29 @@ describe("execution and event context", () => {
     expect(agentCompleted?.startedEventId).toBe(agentStarted?.eventId);
     expect(getCurrentParentId()).toBeNull();
   });
+
+  it("preserves the agent scope after tool usage error events", () => {
+    restoreEventScope([
+      ["crew-1", "crew_kickoff_started"],
+      ["task-1", "task_started"],
+      ["agent-1", "agent_execution_started"],
+    ]);
+
+    crewaiEventBus.emit(null, new ToolUsageStartedEvent({
+      toolName: "test_tool",
+      toolArgs: {},
+      agentKey: "test_agent",
+    }));
+    crewaiEventBus.emit(null, new ToolUsageErrorEvent({
+      toolName: "test_tool",
+      toolArgs: {},
+      agentKey: "test_agent",
+      error: new Error("test error"),
+    }));
+
+    expect(getCurrentParentId()).toBe("agent-1");
+    restoreEventScope([]);
+  });
 });
 
 type FakeDocument = {

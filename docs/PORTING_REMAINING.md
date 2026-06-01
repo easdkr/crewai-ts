@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 709 passing tests.
+- Test suite: 710 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -194,6 +194,7 @@ When more goal budget is available, continue from the behavioral parity audits b
   - kickoff-time `fromCheckpoint` / `from_checkpoint` resume without replaying completed methods
   - EventBus `runtimeState` / `runtime_state`, `setRuntimeState` / `set_runtime_state`, and third-argument runtime state delivery to handlers
   - EventBus now honors upstream-style `Depends` handler ordering and validates circular handler dependencies.
+  - Event context now preserves enclosing agent scope after paired tool usage error events.
   - runtime checkpoint serialization of completed methods, method outputs/counts, and flow state
   - `LockedListProxy`, `LockedDictProxy`, and `StateProxy` mutation helpers backed by the original state values
   - `LockedListProxy` / `LockedDictProxy` now expose upstream-style collection helpers such as `append`, `insert`, `remove`, `count`, `sort`, `reverse`, `copy`, `pop`, `setdefault`, and `items`
