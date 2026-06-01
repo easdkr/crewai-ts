@@ -848,7 +848,7 @@ export class StructuredTool extends BaseTool {
   }
 
   protected _run(args: Record<string, unknown>): MaybePromise<unknown> {
-    return this.func(args);
+    return this.callStructuredFunction(args);
   }
 
   override invoke(input?: ToolInvocationInput, _config?: Record<string, unknown> | null): MaybePromise<unknown> {
@@ -860,7 +860,7 @@ export class StructuredTool extends BaseTool {
       );
     }
     this._incrementUsageCount();
-    return this.func(parsedArgs);
+    return this.callStructuredFunction(parsedArgs);
   }
 
   override async ainvoke(input?: ToolInvocationInput, _config?: Record<string, unknown> | null): Promise<unknown> {
@@ -872,7 +872,7 @@ export class StructuredTool extends BaseTool {
       );
     }
     this._incrementUsageCount();
-    return await this.func(parsedArgs);
+    return await this.callStructuredFunction(parsedArgs);
   }
 
   override async arun(input?: ToolInvocationInput): Promise<unknown> {
@@ -928,6 +928,18 @@ export class StructuredTool extends BaseTool {
 
   _increment_usage_count(): void {
     this._incrementUsageCount();
+  }
+
+  private callStructuredFunction(parsedArgs: Record<string, unknown>): MaybePromise<unknown> {
+    const parameterNames = inferFunctionParameterNames(this.func);
+    if (parameterNames.length <= 1) {
+      return this.func(parsedArgs);
+    }
+    const orderedNames = Object.keys(this.argsSchema).length > 0
+      ? Object.keys(this.argsSchema)
+      : parameterNames;
+    const positional = orderedNames.map((parameterName) => parsedArgs[parameterName]);
+    return (this.func as (...args: unknown[]) => MaybePromise<unknown>)(...positional);
   }
 
   __repr__(): string {

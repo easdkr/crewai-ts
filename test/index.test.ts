@@ -15668,6 +15668,15 @@ describe("tools", () => {
     function add(a: unknown, b: unknown): number {
       return Number(a) + Number(b);
     }
+    const directAddTool = new StructuredTool({
+      name: "direct add",
+      description: "Directly add two numbers",
+      argsSchema: {
+        a: { type: "number", required: true },
+        b: { type: "number", required: true },
+      },
+      func: add,
+    });
     const addTool = StructuredTool.from_function(
       add,
       "add numbers",
@@ -15679,6 +15688,8 @@ describe("tools", () => {
       },
     );
 
+    expect(directAddTool.invoke({ a: 2, b: 3 })).toBe(5);
+    await expect(directAddTool.ainvoke(JSON.stringify({ a: 4, b: 5 }))).resolves.toBe(9);
     expect(addTool.args).toBe(addTool.argsSchema);
     expect(addTool.args_schema).toBe(addTool.argsSchema);
     expect(addTool.result_as_answer).toBe(true);
