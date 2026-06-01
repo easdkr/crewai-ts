@@ -12185,6 +12185,11 @@ describe("agent planning", () => {
     expect(copy.agent_knowledge_context).toBe("Agent context");
     expect(copy.execution_context).not.toBe(executionContext);
     expect(copy.execution_context?.currentTaskId).toBe("agent-task");
+    expect(copy.agent_executor).toBeNull();
+    expect(copy.cache_handler).not.toBe(agentInstance.cache_handler);
+    expect(copy.tools_handler).not.toBe(agentInstance.tools_handler);
+    expect(copy.apps).toBeNull();
+    expect(copy.mcps).toBeNull();
 
     const sharedStorage = {
       search: () => [],
