@@ -10603,6 +10603,19 @@ describe("core crew runtime", () => {
     expect(crewInstance.query_knowledge(["collaborative"])?.[0]?.content).toContain("collaborative agents");
     await expect(crewInstance.aquery_knowledge(["CrewAI"])).resolves.toHaveLength(1);
 
+    const embeddingCallable = (texts: readonly unknown[]) => texts.map(() => [0.1, 0.2, 0.3]);
+    const memoryCrew = new Crew({
+      name: "Memory Crew",
+      agents: [researcher],
+      tasks: [taskInstance],
+      memory: true,
+      embedder: { provider: "custom", config: { embedding_callable: embeddingCallable } },
+    });
+    const resolvedMemory = (memoryCrew as unknown as { resolvedMemory: Memory }).resolvedMemory;
+    expect(resolvedMemory).toBeInstanceOf(Memory);
+    expect(resolvedMemory.root_scope).toBe("/crew/memory-crew");
+    expect(resolvedMemory._embedder).toBe(embeddingCallable);
+
     await crewInstance.train(1, trainingFile, { topic: "CrewAI" });
     const testResult = await crewInstance.test(1, () => JSON.stringify({ quality: 8 }), { topic: "CrewAI" });
 

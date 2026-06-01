@@ -1918,7 +1918,10 @@ export class Crew {
 
   private resolveMemory(memory: boolean | Memory | MemoryScope): Memory | MemoryScope | null {
     if (memory === true) {
-      return new Memory({ rootScope: `/crew/${sanitizeScopeName(this.name ?? "crew")}` });
+      return new Memory({
+        rootScope: `/crew/${sanitizeScopeName(this.name ?? "crew")}`,
+        ...(this.embedder === null ? {} : { embedder: this.embedder }),
+      });
     }
     if (memory instanceof Memory) {
       return memory;
