@@ -14575,9 +14575,15 @@ describe("tools", () => {
       currentUsageCount: 1,
       func: ({ query }) => `found:${String(query)}`,
     });
+    const summarize = new StructuredTool({
+      name: "Summarize Tool",
+      description: "Summarize docs",
+      argsSchema: {},
+      func: () => "summary",
+    });
     const task = { used_tools: 2, tools_errors: 0 };
     const usage = new ToolUsage({
-      tools: [search],
+      tools: [search, summarize],
       toolsHandler: new ToolsHandler({ lastUsedTool: { toolName: "Search Tool", arguments: { query: "CrewAI" } } }),
       task,
       action: new AgentAction({
@@ -14602,6 +14608,7 @@ describe("tools", () => {
     });
     expect(usage._check_tool_repeated_usage({ toolName: "search_tool", arguments: { query: "CrewAI" } })).toBe(true);
     expect(usage._check_usage_limit(search, "search_tool")).toContain("usage limit of 1");
+    expect(usage._render()).toBe("Search docs\n--\nSummarize docs");
     expect(usage._format_result("done")).toContain("You ONLY have access to the following tools");
     expect(task.used_tools).toBe(3);
     expect(usage._prepare_event_data(search, { toolName: "Search Tool", arguments: { query: "CrewAI" } })).toMatchObject({

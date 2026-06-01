@@ -1586,6 +1586,10 @@ export class ToolUsage {
     throw new Error(error);
   }
 
+  _render(): string {
+    return this.tools.map((tool) => tool.description ?? "").join("\n--\n");
+  }
+
   _original_tool_calling(_toolString: string, raiseError = false): ToolCalling | ToolUsageError {
     const action = this.action;
     if (!action) {
