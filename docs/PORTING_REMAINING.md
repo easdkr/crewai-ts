@@ -91,6 +91,7 @@ This register is the source of truth for continuing porting work while parity sc
 - Provider-agnostic prompt-cache breakpoints are release-gated with deterministic OpenAI and Anthropic formatting tests: markers are stripped from wire payloads without mutating caller messages, Anthropic system/stable user blocks receive ephemeral cache control, assistant markers are ignored, and volatile tool-result carrier messages are not stamped.
 - Google Vertex legacy `textembedding-gecko*` embeddings remain intentionally unsupported in the TypeScript runtime without Vertex AI SDK credentials; the current behavior raises a clear error.
 - PDF/Excel/Docling-style optional parsing uses built-in or injected local extractors where possible. Python-only optional dependencies such as `pdfplumber` or Docling converters are not bundled.
+- `PickleHandler` remains a deterministic JSON-backed `.pkl` shim in the TypeScript runtime, but mirrors upstream corrupted-load behavior by surfacing a `pickle data was truncated` error instead of silently resetting damaged persistence files.
 - MCP transports may use the installed JS SDK shape, but release tests should continue to rely on local/fake clients and error classification rather than live MCP servers.
 - MCP native tool discovery is release-gated with deterministic fake-client behavior: empty or fully filtered tool lists warn and return no clients, and unexpected discovery failures are wrapped with a clear native MCP discovery error. Live MCP servers remain outside the default gate.
 - Crew context metadata is release-gated with a deterministic `AsyncLocalStorage` shim rather than OpenTelemetry baggage: `CrewContext` carries upstream-style `id` and `key`, `get_crew_context` returns only an active scoped context, and `withCrewContext` preserves nested and throwing scopes.
@@ -184,6 +185,7 @@ When more goal budget is available, continue from the behavioral parity audits b
 ## Completed In Current Tool Behavior Pass
 
 - `BaseTool.run` / `arun` argument validation now mirrors upstream schema behavior for LLM-generated kwargs: when an `argsSchema` is present, validated execution receives only schema fields plus defaults, hallucinated extra keys are stripped before `_run` / `_arun`, and usage counts do not increment on validation errors.
+- `PickleHandler.load` now mirrors upstream corrupted persistence behavior for the JSON-backed TS shim: missing or empty files still load as `{}`, while malformed saved data raises `pickle data was truncated` instead of being silently discarded.
 - `MCPToolResolver._resolve_native` now mirrors upstream deterministic native MCP resolver behavior for fake clients: when discovery yields no usable tools it logs a warning and returns `[[], []]`, and unexpected discovery failures are wrapped as native MCP tool discovery errors while still disconnecting the discovery client.
 
 ## Completed In Current AgentExecutor Behavior Pass

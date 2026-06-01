@@ -111,11 +111,14 @@ export class PickleHandler {
     if (!existsSync(this.filePath)) {
       return {};
     }
-    try {
-      const content = readFileSync(this.filePath, "utf8").trim();
-      return content ? JSON.parse(content) : {};
-    } catch {
+    const content = readFileSync(this.filePath, "utf8").trim();
+    if (!content) {
       return {};
+    }
+    try {
+      return JSON.parse(content) as unknown;
+    } catch (error) {
+      throw new Error("pickle data was truncated", { cause: error });
     }
   }
 }

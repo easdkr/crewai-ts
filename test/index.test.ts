@@ -2164,6 +2164,9 @@ describe("training utilities", () => {
 
       handler.clear();
       expect(handler.load()).toEqual({});
+
+      writeFileSync(filePath, "corrupted data", "utf8");
+      expect(() => handler.load()).toThrow("pickle data was truncated");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
