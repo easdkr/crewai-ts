@@ -754,6 +754,10 @@ import {
   extractAvailableExports,
   extractToolsMetadata,
   extract_available_exports,
+  _estimate_token_count,
+  _extract_summary_tags,
+  _format_messages_for_summary,
+  _split_messages_into_chunks,
   isValidTool,
   is_valid_tool,
   getCrewaiVersion,
@@ -5740,6 +5744,32 @@ describe("agent utility helpers", () => {
     expect(hasReachedMaxIterations(2, 3)).toBe(false);
     expect(extractTaskSection("Intro\n## Task\nResearch CrewAI\n---\n## Instructions\nUse sources")).toBe("Research CrewAI");
     expect(extractTaskSection("x".repeat(2005))).toBe(`${"x".repeat(2000)}\n... [truncated]`);
+  });
+
+  it("exposes upstream context summary helper methods", () => {
+    const messages: LLMMessage[] = [
+      { role: "system", content: "System rules" },
+      { role: "user", content: "Research CrewAI" },
+      { role: "assistant", content: null, tool_calls: [{ function: { name: "search" } }] } as LLMMessage & Record<string, unknown>,
+      { role: "tool", name: "search", content: "Result" } as LLMMessage & Record<string, unknown>,
+      { role: "user", content: [{ type: "text", text: "Follow up" }] } as LLMMessage,
+    ];
+
+    expect(_estimate_token_count("12345678")).toBe(2);
+    expect(_format_messages_for_summary(messages)).toBe([
+      "[USER]: Research CrewAI",
+      "[ASSISTANT]: [Called tools: search]",
+      "[TOOL_RESULT (search)]: Result",
+      "[USER]: Follow up",
+    ].join("\n\n"));
+    expect(_split_messages_into_chunks([
+      { role: "system", content: "skip" },
+      { role: "user", content: "12345678" },
+      { role: "assistant", content: "12345678" },
+      { role: "user", content: "1234" },
+    ], 3).map((chunk) => chunk.length)).toEqual([1, 2]);
+    expect(_extract_summary_tags("before <summary>Important summary</summary> after")).toBe("Important summary");
+    expect(_extract_summary_tags("No tags")).toBe("No tags");
   });
 
   it("parses ReAct agent output and normalizes string tool calls", async () => {

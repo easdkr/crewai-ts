@@ -275,6 +275,83 @@ export function summarizeMessages(messages: readonly LLMMessage[]): SummaryConte
 
 export const summarize_messages = summarizeMessages;
 
+export function _estimate_token_count(text: string): number {
+  return Math.floor(text.length / 4);
+}
+
+export function _format_messages_for_summary(messages: readonly LLMMessage[]): string {
+  const lines: string[] = [];
+  for (const message of messages) {
+    const record = message as unknown as Record<string, unknown>;
+    const role = typeof record.role === "string" ? record.role : "user";
+    if (role === "system") {
+      continue;
+    }
+    let content = record.content;
+    if (content === null || content === undefined) {
+      const toolCalls = Array.isArray(record.tool_calls) ? record.tool_calls : null;
+      const toolNames = toolCalls?.map((toolCall) => {
+        const toolCallRecord = toolCall as Record<string, unknown>;
+        const functionRecord = typeof toolCallRecord.function === "object" && toolCallRecord.function !== null
+          ? toolCallRecord.function as Record<string, unknown>
+          : null;
+        return typeof functionRecord?.name === "string" ? functionRecord.name : "unknown";
+      }) ?? [];
+      content = toolNames.length > 0
+        ? `[Called tools: ${toolNames.join(", ")}]`
+        : "";
+    } else if (Array.isArray(content)) {
+      const textParts = content
+        .filter((block): block is { type?: unknown; text?: unknown } => Boolean(block) && typeof block === "object")
+        .filter((block) => block.type === "text")
+        .map((block) => typeof block.text === "string" ? block.text : "")
+        .filter(Boolean);
+      content = textParts.length > 0 ? textParts.join(" ") : "[multimodal content]";
+    }
+
+    const label = role === "assistant"
+      ? "[ASSISTANT]:"
+      : role === "tool"
+        ? `[TOOL_RESULT (${typeof record.name === "string" ? record.name : "unknown"})]:`
+        : "[USER]:";
+    lines.push(`${label} ${String(content)}`);
+  }
+  return lines.join("\n\n");
+}
+
+export function _split_messages_into_chunks(messages: readonly LLMMessage[], max_tokens: number): LLMMessage[][] {
+  const nonSystem = messages.filter((message) => message.role !== "system");
+  if (nonSystem.length === 0) {
+    return [];
+  }
+  const chunks: LLMMessage[][] = [];
+  let currentChunk: LLMMessage[] = [];
+  let currentTokens = 0;
+  for (const message of nonSystem) {
+    const rawContent = (message as unknown as Record<string, unknown>).content;
+    const content = Array.isArray(rawContent)
+      ? JSON.stringify(rawContent)
+      : typeof rawContent === "string" ? rawContent : "";
+    const messageTokens = _estimate_token_count(content);
+    if (currentChunk.length > 0 && currentTokens + messageTokens > max_tokens) {
+      chunks.push(currentChunk);
+      currentChunk = [];
+      currentTokens = 0;
+    }
+    currentChunk.push(message);
+    currentTokens += messageTokens;
+  }
+  if (currentChunk.length > 0) {
+    chunks.push(currentChunk);
+  }
+  return chunks;
+}
+
+export function _extract_summary_tags(text: string): string {
+  const match = /<summary>([\s\S]*?)<\/summary>/.exec(text);
+  return (match?.[1] ?? text).trim();
+}
+
 export function showAgentLogs(_agent: unknown, _message: string): void {
   void _agent;
   void _message;
