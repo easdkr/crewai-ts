@@ -1027,6 +1027,9 @@ export abstract class FileSource {
   }
 }
 
+type FileUrlFetchResult = { content: Uint8Array | Buffer | string; contentType?: string | null };
+type FileUrlFetcher = (url: string) => FileUrlFetchResult | Promise<FileUrlFetchResult>;
+
 export class FilePath extends FileSource {
   readonly path: string;
   readonly maxSizeBytes: number;
@@ -1124,12 +1127,12 @@ export class FileUrl extends FileSource {
   readonly filename: string | null;
   private detectedContentType: string | null = null;
   private content: Uint8Array | null = null;
-  private readonly fetcher: ((url: string) => Promise<{ content: Uint8Array | Buffer | string; contentType?: string | null }>) | null;
+  private readonly fetcher: FileUrlFetcher | null;
 
   constructor(options: {
     url: string;
     filename?: string | null;
-    fetcher?: ((url: string) => Promise<{ content: Uint8Array | Buffer | string; contentType?: string | null }>) | null;
+    fetcher?: FileUrlFetcher | null;
   }) {
     super();
     if (!options.url.startsWith("http://") && !options.url.startsWith("https://")) {
@@ -1146,7 +1149,17 @@ export class FileUrl extends FileSource {
   }
 
   override read(): Uint8Array {
-    throw new Error("FileUrl.read requires an injected fetcher in this deterministic TypeScript shim. Use aread() with a fetcher or resolve URL-capable providers as UrlReference.");
+    if (this.content !== null) {
+      return this.content;
+    }
+    if (!this.fetcher) {
+      throw new Error("FileUrl.read requires an injected fetcher in this deterministic TypeScript shim. Use aread() with a fetcher or resolve URL-capable providers as UrlReference.");
+    }
+    const fetched = this.fetcher(this.url);
+    if (isPromiseLike(fetched)) {
+      throw new Error("FileUrl.read requires a synchronous injected fetcher in this deterministic TypeScript shim. Use aread() with async fetchers.");
+    }
+    return this.applyFetchedContent(fetched);
   }
 
   override async aread(): Promise<Uint8Array> {
@@ -1157,6 +1170,10 @@ export class FileUrl extends FileSource {
       throw new Error("FileUrl.aread requires an injected fetcher in this deterministic TypeScript shim.");
     }
     const fetched = await this.fetcher(this.url);
+    return this.applyFetchedContent(fetched);
+  }
+
+  private applyFetchedContent(fetched: FileUrlFetchResult): Uint8Array {
     this.content = typeof fetched.content === "string" ? Buffer.from(fetched.content) : Buffer.from(fetched.content);
     if (fetched.contentType) {
       this.detectedContentType = fetched.contentType.split(";")[0] ?? fetched.contentType;
@@ -1500,7 +1517,17 @@ function coerceFileSource(value: FileSourceInput): FileSource {
 }
 
 function supportsUrlReferences(provider: FileProvider): boolean {
+  if (["bedrock", "aws"].includes(provider.toLowerCase())) {
+    return false;
+  }
   return getConstraintsForProvider(provider)?.supportsUrlReferences ?? false;
+}
+
+function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
+  return (typeof value === "object" || typeof value === "function")
+    && value !== null
+    && "then" in value
+    && typeof (value as { then?: unknown }).then === "function";
 }
 
 function validateSize(

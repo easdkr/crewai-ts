@@ -2101,6 +2101,31 @@ describe("environment, logging, and file store utilities", () => {
     expect(resolver.resolve_files({ image }, "gemini").image).toBeInstanceOf(UrlReference);
   });
 
+  it("fetches upstream FileUrl content for Bedrock instead of returning URL references", async () => {
+    const syncUrl = new FileUrl({
+      url: "https://example.com/bedrock.png",
+      fetcher: () => ({
+        content: Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from("bedrock")]),
+        contentType: "image/png",
+      }),
+    });
+    const resolver = new FileResolver();
+    const resolved = resolver.resolve(new ImageFile({ source: syncUrl }), "bedrock");
+
+    expect(resolved).toBeInstanceOf(InlineBytes);
+    expect(resolved).not.toBeInstanceOf(UrlReference);
+    expect(Buffer.from((resolved as InlineBytes).data).toString("utf8", 8)).toBe("bedrock");
+
+    const asyncUrl = new FileUrl({
+      url: "https://example.com/bedrock-async.png",
+      fetcher: () => Promise.resolve({
+        content: Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from("async")]),
+        contentType: "image/png",
+      }),
+    });
+    await expect(resolver.aresolve(new ImageFile({ source: asyncUrl }), "bedrock")).resolves.toBeInstanceOf(InlineBytes);
+  });
+
   it("tracks upstream crewai-files upload cache lifecycle deterministically", async () => {
     const png = Buffer.concat([
       Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
