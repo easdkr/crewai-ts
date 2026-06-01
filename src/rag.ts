@@ -2352,7 +2352,10 @@ export class ChromaDBClient {
 
   search(params: BaseCollectionSearchParams): SearchResult[] {
     const normalized = normalizeSearchParams(params, this.defaultLimit, this.defaultScoreThreshold);
-    const collection = this.get_or_create_collection(normalized) as Record<string, unknown>;
+    const collection = this.callClient("get_or_create_collection", "getOrCreateCollection", {
+      name: sanitizeCollectionName(normalized.collection_name),
+      embedding_function: this.embeddingFunction,
+    }) as Record<string, unknown>;
     const result = callMethod(collection, "query", "query", {
       query_texts: [normalized.query],
       n_results: normalized.limit,
@@ -2365,7 +2368,10 @@ export class ChromaDBClient {
 
   async asearch(params: BaseCollectionSearchParams): Promise<SearchResult[]> {
     const normalized = normalizeSearchParams(params, this.defaultLimit, this.defaultScoreThreshold);
-    const collection = await this.aget_or_create_collection(normalized) as Record<string, unknown>;
+    const collection = await this.callClientAsync("get_or_create_collection", "getOrCreateCollection", {
+      name: sanitizeCollectionName(normalized.collection_name),
+      embedding_function: this.embeddingFunction,
+    }) as Record<string, unknown>;
     const result = await callMethodAsync(collection, "query", "query", {
       query_texts: [normalized.query],
       n_results: normalized.limit,

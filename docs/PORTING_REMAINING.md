@@ -123,6 +123,7 @@ When more goal budget is available, continue from the behavioral parity audits b
 - `ChromaDBClient.add_documents` / `aadd_documents` now mirror upstream upsert payload semantics by passing `metadatas: null` when an entire batch has no metadata.
 - `ChromaDBClient.add_documents` / `aadd_documents` now use upstream collection lookup payloads and avoid forwarding add-only fields such as `documents` or `batch_size` to the Chroma client.
 - `ChromaDBClient.search` / `asearch` now use the upstream default Chroma include ordering: `metadatas`, `documents`, then `distances`.
+- `ChromaDBClient.search` / `asearch` now use upstream collection lookup payloads and avoid forwarding search-only fields such as `query`, `limit`, or `include` to the Chroma client.
 - Added upstream-style `KnowledgeStorage` save/asave error conversion for embedding dimension mismatches.
 - Added upstream-style `KnowledgeStorage._get_client` plus collection-name helper aliases for storage extension compatibility.
 - Added embedding provider config-field compatibility for OpenAI, Azure, SentenceTransformer, VoyageAI, VertexAI, HuggingFace, Instructor, Jina, Ollama, OpenCLIP, Text2Vec, Google Generative AI, Bedrock, Cohere, ONNX, Roboflow, and WatsonX defaults plus direct provider attribute access.

@@ -9533,11 +9533,16 @@ describe("RAG configuration and factories", () => {
         distances: [[0]],
       })),
     };
+    const getOrCreateCollection = vi.fn(() => collection);
     const client = new ChromaDBClient({
-      get_or_create_collection: vi.fn(() => collection),
+      get_or_create_collection: getOrCreateCollection,
     }, (texts: readonly string[]) => texts.map((text) => [text.length]));
 
     expect(client.search({ collection_name: "docs", query: "CrewAI" })).toHaveLength(1);
+    expect(getOrCreateCollection).toHaveBeenCalledWith({
+      name: "docs",
+      embedding_function: client.embedding_function,
+    });
     expect(collection.query).toHaveBeenCalledWith({
       query_texts: ["CrewAI"],
       n_results: 5,
