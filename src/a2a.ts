@@ -3355,7 +3355,23 @@ export class A2AClientConfig {
   }
 }
 
-export class A2AConfig extends A2AClientConfig {}
+export class A2AConfig extends A2AClientConfig {
+  override migrateDeprecatedTransportFields(): this {
+    return super.migrateDeprecatedTransportFields();
+  }
+
+  override _migrate_deprecated_transport_fields(): this {
+    return super._migrate_deprecated_transport_fields();
+  }
+
+  override serializeResponseModel(value: unknown): unknown {
+    return super.serializeResponseModel(value);
+  }
+
+  override _serialize_response_model(value: unknown): unknown {
+    return super._serialize_response_model(value);
+  }
+}
 
 export type A2AServerConfigOptions = {
   name?: string | null;

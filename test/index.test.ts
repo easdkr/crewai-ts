@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { HTTPTransport as HookHTTPTransport } from "../src/llms-hooks-transport.js";
 import {
   A2AClientConfig,
+  A2AConfig,
   A2AError,
   A2AErrorCode,
   A2UIClientExtension,
@@ -5238,6 +5239,9 @@ describe("a2a utilities", () => {
     expect(transport.preferred).toBeNull();
     expect(client._migrate_deprecated_transport_fields()).toBe(client);
     expect(client._serialize_response_model({ name: "RemoteResponse" })).toBe("RemoteResponse");
+    const deprecatedClient = new A2AConfig({ endpoint: "https://remote.example.com/a2a" });
+    expect(deprecatedClient._migrate_deprecated_transport_fields()).toBe(deprecatedClient);
+    expect(deprecatedClient._serialize_response_model({ name: "DeprecatedResponse" })).toBe("DeprecatedResponse");
     expect(new A2AClientConfig({ endpoint: "https://remote.example.com/a2a" }).updates).toBeInstanceOf(StreamingConfig);
     expect(server.endpoint).toBe("http://localhost:9000");
     expect(server.transport.preferred).toBe(A2ATransport.GRPC);
@@ -10668,6 +10672,7 @@ describe("core crew runtime", () => {
     toolAdapter.configure_tools([]);
     const [convertedTool] = toolAdapter.tools() as Array<{ name: string; func: (input: unknown) => Promise<unknown> }>;
     expect(convertedTool?.name).toBe("echo_tool");
+    expect(toolAdapter.tools()).toBe(toolAdapter.convertedTools);
     await expect(convertedTool?.func("raw input")).resolves.toBe("raw input");
     expect(toolCalls).toEqual(["raw input"]);
     expect(events).toContain("agent_execution_started");

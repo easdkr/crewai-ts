@@ -363,6 +363,10 @@ export class LangGraphToolAdapter extends BaseToolAdapter {
     }));
     this.converted_tools = this.convertedTools;
   }
+
+  override tools(): unknown[] {
+    return this.convertedTools;
+  }
 }
 
 export class LangGraphConverterAdapter extends BaseConverterAdapter {
