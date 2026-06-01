@@ -7888,6 +7888,22 @@ describe("crew execution utilities", () => {
 
     expect(stringConfigCrew.agents[0]?.role).toBe("String Researcher");
     expect(stringConfigCrew.tasks[0]?.agent).toBe(stringConfigCrew.agents[0]);
+    expect(() => new Crew({
+      config: {
+        agents: [],
+        tasks: [],
+      },
+    })).toThrow("Config should have 'agents' and 'tasks'.");
+    expect(() => new Crew({
+      config: {
+        agents: [
+          { role: "Researcher", goal: "Find facts", backstory: "Careful analyst" },
+        ],
+        tasks: [
+          { description: "Research", expected_output: "A brief", agent: "Missing" },
+        ],
+      },
+    })).toThrow("No agent found with role 'Missing'.");
     crewFromConfig._setup_from_config();
     expect(crewFromConfig.agents[0]).toBeInstanceOf(Agent);
     expect(crewFromConfig.tasks[0]).toBeInstanceOf(Task);

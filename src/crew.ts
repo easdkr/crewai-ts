@@ -1191,12 +1191,7 @@ export class Crew {
   }
 
   createTask(taskConfig: Record<string, unknown>): Task {
-    const agentName = typeof taskConfig.agent === "string" ? taskConfig.agent : null;
-    const agent = agentName
-      ? this.agents.find((candidate) => candidate.role === agentName) ?? null
-      : taskConfig.agent instanceof Agent
-        ? taskConfig.agent
-        : null;
+    const agent = this.agentForTaskConfig(taskConfig);
     const { agent: _agent, ...taskOptions } = taskConfig;
     void _agent;
     return new Task({
@@ -1446,16 +1441,14 @@ export class Crew {
   private setupFromConfig(config: Record<string, unknown>): void {
     const agents = config.agents;
     const tasks = config.tasks;
-    if (!Array.isArray(agents) || !Array.isArray(tasks)) {
+    if (!Array.isArray(agents) || !Array.isArray(tasks) || agents.length === 0 || tasks.length === 0) {
       throw new Error("Config should have 'agents' and 'tasks'.");
     }
     this.process = parseProcess(config.process, this.process);
     this.agents = agents.map((agentConfig) => createAgentFromConfig(asRecord(agentConfig)));
-    const agentByRole = new Map(this.agents.map((agent) => [agent.role, agent]));
     this.tasks = tasks.map((taskConfig) => {
       const taskRecord = asRecord(taskConfig);
-      const agentName = typeof taskRecord.agent === "string" ? taskRecord.agent : null;
-      const agent = agentName ? agentByRole.get(agentName) ?? null : null;
+      const agent = this.agentForTaskConfig(taskRecord);
       const { agent: _agent, ...taskOptions } = taskRecord;
       void _agent;
       return new Task({
@@ -1465,6 +1458,21 @@ export class Crew {
         agent,
       });
     });
+  }
+
+  private agentForTaskConfig(taskConfig: Record<string, unknown>): Agent {
+    const agentRef = taskConfig.agent;
+    if (typeof agentRef === "string") {
+      const agent = this.agents.find((candidate) => candidate.role === agentRef);
+      if (agent) {
+        return agent;
+      }
+      throw new Error(`No agent found with role '${agentRef}'.`);
+    }
+    if (agentRef instanceof Agent) {
+      return agentRef;
+    }
+    throw new Error("Task config must include an agent role.");
   }
 
   private async withStreamDisabled<T>(run: () => Promise<T>): Promise<T> {
