@@ -13268,6 +13268,68 @@ describe("agent planning", () => {
     expect(PlannerObserver._parseObservationResponse("not json").remaining_plan_still_valid).toBe(false);
   });
 
+  it("observes completed planner steps by parsing deterministic LLM responses", () => {
+    const calls: LLMMessage[][] = [];
+    const observer = new PlannerObserver(
+      {
+        role: "Builder",
+        llm: {
+          call(messages: readonly LLMMessage[]) {
+            calls.push([...messages]);
+            return JSON.stringify({
+              step_completed_successfully: false,
+              key_information_learned: "build failed with exit code 1",
+              remaining_plan_still_valid: false,
+              needs_full_replan: true,
+              replan_reason: "build system is misconfigured",
+            });
+          },
+        },
+      },
+      { description: "Build the project", expected_output: "Successful build" },
+    );
+    const completed = new TodoItem({ step_number: 1, description: "Run make", status: TodoStatus.RUNNING });
+
+    const observation = observer.observe({
+      completed_step: completed,
+      result: "make: *** No rule to make target 'all'. Stop.",
+      all_completed: [],
+      remaining_todos: [],
+    });
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.[1]?.content).toContain("Build the project");
+    expect(observation.step_completed_successfully).toBe(false);
+    expect(observation.needs_full_replan).toBe(true);
+    expect(observation.replan_reason).toBe("build system is misconfigured");
+  });
+
+  it("falls back conservatively when planner observation LLM fails", () => {
+    const observer = new PlannerObserver(
+      {
+        role: "Builder",
+        llm: {
+          call() {
+            throw new Error("llm unavailable");
+          },
+        },
+      },
+      { description: "Build the project", expected_output: "Successful build" },
+    );
+    const completed = new TodoItem({ step_number: 1, description: "Run make", status: TodoStatus.RUNNING });
+
+    const observation = observer.observe({
+      completed_step: completed,
+      result: "Error: tool timeout",
+      all_completed: [],
+      remaining_todos: [],
+    });
+
+    expect(observation.step_completed_successfully).toBe(true);
+    expect(observation.remaining_plan_still_valid).toBe(true);
+    expect(observation.needs_full_replan).toBe(false);
+  });
+
   it("creates a default bounded low-effort PlanningConfig for planning true", () => {
     const agentInstance = new Agent({
       role: "Planner",

@@ -2307,7 +2307,46 @@ export class PlannerObserver {
     return this._resolveLlm();
   }
 
-  observe(step: string, result: unknown): StepObservation {
+  observe(
+    stepOrOptions: string | TodoItem | {
+      completedStep?: TodoItem;
+      completed_step?: TodoItem;
+      result?: unknown;
+      allCompleted?: readonly TodoItem[];
+      all_completed?: readonly TodoItem[];
+      remainingTodos?: readonly TodoItem[];
+      remaining_todos?: readonly TodoItem[];
+    },
+    result?: unknown,
+    allCompleted: readonly TodoItem[] = [],
+    remainingTodos: readonly TodoItem[] = [],
+  ): StepObservation {
+    if (typeof stepOrOptions !== "string") {
+      const options = stepOrOptions instanceof TodoItem
+        ? { completedStep: stepOrOptions, result, allCompleted, remainingTodos }
+        : stepOrOptions;
+      const completedStep = options.completedStep ?? options.completed_step;
+      if (completedStep instanceof TodoItem) {
+        const stepResult = options.result;
+        const completed = options.allCompleted ?? options.all_completed ?? [];
+        const remaining = options.remainingTodos ?? options.remaining_todos ?? [];
+        const messages = this._buildObservationMessages(completedStep, stringifyStepResult(stepResult), completed, remaining);
+        try {
+          const response = callPlannerLlm(this.llm, messages);
+          if (response !== null) {
+            return PlannerObserver._parseObservationResponse(response);
+          }
+        } catch {
+          return new StepObservation({
+            step_completed_successfully: true,
+            key_information_learned: stringifyStepResult(stepResult),
+            remaining_plan_still_valid: true,
+            needs_full_replan: false,
+          });
+        }
+      }
+    }
+    const step = typeof stepOrOptions === "string" ? stepOrOptions : stringifyStepResult(stepOrOptions);
     return new StepObservation({
       stepCompletedSuccessfully: true,
       keyInformationLearned: `${step}${result === undefined ? "" : `: ${typeof result === "string" ? result : JSON.stringify(result)}`}`,
@@ -2562,6 +2601,15 @@ function asPlannerRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value)
     ? value as Record<string, unknown>
     : null;
+}
+
+function callPlannerLlm(llm: unknown, messages: readonly LLMMessage[]): unknown {
+  const record = asPlannerRecord(llm);
+  const call = record?.call;
+  if (typeof call === "function") {
+    return call.call(llm, messages);
+  }
+  return null;
 }
 
 function parseObservationPayload(response: unknown): unknown {
