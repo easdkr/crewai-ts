@@ -10,7 +10,12 @@ export type InputResponse = {
 };
 
 export type InputProvider = {
-  requestInput(
+  requestInput?(
+    message: string,
+    flow: Flow<object>,
+    metadata?: Record<string, unknown> | null,
+  ): MaybePromise<string | InputResponse | null>;
+  request_input?(
     message: string,
     flow: Flow<object>,
     metadata?: Record<string, unknown> | null,

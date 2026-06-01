@@ -16463,6 +16463,40 @@ describe("flow runtime", () => {
     await expect(flow.kickoff()).resolves.toBe("from global");
   });
 
+  it("resolves upstream class-level input_provider before global flowConfig", async () => {
+    const flowMessages: string[] = [];
+    const globalMessages: string[] = [];
+    const flowProvider = {
+      request_input: (message: string) => {
+        flowMessages.push(message);
+        return "from flow";
+      },
+    };
+    const globalProvider = {
+      requestInput: (message: string) => {
+        globalMessages.push(message);
+        return "from global";
+      },
+    };
+
+    class AskFlow extends Flow {
+      static input_provider = flowProvider;
+
+      gather() {
+        return this.ask("Question?");
+      }
+    }
+
+    flowConfig.inputProvider = globalProvider;
+    const flow = new AskFlow();
+    decorateMethod(AskFlow, "gather", start() as unknown as Decorator).call(flow);
+
+    await expect(flow.kickoff()).resolves.toBe("from flow");
+    expect(flow._resolve_input_provider()).toBe(flowProvider);
+    expect(flowMessages).toEqual(["Question?"]);
+    expect(globalMessages).toEqual([]);
+  });
+
   it("exposes upstream flow input provider and human feedback private helper aliases", async () => {
     const localProvider = { requestInput: () => "local" };
     const globalProvider = { requestInput: () => "global" };

@@ -1137,6 +1137,7 @@ export class Flow<TState extends object = Record<string, unknown>> {
   readonly name: string | null;
   readonly maxMethodCalls: number;
   inputProvider: InputProvider | null;
+  input_provider: InputProvider | null;
   persistence: FlowPersistence | null;
   stream: boolean;
   checkpoint: CheckpointConfig | false | null;
@@ -1164,6 +1165,7 @@ export class Flow<TState extends object = Record<string, unknown>> {
     this.name = options.name ?? null;
     this.maxMethodCalls = options.maxMethodCalls ?? 100;
     this.inputProvider = options.inputProvider ?? null;
+    this.input_provider = this.inputProvider;
     this.persistence = options.persistence ?? null;
     this.stream = options.stream ?? false;
     this.checkpoint = coerceCheckpointConfig(options.checkpoint);
@@ -2111,7 +2113,14 @@ export class Flow<TState extends object = Record<string, unknown>> {
     },
   ): MaybePromise<string | null> {
     try {
-      const response = provider.requestInput(context.message, this, context.metadata);
+      let response: string | InputResponse | null | PromiseLike<string | InputResponse | null>;
+      if (provider.requestInput) {
+        response = provider.requestInput.call(provider, context.message, this, context.metadata);
+      } else if (provider.request_input) {
+        response = provider.request_input.call(provider, context.message, this, context.metadata);
+      } else {
+        throw new Error("Resolved input_provider does not implement the InputProvider protocol (missing request_input).");
+      }
       if (isPromiseLike(response)) {
         return this.resolveAsyncInput(response, {
           flowName: context.flowName,
@@ -2162,7 +2171,18 @@ export class Flow<TState extends object = Record<string, unknown>> {
   }
 
   private resolveInputProvider(): InputProvider {
-    return this.inputProvider ?? flowConfig.inputProvider ?? new ConsoleInputProvider();
+    const constructorProvider = (this.constructor as {
+      inputProvider?: InputProvider | null;
+      input_provider?: InputProvider | null;
+    }).inputProvider ?? (this.constructor as {
+      inputProvider?: InputProvider | null;
+      input_provider?: InputProvider | null;
+    }).input_provider ?? null;
+    return this.inputProvider
+      ?? this.input_provider
+      ?? constructorProvider
+      ?? flowConfig.inputProvider
+      ?? new ConsoleInputProvider();
   }
 
   _resolveInputProvider(): InputProvider {
