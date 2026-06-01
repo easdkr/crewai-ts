@@ -1038,8 +1038,8 @@ export class Crew {
       promptFile: this.promptFile,
       shareCrew: this.shareCrew,
       memory: this.resolvedMemory ?? this.memory,
-      knowledge: this.knowledge,
-      knowledgeSources: this.knowledgeSources,
+      knowledge: copyKnowledge(this.knowledge),
+      knowledgeSources: [...this.knowledgeSources],
       managerAgent,
       managerLlm: this.managerLlm,
       functionCallingLlm: this.functionCallingLlm,
@@ -2832,6 +2832,14 @@ function bindMemoryView(value: unknown, backing: Memory): void {
   if (typeof bind === "function") {
     bind.call(value, backing);
   }
+}
+
+function copyKnowledge(knowledge: Knowledge | null): Knowledge | null {
+  if (!knowledge) {
+    return null;
+  }
+  const prototype = Object.getPrototypeOf(knowledge) as object | null;
+  return Object.assign(Object.create(prototype) as Knowledge, knowledge);
 }
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {

@@ -10948,6 +10948,20 @@ describe("core crew runtime", () => {
     expect(copy.execution_context).not.toBe(context);
     expect(copy.execution_context?.currentTaskId).toBe("task-1");
     expect(copy.checkpoint_inputs).toEqual({ topic: "CrewAI" });
+
+    const crewKnowledgeSource = new StringKnowledgeSource("Copied crew knowledge source.");
+    const crewKnowledge = new Knowledge({ sources: [new StringKnowledgeSource("Copied crew knowledge.")] });
+    const knowledgeCrew = new Crew({
+      agents: [new Agent({ role: "Knowledge Agent", goal: "Copy crew knowledge", backstory: "Checks copy behavior" })],
+      knowledge: crewKnowledge,
+      knowledgeSources: [crewKnowledgeSource],
+    });
+    const knowledgeCopy = knowledgeCrew.copy();
+    expect(knowledgeCopy.knowledge).not.toBe(crewKnowledge);
+    expect(knowledgeCopy.knowledge?.query("Copied", { scoreThreshold: null })[0]?.content)
+      .toContain("Copied crew knowledge.");
+    expect(knowledgeCopy.knowledgeSources).not.toBe(knowledgeCrew.knowledgeSources);
+    expect(knowledgeCopy.knowledgeSources[0]).toBe(crewKnowledgeSource);
   });
 
   it("uses previous task outputs as default context when context is unspecified", async () => {
