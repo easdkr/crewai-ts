@@ -423,11 +423,11 @@ export function buildRichFieldDescription(propSchema: JsonSchema): string {
   return parts.join(". ");
 }
 
-export function _inline_top_level_ref(schema: JsonSchema): JsonSchema {
+export function _inline_top_level_ref(schema: JsonSchema, rootSchema: JsonSchema = schema): JsonSchema {
   const copy = cloneSchema(schema);
   const ref = copy.$ref;
   const defName = typeof ref === "string" ? localDefName(ref) : null;
-  const defs = isSchemaRecord(copy.$defs) ? copy.$defs : {};
+  const defs = isSchemaRecord(copy.$defs) ? copy.$defs : isSchemaRecord(rootSchema.$defs) ? rootSchema.$defs : {};
   const defSchema = defName ? defs[defName] : null;
   if (isSchemaRecord(defSchema)) {
     const resolved = cloneSchema(defSchema);
@@ -517,6 +517,8 @@ export type CreatedSchemaModel = {
 };
 
 type CreateModelOptions = {
+  rootSchema?: JsonSchema | null;
+  root_schema?: JsonSchema | null;
   modelName?: string | null;
   model_name?: string | null;
   enrichDescriptions?: boolean;
@@ -528,6 +530,12 @@ function coerceCreateModelOptions(value: unknown): CreateModelOptions {
     return {};
   }
   const options: CreateModelOptions = {};
+  if (isSchemaRecord(value.rootSchema)) {
+    options.rootSchema = value.rootSchema;
+  }
+  if (isSchemaRecord(value.root_schema)) {
+    options.root_schema = value.root_schema;
+  }
   if (typeof value.modelName === "string") {
     options.modelName = value.modelName;
   }
@@ -881,10 +889,12 @@ export function createModelFromSchema(
     ?? options.model_name
     ?? (typeof schema.title === "string" ? schema.title : "DynamicModel");
   const enrichDescriptions = options.enrichDescriptions ?? options.enrich_descriptions ?? false;
-  const resolvedSchema = forceAdditionalPropertiesFalse(_inline_top_level_ref(cloneSchema(schema)));
+  const rootSchema = forceAdditionalPropertiesFalse(cloneSchema(options.rootSchema ?? options.root_schema ?? schema));
+  const resolvedSchema = forceAdditionalPropertiesFalse(_inline_top_level_ref(cloneSchema(schema), rootSchema));
   const normalizedSchema = Array.isArray(resolvedSchema.allOf) ? _merge_all_of_schemas(resolvedSchema.allOf.filter(isSchemaRecord), resolvedSchema) : resolvedSchema;
-  validateSupportedSchemaTypes(normalizedSchema, normalizedSchema);
-  const modelFields = buildModelFields(normalizedSchema, normalizedSchema, enrichDescriptions);
+  const effectiveRoot = isSchemaRecord(normalizedSchema.$defs) ? normalizedSchema : rootSchema;
+  validateSupportedSchemaTypes(normalizedSchema, effectiveRoot);
+  const modelFields = buildModelFields(normalizedSchema, effectiveRoot, enrichDescriptions);
   return {
     name: modelName,
     __name__: modelName,
@@ -892,7 +902,7 @@ export function createModelFromSchema(
     model_fields: modelFields,
     modelFields,
     modelValidate(value: unknown): unknown {
-      return validateSchemaValue(normalizedSchema, value, modelName, normalizedSchema);
+      return validateSchemaValue(normalizedSchema, value, modelName, effectiveRoot);
     },
     model_validate(value: unknown): unknown {
       return this.modelValidate(value);

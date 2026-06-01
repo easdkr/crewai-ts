@@ -2570,6 +2570,30 @@ describe("schema utilities", () => {
     });
     expect(() => Model.model_validate({ children: [] })).toThrow(/name/);
   });
+
+  it("resolves created schema model refs from an explicit root schema", () => {
+    const rootSchema = {
+      $defs: {
+        Item: {
+          type: "object",
+          properties: {
+            id: { type: "integer" },
+            label: { type: "string" },
+          },
+          required: ["id"],
+        },
+      },
+    };
+    const Model = create_model_from_schema(
+      { $ref: "#/$defs/Item" },
+      { root_schema: rootSchema, model_name: "Item" },
+    );
+
+    expect(Model.__name__).toBe("Item");
+    expect(Model.model_validate({ id: 1, label: "CrewAI" })).toEqual({ id: 1, label: "CrewAI" });
+    expect(Model.model_validate({ id: 1 })).toEqual({ id: 1, label: null });
+    expect(() => Model.model_validate({ label: "missing id" })).toThrow(/id/);
+  });
 });
 
 describe("i18n and prompt utilities", () => {
