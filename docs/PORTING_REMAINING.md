@@ -35,6 +35,23 @@ Remaining work should be classified by behavior parity:
 - **Intentionally unsupported in this port:** cloud subscription/platform features, network exporters, live provider SDK clients, or Python-only runtime integrations that should not enter the default release gate.
 - **Missing behavior:** upstream user workflow or example is not supported and can be verified by a focused failing test.
 
+Release readiness is decided by the full validation gate plus this behavior classification, not by commit count or by driving the parity scripts beyond `missing=0`.
+
+## Behavior Parity Release Map
+
+Use this map before starting any new porting change. If a behavior lands in **covered** or **shimmed**, protect it with deterministic tests and keep it in the default gate. If it lands in **unsupported**, document the boundary and do not add runtime code unless the project explicitly chooses an optional integration gate. If it lands in **missing**, add a focused failing behavior test before implementation.
+
+| Area | Classification | Release gate expectation |
+| --- | --- | --- |
+| Root exports, subpath exports, and public class method names | Covered in the default deterministic gate | Regression-only parity checks. Do not mine these scripts for new alias-only work while `missing=0`. |
+| Core Agent, Task, Crew, Flow, Memory, Knowledge, Tool, and Process workflows | Covered in the default deterministic gate | Behavior tests should model upstream examples and tests with local LLM/tool fixtures. |
+| Experimental `AgentExecutor` plan-and-execute workflow | Covered in the default deterministic gate, with behavior audit continuing | Continue only from upstream behavior gaps such as planning execution, tool observation, replanning, memory, human feedback, and native tool message semantics. Avoid private helper alias churn. |
+| Provider request/response adapters | Documented deterministic shim | Test SDK-shaped request building, response parsing, streaming accumulation, usage extraction, file conversion, and error classification with fixtures. Live credentials and real SDK calls stay outside the default gate. |
+| Storage, RAG, and vector backends | Documented deterministic shim | In-memory/fake-client lifecycle, filtering, reset, async aliases, and error conversion are release-gated. Real Qdrant, LanceDB, ChromaDB, and provider SDK coverage is optional only. |
+| Telemetry, tracing, and evaluation listeners | Documented deterministic shim | Local span/event recording and evaluator behavior are release-gated. Remote exporters and OTLP upload paths are optional only. |
+| CrewAI cloud/platform subscription, enterprise automations, hosted triggers, and remote dashboards | Intentionally unsupported in this port | Keep as documented boundaries. Do not port network/platform side effects into the default runtime. |
+| Python-only optional runtime integrations | Intentionally unsupported or shimmed case-by-case | Prefer injected/local extractors or clear errors. Do not bundle Python-only dependencies into the TS package. |
+
 ## Intentionally Unsupported Or Shimmed Areas
 
 - CrewAI cloud/platform subscription features are outside this port's scope unless they can be represented as local deterministic metadata with no network side effects.
@@ -57,8 +74,8 @@ High-value behavior audits still worth running:
    - Any failing local example becomes the next behavior test.
 
 2. **Experimental `AgentExecutor` plan-and-execute behavior**
-   - Current TS implementation covers routing/state basics and many planning data structures.
-   - Audit with behavior tests for end-to-end plan generation, isolated step execution, observation/replan decisions, native tool execution, and human feedback loops.
+   - Current TS implementation covers deterministic finalization, dynamic replanning triggers, object-style invoke setup, tool observations, native tool messages, memory save, human feedback, and plan refinement semantics.
+   - Continue auditing only with behavior tests for end-to-end plan generation, isolated step execution, observation/replan decisions, native tool execution, and human feedback loops.
    - Do not add private helper aliases unless the behavior test requires them.
 
 3. **SDK-backed provider response translation**
