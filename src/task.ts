@@ -281,6 +281,7 @@ export class Task {
   checkpointOriginalOutputFile: string | null;
   checkpoint_original_output_file: string | null;
   private executionPlan: string | null = null;
+  private readonly guardrailRetryCounts = new Map<number, number>();
 
   constructor(options: TaskOptions) {
     this.id = options.id ?? randomUUID();
@@ -788,12 +789,13 @@ export class Task {
       return taskOutput;
     }
     let output = taskOutput;
+    let currentRetryCount = guardrailIndex === undefined || guardrailIndex === null
+      ? this.retryCount
+      : this.guardrailRetryCounts.get(guardrailIndex) ?? 0;
     for (let attempt = 0; attempt <= this.guardrailMaxRetries; attempt += 1) {
-      this.retryCount = attempt;
-      this.retry_count = this.retryCount;
       crewaiEventBus.emit(this, new LLMGuardrailStartedEvent({
         guardrail,
-        retry_count: attempt,
+        retry_count: currentRetryCount,
         from_task: this,
         from_agent: agent,
       }));
@@ -805,7 +807,7 @@ export class Task {
         success,
         result: nextValue,
         ...(success ? {} : { error: nextValue }),
-        retry_count: attempt,
+        retry_count: currentRetryCount,
         from_task: this,
         from_agent: agent,
       }));
@@ -820,6 +822,14 @@ export class Task {
           ? "guardrail"
           : `guardrail ${String(guardrailIndex)}`;
         throw new Error(`Task failed ${guardrailName} validation after ${String(this.guardrailMaxRetries)} retries. Last error: ${String(nextValue)}`);
+      }
+      if (guardrailIndex === undefined || guardrailIndex === null) {
+        this.retryCount += 1;
+        this.retry_count = this.retryCount;
+        currentRetryCount = this.retryCount;
+      } else {
+        currentRetryCount += 1;
+        this.guardrailRetryCounts.set(guardrailIndex, currentRetryCount);
       }
       const context = [
         `Validation error: ${String(nextValue)}`,
@@ -957,7 +967,7 @@ export class Task {
       });
       let output = await this.createOutput(raw, agent, renderedTask);
 
-      for (const [index, guardrail] of this.effectiveGuardrails().entries()) {
+      for (const [guardrail, index] of this.effectiveGuardrailEntries()) {
         output = await this.runGuardrail(guardrail, output, agent, index, inputs, tools, renderedTask);
       }
       output = await this.handleHumanInput(output, agent, inputs, tools, renderedTask, executionOptions);
@@ -1066,30 +1076,30 @@ export class Task {
     });
   }
 
-  private effectiveGuardrails(): readonly Guardrail[] {
-    return this.guardrails.length > 0
-      ? this.guardrails
-      : this.guardrail
-        ? [this.guardrail]
-        : [];
+  private effectiveGuardrailEntries(): readonly (readonly [Guardrail, number | null])[] {
+    if (this.guardrails.length > 0) {
+      return this.guardrails.map((guardrail, index) => [guardrail, index] as const);
+    }
+    return this.guardrail ? [[this.guardrail, null] as const] : [];
   }
 
   private async runGuardrail(
     guardrail: Guardrail,
     initialOutput: TaskOutput,
     agent: Agent,
-    index: number,
+    index: number | null,
     inputs: InputValues = {},
     tools: readonly Tool[] = [],
     renderedTask?: RenderedTask,
   ): Promise<TaskOutput> {
     let output = initialOutput;
+    let currentRetryCount = index === null
+      ? this.retryCount
+      : this.guardrailRetryCounts.get(index) ?? 0;
     for (let attempt = 0; attempt <= this.guardrailMaxRetries; attempt += 1) {
-      this.retryCount = attempt;
-      this.retry_count = this.retryCount;
       crewaiEventBus.emit(this, new LLMGuardrailStartedEvent({
         guardrail,
-        retry_count: attempt,
+        retry_count: currentRetryCount,
         from_task: this,
         from_agent: agent,
       }));
@@ -1101,7 +1111,7 @@ export class Task {
         success,
         result: nextValue,
         ...(success ? {} : { error: nextValue }),
-        retry_count: attempt,
+        retry_count: currentRetryCount,
         from_task: this,
         from_agent: agent,
       }));
@@ -1109,7 +1119,16 @@ export class Task {
         return await this.normalizeGuardrailOutput(nextValue, output, agent);
       }
       if (attempt === this.guardrailMaxRetries) {
-        throw new Error(`Task failed guardrail ${String(index)} validation after ${String(this.guardrailMaxRetries)} retries. Last error: ${String(nextValue)}`);
+        const guardrailName = index === null ? "guardrail" : `guardrail ${String(index)}`;
+        throw new Error(`Task failed ${guardrailName} validation after ${String(this.guardrailMaxRetries)} retries. Last error: ${String(nextValue)}`);
+      }
+      if (index === null) {
+        this.retryCount += 1;
+        this.retry_count = this.retryCount;
+        currentRetryCount = this.retryCount;
+      } else {
+        currentRetryCount += 1;
+        this.guardrailRetryCounts.set(index, currentRetryCount);
       }
       const context = [
         `Validation error: ${String(nextValue)}`,
@@ -1198,7 +1217,7 @@ export class Task {
         task: this,
       });
       output = await this.createOutput(raw, agent, renderedTask);
-      for (const [index, guardrail] of this.effectiveGuardrails().entries()) {
+      for (const [guardrail, index] of this.effectiveGuardrailEntries()) {
         output = await this.runGuardrail(guardrail, output, agent, index, inputs, tools, renderedTask);
       }
     }

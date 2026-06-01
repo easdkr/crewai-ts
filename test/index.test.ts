@@ -19396,6 +19396,72 @@ describe("task guardrails", () => {
 
     expect(events.map((event) => event.type)).toEqual(["llm_guardrail_started"]);
   });
+
+  it("reports single guardrail retry exhaustion without a list index", async () => {
+    const agentInstance = new Agent({
+      role: "Writer",
+      goal: "Write reports",
+      backstory: "Careful writer",
+      llm: () => "draft",
+    });
+    const taskInstance = new Task({
+      description: "Write",
+      expectedOutput: "A report",
+      agent: agentInstance,
+      guardrailMaxRetries: 1,
+      guardrail: () => [false, "still invalid"],
+    });
+
+    await expect(taskInstance.execute()).rejects.toThrow(
+      "Task failed guardrail validation after 1 retries. Last error: still invalid",
+    );
+  });
+
+  it("preserves indexed guardrail retry counts across helper calls", async () => {
+    const startedRetryCounts: number[] = [];
+    crewaiEventBus.on("llm_guardrail_started", (_source, event) => {
+      startedRetryCounts.push(event.retry_count);
+    });
+    const agentInstance = new Agent({
+      role: "Writer",
+      goal: "Write reports",
+      backstory: "Careful writer",
+      llm: () => "fixed",
+    });
+    const taskInstance = new Task({
+      description: "Write",
+      expectedOutput: "A report",
+      guardrailMaxRetries: 1,
+    });
+    const output = new TaskOutput({
+      description: "Write",
+      expectedOutput: "A report",
+      raw: "draft",
+      agent: "Writer",
+    });
+    let attempts = 0;
+
+    await taskInstance._invoke_guardrail_function(
+      output,
+      agentInstance,
+      [],
+      () => {
+        attempts += 1;
+        return attempts === 1 ? [false, "needs revision"] : [true, "fixed"];
+      },
+      0,
+    );
+    await taskInstance._invoke_guardrail_function(
+      output,
+      agentInstance,
+      [],
+      () => [true, "still fixed"],
+      0,
+    );
+
+    expect(startedRetryCounts.slice(-3)).toEqual([0, 1, 1]);
+    expect(taskInstance.retry_count).toBe(0);
+  });
 });
 
 describe("task execution tracking", () => {
