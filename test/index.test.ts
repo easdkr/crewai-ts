@@ -13136,6 +13136,27 @@ describe("agent planning", () => {
     expect(todos.get_ready_todos().map((todo) => todo.step_number)).toEqual([3]);
   });
 
+  it("preserves empty string todo results while ignoring null overwrites", () => {
+    const todos = new TodoList({
+      items: [
+        { step_number: 1, description: "Completed" },
+        { step_number: 2, description: "Failed" },
+        { step_number: 3, description: "Existing", result: "existing result" },
+      ],
+    });
+
+    todos.mark_completed(1, "");
+    todos.mark_failed(2, "");
+    todos.mark_completed(3, null);
+
+    expect(todos.get_by_step_number(1)?.status).toBe(TodoStatus.COMPLETED);
+    expect(todos.get_by_step_number(1)?.result).toBe("");
+    expect(todos.get_by_step_number(2)?.status).toBe(TodoStatus.FAILED);
+    expect(todos.get_by_step_number(2)?.result).toBe("");
+    expect(todos.get_by_step_number(3)?.status).toBe(TodoStatus.COMPLETED);
+    expect(todos.get_by_step_number(3)?.result).toBe("existing result");
+  });
+
   it("exposes upstream StepObservation refinement coercion helper", () => {
     const single = { step_number: 3, new_description: "Pick the best option" };
 
