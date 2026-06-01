@@ -9492,6 +9492,35 @@ describe("RAG configuration and factories", () => {
     expect(fake.collections.size).toBe(0);
   });
 
+  it("uses upstream ChromaDB collection create and get payload shapes", () => {
+    const collection = new FakeChromaCollection();
+    const createCollection = vi.fn();
+    const getOrCreateCollection = vi.fn(() => collection);
+    const client = new ChromaDBClient({
+      create_collection: createCollection,
+      get_or_create_collection: getOrCreateCollection,
+    }, (texts: readonly string[]) => texts.map((text) => [text.length]));
+
+    client.create_collection({ collection_name: "docs", metadata: { owner: "crew" }, get_or_create: true });
+    expect(createCollection).toHaveBeenCalledWith({
+      name: "docs",
+      configuration: undefined,
+      metadata: { owner: "crew", "hnsw:space": "cosine" },
+      embedding_function: client.embedding_function,
+      data_loader: undefined,
+      get_or_create: true,
+    });
+
+    expect(client.get_or_create_collection({ collection_name: "docs" })).toBe(collection);
+    expect(getOrCreateCollection).toHaveBeenCalledWith({
+      name: "docs",
+      configuration: undefined,
+      metadata: { "hnsw:space": "cosine" },
+      embedding_function: client.embedding_function,
+      data_loader: undefined,
+    });
+  });
+
   it("passes null ChromaDB metadatas when every added document omits metadata", () => {
     const collection = { upsert: vi.fn() };
     const getOrCreateCollection = vi.fn(() => collection);

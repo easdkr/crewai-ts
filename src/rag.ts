@@ -2263,11 +2263,7 @@ export class ChromaDBClient {
   }
 
   create_collection(params: BaseCollectionParams): void {
-    this.callClient("create_collection", "createCollection", {
-      name: sanitizeCollectionName(collectionNameFrom(params)),
-      metadata: normalizeChromaMetadata(params.metadata),
-      ...params,
-    });
+    this.callClient("create_collection", "createCollection", this.chromaCollectionPayload(params, true));
   }
 
   createCollection(params: BaseCollectionParams): void {
@@ -2275,20 +2271,11 @@ export class ChromaDBClient {
   }
 
   async acreate_collection(params: BaseCollectionParams): Promise<void> {
-    await this.callClientAsync("create_collection", "createCollection", {
-      name: sanitizeCollectionName(collectionNameFrom(params)),
-      metadata: normalizeChromaMetadata(params.metadata),
-      ...params,
-    });
+    await this.callClientAsync("create_collection", "createCollection", this.chromaCollectionPayload(params, true));
   }
 
   get_or_create_collection(params: BaseCollectionParams): unknown {
-    return this.callClient("get_or_create_collection", "getOrCreateCollection", {
-      name: sanitizeCollectionName(collectionNameFrom(params)),
-      metadata: normalizeChromaMetadata(params.metadata),
-      embedding_function: this.embeddingFunction,
-      ...params,
-    });
+    return this.callClient("get_or_create_collection", "getOrCreateCollection", this.chromaCollectionPayload(params, false));
   }
 
   getOrCreateCollection(params: BaseCollectionParams): unknown {
@@ -2296,12 +2283,7 @@ export class ChromaDBClient {
   }
 
   async aget_or_create_collection(params: BaseCollectionParams): Promise<unknown> {
-    return this.callClientAsync("get_or_create_collection", "getOrCreateCollection", {
-      name: sanitizeCollectionName(collectionNameFrom(params)),
-      metadata: normalizeChromaMetadata(params.metadata),
-      embedding_function: this.embeddingFunction,
-      ...params,
-    });
+    return this.callClientAsync("get_or_create_collection", "getOrCreateCollection", this.chromaCollectionPayload(params, false));
   }
 
   add_documents(params: BaseCollectionAddParams): void {
@@ -2418,6 +2400,20 @@ export class ChromaDBClient {
 
   private async callClientAsync(snakeName: string, camelName: string, params: Record<string, unknown>): Promise<unknown> {
     return callMethodAsync(this.client, snakeName, camelName, params);
+  }
+
+  private chromaCollectionPayload(params: BaseCollectionParams, includeGetOrCreate: boolean): Record<string, unknown> {
+    const payload: Record<string, unknown> = {
+      name: sanitizeCollectionName(collectionNameFrom(params)),
+      configuration: params.configuration,
+      metadata: normalizeChromaMetadata(params.metadata),
+      embedding_function: params.embedding_function ?? params.embeddingFunction ?? this.embeddingFunction,
+      data_loader: params.data_loader ?? params.dataLoader,
+    };
+    if (includeGetOrCreate) {
+      payload.get_or_create = params.get_or_create ?? params.getOrCreate ?? false;
+    }
+    return payload;
   }
 }
 

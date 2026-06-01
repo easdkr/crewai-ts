@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 740 passing tests.
+- Test suite: 741 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -124,6 +124,7 @@ When more goal budget is available, continue from the behavioral parity audits b
 - `ChromaDBClient.add_documents` / `aadd_documents` now use upstream collection lookup payloads and avoid forwarding add-only fields such as `documents` or `batch_size` to the Chroma client.
 - `ChromaDBClient.search` / `asearch` now use the upstream default Chroma include ordering: `metadatas`, `documents`, then `distances`.
 - `ChromaDBClient.search` / `asearch` now use upstream collection lookup payloads and avoid forwarding search-only fields such as `query`, `limit`, or `include` to the Chroma client.
+- `ChromaDBClient.create_collection` / `get_or_create_collection` and async counterparts now use upstream SDK payload shapes without forwarding wrapper-only `collection_name` fields.
 - Added upstream-style `KnowledgeStorage` save/asave error conversion for embedding dimension mismatches.
 - Added upstream-style `KnowledgeStorage._get_client` plus collection-name helper aliases for storage extension compatibility.
 - Added embedding provider config-field compatibility for OpenAI, Azure, SentenceTransformer, VoyageAI, VertexAI, HuggingFace, Instructor, Jina, Ollama, OpenCLIP, Text2Vec, Google Generative AI, Bedrock, Cohere, ONNX, Roboflow, and WatsonX defaults plus direct provider attribute access.
