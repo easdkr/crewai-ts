@@ -587,8 +587,9 @@ export class ReasoningEfficiencyEvaluator extends BaseEvaluator {
       return new EvaluationScore({ score: null, feedback: "Insufficient LLM calls to evaluate reasoning efficiency." });
     }
     const totalTokens = llmCalls.reduce<number>((total, call) => total + toNumberOrZero((asNullableRecord(call) ?? {}).total_tokens), 0);
-    const loopDetected = detectReasoningLoops(llmCalls);
-    const pattern = analyzeReasoningPattern(llmCalls);
+    const [loopDetected] = this._detect_loops(llmCalls);
+    const patternDetails = this._analyze_reasoning_patterns(llmCalls);
+    const pattern = patternDetails.primary_pattern;
     const prompt: LLMMessage[] = [
       {
         role: "system",
@@ -631,6 +632,97 @@ Evaluate the reasoning efficiency of this agent based on these interaction patte
       feedbackPrefix: "Feedback",
     };
     return isPromiseLike(response) ? Promise.resolve(response).then((value) => parseDetailedEvaluatorScore(value, config)) : parseDetailedEvaluatorScore(response, config);
+  }
+
+  _detect_loops(llmCalls: readonly unknown[]): [boolean, Array<Record<string, unknown>>] {
+    const messages = llmCalls.map(getReasoningText).filter((message) => message.length > 0);
+    const loopDetails: Array<Record<string, unknown>> = [];
+    for (let i = 0; i < messages.length - 2; i += 1) {
+      for (let j = i + 1; j < messages.length - 1; j += 1) {
+        const similarity = this._calculate_text_similarity(messages[i] ?? "", messages[j] ?? "");
+        if (similarity > 0.7) {
+          loopDetails.push({
+            first_occurrence: i,
+            second_occurrence: j,
+            similarity,
+            snippet: `${(messages[i] ?? "").slice(0, 100)}...`,
+          });
+        }
+      }
+    }
+    return [loopDetails.length > 0, loopDetails];
+  }
+
+  _calculate_text_similarity(text1: string, text2: string): number {
+    return calculateTextSimilarity(text1, text2);
+  }
+
+  _analyze_reasoning_patterns(llmCalls: readonly unknown[]): {
+    primary_pattern: ReasoningPatternType;
+    details: string;
+    metrics: {
+      avg_length: number;
+      std_length: number;
+      length_trend: number;
+      loop_score: number;
+    };
+  } {
+    const callLengths = llmCalls.map((call) => getReasoningText(call).length);
+    const avgLength = average(callLengths);
+    const stdLength = standardDeviation(callLengths);
+    const lengthTrend = this._calculate_trend(callLengths);
+    const loopScore = this._calculate_loop_likelihood(callLengths, []);
+    let primaryPattern: ReasoningPatternType = ReasoningPatternType.EFFICIENT;
+    let details = "Agent demonstrates efficient reasoning patterns.";
+
+    if (loopScore > 0.7) {
+      primaryPattern = ReasoningPatternType.LOOP;
+      details = "Agent appears to be stuck in repetitive thinking patterns.";
+    } else if (avgLength > 1000 && avgLength > 0 && stdLength / avgLength < 0.3) {
+      primaryPattern = ReasoningPatternType.VERBOSE;
+      details = "Agent is consistently verbose across interactions.";
+    } else if (llmCalls.length > 10 && lengthTrend > 0.5) {
+      primaryPattern = ReasoningPatternType.INDECISIVE;
+      details = "Agent shows signs of indecisiveness with increasing message lengths.";
+    } else if (avgLength > 0 && stdLength / avgLength > 0.8) {
+      primaryPattern = ReasoningPatternType.SCATTERED;
+      details = "Agent shows inconsistent reasoning flow with highly variable responses.";
+    }
+
+    return {
+      primary_pattern: primaryPattern,
+      details,
+      metrics: {
+        avg_length: avgLength,
+        std_length: stdLength,
+        length_trend: lengthTrend,
+        loop_score: loopScore,
+      },
+    };
+  }
+
+  _calculate_trend(values: readonly number[]): number {
+    return calculateTrend(values);
+  }
+
+  _calculate_loop_likelihood(callLengths: readonly number[], responseTimes: readonly number[] = []): number {
+    const indicators: number[] = [];
+    const lengthScore = calculateLoopLikelihood(callLengths);
+    if (callLengths.length >= 4) {
+      indicators.push(lengthScore);
+    }
+    if (responseTimes.length >= 3) {
+      const meanTime = average(responseTimes);
+      if (meanTime > 0) {
+        const timeConsistency = 1 - (standardDeviation(responseTimes) / meanTime);
+        indicators.push(Math.max(0, timeConsistency - 0.3) * 1.5);
+      }
+    }
+    return indicators.length > 0 ? average(indicators) : 0;
+  }
+
+  _get_call_samples(llmCalls: readonly unknown[]): string {
+    return getReasoningCallSamples(llmCalls);
   }
 }
 
@@ -821,6 +913,18 @@ export class EvaluationDisplayFormatter {
   }
 
   private summarizeFeedbacks(feedbacks: readonly string[]): string {
+    return this._summarize_feedbacks("", "", feedbacks, [], AggregationStrategy.SIMPLE_AVERAGE);
+  }
+
+  _summarize_feedbacks(
+    _agentRole: string,
+    _metric: string,
+    feedbacks: readonly string[],
+    _scores: readonly (number | null)[] = [],
+    _strategy: AggregationStrategy = AggregationStrategy.SIMPLE_AVERAGE,
+  ): string {
+    void _scores;
+    void _strategy;
     if (feedbacks.length === 0) {
       return "";
     }
@@ -1415,11 +1519,19 @@ export function assert_experiment_no_regression(comparison_result: Record<string
   if (regressed.length > 0) {
     throw new Error(`Regression detected! The following tests that previously passed now fail: ${regressed.join(", ")}`);
   }
+  const missingTests = asStringArray(comparison_result.missing_tests);
+  if (missingTests.length > 0) {
+    console.warn(`Warning: ${String(missingTests.length)} tests from the baseline are missing in the current run: ${missingTests.join(", ")}`);
+  }
+}
+
+export function _get_baseline_filepath_fallback(): string {
+  return "experiment_fallback_results.json";
 }
 
 export function assert_experiment_successfully(
   experiment_results: ExperimentResults,
-  baseline_filepath = "experiment_fallback_results.json",
+  baseline_filepath = _get_baseline_filepath_fallback(),
 ): void {
   const failed = experiment_results.results.filter((result) => !result.passed);
   if (failed.length > 0) {
@@ -2073,18 +2185,6 @@ function getReasoningText(call: unknown): string {
   return stringifyEvaluationValue(content);
 }
 
-function detectReasoningLoops(llmCalls: readonly unknown[]): boolean {
-  const messages = llmCalls.map(getReasoningText).filter((message) => message.length > 0);
-  for (let i = 0; i < messages.length - 2; i += 1) {
-    for (let j = i + 1; j < messages.length - 1; j += 1) {
-      if (calculateTextSimilarity(messages[i] ?? "", messages[j] ?? "") > 0.7) {
-        return true;
-      }
-    }
-  }
-  return false;
-}
-
 function calculateTextSimilarity(text1: string, text2: string): number {
   const words1 = new Set(text1.toLowerCase().replace(/\s+/g, " ").trim().split(" ").filter(Boolean));
   const words2 = new Set(text2.toLowerCase().replace(/\s+/g, " ").trim().split(" ").filter(Boolean));
@@ -2099,26 +2199,6 @@ function calculateTextSimilarity(text1: string, text2: string): number {
     }
   }
   return intersection / union.size;
-}
-
-function analyzeReasoningPattern(llmCalls: readonly unknown[]): ReasoningPatternType {
-  const lengths = llmCalls.map((call) => getReasoningText(call).length);
-  const avgLength = average(lengths);
-  const stdLength = standardDeviation(lengths);
-  const trend = calculateTrend(lengths);
-  if (calculateLoopLikelihood(lengths) > 0.7) {
-    return ReasoningPatternType.LOOP;
-  }
-  if (avgLength > 1000 && avgLength > 0 && stdLength / avgLength < 0.3) {
-    return ReasoningPatternType.VERBOSE;
-  }
-  if (llmCalls.length > 10 && trend > 0.5) {
-    return ReasoningPatternType.INDECISIVE;
-  }
-  if (avgLength > 0 && stdLength / avgLength > 0.8) {
-    return ReasoningPatternType.SCATTERED;
-  }
-  return ReasoningPatternType.EFFICIENT;
 }
 
 function standardDeviation(values: readonly number[]): number {

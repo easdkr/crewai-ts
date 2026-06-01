@@ -866,6 +866,7 @@ export {
   ToolSelectionEvaluator,
   TrainingTaskEvaluation,
   TrainingTaskEvaluationModel,
+  _get_baseline_filepath_fallback,
   assert_experiment_no_regression,
   assert_experiment_successfully,
   create_default_evaluator,

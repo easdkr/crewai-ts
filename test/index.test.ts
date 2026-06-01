@@ -405,7 +405,9 @@ import {
   ParameterExtractionEvaluator,
   ToolInvocationEvaluator,
   ReasoningEfficiencyEvaluator,
+  ReasoningPatternType,
   run_experiment,
+  _get_baseline_filepath_fallback,
   __version__,
   afterLlmCall,
   afterToolCall,
@@ -5764,6 +5766,32 @@ describe("evaluator utilities", () => {
     });
   });
 
+  it("exposes upstream reasoning metric helper methods", () => {
+    const evaluator = new ReasoningEfficiencyEvaluator();
+    const repeatedCalls = [
+      { response: "search facts then summarize" },
+      { response: "calculate totals" },
+      { response: "search facts then summarize" },
+      { response: "finish answer" },
+    ];
+    const loopPatternCalls = [
+      { response: "aaaaaaaaaa" },
+      { response: "bbbbbbbbbbbbbbbbbbbb" },
+      { response: "aaaaaaaaaa" },
+      { response: "bbbbbbbbbbbbbbbbbbbb" },
+      { response: "aaaaaaaaaa" },
+    ];
+
+    const [hasLoop, details] = evaluator._detect_loops(repeatedCalls);
+    expect(hasLoop).toBe(true);
+    expect(details[0]).toMatchObject({ first_occurrence: 0, second_occurrence: 2, similarity: 1 });
+    expect(evaluator._calculate_text_similarity("alpha beta", "alpha gamma")).toBeCloseTo(1 / 3);
+    expect(evaluator._calculate_trend([1, 2, 3, 4])).toBeGreaterThan(0);
+    expect(evaluator._calculate_loop_likelihood([10, 20, 10, 20])).toBeGreaterThan(0);
+    expect(evaluator._analyze_reasoning_patterns(loopPatternCalls).primary_pattern).toBe(ReasoningPatternType.LOOP);
+    expect(evaluator._get_call_samples(repeatedCalls)).toContain("Call 1:");
+  });
+
   it("aggregates agent evaluation results with display formatter parity", () => {
     const formatter = new EvaluationDisplayFormatter();
     const aggregated = formatter.aggregateAgentResults({
@@ -5808,6 +5836,7 @@ describe("evaluator utilities", () => {
     expect(new EvaluationScore({ score: null, feedback: "missing" }).__str__()).toBe("Score: N/A - missing");
     expect(aggregated.__str__()).toContain("Agent Evaluation: Researcher");
     expect(aggregated.__str__()).toContain("- GOAL_ALIGNMENT: 9/10");
+    expect(formatter._summarize_feedbacks("Researcher", "goal_alignment", ["clear", "covered"], [8, 10])).toBe("Feedback 1: clear\n\nFeedback 2: covered");
   });
 
   it("formats experiment result summaries and comparison summaries", () => {
@@ -5890,6 +5919,10 @@ describe("evaluator utilities", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  it("exposes upstream experiment testing fallback helper", () => {
+    expect(_get_baseline_filepath_fallback()).toBe("experiment_fallback_results.json");
   });
 
   it("extracts and asserts experiment runner scores with upstream comparison rules", () => {
