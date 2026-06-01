@@ -526,6 +526,131 @@ export type ToolMetadata = {
   args_schema?: unknown;
 };
 
+export class SchemaGenerator {
+  handleInvalidForJsonSchema(schema: unknown, errorInfo: unknown): never {
+    void schema;
+    void errorInfo;
+    throw new Error("Omit invalid JSON schema value.");
+  }
+
+  handle_invalid_for_json_schema(schema: unknown, errorInfo: unknown): never {
+    return this.handleInvalidForJsonSchema(schema, errorInfo);
+  }
+}
+
+export function handleInvalidForJsonSchema(schema: unknown, errorInfo: unknown): never {
+  return new SchemaGenerator().handleInvalidForJsonSchema(schema, errorInfo);
+}
+
+export const handle_invalid_for_json_schema = handleInvalidForJsonSchema;
+
+export function _get_schema_generator(): typeof SchemaGenerator {
+  return SchemaGenerator;
+}
+
+export function _unwrap_schema(schema: unknown): Record<string, unknown> {
+  let result = isRecord(schema) ? { ...schema } : {};
+  while (
+    typeof result.type === "string"
+    && ["function-after", "function-before", "function-wrap", "default"].includes(result.type)
+    && isRecord(result.schema)
+  ) {
+    result = { ...result.schema };
+  }
+  if (result.type === "definitions" && isRecord(result.schema)) {
+    result = { ...result.schema };
+  }
+  return result;
+}
+
+export function _extract_field_default(
+  field: unknown,
+  fallback: string | readonly unknown[] | number = "",
+): string | readonly unknown[] | number {
+  if (!isRecord(field)) {
+    return fallback;
+  }
+  const schema = isRecord(field.schema) ? field.schema : {};
+  const defaultValue = schema.default;
+  return typeof defaultValue === "string" || typeof defaultValue === "number" || Array.isArray(defaultValue)
+    ? defaultValue
+    : fallback;
+}
+
+export function _extract_run_params_schema(argsSchemaField: unknown): Record<string, unknown> {
+  if (!argsSchemaField) {
+    return {};
+  }
+  if (isRecord(argsSchemaField) && isRecord(argsSchemaField.schema)) {
+    const defaultValue = argsSchemaField.schema.default;
+    return schemaFromValue(defaultValue);
+  }
+  return schemaFromValue(argsSchemaField);
+}
+
+const IGNORED_INIT_PARAMS = new Set([
+  "name",
+  "description",
+  "envVars",
+  "env_vars",
+  "argsSchema",
+  "args_schema",
+  "descriptionUpdated",
+  "description_updated",
+  "cacheFunction",
+  "cache_function",
+  "resultAsAnswer",
+  "result_as_answer",
+  "maxUsageCount",
+  "max_usage_count",
+  "currentUsageCount",
+  "current_usage_count",
+  "packageDependencies",
+  "package_dependencies",
+]);
+
+export function _extract_init_params_schema(toolClassOrInstance: unknown): Record<string, unknown> {
+  const schema = schemaFromValue(
+    getStaticOrInstanceValue(toolClassOrInstance, "initParamsSchema")
+      ?? getStaticOrInstanceValue(toolClassOrInstance, "init_params_schema")
+      ?? callStaticOrInstanceMethod(toolClassOrInstance, "modelJsonSchema")
+      ?? callStaticOrInstanceMethod(toolClassOrInstance, "model_json_schema"),
+  );
+  if (!isRecord(schema.properties)) {
+    return schema;
+  }
+  const properties = Object.fromEntries(
+    Object.entries(schema.properties).filter(([key]) => !IGNORED_INIT_PARAMS.has(key)),
+  );
+  const required = Array.isArray(schema.required)
+    ? schema.required.filter((key): key is string => typeof key === "string" && key in properties)
+    : undefined;
+  return {
+    ...schema,
+    properties,
+    ...(required ? { required } : {}),
+  };
+}
+
+export function _extract_env_vars(envVarsField: unknown): EnvVarEntry[] {
+  if (!envVarsField) {
+    return [];
+  }
+  let value: unknown = envVarsField;
+  if (isRecord(envVarsField) && isRecord(envVarsField.schema)) {
+    value = envVarsField.schema.default;
+    if (value === undefined && typeof envVarsField.schema.default_factory === "function") {
+      try {
+        const defaultFactory = envVarsField.schema.default_factory as () => unknown;
+        value = defaultFactory();
+      } catch {
+        value = [];
+      }
+    }
+  }
+  return normalizeEnvVars(value);
+}
+
 export function extractToolsMetadata(tools: readonly unknown[] | ProjectModuleLike): ToolMetadata[] {
   return extractValues(tools)
     .map((value) => toolMetadataFromValue(value))
@@ -540,11 +665,12 @@ function toolMetadataFromValue(value: unknown): ToolMetadata | null {
     return null;
   }
 
-  const argsSchema = (tool as { argsSchema?: unknown; args_schema?: unknown }).argsSchema
-    ?? (tool as { args_schema?: unknown }).args_schema
+  const toolClass = typeof value === "function" ? value : tool.constructor;
+  const argsSchema = getStaticOrInstanceValue(tool, "argsSchema")
+    ?? getStaticOrInstanceValue(tool, "args_schema")
     ?? {};
-  const envVars = (tool as { envVars?: unknown; env_vars?: unknown }).envVars
-    ?? (tool as { env_vars?: unknown }).env_vars
+  const envVars = getStaticOrInstanceValue(tool, "envVars")
+    ?? getStaticOrInstanceValue(tool, "env_vars")
     ?? [];
   const constructorName = tool.constructor.name && tool.constructor.name !== "Object"
     ? tool.constructor.name
@@ -555,9 +681,9 @@ function toolMetadataFromValue(value: unknown): ToolMetadata | null {
     module: tool.constructor.name && tool.constructor.name !== "Object" ? tool.constructor.name : "",
     humanized_name: tool.name,
     description: tool.description ?? "",
-    run_params_schema: isRecord(argsSchema) ? argsSchema : {},
-    init_params_schema: {},
-    env_vars: normalizeEnvVars(envVars),
+    run_params_schema: _extract_run_params_schema(argsSchema),
+    init_params_schema: _extract_init_params_schema(toolClass),
+    env_vars: _extract_env_vars(envVars),
     argsSchema,
     args_schema: argsSchema,
   };
@@ -590,6 +716,56 @@ function normalizeEnvVars(value: unknown): EnvVarEntry[] {
       required: typeof entry.required === "boolean" ? entry.required : true,
       default: typeof entry.default === "string" || entry.default === null ? entry.default : null,
     }));
+}
+
+function schemaFromValue(value: unknown): Record<string, unknown> {
+  if (!isRecord(value)) {
+    return {};
+  }
+  if (typeof value.modelJsonSchema === "function") {
+    const schema = (value.modelJsonSchema as () => unknown).call(value);
+    return isRecord(schema) ? { ...schema } : {};
+  }
+  if (typeof value.model_json_schema === "function") {
+    const schema = (value.model_json_schema as () => unknown).call(value);
+    return isRecord(schema) ? { ...schema } : {};
+  }
+  if (isRecord(value.json_schema)) {
+    return { ...value.json_schema };
+  }
+  if (isRecord(value.schema)) {
+    return { ...value.schema };
+  }
+  return { ...value };
+}
+
+function getStaticOrInstanceValue(value: unknown, key: string): unknown {
+  if (isRecord(value) && key in value) {
+    return value[key];
+  }
+  if (typeof value === "function") {
+    const record = value as unknown as Record<string, unknown>;
+    if (key in record) {
+      return record[key];
+    }
+  }
+  const constructor = isRecord(value) && "constructor" in value ? value.constructor : null;
+  if (isRecord(constructor) && key in constructor) {
+    return constructor[key];
+  }
+  return undefined;
+}
+
+function callStaticOrInstanceMethod(value: unknown, key: string): unknown {
+  const method = getStaticOrInstanceValue(value, key);
+  if (typeof method !== "function") {
+    return undefined;
+  }
+  try {
+    return method.call(typeof value === "function" ? value : value);
+  } catch {
+    return undefined;
+  }
 }
 
 function getMethodsByKind(instance: object, kind: Parameters<typeof filterEntries>[1]): Map<string, () => unknown> {

@@ -759,6 +759,13 @@ import {
   getProjectDescription,
   getProjectName,
   getProjectVersion,
+  SchemaGenerator,
+  _extract_env_vars,
+  _extract_field_default,
+  _extract_init_params_schema,
+  _extract_run_params_schema,
+  _get_schema_generator,
+  _unwrap_schema,
   extractAvailableExports,
   extractToolsMetadata,
   extract_available_exports,
@@ -1353,6 +1360,16 @@ describe("serialization and project utilities", () => {
 
   it("extracts upstream-style project tool exports and metadata", () => {
     class ProjectSearchTool extends BaseTool {
+      static initParamsSchema = {
+        type: "object",
+        properties: {
+          endpoint: { type: "string" },
+          name: { type: "string" },
+          max_usage_count: { type: "integer" },
+        },
+        required: ["endpoint", "name"],
+      };
+
       constructor() {
         super({
           name: "project_search",
@@ -1402,6 +1419,13 @@ describe("serialization and project utilities", () => {
         run_params_schema: {
           query: { type: "string", required: true },
         },
+        init_params_schema: {
+          type: "object",
+          properties: {
+            endpoint: { type: "string" },
+          },
+          required: ["endpoint"],
+        },
         env_vars: [
           {
             name: "PROJECT_SEARCH_TOKEN",
@@ -1419,6 +1443,93 @@ describe("serialization and project utilities", () => {
         humanized_name: "decorated_search",
         description: "Decorated search",
       }),
+    ]);
+  });
+
+  it("exposes upstream project metadata extraction helpers", () => {
+    const nestedSchema = {
+      type: "function-after",
+      schema: {
+        type: "default",
+        schema: {
+          type: "object",
+          properties: { query: { type: "string" } },
+        },
+      },
+    };
+    const envDefault = [
+      new EnvVar({
+        name: "SEARCH_TOKEN",
+        description: "Search token",
+        required: false,
+        default: "demo",
+      }),
+    ];
+
+    class SchemaTool extends BaseTool {
+      static modelJsonSchema() {
+        return {
+          type: "object",
+          properties: {
+            endpoint: { type: "string" },
+            envVars: { type: "array" },
+            argsSchema: { type: "object" },
+          },
+          required: ["endpoint", "envVars"],
+        };
+      }
+
+      constructor() {
+        super({
+          name: "schema_tool",
+          description: "Schema tool",
+          argsSchema: {
+            query: { type: "string", required: true },
+          },
+          envVars: envDefault,
+        });
+      }
+
+      protected _run(): string {
+        return "ok";
+      }
+    }
+
+    expect(_get_schema_generator()).toBe(SchemaGenerator);
+    expect(() => new SchemaGenerator().handle_invalid_for_json_schema({}, "bad")).toThrow("Omit invalid JSON schema value");
+    expect(_unwrap_schema(nestedSchema)).toEqual({
+      type: "object",
+      properties: { query: { type: "string" } },
+    });
+    expect(_extract_field_default({ schema: { default: "tool_name" } })).toBe("tool_name");
+    expect(_extract_field_default({ schema: { default: { bad: true } } }, "fallback")).toBe("fallback");
+    expect(_extract_run_params_schema({
+      schema: {
+        default: {
+          model_json_schema: () => ({
+            type: "object",
+            properties: { query: { type: "string" } },
+          }),
+        },
+      },
+    })).toEqual({
+      type: "object",
+      properties: { query: { type: "string" } },
+    });
+    expect(_extract_init_params_schema(SchemaTool)).toEqual({
+      type: "object",
+      properties: {
+        endpoint: { type: "string" },
+      },
+      required: ["endpoint"],
+    });
+    expect(_extract_env_vars({ schema: { default_factory: () => envDefault } })).toEqual([
+      {
+        name: "SEARCH_TOKEN",
+        description: "Search token",
+        required: false,
+        default: "demo",
+      },
     ]);
   });
 

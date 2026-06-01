@@ -2191,6 +2191,13 @@ export {
 export { RWLock } from "./rw-lock.js";
 export {
   CrewProject,
+  SchemaGenerator,
+  _extract_env_vars,
+  _extract_field_default,
+  _extract_init_params_schema,
+  _extract_run_params_schema,
+  _get_schema_generator,
+  _unwrap_schema,
   agentOptionsFromConfig,
   extractAvailableExports,
   extractToolsMetadata,
@@ -2207,6 +2214,8 @@ export {
   get_crews,
   get_flow_instance,
   get_flows,
+  handleInvalidForJsonSchema,
+  handle_invalid_for_json_schema,
   isValidTool,
   is_valid_tool,
   loadConfig,
