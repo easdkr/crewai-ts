@@ -780,8 +780,24 @@ export class AgentExecutor extends BaseAgentExecutor {
   executeNativeTool(): "native_tool_completed" | "tool_result_is_final" {
     const pendingCalls = [...this.state.pending_tool_calls];
     this.state.pending_tool_calls = [];
-    for (const toolCall of pendingCalls) {
-      const { name, args, id } = normalizeNativeToolCall(toolCall);
+    const normalizedCalls = pendingCalls
+      .map((toolCall) => normalizeNativeToolCall(toolCall))
+      .filter((call) => call.name);
+    if (normalizedCalls.length > 0) {
+      this.state.messages.push({
+        role: "assistant",
+        content: null,
+        tool_calls: normalizedCalls.map((call) => ({
+          id: call.id ?? call.name,
+          type: "function",
+          function: {
+            name: call.name,
+            arguments: stringifyNativeToolArguments(call.args),
+          },
+        })),
+      } as unknown as LLMMessage);
+    }
+    for (const { name, args, id } of normalizedCalls) {
       if (!name) {
         continue;
       }
@@ -789,6 +805,7 @@ export class AgentExecutor extends BaseAgentExecutor {
       const text = stringifyStepResult(result);
       this.state.messages.push({
         role: "tool",
+        name,
         content: text,
         tool_call_id: id ?? name,
       } as unknown as LLMMessage);
@@ -2223,6 +2240,17 @@ function normalizeNativeToolCall(toolCall: unknown): { name: string | null; args
     args,
     id: typeof record.id === "string" ? record.id : null,
   };
+}
+
+function stringifyNativeToolArguments(args: unknown): string {
+  if (typeof args === "string") {
+    return args;
+  }
+  try {
+    return JSON.stringify(args ?? {});
+  } catch {
+    return "{}";
+  }
 }
 
 function parseNativeArgs(rawArgs: string): unknown {

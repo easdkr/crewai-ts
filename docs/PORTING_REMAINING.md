@@ -122,6 +122,7 @@ When more goal budget is available, continue from the behavioral parity audits b
 - `AgentExecutor.handle_refine_and_continue` now applies the latest planner observation refinements to pending todos before continuing.
 - `AgentExecutor.execute_todo_sequential` now falls back to upstream-style todo prompt injection when planning is disabled instead of pretending isolated step execution occurred.
 - `AgentExecutor.execute_tool_action` now records non-final tool observations and appends the upstream post-tool reasoning prompt before continuing.
+- `AgentExecutor.execute_native_tool` now records the upstream assistant `tool_calls` message and named tool result messages before continuing or short-circuiting.
 - `AgentExecutor` replanning now builds previous-execution context, temporarily enhances the task description for the planner, preserves completed/failed history, and replaces only pending todos when a ready structured plan is returned.
 - `StepExecutor.execute` now runs `TodoItem` inputs through isolated step execution and returns a failed `StepResult` when an expected upstream `tool_to_use` is available but was not called.
 
