@@ -1736,9 +1736,12 @@ export {
 } from "./version.js";
 export {
   LiteAgent,
+  _kickoff_with_a2a_support,
+  task_to_kickoff_adapter,
   type LiteAgentGuardrail,
   type LiteAgentGuardrailResult,
   type LiteAgentKickoffInput,
+  type LiteAgentKickoffFunction,
   type LiteAgentKickoffOptions,
   type LiteAgentOptions,
 } from "./lite-agent.js";

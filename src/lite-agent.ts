@@ -21,6 +21,13 @@ import { LiteAgentOutput } from "./lite-agent-output.js";
 import { Memory, type MemoryScope } from "./memory.js";
 import { getToolNames, parseTools, renderTextDescriptionAndArgs } from "./agent-utils.js";
 import type { AgentStepCallback, LLMMessage, Tool } from "./types.js";
+import {
+  _execute_task_with_a2a,
+  create_extension_registry_from_config,
+  get_a2a_agents_and_response_model,
+  inject_a2a_server_methods,
+  wrap_agent_with_a2a_instance,
+} from "./a2a.js";
 
 export type LiteAgentGuardrailResult =
   | readonly [boolean, unknown]
@@ -65,9 +72,70 @@ export type LiteAgentOptions = {
   step_callback?: AgentStepCallback | null;
   codeExecutionMode?: CodeExecutionMode;
   code_execution_mode?: CodeExecutionMode;
+  a2a?: unknown;
 };
 
 export type LiteAgentKickoffInput = string | readonly LLMMessage[];
+
+export type LiteAgentKickoffFunction = (
+  messages: LiteAgentKickoffInput,
+  responseFormatOrOptions?: unknown,
+  inputFiles?: InputFiles,
+) => LiteAgentOutput | Promise<LiteAgentOutput>;
+
+export async function _kickoff_with_a2a_support(
+  agent: LiteAgent,
+  original_kickoff: LiteAgentKickoffFunction,
+  messages: LiteAgentKickoffInput,
+  response_format: unknown = null,
+  input_files: InputFiles | null = null,
+  extension_registry = create_extension_registry_from_config([]),
+): Promise<LiteAgentOutput> {
+  const [a2aAgents, agentResponseModel] = get_a2a_agents_and_response_model(agent.a2a as never);
+  if (a2aAgents.length === 0) {
+    return await original_kickoff(messages, response_format, input_files ?? undefined);
+  }
+  const description = liteAgentKickoffDescription(messages);
+  if (!description) {
+    return await original_kickoff(messages, response_format, input_files ?? undefined);
+  }
+  const result = await _execute_task_with_a2a({
+    self: agent,
+    a2a_agents: a2aAgents,
+    original_fn: async () => {
+      const output = await original_kickoff(messages, response_format, input_files ?? undefined);
+      return output.raw;
+    },
+    task: {
+      description,
+      agent,
+      expected_output: "Result from A2A delegation",
+      input_files: input_files ?? {},
+    },
+    agent_response_model: agentResponseModel,
+    context: null,
+    tools: null,
+    extension_registry,
+  });
+  return new LiteAgentOutput({
+    raw: result,
+    agent_role: agent.role,
+    usage_metrics: null,
+    messages: [],
+  });
+}
+
+export function task_to_kickoff_adapter(
+  original_kickoff: LiteAgentKickoffFunction,
+  messages: LiteAgentKickoffInput,
+  response_format: unknown = null,
+  input_files: InputFiles | null = null,
+): (...args: unknown[]) => Promise<string> {
+  return async () => {
+    const result = await original_kickoff(messages, response_format, input_files ?? undefined);
+    return result.raw;
+  };
+}
 
 export class LiteAgent {
   readonly id: string;
@@ -96,6 +164,7 @@ export class LiteAgent {
   readonly stepCallback: AgentStepCallback | null;
   readonly codeExecutionMode: CodeExecutionMode;
   readonly code_execution_mode: CodeExecutionMode;
+  readonly a2a: unknown;
   readonly originalAgent: Agent | null = null;
   readonly original_agent: Agent | null = null;
   toolsResults: Record<string, unknown>[] = [];
@@ -136,6 +205,7 @@ export class LiteAgent {
     this.stepCallback = options.stepCallback ?? options.step_callback ?? null;
     this.codeExecutionMode = options.codeExecutionMode ?? options.code_execution_mode ?? "safe";
     this.code_execution_mode = this.codeExecutionMode;
+    this.a2a = options.a2a ?? null;
     this._key = randomUUID();
     this.resolveMemory();
   }
@@ -193,6 +263,11 @@ export class LiteAgent {
   }
 
   setupA2aSupport(): this {
+    if (this.a2a) {
+      wrap_agent_with_a2a_instance(this);
+    } else {
+      inject_a2a_server_methods(this);
+    }
     return this;
   }
 
@@ -588,6 +663,19 @@ function formatLiteAgentMessages(input: LiteAgentKickoffInput, explicitInputFile
     messages,
     inputFiles: { ...messageInputFiles, ...(explicitInputFiles ?? {}) },
   };
+}
+
+function liteAgentKickoffDescription(messages: LiteAgentKickoffInput): string {
+  if (typeof messages === "string") {
+    return messages;
+  }
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message?.role === "user" && typeof message.content === "string") {
+      return message.content;
+    }
+  }
+  return "";
 }
 
 function parseStructuredOutput(raw: string, responseFormat: unknown): unknown {

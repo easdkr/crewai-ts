@@ -183,6 +183,8 @@ import {
   KnowledgeSearchQueryFailedEvent,
   Knowledge,
   LiteAgent,
+  _kickoff_with_a2a_support,
+  task_to_kickoff_adapter,
   LiteAgentExecutionCompletedEvent,
   LiteAgentExecutionErrorEvent,
   LiteAgentExecutionStartedEvent,
@@ -21834,6 +21836,25 @@ describe("lite agent", () => {
     expect(logs[0]?.agent_role).toBe("Helper Agent");
     expect(() => LiteAgent.validate_guardrail_function(() => [true, "ok"]))
       .toThrow("Guardrail function must accept exactly 1 parameter");
+  });
+
+  it("exposes upstream LiteAgent A2A kickoff adapters", async () => {
+    const agent = new LiteAgent({
+      role: "A2A Lite",
+      goal: "Delegate when needed",
+      backstory: "Compatibility focused",
+      llm: () => "local",
+    });
+    const original = vi.fn(() => new LiteAgentOutput({
+      raw: "local result",
+      agent_role: agent.role,
+    }));
+
+    await expect(_kickoff_with_a2a_support(agent, original, "Research CrewAI", null, null))
+      .resolves.toMatchObject({ raw: "local result", agentRole: "A2A Lite" });
+    await expect(task_to_kickoff_adapter(original, "Research CrewAI")())
+      .resolves.toBe("local result");
+    expect(agent.setup_a2a_support()).toBe(agent);
   });
 
   it("exposes upstream LiteAgent memory injection and save helpers", () => {
