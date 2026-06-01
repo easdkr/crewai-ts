@@ -19930,6 +19930,45 @@ describe("LLM providers", () => {
   });
 });
 
+describe("task markdown prompts", () => {
+  it("matches upstream markdown instructions in task prompts", () => {
+    const agentInstance = new Agent({
+      role: "Researcher",
+      goal: "Research a topic",
+      backstory: "Writes well-formatted content",
+    });
+    const taskInstance = new Task({
+      description: "Research advances in AI in 2023",
+      expectedOutput: "A summary of key AI advances in 2023",
+      markdown: true,
+      agent: agentInstance,
+    });
+
+    const prompt = taskInstance.prompt();
+
+    expect(prompt).toContain("Research advances in AI in 2023");
+    expect(prompt).toContain("A summary of key AI advances in 2023");
+    expect(prompt).toContain("Your final answer MUST be formatted in Markdown syntax.");
+    expect(prompt).toContain("Follow these guidelines:");
+    expect(prompt).toContain("- Use # for headers");
+    expect(prompt).toContain("- Use ** for bold text");
+    expect(prompt).toContain("- Use * for italic text");
+    expect(prompt).toContain("- Use - or * for bullet points");
+    expect(prompt).toContain("- Use `code` for inline code");
+    expect(prompt).toContain("- Use ```language for code blocks");
+  });
+
+  it("omits upstream markdown instructions when markdown is disabled", () => {
+    const taskInstance = new Task({
+      description: "Research advances in AI in 2023",
+      expectedOutput: "A summary of key AI advances in 2023",
+      markdown: false,
+    });
+
+    expect(taskInstance.prompt()).not.toContain("Your final answer MUST be formatted in Markdown syntax.");
+  });
+});
+
 describe("task output files", () => {
   it("accepts upstream snake_case Task options for structured output files", async () => {
     const baseDirectory = mkdtempSync(join(tmpdir(), "crewai-ts-snake-task-"));

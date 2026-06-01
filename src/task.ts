@@ -77,6 +77,17 @@ type TaskAsyncFuture = {
   reject?: (error: unknown) => void;
 };
 
+const MARKDOWN_FORMATTING_INSTRUCTIONS = [
+  "Your final answer MUST be formatted in Markdown syntax.",
+  "Follow these guidelines:",
+  "- Use # for headers",
+  "- Use ** for bold text",
+  "- Use * for italic text",
+  "- Use - or * for bullet points",
+  "- Use `code` for inline code",
+  "- Use ```language for code blocks",
+].join("\n");
+
 const AUTO_INJECTED_CONTENT_TYPE_PREFIXES_BY_PROVIDER: Record<string, readonly string[]> = {
   anthropic: ["image/", "application/pdf"],
   claude: ["image/", "application/pdf"],
@@ -648,12 +659,7 @@ export class Task {
     const parts = [
       this.description,
       `Expected output: ${this.expectedOutput}`,
-      this.markdown
-        ? [
-            "Your final answer MUST be formatted in Markdown syntax.",
-            "Use # for headers, **bold**, *italic*, bullet points, inline code, and fenced code blocks when useful.",
-          ].join("\n")
-        : null,
+      this.markdown ? MARKDOWN_FORMATTING_INSTRUCTIONS : null,
     ];
     return parts.filter((part): part is string => Boolean(part)).join("\n");
   }
@@ -1102,7 +1108,7 @@ export class Task {
       `Expected output: ${expectedOutput}`,
       this.executionPlan ? `Planning:\n${this.executionPlan}` : null,
       context ? `Context:\n${context}` : null,
-      this.markdown ? "Return the final answer formatted as Markdown." : null,
+      this.markdown ? MARKDOWN_FORMATTING_INSTRUCTIONS : null,
     ];
     return {
       description,
