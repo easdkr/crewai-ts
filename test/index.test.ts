@@ -18601,6 +18601,77 @@ describe("flow runtime", () => {
     expect(flow.state.callCount).toBe(1);
   });
 
+  it("continues cyclic router flows with persistence and explicit input ids", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "crewai-ts-flow-cyclic-persist-"));
+    const persistence = new SQLiteFlowPersistence(join(directory, "flows.db"));
+
+    class PersistCyclicFlow extends Flow<{ id: string; events: string[]; iteration: number }> {
+      constructor() {
+        super({
+          initialState: { id: "initial-flow", events: [], iteration: 0 },
+          persistence,
+          maxMethodCalls: 20,
+        });
+      }
+
+      begin() {
+        this.state.events.push("begin");
+      }
+
+      classify() {
+        this.state.iteration += 1;
+        this.state.events.push(`classify:${String(this.state.iteration)}`);
+        return this.state.iteration <= 3 ? "type_a" : "exit";
+      }
+
+      handle() {
+        this.state.events.push(`handle:${String(this.state.iteration)}`);
+      }
+
+      send() {
+        this.state.events.push(`send:${String(this.state.iteration)}`);
+      }
+
+      capture() {
+        this.state.events.push(`capture:${String(this.state.iteration)}`);
+      }
+
+      finish() {
+        this.state.events.push("finish");
+      }
+    }
+
+    const initializers = [
+      decorateMethod(PersistCyclicFlow, "begin", start() as unknown as Decorator),
+      decorateMethod(PersistCyclicFlow, "classify", router(or_("begin", "capture")) as unknown as Decorator),
+      decorateMethod(PersistCyclicFlow, "handle", listen("type_a") as unknown as Decorator),
+      decorateMethod(PersistCyclicFlow, "send", listen(or_("handle")) as unknown as Decorator),
+      decorateMethod(PersistCyclicFlow, "capture", listen("send") as unknown as Decorator),
+      decorateMethod(PersistCyclicFlow, "finish", listen("exit") as unknown as Decorator),
+    ];
+
+    try {
+      const flow = new PersistCyclicFlow();
+      initializers.forEach((initializer) => {
+        initializer.call(flow);
+      });
+
+      await flow.kickoff({ inputs: { id: "cyclic-flow-id" } });
+
+      expect(flow.state.events).toContain("finish");
+      expect(flow.state.events.filter((event) => event.startsWith("classify:"))).toHaveLength(4);
+      expect(flow.state.events.filter((event) => event.startsWith("handle:"))).toHaveLength(3);
+      expect(flow.state.events.filter((event) => event.startsWith("send:"))).toHaveLength(3);
+      expect(flow.state.events.filter((event) => event.startsWith("capture:"))).toHaveLength(3);
+      await expect(persistence.loadState("cyclic-flow-id")).resolves.toMatchObject({
+        id: "cyclic-flow-id",
+        iteration: 4,
+      });
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
   it("preserves non-structured-cloneable flow state values when copying state", () => {
     const handler = () => "locked";
     const flow = new Flow<{
