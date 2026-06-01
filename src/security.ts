@@ -191,7 +191,7 @@ function coerceFingerprint(value?: Fingerprint | FingerprintDict | string | null
   return Fingerprint.fromDict(value);
 }
 
-function validateMetadata(metadata: unknown): FingerprintMetadata {
+export function validateMetadata(metadata: unknown): FingerprintMetadata {
   if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
     throw new Error("Metadata must be a dictionary");
   }
@@ -216,6 +216,8 @@ function validateMetadata(metadata: unknown): FingerprintMetadata {
   }
   return { ...record };
 }
+
+export const _validate_metadata = validateMetadata;
 
 function uuidV5(seed: string, namespace: string): string {
   const namespaceBytes = uuidToBytes(namespace);

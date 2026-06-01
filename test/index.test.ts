@@ -61,6 +61,7 @@ import {
   _normalize_grpc_metadata,
   _parse_redis_url,
   _raise_auth_mismatch,
+  _validate_metadata,
   Agent,
   AgentCardSigningConfig,
   AgentExecutor,
@@ -21000,6 +21001,8 @@ describe("security fingerprints", () => {
   });
 
   it("validates fingerprint metadata and security config coercion", () => {
+    expect(_validate_metadata({ nested: { ok: true } })).toEqual({ nested: { ok: true } });
+    expect(() => _validate_metadata("invalid")).toThrow("Metadata must be a dictionary");
     expect(() => new Fingerprint({ metadata: { nested: { too: { deep: true } } } }))
       .toThrow("Metadata can only be nested one level deep");
     expect(() => Fingerprint.generate("   ")).toThrow("Seed cannot be empty");
