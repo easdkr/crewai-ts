@@ -9753,6 +9753,82 @@ describe("execution and event context", () => {
     expect(get_crew_context()).toBeNull();
   });
 
+  it("scopes crew context during kickoff and restores it afterwards", async () => {
+    const contexts: Array<{ stage: string; id: string | null; key: string | null }> = [];
+    const agentInstance = new Agent({
+      role: "Researcher",
+      goal: "Research",
+      backstory: "Careful analyst",
+      llm: () => "done",
+    });
+    const taskInstance = new Task({
+      description: "Research",
+      expectedOutput: "Done",
+      agent: agentInstance,
+      callback: () => {
+        const context = get_crew_context();
+        contexts.push({
+          stage: "task_callback",
+          id: context?.id ?? null,
+          key: context?.key ?? null,
+        });
+      },
+    });
+    const crewInstance = new Crew({
+      name: "context-crew",
+      agents: [agentInstance],
+      tasks: [taskInstance],
+    });
+
+    contexts.push({ stage: "before", id: get_crew_context()?.id ?? null, key: get_crew_context()?.key ?? null });
+    await crewInstance.kickoff();
+    contexts.push({ stage: "after", id: get_crew_context()?.id ?? null, key: get_crew_context()?.key ?? null });
+
+    expect(contexts).toEqual([
+      { stage: "before", id: null, key: null },
+      { stage: "task_callback", id: crewInstance.id, key: crewInstance.key },
+      { stage: "after", id: null, key: null },
+    ]);
+  });
+
+  it("isolates crew context across concurrent kickoffForEachAsync executions", async () => {
+    const contexts: Array<{ topic: string; id: string | null }> = [];
+    const agentInstance = new Agent({
+      role: "Researcher",
+      goal: "Research",
+      backstory: "Careful analyst",
+      llm: async (messages) => {
+        const content = messages.at(-1)?.content ?? "";
+        await delay(content.includes("slow") ? 20 : 1);
+        return content;
+      },
+    });
+    const taskInstance = new Task({
+      description: "Research {topic}",
+      expectedOutput: "Done",
+      agent: agentInstance,
+      callback: (output) => {
+        contexts.push({
+          topic: output.raw.includes("slow") ? "slow" : "fast",
+          id: get_crew_context()?.id ?? null,
+        });
+      },
+    });
+
+    await new Crew({
+      name: "context-for-each",
+      agents: [agentInstance],
+      tasks: [taskInstance],
+    }).kickoffForEachAsync({
+      inputs: [{ topic: "slow" }, { topic: "fast" }],
+    });
+
+    expect(contexts).toHaveLength(2);
+    expect(contexts.every((context) => context.id !== null)).toBe(true);
+    expect(new Set(contexts.map((context) => context.id)).size).toBe(2);
+    expect(get_crew_context()).toBeNull();
+  });
+
   it("matches upstream platform integration token precedence and env fallback", () => {
     const previousToken = process.env.CREWAI_PLATFORM_INTEGRATION_TOKEN;
     setPlatformIntegrationToken(null);

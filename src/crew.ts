@@ -40,6 +40,7 @@ import type { LLM } from "./types.js";
 import { createReadFileTool, extractInputFilesFromInputs } from "./input-files.js";
 import type { EmbedderConfig } from "./rag.js";
 import { aggregateRawOutputsFromTaskOutputs, aggregateRawOutputsFromTasks } from "./formatter.js";
+import { withCrewContext } from "./utilities.js";
 
 export type KickoffOptions = {
   inputs?: InputValues;
@@ -742,38 +743,40 @@ export class Crew {
     if (this.stream) {
       return new CrewStreamingOutput(async () => await this.withStreamDisabled(async () => await this.kickoff(options))) as unknown as CrewOutput;
     }
-    let inputs = { ...(options.inputs ?? {}) };
-    let inputFiles = options.inputFiles ?? options.input_files;
-    const beforeUsage = this.calculateUsageMetrics();
-    this.executionLogs = [];
-    this.taskOutputStorageHandler?.reset();
-    crewaiEventBus.emit(this, new CrewKickoffStartedEvent({ crewName: this.name, inputs }));
-    try {
-      for (const callback of this.beforeKickoffCallbacks) {
-        inputs = { ...(await callback(inputs)) };
-      }
-      const extracted = extractInputFilesFromInputs(inputs);
-      inputs = extracted.inputs;
-      inputFiles = { ...(inputFiles ?? {}), ...extracted.inputFiles };
-      if (this.planning) {
-        await this.handleCrewPlanning();
-      }
+    return await withCrewContext({ crew: this }, async () => {
+      let inputs = { ...(options.inputs ?? {}) };
+      let inputFiles = options.inputFiles ?? options.input_files;
+      const beforeUsage = this.calculateUsageMetrics();
+      this.executionLogs = [];
+      this.taskOutputStorageHandler?.reset();
+      crewaiEventBus.emit(this, new CrewKickoffStartedEvent({ crewName: this.name, inputs }));
+      try {
+        for (const callback of this.beforeKickoffCallbacks) {
+          inputs = { ...(await callback(inputs)) };
+        }
+        const extracted = extractInputFilesFromInputs(inputs);
+        inputs = extracted.inputs;
+        inputFiles = { ...(inputFiles ?? {}), ...extracted.inputFiles };
+        if (this.planning) {
+          await this.handleCrewPlanning();
+        }
 
-      const output = await this.runProcess(inputs, inputFiles);
-      let finalOutput = output;
-      for (const callback of this.afterKickoffCallbacks) {
-        finalOutput = await callback(finalOutput);
+        const output = await this.runProcess(inputs, inputFiles);
+        let finalOutput = output;
+        for (const callback of this.afterKickoffCallbacks) {
+          finalOutput = await callback(finalOutput);
+        }
+        finalOutput = this.postKickoff(finalOutput);
+        const usageDelta = subtractUsageMetrics(this.calculateUsageMetrics(), beforeUsage);
+        this.setUsageMetrics(addUsageMetrics(this.usageMetrics, usageDelta));
+        finalOutput = withTokenUsage(finalOutput, usageDelta);
+        crewaiEventBus.emit(this, new CrewKickoffCompletedEvent({ crewName: this.name, output: finalOutput }));
+        return finalOutput;
+      } catch (error) {
+        crewaiEventBus.emit(this, new CrewKickoffFailedEvent({ crewName: this.name, error }));
+        throw error;
       }
-      finalOutput = this.postKickoff(finalOutput);
-      const usageDelta = subtractUsageMetrics(this.calculateUsageMetrics(), beforeUsage);
-      this.setUsageMetrics(addUsageMetrics(this.usageMetrics, usageDelta));
-      finalOutput = withTokenUsage(finalOutput, usageDelta);
-      crewaiEventBus.emit(this, new CrewKickoffCompletedEvent({ crewName: this.name, output: finalOutput }));
-      return finalOutput;
-    } catch (error) {
-      crewaiEventBus.emit(this, new CrewKickoffFailedEvent({ crewName: this.name, error }));
-      throw error;
-    }
+    });
   }
 
   async kickoffAsync(options: KickoffOptions = {}): Promise<CrewOutput> {
@@ -788,48 +791,50 @@ export class Crew {
     if (this.stream) {
       return new CrewStreamingOutput(async () => await this.withStreamDisabled(async () => await this.akickoff(options))) as unknown as CrewOutput;
     }
-    let inputs = { ...(options.inputs ?? {}) };
-    let inputFiles = options.inputFiles ?? options.input_files;
-    const beforeUsage = this.calculateUsageMetrics();
-    this.executionLogs = [];
-    this.taskOutputStorageHandler?.reset();
-    crewaiEventBus.emit(this, new CrewKickoffStartedEvent({ crewName: this.name, inputs }));
-    try {
-      for (const callback of this.beforeKickoffCallbacks) {
-        inputs = { ...(await callback(inputs)) };
-      }
-      const extracted = extractInputFilesFromInputs(inputs);
-      inputs = extracted.inputs;
-      inputFiles = { ...(inputFiles ?? {}), ...extracted.inputFiles };
-      if (this.planning) {
-        await this.handleCrewPlanning();
-      }
+    return await withCrewContext({ crew: this }, async () => {
+      let inputs = { ...(options.inputs ?? {}) };
+      let inputFiles = options.inputFiles ?? options.input_files;
+      const beforeUsage = this.calculateUsageMetrics();
+      this.executionLogs = [];
+      this.taskOutputStorageHandler?.reset();
+      crewaiEventBus.emit(this, new CrewKickoffStartedEvent({ crewName: this.name, inputs }));
+      try {
+        for (const callback of this.beforeKickoffCallbacks) {
+          inputs = { ...(await callback(inputs)) };
+        }
+        const extracted = extractInputFilesFromInputs(inputs);
+        inputs = extracted.inputs;
+        inputFiles = { ...(inputFiles ?? {}), ...extracted.inputFiles };
+        if (this.planning) {
+          await this.handleCrewPlanning();
+        }
 
-      let output: CrewOutput;
-      switch (this.process) {
-        case Process.sequential:
-          output = await this._arun_sequential_process(inputs, inputFiles);
-          break;
-        case Process.hierarchical:
-          output = await this._arun_hierarchical_process(inputs, inputFiles);
-          break;
-        default:
-          throw new Error(`Unsupported crew process: ${String(this.process)}`);
+        let output: CrewOutput;
+        switch (this.process) {
+          case Process.sequential:
+            output = await this._arun_sequential_process(inputs, inputFiles);
+            break;
+          case Process.hierarchical:
+            output = await this._arun_hierarchical_process(inputs, inputFiles);
+            break;
+          default:
+            throw new Error(`Unsupported crew process: ${String(this.process)}`);
+        }
+        let finalOutput = output;
+        for (const callback of this.afterKickoffCallbacks) {
+          finalOutput = await callback(finalOutput);
+        }
+        finalOutput = this.postKickoff(finalOutput);
+        const usageDelta = subtractUsageMetrics(this.calculateUsageMetrics(), beforeUsage);
+        this.setUsageMetrics(addUsageMetrics(this.usageMetrics, usageDelta));
+        finalOutput = withTokenUsage(finalOutput, usageDelta);
+        crewaiEventBus.emit(this, new CrewKickoffCompletedEvent({ crewName: this.name, output: finalOutput }));
+        return finalOutput;
+      } catch (error) {
+        crewaiEventBus.emit(this, new CrewKickoffFailedEvent({ crewName: this.name, error }));
+        throw error;
       }
-      let finalOutput = output;
-      for (const callback of this.afterKickoffCallbacks) {
-        finalOutput = await callback(finalOutput);
-      }
-      finalOutput = this.postKickoff(finalOutput);
-      const usageDelta = subtractUsageMetrics(this.calculateUsageMetrics(), beforeUsage);
-      this.setUsageMetrics(addUsageMetrics(this.usageMetrics, usageDelta));
-      finalOutput = withTokenUsage(finalOutput, usageDelta);
-      crewaiEventBus.emit(this, new CrewKickoffCompletedEvent({ crewName: this.name, output: finalOutput }));
-      return finalOutput;
-    } catch (error) {
-      crewaiEventBus.emit(this, new CrewKickoffFailedEvent({ crewName: this.name, error }));
-      throw error;
-    }
+    });
   }
 
   async kickoffForEach(options: KickoffForEachOptions): Promise<CrewOutput[]> {
