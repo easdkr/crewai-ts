@@ -2219,6 +2219,11 @@ describe("environment, logging, and file store utilities", () => {
     expect(customResolver.config.prefer_upload).toBe(true);
     expect(customResolver.config.upload_threshold_bytes).toBe(5 * 1024 * 1024);
     expect(customResolver.upload_cache).toBeNull();
+
+    const geminiResolver = createResolver({ provider: "gemini" });
+    expect(geminiResolver.config.upload_threshold_bytes).toBe(20_971_520);
+    const explicitThreshold = createResolver({ provider: "gemini", upload_threshold_bytes: 1234 });
+    expect(explicitThreshold.config.upload_threshold_bytes).toBe(1234);
   });
 
   it("validates upstream crewai-files provider constraints deterministically", () => {

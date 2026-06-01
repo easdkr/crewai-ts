@@ -1402,9 +1402,17 @@ export type CreateResolverOptions = ConstructorParameters<typeof FileResolverCon
 };
 
 export function createResolver(options: FileResolverConfig | CreateResolverOptions = {}): FileResolver {
+  const uploadThresholdBytes = options instanceof FileResolverConfig
+    ? null
+    : options.uploadThresholdBytes
+      ?? options.upload_threshold_bytes
+      ?? (options.provider ? getConstraintsForProvider(options.provider)?.fileUploadThresholdBytes : undefined);
   const config = options instanceof FileResolverConfig
     ? options
-    : new FileResolverConfig(options);
+    : new FileResolverConfig({
+      ...options,
+      ...(uploadThresholdBytes === undefined ? {} : { uploadThresholdBytes }),
+    });
   const enableCache = options instanceof FileResolverConfig
     ? true
     : options.enableCache ?? options.enable_cache ?? true;
