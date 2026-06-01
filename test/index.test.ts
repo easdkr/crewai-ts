@@ -10280,6 +10280,31 @@ describe("core crew runtime", () => {
     ]);
   });
 
+  it("injects AgentExecutor object-style invoke files into the last user prompt", () => {
+    const executor = new AgentExecutor({
+      prompt: {
+        system: "System: {input}",
+        user: "User: {input}",
+      },
+    });
+    Object.assign(executor, {
+      kickoff() {
+        executor.state.current_answer = new AgentFinish({
+          thought: "done",
+          output: "Done",
+          text: "complete",
+        });
+      },
+    });
+
+    const files = { "diagram.png": { media_type: "image/png", data: "base64" } };
+    expect(executor.invoke({ input: "inspect", files })).toEqual({ output: "Done" });
+    expect(executor.state.messages).toEqual([
+      { role: "system", content: "System: inspect" },
+      { role: "user", content: "User: inspect", files },
+    ]);
+  });
+
   it("applies AgentExecutor human feedback during object-style invoke", () => {
     const executor = new AgentExecutor();
     Object.assign(executor, {

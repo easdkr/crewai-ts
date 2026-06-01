@@ -986,6 +986,21 @@ export class AgentExecutor extends BaseAgentExecutor {
     } else if (this.kickoffInput) {
       this.state.messages.push({ role: "user", content: this.kickoffInput });
     }
+    this.injectFilesFromInputs(inputs);
+  }
+
+  private injectFilesFromInputs(inputs: Record<string, unknown>): void {
+    const files = inputs.files;
+    if (!files) {
+      return;
+    }
+    for (let index = this.state.messages.length - 1; index >= 0; index -= 1) {
+      const message = this.state.messages[index] as Record<string, unknown>;
+      if (message.role === "user") {
+        message.files = files;
+        return;
+      }
+    }
   }
 
   private applyHumanFeedback(answer: AgentFinish): AgentFinish {
