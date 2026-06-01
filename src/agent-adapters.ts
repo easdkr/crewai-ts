@@ -347,7 +347,7 @@ export class LangGraphToolAdapter extends BaseToolAdapter {
       description: tool.description ?? "",
       args_schema: (tool as { argsSchema?: unknown; args_schema?: unknown }).argsSchema ?? (tool as { argsSchema?: unknown; args_schema?: unknown }).args_schema ?? {},
       argsSchema: (tool as { argsSchema?: unknown; args_schema?: unknown }).argsSchema ?? (tool as { argsSchema?: unknown; args_schema?: unknown }).args_schema ?? {},
-      func: async (input: unknown) => await tool.run(normalizeToolArgs(input)),
+      func: async (input: unknown) => await tool.run(typeof input === "string" ? input : normalizeToolArgs(input)),
       tool,
     }));
     this.converted_tools = this.convertedTools;
@@ -356,13 +356,38 @@ export class LangGraphToolAdapter extends BaseToolAdapter {
 
 export class LangGraphConverterAdapter extends BaseConverterAdapter {
   converter: Converter | null = null;
+  systemPromptAppendix: string | null = null;
+  _system_prompt_appendix: string | null = null;
 
   configureStructuredOutput(task: unknown): void {
     this.configureFormatFromTask(task);
+    this.systemPromptAppendix = this.generateSystemPromptAppendix();
+    this._system_prompt_appendix = this.systemPromptAppendix;
   }
 
-  enhanceSystemPrompt(basePrompt: string): string {
-    return appendStructuredOutputPrompt(basePrompt, this.outputFormat, this.schema);
+  generateSystemPromptAppendix(): string {
+    if (!this.outputFormat || !this.schema) {
+      return "";
+    }
+    return [
+      "Important: Your final answer MUST be provided in the following structured format:",
+      "",
+      JSON.stringify(this.schema, null, 2),
+      "",
+      "DO NOT include any markdown code blocks, backticks, or other formatting around your response.",
+      "The output should be raw JSON that exactly matches the specified schema.",
+    ].join("\n");
+  }
+
+  _generate_system_prompt_appendix(): string {
+    return this.generateSystemPromptAppendix();
+  }
+
+  enhanceSystemPrompt(originalPrompt: string): string {
+    if (!this.systemPromptAppendix) {
+      return originalPrompt;
+    }
+    return `${originalPrompt}\n${this.systemPromptAppendix}`;
   }
 }
 
@@ -375,16 +400,19 @@ export class LangGraphAgentAdapter extends BaseAgentAdapter {
   _graph: unknown = null;
   graphMemory: unknown = null;
   _memory: unknown = null;
+  readonly maxIterations: number;
+  readonly max_iterations: number;
 
   constructor(options: AgentOptions & { model?: string; maxIterations?: number; max_iterations?: number; agentConfig?: Record<string, unknown> | null; agent_config?: Record<string, unknown> | null }) {
     const { model, maxIterations, max_iterations, ...agentOptions } = options;
     super({ ...agentOptions, llm: options.llm ?? model ?? "gpt-4o" });
-    void maxIterations;
-    void max_iterations;
+    this.maxIterations = maxIterations ?? max_iterations ?? 10;
+    this.max_iterations = this.maxIterations;
     this.toolAdapter = new LangGraphToolAdapter(options.tools);
     this.tool_adapter = this.toolAdapter;
     this.converterAdapter = new LangGraphConverterAdapter(this);
     this.converter_adapter = this.converterAdapter;
+    this.setupGraph();
   }
 
   configureTools(tools?: readonly CrewTool[] | null): void {
@@ -407,11 +435,24 @@ export class LangGraphAgentAdapter extends BaseAgentAdapter {
     this.configureStructuredOutput(task);
   }
 
+  setupGraph(): void {
+    this.graphMemory = {};
+    this._memory = this.graphMemory;
+    this.createAgentExecutor();
+  }
+
+  _setup_graph(): void {
+    this.setupGraph();
+  }
+
   createAgentExecutor(tools: readonly CrewTool[] | null = null): void {
     this.configureTools([...this.tools, ...(tools ?? [])]);
     this.graph = {
       tools: this.toolAdapter.tools(),
       invoke: (input: unknown) => ({ messages: [{ content: stringifyAdapterValue(input) }] }),
+      checkpointer: this.graphMemory,
+      debug: this.verbose,
+      config: this.agentConfig,
     };
     this._graph = this.graph;
   }

@@ -76,6 +76,8 @@ import {
   OpenAIAgentAdapter,
   BaseConverterAdapter,
   LangGraphAgentAdapter,
+  LangGraphConverterAdapter,
+  LangGraphToolAdapter,
   BaseAgent,
   AuthenticatedUser,
   AccumulatedToolArgs,
@@ -9790,8 +9792,36 @@ describe("core crew runtime", () => {
     const langGraphResult = await langGraph.execute_task(taskInstance, "graph context");
 
     expect(langGraphResult).toContain("LangGraph Adapter");
+    expect(langGraph._graph).not.toBeNull();
+    expect(langGraph._memory).not.toBeNull();
+    expect(langGraph.max_iterations).toBe(10);
+    langGraph._setup_graph();
+    expect(langGraph._graph).toMatchObject({ debug: false });
     expect(langGraph.get_delegation_tools([writer])).toHaveLength(2);
     expect(LangGraphAgentAdapter.get_output_converter(() => "converted", "raw", { name: "Output" }, "Convert")).toBeInstanceOf(Converter);
+    const converter = new LangGraphConverterAdapter(langGraph);
+    converter.configure_structured_output({
+      output_json: {
+        name: "Structured",
+        schema: { type: "object", properties: { summary: { type: "string" } } },
+      },
+    });
+    expect(converter._generate_system_prompt_appendix()).toContain("raw JSON");
+    expect(converter.enhance_system_prompt("Base")).toContain("Important: Your final answer MUST");
+    const toolCalls: unknown[] = [];
+    const toolAdapter = new LangGraphToolAdapter([{
+      name: "Echo Tool",
+      description: "Echoes input",
+      run: (input: unknown) => {
+        toolCalls.push(input);
+        return String(input);
+      },
+    }]);
+    toolAdapter.configure_tools([]);
+    const [convertedTool] = toolAdapter.tools() as Array<{ name: string; func: (input: unknown) => Promise<unknown> }>;
+    expect(convertedTool?.name).toBe("echo_tool");
+    await expect(convertedTool?.func("raw input")).resolves.toBe("raw input");
+    expect(toolCalls).toEqual(["raw input"]);
     expect(events).toContain("agent_execution_started");
     expect(events.some((event) => event.startsWith("agent_execution_completed:"))).toBe(true);
   });
