@@ -16903,6 +16903,42 @@ describe("flow runtime", () => {
     ]);
   });
 
+  it("preserves terminal flow human feedback method output while tracking routing outcome", async () => {
+    class FinalReviewFlow extends Flow {
+      generate() {
+        return { title: "My Article", status: "ready" };
+      }
+    }
+
+    const initializers = [
+      decorateMethod(FinalReviewFlow, "generate", humanFeedback({
+        message: "Review?",
+        emit: ["approved", "rejected"],
+        provider: {
+          requestFeedback: () => "looks approved",
+        },
+      }) as unknown as Decorator),
+      decorateMethod(FinalReviewFlow, "generate", start() as unknown as Decorator),
+    ];
+    const flow = new FinalReviewFlow();
+    initializers.forEach((initializer) => {
+      initializer.call(flow);
+    });
+
+    await expect(flow.kickoff()).resolves.toEqual({ title: "My Article", status: "ready" });
+    expect(flow.lastHumanFeedback).toMatchObject({
+      output: { title: "My Article", status: "ready" },
+      feedback: "looks approved",
+      outcome: "approved",
+    });
+    expect(flow.methodOutputs).toEqual([{ title: "My Article", status: "ready" }]);
+    expect(flow.executionTrace[0]).toMatchObject({
+      methodName: "generate",
+      output: { title: "My Article", status: "ready" },
+      routerPath: "approved",
+    });
+  });
+
   it("validates human feedback routing configuration before decoration", () => {
     expect(() => humanFeedback({
       message: "Review",
@@ -17430,7 +17466,7 @@ describe("flow runtime", () => {
     });
     expect(flow.state.events).toEqual(["review", "publish:approved"]);
     expect(flow.executionTrace.map((entry) => [entry.methodName, entry.output, entry.routerPath])).toEqual([
-      ["review", "approved", "approved"],
+      ["review", "draft", "approved"],
       ["publish", "published:approved, looks good", null],
     ]);
   });

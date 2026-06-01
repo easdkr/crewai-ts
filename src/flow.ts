@@ -915,6 +915,14 @@ export type HumanFeedbackResult = {
   metadata: Record<string, unknown>;
 };
 
+const HUMAN_FEEDBACK_ROUTING_RESULT = Symbol("humanFeedbackRoutingResult");
+
+type HumanFeedbackRoutingResult = {
+  readonly [HUMAN_FEEDBACK_ROUTING_RESULT]: true;
+  readonly methodOutput: unknown;
+  readonly routerOutput: string;
+};
+
 export type HumanFeedbackConfig = {
   message: string;
   emit?: readonly string[] | null;
@@ -1683,7 +1691,9 @@ export class Flow<TState extends object = Record<string, unknown>> {
         }
         methodCalls += 1;
         const methodEntry = entries.find((entry) => String(entry.name) === current.name);
-        const output = await this.callFlowMethod(current.name, current.input, flowName);
+        const rawOutput = await this.callFlowMethod(current.name, current.input, flowName);
+        const output = unwrapHumanFeedbackMethodOutput(rawOutput);
+        const routerOutput = unwrapHumanFeedbackRouterOutput(rawOutput);
         lastOutput = output;
         outputs.set(current.name, output);
         completed.add(current.name);
@@ -1696,10 +1706,10 @@ export class Flow<TState extends object = Record<string, unknown>> {
         const triggers = [current.name];
         let routerPath: string | null = null;
 
-        if (this.isRouterOutput(methodEntry, current.name, output)) {
-          routerPath = stringifyRouterOutput(output);
+        if (this.isRouterOutput(methodEntry, current.name, routerOutput)) {
+          routerPath = stringifyRouterOutput(routerOutput);
           completed.add(routerPath);
-          outputs.set(routerPath, output);
+          outputs.set(routerPath, routerOutput);
           triggers.push(routerPath);
         }
         this.runtimeExecutionTrace.push({
@@ -2197,7 +2207,8 @@ export class Flow<TState extends object = Record<string, unknown>> {
     methodName: string,
     methodOutput: unknown,
     config: HumanFeedbackConfig,
-  ): Promise<HumanFeedbackResult | string> {
+    options: { preserveMethodOutput?: boolean } = {},
+  ): Promise<HumanFeedbackResult | HumanFeedbackRoutingResult | string> {
     const reviewedOutput = await preReviewHumanFeedbackOutput(this, methodName, methodOutput, config);
     const feedback = await this.collectHumanFeedback(methodName, reviewedOutput, config);
     const result = this.recordHumanFeedbackResult({
@@ -2217,7 +2228,9 @@ export class Flow<TState extends object = Record<string, unknown>> {
       outcome: result.outcome,
     }));
     return config.emit && config.emit.length > 0
-      ? result.outcome ?? config.defaultOutcome ?? config.emit[0] ?? ""
+      ? options.preserveMethodOutput
+        ? makeHumanFeedbackRoutingResult(reviewedOutput, result.outcome ?? config.defaultOutcome ?? config.emit[0] ?? "")
+        : result.outcome ?? config.defaultOutcome ?? config.emit[0] ?? ""
       : result;
   }
 
@@ -2273,7 +2286,7 @@ export class Flow<TState extends object = Record<string, unknown>> {
       crewaiEventBus.emit(this, new MethodExecutionFinishedEvent({
         flowName,
         methodName: name,
-        result,
+        result: unwrapHumanFeedbackMethodOutput(result),
         state: this.stateSnapshot(),
       }));
       return result;
@@ -2353,16 +2366,17 @@ export class Flow<TState extends object = Record<string, unknown>> {
     const outputs = new Map<string, unknown>();
     const completed = new Set<string>();
     const queue: Array<{ name: string; input: unknown }> = [];
-    const methodOutput = context.emit && context.emit.length > 0
+    const methodOutput = context.emit && context.emit.length > 0 ? context.output : result;
+    const routerOutput = context.emit && context.emit.length > 0
       ? result.outcome ?? context.defaultOutcome ?? context.emit[0] ?? ""
-      : result;
+      : methodOutput;
     outputs.set(context.methodName, methodOutput);
     completed.add(context.methodName);
     const triggers = [context.methodName];
     let routerPath: string | null = null;
     if (context.emit && context.emit.length > 0) {
-      routerPath = stringifyRouterOutput(methodOutput);
-      outputs.set(routerPath, methodOutput);
+      routerPath = stringifyRouterOutput(routerOutput);
+      outputs.set(routerPath, routerOutput);
       completed.add(routerPath);
       triggers.push(routerPath);
     }
@@ -2397,7 +2411,9 @@ export class Flow<TState extends object = Record<string, unknown>> {
       }
       methodCalls += 1;
       const entry = entries.find((candidate) => String(candidate.name) === current.name);
-      const output = await this.callFlowMethod(current.name, current.input, flowName);
+      const rawOutput = await this.callFlowMethod(current.name, current.input, flowName);
+      const output = unwrapHumanFeedbackMethodOutput(rawOutput);
+      const currentRouterOutput = unwrapHumanFeedbackRouterOutput(rawOutput);
       lastOutput = output;
       outputs.set(current.name, output);
       completed.add(current.name);
@@ -2409,9 +2425,9 @@ export class Flow<TState extends object = Record<string, unknown>> {
       );
       const nextTriggers = [current.name];
       let nextRouterPath: string | null = null;
-      if (this.isRouterOutput(entry, current.name, output)) {
-        nextRouterPath = stringifyRouterOutput(output);
-        outputs.set(nextRouterPath, output);
+      if (this.isRouterOutput(entry, current.name, currentRouterOutput)) {
+        nextRouterPath = stringifyRouterOutput(currentRouterOutput);
+        outputs.set(nextRouterPath, currentRouterOutput);
         completed.add(nextRouterPath);
         nextTriggers.push(nextRouterPath);
       }
@@ -2728,6 +2744,28 @@ function serializeHumanFeedbackLlm(value: unknown): string | Record<string, unkn
 
 function isHumanFeedbackPending(value: unknown): value is HumanFeedbackPending {
   return value instanceof HumanFeedbackPending;
+}
+
+function makeHumanFeedbackRoutingResult(methodOutput: unknown, routerOutput: string): HumanFeedbackRoutingResult {
+  return {
+    [HUMAN_FEEDBACK_ROUTING_RESULT]: true,
+    methodOutput,
+    routerOutput,
+  };
+}
+
+function isHumanFeedbackRoutingResult(value: unknown): value is HumanFeedbackRoutingResult {
+  return Boolean(value)
+    && typeof value === "object"
+    && (value as { [HUMAN_FEEDBACK_ROUTING_RESULT]?: unknown })[HUMAN_FEEDBACK_ROUTING_RESULT] === true;
+}
+
+function unwrapHumanFeedbackMethodOutput(value: unknown): unknown {
+  return isHumanFeedbackRoutingResult(value) ? value.methodOutput : value;
+}
+
+function unwrapHumanFeedbackRouterOutput(value: unknown): unknown {
+  return isHumanFeedbackRoutingResult(value) ? value.routerOutput : value;
 }
 
 function collapseFeedbackToOutcome(
@@ -3067,7 +3105,7 @@ export function humanFeedback(configOrMessage: HumanFeedbackConfig | string): Me
       if (!(this instanceof Flow)) {
         return output;
       }
-      return await this.requestHumanFeedback(String(context.name), output, normalizeHumanFeedbackConfig(config));
+      return await this.requestHumanFeedback(String(context.name), output, normalizeHumanFeedbackConfig(config), { preserveMethodOutput: true });
     };
   };
 }
