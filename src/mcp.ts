@@ -286,10 +286,18 @@ export abstract class BaseTransport {
     this.connectedValue = true;
   }
 
+  _set_streams(read: unknown, write: unknown): void {
+    this.setStreams(read, write);
+  }
+
   protected clearStreams(): void {
     this.readStreamValue = null;
     this.writeStreamValue = null;
     this.connectedValue = false;
+  }
+
+  _clear_streams(): void {
+    this.clearStreams();
   }
 
   markConnectedForClient(): void {

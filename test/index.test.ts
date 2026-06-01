@@ -2514,6 +2514,10 @@ describe("mcp configuration", () => {
     expect(mockTransport.connected).toBe(true);
     expect(mockTransport.readStream).toBe(mockTransport.writeStream);
     expect(mockTransport.starts).toEqual(["start"]);
+    mockTransport._clear_streams();
+    expect(mockTransport.connected).toBe(false);
+    mockTransport._set_streams({ read: true }, { write: true });
+    expect(mockTransport.connected).toBe(true);
     await mockTransport.disconnect();
     expect(mockTransport.connected).toBe(false);
   });
