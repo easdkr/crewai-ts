@@ -18893,6 +18893,35 @@ describe("LLM providers", () => {
     await expect(gemini.acall([{ role: "user", content: "hello" }])).rejects.toThrow("No LLM provider registered");
   });
 
+  it("formats Bedrock multimodal files into Converse image and document blocks", () => {
+    const bedrock = new BedrockCompletion({ model: "anthropic.claude-3-sonnet" });
+    const claude2 = new BedrockCompletion({ model: "anthropic.claude-v2" });
+
+    expect(bedrock.supports_multimodal()).toBe(true);
+    expect(claude2.supports_multimodal()).toBe(false);
+
+    const [messages, systemMessage] = (bedrock as unknown as {
+      _format_messages_for_converse(messages: Array<LLMMessage & Record<string, unknown>>): [Record<string, unknown>[], string | null];
+    })._format_messages_for_converse([{
+      role: "user",
+      content: "Inspect these files",
+      files: {
+        chart: { filename: "chart.png", content: "png-bytes", contentType: "image/png" },
+        doc: { filename: "brief.pdf", content: "pdf-bytes", contentType: "application/pdf" },
+      },
+    }]);
+
+    expect(systemMessage).toBeNull();
+    expect(messages).toEqual([{
+      role: "user",
+      content: [
+        { text: "Inspect these files" },
+        { image: { format: "png", source: { bytes: "png-bytes" } } },
+        { document: { name: "brief", format: "pdf", source: { bytes: "pdf-bytes" } } },
+      ],
+    }]);
+  });
+
   it("prepares OpenAI chat and responses request parameters without SDK side effects", () => {
     const search = new StructuredTool({
       name: "search docs",

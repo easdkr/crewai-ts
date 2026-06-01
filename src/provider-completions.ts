@@ -795,7 +795,12 @@ export class BedrockCompletion extends ConfiguredLLM {
   }
 
   override supportsMultimodal(): boolean {
-    return super.supportsMultimodal();
+    const model = this.model.toLowerCase();
+    return model.includes("claude-3")
+      || model.includes("claude-sonnet-4")
+      || model.includes("claude-opus-4")
+      || model.includes("claude-haiku-4")
+      || model.includes("nova");
   }
 
   override supports_multimodal(): boolean {
@@ -935,7 +940,9 @@ export class BedrockCompletion extends ConfiguredLLM {
 
       converseMessages.push({
         role,
-        content: Array.isArray(content) ? content : [{ text: content || "" }],
+        content: Array.isArray(content)
+          ? bedrockConverseContentBlocks(content)
+          : [{ text: content || "" }],
       });
     }
 
@@ -2358,6 +2365,86 @@ function normalizeOpenAIFunctionToolSchemas(tools: readonly unknown[]): Array<{
       },
     };
   });
+}
+
+function bedrockConverseContentBlocks(blocks: readonly unknown[]): Record<string, unknown>[] {
+  return blocks.map((block) => {
+    const record = readObject(block);
+    if (record.type === "file" && record.source === "inline") {
+      const contentType = scalarToString(record.content_type) ?? scalarToString(record.contentType) ?? "";
+      const content = scalarToString(record.content) ?? "";
+      if (contentType.startsWith("image/")) {
+        return {
+          image: {
+            format: bedrockInlineImageFormat(contentType, scalarToString(record.filename)),
+            source: { bytes: content },
+          },
+        };
+      }
+      const documentFormat = bedrockInlineDocumentFormat(contentType, scalarToString(record.filename));
+      if (documentFormat) {
+        return {
+          document: {
+            name: bedrockDocumentName(scalarToString(record.filename) ?? scalarToString(record.name) ?? "document"),
+            format: documentFormat,
+            source: { bytes: content },
+          },
+        };
+      }
+    }
+    if (record.type === "text" && typeof record.text === "string") {
+      return { text: record.text };
+    }
+    return { ...record };
+  });
+}
+
+function bedrockInlineImageFormat(contentType: string, filename: string | null): string {
+  const lower = contentType.toLowerCase();
+  if (lower.includes("png")) {
+    return "png";
+  }
+  if (lower.includes("jpeg") || lower.includes("jpg")) {
+    return "jpeg";
+  }
+  if (lower.includes("gif")) {
+    return "gif";
+  }
+  if (lower.includes("webp")) {
+    return "webp";
+  }
+  const extension = filename?.split(".").pop()?.toLowerCase();
+  return extension === "jpg" ? "jpeg" : extension || "png";
+}
+
+function bedrockInlineDocumentFormat(contentType: string, filename: string | null): string | null {
+  const lower = contentType.toLowerCase();
+  if (lower === "application/pdf") {
+    return "pdf";
+  }
+  if (lower === "text/csv") {
+    return "csv";
+  }
+  if (lower === "text/plain") {
+    return "txt";
+  }
+  if (lower === "text/markdown") {
+    return "md";
+  }
+  if (lower === "text/html") {
+    return "html";
+  }
+  const extension = filename?.split(".").pop()?.toLowerCase();
+  if (extension && ["pdf", "csv", "txt", "md", "html", "doc", "docx", "xls", "xlsx"].includes(extension)) {
+    return extension;
+  }
+  return null;
+}
+
+function bedrockDocumentName(filename: string): string {
+  const name = filename.replace(/\.[^.]+$/u, "");
+  const sanitized = name.replace(/[^\p{L}\p{N}\s\-()[\]]/gu, " ").replace(/\s+/gu, " ").trim();
+  return sanitized || "document";
 }
 
 function geminiVersion(model: string): number {
