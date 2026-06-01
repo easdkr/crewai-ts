@@ -23417,6 +23417,29 @@ describe("task guardrails", () => {
 });
 
 describe("task execution tracking", () => {
+  it("includes agent execution messages in task outputs", async () => {
+    const agent = new Agent({
+      role: "Researcher",
+      goal: "Track messages",
+      backstory: "Careful analyst",
+      llm: () => "message-backed output",
+    });
+    const taskInstance = new Task({
+      description: "Collect execution messages",
+      expectedOutput: "A result with messages",
+      agent,
+    });
+
+    const output = await taskInstance.execute();
+
+    expect(output.messages.length).toBeGreaterThan(0);
+    const lastMessage = output.messages.at(-1);
+    expect(lastMessage).toMatchObject({ role: "user" });
+    expect(String((lastMessage as { content?: unknown } | undefined)?.content))
+      .toContain("Collect execution messages");
+    expect(taskInstance.output?.messages).toEqual(output.messages);
+  });
+
   it("tracks prompt context, processed agents, and used tools", async () => {
     const search = new StructuredTool({
       name: "search",

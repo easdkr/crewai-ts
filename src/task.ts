@@ -1190,6 +1190,7 @@ export class Task {
       pydantic,
       agent: agent.role,
       outputFormat,
+      messages: agent.lastMessages,
     });
   }
 
