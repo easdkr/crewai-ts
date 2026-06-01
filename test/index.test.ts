@@ -24760,6 +24760,51 @@ describe("task guardrails", () => {
     expect(startedRetryCounts.slice(-3)).toEqual([0, 1, 1]);
     expect(taskInstance.retry_count).toBe(0);
   });
+
+  it("tracks retries independently for each guardrail in a list", async () => {
+    const callCounts = { first: 0, second: 0, third: 0 };
+    const agentInstance = new Agent({
+      role: "Writer",
+      goal: "Write reports",
+      backstory: "Careful writer",
+      llm: (messages) => messages.at(-1)?.content.includes("Previous attempt failed validation")
+        ? "retry draft"
+        : "base",
+    });
+    const taskInstance = new Task({
+      description: "Write",
+      expectedOutput: "A report",
+      agent: agentInstance,
+      guardrailMaxRetries: 3,
+      guardrails: [
+        (output) => {
+          callCounts.first += 1;
+          return callCounts.first <= 2
+            ? [false, "first not ready"]
+            : [true, `first:${output.raw}`];
+        },
+        (output) => {
+          callCounts.second += 1;
+          return callCounts.second === 1
+            ? [false, "second not ready"]
+            : [true, `second:${output.raw}`];
+        },
+        (output) => {
+          callCounts.third += 1;
+          return [true, `third:${output.raw}`];
+        },
+      ],
+    });
+
+    const output = await taskInstance.execute();
+
+    expect(output.raw).toBe("third:second:retry draft");
+    expect(callCounts).toEqual({ first: 3, second: 2, third: 1 });
+    expect(taskInstance._guardrail_retry_counts.get(0)).toBe(2);
+    expect(taskInstance._guardrail_retry_counts.get(1)).toBe(1);
+    expect(taskInstance._guardrail_retry_counts.get(2) ?? 0).toBe(0);
+    expect(taskInstance.retry_count).toBe(0);
+  });
 });
 
 describe("task execution tracking", () => {

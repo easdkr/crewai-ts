@@ -307,6 +307,7 @@ export class Task {
   private resolvedGuardrail: Guardrail | null = null;
   private resolvedGuardrails: readonly Guardrail[] = [];
   private readonly guardrailRetryCounts = new Map<number, number>();
+  readonly _guardrail_retry_counts = this.guardrailRetryCounts;
 
   constructor(options: TaskOptions) {
     this.id = Task.denyUserSetId(options.id, {
