@@ -9694,13 +9694,16 @@ describe("RAG configuration and factories", () => {
       }),
     } as Response);
 
-    const vertexEmbedder = new GoogleGenAIVertexEmbeddingFunction({
+    const vertexFunction = new GoogleGenAIVertexEmbeddingFunction({
       api_key: "vertex-test",
       model_name: "gemini-embedding-001",
       task_type: "RETRIEVAL_QUERY",
       output_dimensionality: 512,
-    }).asCallable();
+    });
+    expect(vertexFunction._init_genai_client()).toBe(vertexFunction);
+    const vertexEmbedder = vertexFunction.asCallable();
     await expect(vertexEmbedder(["first", "second"])).resolves.toEqual([[0.91, 0.92], [0.93, 0.94]]);
+    await expect(vertexFunction._call_genai(["third"])).resolves.toEqual([[0.91, 0.92], [0.93, 0.94]]);
 
     const fetchCall = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(fetchCall[0]).toBe("https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:batchEmbedContents?key=vertex-test");
@@ -9724,7 +9727,11 @@ describe("RAG configuration and factories", () => {
     }));
     fetchMock.mockRestore();
 
-    await expect(new GoogleGenAIVertexEmbeddingFunction().__call__(["legacy"]))
+    const legacyVertexFunction = new GoogleGenAIVertexEmbeddingFunction();
+    expect(legacyVertexFunction._init_legacy_client()).toBe(legacyVertexFunction);
+    await expect(legacyVertexFunction._call_legacy(["legacy"]))
+      .rejects.toThrow("legacy textembedding-gecko models require Vertex AI SDK credentials");
+    await expect(legacyVertexFunction.__call__(["legacy"]))
       .rejects.toThrow("legacy textembedding-gecko models require Vertex AI SDK credentials");
   });
 

@@ -844,15 +844,46 @@ export class GoogleGenAIVertexEmbeddingFunction {
   }
 
   async call(input: Embeddable): Promise<Embeddings> {
-    if (this.isLegacyModel()) {
-      throw new Error("Google Vertex legacy textembedding-gecko models require Vertex AI SDK credentials.");
-    }
     const values = Array.isArray(input) ? input.map((value) => String(value)) : [String(input)];
+    if (this.isLegacyModel()) {
+      return await this._callLegacy(values);
+    }
+    return await this._callGenai(values);
+  }
+
+  _initLegacyClient(options: VertexAIProviderConfig = {}): this {
+    void options;
+    return this;
+  }
+
+  _init_legacy_client(options: VertexAIProviderConfig = {}): this {
+    return this._initLegacyClient(options);
+  }
+
+  _initGenaiClient(options: VertexAIProviderConfig = {}): this {
+    void options;
+    return this;
+  }
+
+  _init_genai_client(options: VertexAIProviderConfig = {}): this {
+    return this._initGenaiClient(options);
+  }
+
+  _callLegacy(input: readonly string[]): Promise<Embeddings> {
+    void input;
+    return Promise.reject(new Error("Google Vertex legacy textembedding-gecko models require Vertex AI SDK credentials."));
+  }
+
+  async _call_legacy(input: readonly string[]): Promise<Embeddings> {
+    return await this._callLegacy(input);
+  }
+
+  async _callGenai(input: readonly string[]): Promise<Embeddings> {
     const response = await fetch(this.endpointUrl(), {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        requests: values.map((text) => ({
+        requests: input.map((text) => ({
           model: `models/${this.model_name}`,
           content: { parts: [{ text }] },
           taskType: this.task_type,
@@ -866,6 +897,10 @@ export class GoogleGenAIVertexEmbeddingFunction {
       throw new Error(`Google Vertex embeddings request failed with status ${String(response.status)}`);
     }
     return extractGoogleGenerativeAiEmbeddings(await response.json());
+  }
+
+  async _call_genai(input: readonly string[]): Promise<Embeddings> {
+    return await this._callGenai(input);
   }
 
   async __call__(input: Embeddable): Promise<Embeddings> {
