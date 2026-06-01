@@ -187,6 +187,10 @@ When more goal budget is available, continue from the behavioral parity audits b
 - `EventBus` now mirrors upstream shutdown flag behavior: setting `_shutting_down` suppresses both `emit` and `aemit` delivery, while `shutdown()` marks the bus as shutting down before flushing and clearing handlers.
 - `CrewContext` / `get_crew_context` now mirror upstream crew-context metadata behavior with a local deterministic scope shim: no active scope returns `null`, active scopes expose `id` and `key`, and nested/exception paths restore the previous context.
 
+## Completed In Current Core Behavior Pass
+
+- `interpolateOnly` now mirrors upstream sequential replacement behavior for task prompt variables: placeholders introduced by an earlier variable value are resolved when the placeholder also appears later in the original template variable list, preserving deterministic task interpolation parity without adding alias/helper surface.
+
 ## Completed In Current Tool Behavior Pass
 
 - `BaseTool.run` / `arun` argument validation now mirrors upstream schema behavior for LLM-generated kwargs: when an `argsSchema` is present, validated execution receives only schema fields plus defaults, hallucinated extra keys are stripped before `_run` / `_arun`, and usage counts do not increment on validation errors.

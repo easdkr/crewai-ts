@@ -74,12 +74,14 @@ export function interpolateOnly(
     throw new Error(`Template variable '${missingVariable}' not found in inputs dictionary`);
   }
 
-  return inputString.replace(variablePattern, (placeholder, variable: string) => {
+  let result = inputString;
+  for (const variable of variables) {
     if (!(variable in inputs)) {
-      return placeholder;
+      continue;
     }
-    return stringifyInterpolationValue(inputs[variable]);
-  });
+    result = result.replaceAll(`{${variable}}`, stringifyInterpolationValue(inputs[variable]));
+  }
+  return result;
 }
 
 export const interpolate_only = interpolateOnly;

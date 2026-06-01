@@ -23758,6 +23758,8 @@ describe("task interpolation", () => {
       .toBe("Data: {'enabled': False, 'tags': ['a', None]}");
     expect(interpolateOnly("This {123} and {!var} should stay but {valid_var} changes", { valid_var: "ok" }))
       .toBe("This {123} and {!var} should stay but ok changes");
+    expect(interpolateOnly("{first} {second}", { first: "{second}", second: "done" })).toBe("done done");
+    expect(interpolateOnly("{first}{second}", { first: "{second}", second: "done" })).toBe("donedone");
     expect(interpolateOnly(null, { name: "CrewAI" })).toBe("");
     expect(() => interpolateOnly("{missing}", {})).toThrow("Inputs dictionary cannot be empty");
     expect(() => interpolateOnly("{data}", { data: new Set(["x"]) })).toThrow("Unsupported type Set");
