@@ -23958,6 +23958,25 @@ describe("task output files", () => {
     expect(output.agent).toBe("Future Agent");
   });
 
+  it("rejects upstream-compatible task async futures when core execution fails", async () => {
+    const agentInstance = new Agent({
+      role: "Future Agent",
+      goal: "Reject future",
+      backstory: "Runs async compatibility helper",
+      llm: () => "future done",
+    });
+    const taskInstance = new Task({
+      description: "Run future",
+      expectedOutput: "Done",
+      agent: agentInstance,
+    });
+    vi.spyOn(taskInstance, "_execute_core").mockRejectedValue(new Error("boom"));
+
+    await expect(new Promise<TaskOutput>((resolve, reject) => {
+      taskInstance._execute_task_async(agentInstance, null, [], { resolve, reject });
+    })).rejects.toThrow("boom");
+  });
+
   it("rejects unsafe output file paths", () => {
     const agentInstance = new Agent({
       role: "Writer",

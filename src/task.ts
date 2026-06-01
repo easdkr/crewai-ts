@@ -648,7 +648,7 @@ export class Task {
   ): void {
     this.startTime = new Date();
     this.start_time = this.startTime;
-    void this.executeCore(agent, context, tools).then(
+    void this._execute_core(agent, context, tools).then(
       (result) => {
         future.setResult?.(result);
         future.set_result?.(result);
