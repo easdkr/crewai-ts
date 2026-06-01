@@ -765,12 +765,15 @@ import {
   _split_messages_into_chunks,
   _executor_stop_words,
   _llm_stop_words_applied,
+  _prepare_llm_call,
+  _validate_and_finalize_llm_response,
   isValidTool,
   is_valid_tool,
   getCrewaiVersion,
   handlePartialJson,
   extractTaskSection,
   formatMessageForLLM,
+  getLlmResponse,
   hasReachedMaxIterations,
   lock,
   parseToml,
@@ -818,6 +821,10 @@ import {
   AfterToolCallHookMethod,
   BeforeLLMCallHookMethod,
   BeforeToolCallHookMethod,
+  clearAfterLlmCallHooks,
+  clearBeforeLlmCallHooks,
+  registerAfterLlmCallHook,
+  registerBeforeLlmCallHook,
   WorkosProvider,
   OutputParserError,
   OptionalDependencyError,
@@ -5802,6 +5809,54 @@ describe("agent utility helpers", () => {
     expect(llm.stop_sequences).toEqual(["BASE"]);
     await expect(_llm_stop_words_applied((messages: LLMMessage[]) => messages[0]?.content ?? "", { stop: ["TEMP"] }, () => "plain"))
       .resolves.toBe("plain");
+  });
+
+  it("runs shared LLM pre-call and post-call hook helpers", async () => {
+    clearBeforeLlmCallHooks();
+    clearAfterLlmCallHooks();
+    const executorContext = {
+      messages: [{ role: "user" as const, content: "from executor" }],
+      agent: { role: "Researcher" },
+      iterations: 2,
+    };
+    const calls: string[] = [];
+
+    try {
+      registerBeforeLlmCallHook((context) => {
+        calls.push(`before:${context.messages[0]?.content ?? ""}:${String(context.iterations)}`);
+        context.messages.push({ role: "system", content: "hook-added" });
+        return true;
+      });
+      registerAfterLlmCallHook((context) => {
+        const response = typeof context.response === "string" ? context.response : JSON.stringify(context.response);
+        calls.push(`after:${response}`);
+        return `${response} after`;
+      });
+
+      await expect(_prepare_llm_call(executorContext, [{ role: "user", content: "input" }]))
+        .resolves.toEqual([
+          { role: "user", content: "from executor" },
+          { role: "system", content: "hook-added" },
+        ]);
+      await expect(_validate_and_finalize_llm_response("answer", executorContext, executorContext.messages))
+        .resolves.toBe("answer after");
+      await expect(getLlmResponse({
+        call(messages: readonly LLMMessage[]) {
+          return messages.map((message) => message.content).join("|");
+        },
+      }, [{ role: "user", content: "input" }], { executorContext })).resolves.toBe("from executor|hook-added after");
+      await expect(_validate_and_finalize_llm_response("", executorContext)).rejects.toThrow("Invalid response from LLM call");
+
+      expect(calls).toEqual([
+        "before:from executor:2",
+        "after:answer",
+        "before:from executor:2",
+        "after:from executor|hook-added",
+      ]);
+    } finally {
+      clearBeforeLlmCallHooks();
+      clearAfterLlmCallHooks();
+    }
   });
 
   it("parses ReAct agent output and normalizes string tool calls", async () => {

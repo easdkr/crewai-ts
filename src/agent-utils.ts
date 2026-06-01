@@ -2,9 +2,10 @@ import { generateModelDescription, sanitizeToolParamsForOpenAIStrict, type JsonS
 import { sanitizeToolName } from "./string-utils.js";
 import { AgentAction, AgentFinish, OutputParserError } from "./agent-parser.js";
 import { BaseTool, ToolResult, type ToolArgsSchema, type ToolArgumentSpec } from "./tools.js";
-import type { LLMMessage, MaybePromise, Tool, ToolContext } from "./types.js";
+import type { LLM, LLMMessage, MaybePromise, Tool, ToolContext } from "./types.js";
 import { AgentRepositoryError } from "./errors.js";
-import { BaseLLM, callStopOverride } from "./llm.js";
+import { BaseLLM, callStopOverride, type LLMResponse } from "./llm.js";
+import { LLMCallHookContext, runAfterLlmCallHooks, runBeforeLlmCallHooks } from "./hooks.js";
 
 export type ToolRunner = (input?: ToolContext | Record<string, unknown> | string) => MaybePromise<unknown>;
 
@@ -237,8 +238,70 @@ export function enforceRpmLimit(requestWithinRpmLimit?: (() => boolean | Promise
 
 export const enforce_rpm_limit = enforceRpmLimit;
 
-export async function getLlmResponse(llm: { call?: (messages: readonly LLMMessage[], options?: Record<string, unknown>) => MaybePromise<unknown> }, messages: readonly LLMMessage[], options: Record<string, unknown> = {}): Promise<unknown> {
-  return await llm.call?.(messages, options);
+export type AgentUtilsExecutorContext = {
+  messages?: readonly LLMMessage[];
+  llm?: unknown;
+  agent?: unknown;
+  task?: unknown;
+  crew?: unknown;
+  iterations?: number;
+};
+
+export async function _prepare_llm_call(
+  executorContext: AgentUtilsExecutorContext | null | undefined,
+  messages: readonly LLMMessage[],
+): Promise<LLMMessage[]> {
+  if (!executorContext) {
+    return [...messages];
+  }
+  const executorMessages = executorContext.messages;
+  const resolvedMessages = executorMessages !== undefined
+    ? [...executorMessages]
+    : [...messages];
+  await runBeforeLlmCallHooks(new LLMCallHookContext({
+    executor: executorContext,
+    messages: resolvedMessages,
+    llm: coerceHookLlm(executorContext.llm),
+    agent: executorContext.agent,
+    task: executorContext.task,
+    crew: executorContext.crew,
+    iterations: executorContext.iterations ?? 0,
+  }));
+  return resolvedMessages;
+}
+
+export async function _validate_and_finalize_llm_response(
+  answer: unknown,
+  executorContext: AgentUtilsExecutorContext | null | undefined = null,
+  messages: readonly LLMMessage[] = [],
+): Promise<unknown> {
+  if (!answer) {
+    throw new Error("Invalid response from LLM call - None or empty.");
+  }
+  return await runAfterLlmCallHooks(new LLMCallHookContext({
+    executor: executorContext ?? null,
+    messages: [...messages],
+    llm: coerceHookLlm(executorContext?.llm),
+    agent: executorContext?.agent,
+    task: executorContext?.task,
+    crew: executorContext?.crew,
+    iterations: executorContext?.iterations ?? 0,
+    response: answer as LLMResponse,
+  }));
+}
+
+export async function getLlmResponse(
+  llm: { call?: (messages: readonly LLMMessage[], options?: Record<string, unknown>) => MaybePromise<unknown> },
+  messages: readonly LLMMessage[],
+  options: Record<string, unknown> = {},
+): Promise<unknown> {
+  const rawExecutorContext = options.executorContext ?? options.executor_context;
+  const executorContext: AgentUtilsExecutorContext | null = isAgentUtilsExecutorContext(rawExecutorContext)
+    ? rawExecutorContext
+    : null;
+  const resolvedMessages = await _prepare_llm_call(executorContext, messages);
+  const answer = await llm.call?.(resolvedMessages, withoutExecutorOptions(options));
+  return await _validate_and_finalize_llm_response(answer, executorContext, resolvedMessages);
 }
 
 export const get_llm_response = getLlmResponse;
@@ -635,6 +698,23 @@ function toolArgumentSpecToJsonSchema(spec: ToolArgumentSpec): JsonSchema {
     schema.type = "object";
   }
   return schema;
+}
+
+function isAgentUtilsExecutorContext(value: unknown): value is AgentUtilsExecutorContext {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function coerceHookLlm(value: unknown): LLM | string | null {
+  return typeof value === "string" || typeof value === "function" || (Boolean(value) && typeof value === "object")
+    ? value as LLM | string
+    : null;
+}
+
+function withoutExecutorOptions(options: Record<string, unknown>): Record<string, unknown> {
+  const { executorContext: _executorContext, executor_context: _executor_context, ...rest } = options;
+  void _executorContext;
+  void _executor_context;
+  return rest;
 }
 
 export const get_tool_names = getToolNames;
