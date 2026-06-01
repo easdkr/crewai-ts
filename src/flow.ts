@@ -1910,6 +1910,16 @@ export class Flow<TState extends object = Record<string, unknown>> {
     this.checkpointRestoreActive = true;
   }
 
+  _restoreFromCheckpoint(checkpoint: Partial<FlowCheckpointEntity> | null = null): void {
+    const source = checkpoint ?? this;
+    const normalized = normalizeFlowCheckpointFields(source);
+    this.restoreFromCheckpointEntity(normalized);
+  }
+
+  _restore_from_checkpoint(checkpoint: Partial<FlowCheckpointEntity> | null = null): void {
+    this._restoreFromCheckpoint(checkpoint);
+  }
+
   private async continueFromHumanFeedback(context: PendingFeedbackContext, feedback: string): Promise<unknown> {
     const flowName = this.flowName();
     const result = this.recordHumanFeedbackResult({
@@ -3491,6 +3501,22 @@ function normalizeFlowCheckpointEntity(entity: unknown): FlowCheckpointEntity | 
   if (record.type !== "Flow") {
     return null;
   }
+  return {
+    checkpoint_completed_methods: Array.isArray(record.checkpoint_completed_methods)
+      ? record.checkpoint_completed_methods.map(String)
+      : [],
+    checkpoint_method_outputs: Array.isArray(record.checkpoint_method_outputs)
+      ? Array.from(record.checkpoint_method_outputs as unknown[])
+      : [],
+    checkpoint_method_counts: normalizeMethodCounts(record.checkpoint_method_counts),
+    checkpoint_state: isRecord(record.checkpoint_state)
+      ? { ...record.checkpoint_state }
+      : {},
+  };
+}
+
+function normalizeFlowCheckpointFields(entity: unknown): FlowCheckpointEntity {
+  const record = isRecord(entity) ? entity : {};
   return {
     checkpoint_completed_methods: Array.isArray(record.checkpoint_completed_methods)
       ? record.checkpoint_completed_methods.map(String)

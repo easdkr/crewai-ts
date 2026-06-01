@@ -14921,6 +14921,18 @@ describe("flow runtime", () => {
     expect(forked.state.events).toEqual(["begin"]);
     expect(forked.methodOutputs).toEqual(["ready", "done"]);
     expect(crewaiEventBus.runtime_state?.branch).toBe("fork/manual");
+
+    const directRestored = new CheckpointFlow();
+    directRestored._restore_from_checkpoint({
+      checkpoint_completed_methods: ["begin", "finish"],
+      checkpoint_method_outputs: ["ready", "done"],
+      checkpoint_method_counts: { begin: 1, finish: 1 },
+      checkpoint_state: { id: "direct-flow", events: ["begin"], done: true },
+    });
+    expect(directRestored.state).toEqual({ id: "direct-flow", events: ["begin"], done: true });
+    expect(directRestored.method_outputs).toEqual(["ready", "done"]);
+    expect([...directRestored.completedMethods]).toEqual(["begin", "finish"]);
+    expect(directRestored.methodExecutionCounts.get("finish")).toBe(1);
   });
 
   it("resumes kickoff from a checkpoint without replaying completed methods", async () => {
