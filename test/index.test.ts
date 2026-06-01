@@ -658,6 +658,15 @@ import {
   loadCrewAndName,
   load_crew_and_name,
   generateModelDescription,
+  _build_model_from_schema,
+  _common_strict_pipeline,
+  _inline_top_level_ref,
+  _json_schema_to_pydantic_field,
+  _json_schema_to_pydantic_type,
+  _merge_all_of_schemas,
+  _process_oneof,
+  _resolve_ref,
+  _strip_keys_recursive,
   getToolNames,
   forceAdditionalPropertiesFalse,
   maybeCastOneToMany,
@@ -1967,6 +1976,49 @@ describe("schema utilities", () => {
         },
       },
     });
+  });
+
+  it("exposes upstream pydantic schema private helpers", () => {
+    expect(_strip_keys_recursive({ type: "object", title: "Search" }, ["title"])).toEqual({ type: "object" });
+    expect(_common_strict_pipeline({ type: "object", title: "Search", properties: { q: { type: "string" } } })).toEqual({
+      type: "object",
+      additionalProperties: false,
+      required: ["q"],
+      properties: {
+        q: { type: "string" },
+      },
+    });
+
+    const root = {
+      $defs: {
+        Pet: {
+          title: "Pet",
+          type: "object",
+          properties: { name: { type: "string" } },
+          required: ["name"],
+        },
+      },
+      $ref: "#/$defs/Pet",
+    };
+    expect(_inline_top_level_ref(root).title).toBe("Pet");
+    expect(_resolve_ref("#/$defs/Pet", root).properties).toEqual({ name: { type: "string" } });
+    expect(_merge_all_of_schemas([{ $ref: "#/$defs/Pet" }, { properties: { age: { type: "integer" } }, required: ["age"] }], root)).toMatchObject({
+      properties: { name: { type: "string" }, age: { type: "integer" } },
+      required: ["name", "age"],
+    });
+
+    expect(_json_schema_to_pydantic_type({ type: ["string", "null"] })).toBe("string | null");
+    expect(_json_schema_to_pydantic_field("name", { type: "string" }, ["name"])).toEqual({
+      name: "name",
+      type: "string",
+      required: true,
+      schema: { type: "string" },
+    });
+    expect(_build_model_from_schema({ title: "Pet", type: "object" }).name).toBe("Pet");
+    expect(_process_oneof({
+      oneOf: [{ title: "Cat", properties: { kind: { type: "string" } } }],
+      discriminator: { propertyName: "kind", mapping: { cat: "Cat" } },
+    }).oneOf).toEqual([{ title: "Cat", properties: { kind: { type: "string", const: "cat" } } }]);
   });
 });
 

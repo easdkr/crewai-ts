@@ -315,6 +315,8 @@ function stripKeysRecursive<T>(schema: T, keys: readonly string[]): T {
   return schema;
 }
 
+export const _strip_keys_recursive = stripKeysRecursive;
+
 export function liftTopLevelAnyOf(schema: JsonSchema): JsonSchema {
   for (const key of ["anyOf", "oneOf", "allOf"] as const) {
     const variants = schema[key];
@@ -342,6 +344,8 @@ function commonStrictPipeline(params: JsonSchema): JsonSchema {
   sanitized = ensureAllPropertiesRequired(sanitized);
   return stripKeysRecursive(sanitized, STRICT_METADATA_KEYS);
 }
+
+export const _common_strict_pipeline = commonStrictPipeline;
 
 export function sanitizeToolParamsForOpenAIStrict<T>(params: T): T {
   if (!isSchemaRecord(params)) {
@@ -419,6 +423,24 @@ export function buildRichFieldDescription(propSchema: JsonSchema): string {
   return parts.join(". ");
 }
 
+export function _inline_top_level_ref(schema: JsonSchema): JsonSchema {
+  const copy = cloneSchema(schema);
+  const ref = copy.$ref;
+  const defName = typeof ref === "string" ? localDefName(ref) : null;
+  const defs = isSchemaRecord(copy.$defs) ? copy.$defs : {};
+  const defSchema = defName ? defs[defName] : null;
+  if (isSchemaRecord(defSchema)) {
+    const resolved = cloneSchema(defSchema);
+    resolved.$defs ??= defs;
+    return resolved;
+  }
+  return copy;
+}
+
+export function _process_oneof(schema: JsonSchema): JsonSchema {
+  return addConstToOneOfVariants(schema);
+}
+
 export function generateModelDescription(
   name: string,
   schema: JsonSchema,
@@ -488,3 +510,60 @@ export function createModelFromSchema(name: string, schema: JsonSchema): { name:
 }
 
 export const create_model_from_schema = createModelFromSchema;
+
+export function _resolve_ref(ref: string, rootSchema: JsonSchema): JsonSchema {
+  const defName = localDefName(ref);
+  const defs = isSchemaRecord(rootSchema.$defs) ? rootSchema.$defs : {};
+  const defSchema = defName ? defs[defName] : null;
+  if (!isSchemaRecord(defSchema)) {
+    throw new Error(`Definition '${defName ?? ref}' not found in $defs.`);
+  }
+  return cloneSchema(defSchema);
+}
+
+export function _merge_all_of_schemas(schemas: readonly JsonSchema[], rootSchema: JsonSchema = {}): JsonSchema {
+  const merged: JsonSchema = { type: "object", properties: {}, required: [] };
+  const requiredValues = (value: unknown): string[] => Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === "string") : [];
+  for (const schema of schemas) {
+    const resolved = typeof schema.$ref === "string" ? _resolve_ref(schema.$ref, rootSchema) : schema;
+    Object.assign(merged, cloneSchema(resolved), {
+      properties: {
+        ...(isSchemaRecord(merged.properties) ? merged.properties : {}),
+        ...(isSchemaRecord(resolved.properties) ? resolved.properties : {}),
+      },
+      required: [...requiredValues(merged.required), ...requiredValues(resolved.required)],
+    });
+  }
+  merged.required = [...new Set(requiredValues(merged.required))];
+  return merged;
+}
+
+export function _json_schema_to_pydantic_type(schema: JsonSchema): string {
+  const typeValue = schema.type;
+  if (typeof typeValue === "string") {
+    return typeValue;
+  }
+  if (Array.isArray(typeValue)) {
+    return typeValue.filter((entry) => typeof entry === "string").join(" | ") || "unknown";
+  }
+  return "unknown";
+}
+
+export function _json_schema_to_pydantic_field(name: string, schema: JsonSchema, required: readonly string[] = []): {
+  name: string;
+  type: string;
+  required: boolean;
+  schema: JsonSchema;
+} {
+  return {
+    name,
+    type: _json_schema_to_pydantic_type(schema),
+    required: required.includes(name),
+    schema,
+  };
+}
+
+export function _build_model_from_schema(schema: JsonSchema, _effectiveRoot: JsonSchema = schema, options: { model_name?: string | null } = {}): ReturnType<typeof createModelFromSchema> {
+  void _effectiveRoot;
+  return createModelFromSchema(options.model_name ?? (typeof schema.title === "string" ? schema.title : "DynamicModel"), schema);
+}
