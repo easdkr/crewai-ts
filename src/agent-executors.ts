@@ -591,9 +591,6 @@ export class AgentExecutor extends BaseAgentExecutor {
   }
 
   handleGoalAchieved(): "all_todos_complete" {
-    for (const todo of this.state.todos.getPendingTodos()) {
-      todo.status = TodoStatus.COMPLETED;
-    }
     return "all_todos_complete";
   }
 

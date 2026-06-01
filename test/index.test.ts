@@ -10087,6 +10087,26 @@ describe("core crew runtime", () => {
     expect((executor.state.current_answer as AgentFinish).thought).toBe("");
   });
 
+  it("preserves pending todo status when AgentExecutor handles early goal achievement", () => {
+    const executor = new AgentExecutor();
+    executor.state.todos.items = [
+      new TodoItem({
+        stepNumber: 1,
+        description: "Find enough evidence",
+        status: TodoStatus.COMPLETED,
+        result: "Goal already satisfied.",
+      }),
+      new TodoItem({
+        stepNumber: 2,
+        description: "Optional follow-up",
+        status: TodoStatus.PENDING,
+      }),
+    ];
+
+    expect(executor.handle_goal_achieved()).toBe("all_todos_complete");
+    expect(executor.state.todos.get_by_step_number(2)?.status).toBe(TodoStatus.PENDING);
+  });
+
   it("routes AgentExecutor dynamic replanning from upstream error signals", () => {
     const executor = new AgentExecutor();
     executor.state.todos.items = [
