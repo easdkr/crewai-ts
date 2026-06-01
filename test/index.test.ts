@@ -23958,6 +23958,28 @@ describe("task output files", () => {
     expect(output.agent).toBe("Future Agent");
   });
 
+  it("returns an awaitable upstream-style future from Task execute_async", async () => {
+    const agentInstance = new Agent({
+      role: "Future Agent",
+      goal: "Resolve future",
+      backstory: "Runs async compatibility helper",
+      llm: () => "async done",
+    });
+    const taskInstance = new Task({
+      description: "Run async",
+      expectedOutput: "Done",
+      async_execution: true,
+      agent: agentInstance,
+    });
+
+    const execution = taskInstance.execute_async(agentInstance) as Promise<TaskOutput> & {
+      result: () => Promise<TaskOutput>;
+    };
+
+    await expect(execution).resolves.toMatchObject({ raw: "async done" });
+    await expect(execution.result()).resolves.toMatchObject({ raw: "async done" });
+  });
+
   it("rejects upstream-compatible task async futures when core execution fails", async () => {
     const agentInstance = new Agent({
       role: "Future Agent",

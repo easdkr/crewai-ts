@@ -83,6 +83,11 @@ type TaskAsyncFuture = {
   reject?: (error: unknown) => void;
 };
 
+export type TaskExecutionFuture = Promise<TaskOutput> & {
+  result: () => Promise<TaskOutput>;
+  exception: () => Promise<unknown>;
+};
+
 const MARKDOWN_FORMATTING_INSTRUCTIONS = [
   "Your final answer MUST be formatted in Markdown syntax.",
   "Follow these guidelines:",
@@ -616,11 +621,11 @@ export class Task {
     return this.executeSync(agent, context, tools);
   }
 
-  executeAsync(agent: Agent | null = null, context: string | null = null, tools?: readonly Tool[]): Promise<TaskOutput> {
-    return this.executeSync(agent, context, tools);
+  executeAsync(agent: Agent | null = null, context: string | null = null, tools?: readonly Tool[]): TaskExecutionFuture {
+    return makeTaskExecutionFuture(this.executeSync(agent, context, tools));
   }
 
-  execute_async(agent: Agent | null = null, context: string | null = null, tools?: readonly Tool[]): Promise<TaskOutput> {
+  execute_async(agent: Agent | null = null, context: string | null = null, tools?: readonly Tool[]): TaskExecutionFuture {
     return this.executeAsync(agent, context, tools);
   }
 
@@ -1502,6 +1507,20 @@ function normalizeGuardrails(guardrails: TaskOptions["guardrails"]): readonly Ta
   return typeof guardrails === "function" || typeof guardrails === "string"
     ? [guardrails]
     : guardrails;
+}
+
+function makeTaskExecutionFuture(promise: Promise<TaskOutput>): TaskExecutionFuture {
+  const future = promise as TaskExecutionFuture;
+  future.result = () => promise;
+  future.exception = async () => {
+    try {
+      await promise;
+      return null;
+    } catch (error) {
+      return error;
+    }
+  };
+  return future;
 }
 
 function normalizeTaskExecutionOptions(
