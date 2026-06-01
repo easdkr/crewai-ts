@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check upstream Crew/Agent class method parity against local TypeScript classes."""
+"""Check upstream core class method parity against local TypeScript classes."""
 
 from __future__ import annotations
 
@@ -20,6 +20,9 @@ UPSTREAM = Path(
 TARGETS = [
     ("Crew", UPSTREAM / "crew.py", ROOT / "src" / "crew.ts"),
     ("Agent", UPSTREAM / "agent" / "core.py", ROOT / "src" / "agent.ts"),
+    ("Task", UPSTREAM / "task.py", ROOT / "src" / "task.ts"),
+    ("LiteAgent", UPSTREAM / "lite_agent.py", ROOT / "src" / "lite-agent.ts"),
+    ("Memory", UPSTREAM / "memory" / "unified_memory.py", ROOT / "src" / "memory.ts"),
 ]
 
 
@@ -38,12 +41,22 @@ def python_class_methods(path: Path, class_name: str) -> list[str]:
 def typescript_class_members(path: Path) -> set[str]:
     text = path.read_text()
     method_pattern = re.compile(
-        r"^  (?:(?:async|static)\s+)*([A-Za-z_][A-Za-z0-9_]*)"
-        r"(?:<[^({]+>)?\(",
+        r"^  (?:(?:public|private|protected|async|static|override)\s+)*"
+        r"([A-Za-z_][A-Za-z0-9_]*)"
+        r"(?:<[^>\n]+>)?\(",
         re.MULTILINE,
     )
     getter_pattern = re.compile(r"^  get ([A-Za-z_][A-Za-z0-9_]*)\(", re.MULTILINE)
-    return set(method_pattern.findall(text)) | set(getter_pattern.findall(text))
+    property_pattern = re.compile(
+        r"^  (?:(?:public|private|protected|readonly|static)\s+)*"
+        r"([A-Za-z_][A-Za-z0-9_]*)\??\s*[:=]",
+        re.MULTILINE,
+    )
+    return (
+        set(method_pattern.findall(text))
+        | set(getter_pattern.findall(text))
+        | set(property_pattern.findall(text))
+    )
 
 
 def snake_to_camel(value: str) -> str:
@@ -52,11 +65,14 @@ def snake_to_camel(value: str) -> str:
 
 
 def local_candidates(upstream_name: str) -> set[str]:
+    camel = snake_to_camel(upstream_name)
     candidates = {
         upstream_name,
         upstream_name.lstrip("_"),
-        snake_to_camel(upstream_name),
+        camel,
     }
+    if upstream_name.startswith("_") and not upstream_name.startswith("__"):
+        candidates.add(f"_{camel}")
     if upstream_name == "__repr__":
         candidates.add("toString")
     return candidates
