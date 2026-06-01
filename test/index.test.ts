@@ -1302,6 +1302,13 @@ describe("serialization and project utilities", () => {
 
     expect(pydanticTaskOutput.to_dict()).toEqual({ summary: "dumped", score: 9 });
     expect(pydanticCrewOutput.to_dict()).toEqual({ summary: "dumped", score: 9 });
+
+    const spacedOutput = new TaskOutput({
+      description: "Alpha  Beta\nGamma Delta Epsilon Zeta Eta Theta Iota Kappa Lambda Mu",
+      raw: "done",
+      agent: "Researcher",
+    });
+    expect(spacedOutput.summary).toBe("Alpha  Beta\nGamma Delta Epsilon Zeta Eta Theta Iota Kappa...");
   });
 
   it("exposes upstream-style LiteAgentOutput string alias", () => {

@@ -47,7 +47,7 @@ export class TaskOutput {
   }
 
   set_summary(): this {
-    this.summary = `${this.description.split(/\s+/).slice(0, 10).join(" ")}...`;
+    this.summary = `${this.description.split(" ").slice(0, 10).join(" ")}...`;
     return this;
   }
 
