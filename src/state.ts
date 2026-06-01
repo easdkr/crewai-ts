@@ -1,5 +1,5 @@
-import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
-import { existsSync, mkdirSync, openSync, readSync, closeSync, statSync, writeFileSync } from "node:fs";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { existsSync, mkdirSync, openSync, readFileSync, readSync, closeSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join, resolve, sep, basename, extname } from "node:path";
 import { randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
@@ -999,20 +999,20 @@ export class JsonProvider implements BaseProvider {
     return path;
   }
 
-  async prune(location: string, maxKeep: number, options: { branch?: string } = {}): Promise<number> {
+  prune(location: string, maxKeep: number, options: { branch?: string } = {}): number {
     const branch = options.branch ?? "main";
     assertSafeBranch(location, branch);
     const branchDir = join(location, branch);
     if (!existsSync(branchDir)) {
       return 0;
     }
-    const files = (await readdir(branchDir, { withFileTypes: true }))
+    const files = readdirSync(branchDir, { withFileTypes: true })
       .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
       .map((entry) => join(branchDir, entry.name))
       .sort((left, right) => statSync(left).mtimeMs - statSync(right).mtimeMs);
     const removable = maxKeep === 0 ? files : files.slice(0, Math.max(0, files.length - maxKeep));
     for (const file of removable) {
-      await rm(file, { force: true });
+      rmSync(file, { force: true });
     }
     return removable.length;
   }
@@ -1027,16 +1027,16 @@ export class JsonProvider implements BaseProvider {
     return this.extractId(location);
   }
 
-  fromCheckpoint(location: string): Promise<string> {
-    return readFile(location, "utf8");
+  fromCheckpoint(location: string): string {
+    return readFileSync(location, "utf8");
   }
 
-  from_checkpoint(location: string): Promise<string> {
+  from_checkpoint(location: string): string {
     return this.fromCheckpoint(location);
   }
 
-  afromCheckpoint(location: string): Promise<string> {
-    return this.fromCheckpoint(location);
+  async afromCheckpoint(location: string): Promise<string> {
+    return await readFile(location, "utf8");
   }
 
   afrom_checkpoint(location: string): Promise<string> {

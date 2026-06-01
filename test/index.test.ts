@@ -28080,7 +28080,7 @@ describe("checkpoint state providers", () => {
     expect(first).toContain("_p-none.json");
     expect(second).toContain(`_p-${firstId}.json`);
     expect(fork).toContain("/fork/exp1/");
-    expect(await provider.from_checkpoint(first)).toBe("{\"step\":1}");
+    expect(provider.from_checkpoint(first)).toBe("{\"step\":1}");
     expect(await provider.afrom_checkpoint(fork)).toBe("{\"fork\":true}");
   });
 
@@ -28109,11 +28109,11 @@ describe("checkpoint state providers", () => {
       provider.checkpoint(`{"fork":${String(index)}}`, directory, { branch: "fork/a" });
     }
 
-    await expect(provider.prune(directory, 1, { branch: "main" })).resolves.toBe(2);
+    expect(provider.prune(directory, 1, { branch: "main" })).toBe(2);
     await expect(readdir(join(directory, "main"))).resolves.toHaveLength(1);
     await expect(readdir(join(directory, "fork", "a"))).resolves.toHaveLength(2);
     expect(() => provider.checkpoint("{}", directory, { branch: "../../etc" })).toThrow("escapes checkpoint directory");
-    await expect(provider.prune(directory, 1, { branch: "../../etc" })).rejects.toThrow("escapes checkpoint directory");
+    expect(() => provider.prune(directory, 1, { branch: "../../etc" })).toThrow("escapes checkpoint directory");
   });
 
   it("attaches checkpoint configs to agents, crews, and flows", () => {
@@ -28670,7 +28670,7 @@ describe("runtime state", () => {
     expect(firstId).not.toBe(secondId);
     expect(state.parent_id).toBe(secondId);
 
-    const secondPayload = JSON.parse(await provider.from_checkpoint(second)) as Record<string, unknown>;
+    const secondPayload = JSON.parse(provider.from_checkpoint(second)) as Record<string, unknown>;
     expect(secondPayload.parent_id).toBe(firstId);
 
     const restored = await RuntimeState.from_checkpoint(new CheckpointConfig({
