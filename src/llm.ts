@@ -1200,8 +1200,13 @@ export const create_llm = createLLM;
 
 export function llmViaEnvironmentOrFallback(env: CreateLLMEnvironment = process.env): LLMClient {
   const model = env.MODEL ?? env.MODEL_NAME ?? env.OPENAI_MODEL_NAME ?? DEFAULT_LLM_MODEL;
-  const baseUrl = env.BASE_URL ?? env.OPENAI_API_BASE ?? env.OPENAI_BASE_URL;
-  const apiBase = env.API_BASE ?? env.AZURE_API_BASE ?? baseUrl;
+  let baseUrl = env.BASE_URL ?? env.OPENAI_API_BASE ?? env.OPENAI_BASE_URL;
+  let apiBase = env.API_BASE ?? env.AZURE_API_BASE;
+  if (baseUrl !== undefined && apiBase === undefined) {
+    apiBase = baseUrl;
+  } else if (apiBase !== undefined && baseUrl === undefined) {
+    baseUrl = apiBase;
+  }
   const spec = resolveLLMModelSpec(model);
   const options: ConstructorParameters<typeof ConfiguredLLM>[0] = {
     model,

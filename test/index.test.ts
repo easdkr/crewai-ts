@@ -18157,8 +18157,18 @@ describe("LLM providers", () => {
     expect((azureEnv as ConfiguredLLM).to_config_dict()).toMatchObject({
       model: "azure/my-deployment",
       api_key: "azure-key",
+      base_url: "https://azure.example.test",
       api_base: "https://azure.example.test",
       additional_params: { api_version: "2024-02-15-preview" },
+    });
+    const apiBaseOnlyEnv = create_llm(null, {
+      MODEL_NAME: "test/api-base-only",
+      API_BASE: "https://api-base-only.example.test",
+    });
+    expect((apiBaseOnlyEnv as ConfiguredLLM).to_config_dict()).toMatchObject({
+      model: "test/api-base-only",
+      base_url: "https://api-base-only.example.test",
+      api_base: "https://api-base-only.example.test",
     });
     const bedrockEnv = create_llm(null, {
       MODEL: "bedrock/amazon.nova-pro-v1:0",
