@@ -18298,6 +18298,34 @@ describe("flow runtime", () => {
     });
   });
 
+  it("falls back to default kickoff when restore_from_state_id is missing", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "crewai-ts-flow-missing-restore-"));
+    const persistence = new JsonFlowPersistence(directory);
+
+    class MissingRestoreFlow extends Flow<{ id: string; counter: number }> {
+      constructor() {
+        super({
+          initialState: { id: "fresh-flow", counter: 0 },
+          persistence,
+        });
+      }
+
+      step() {
+        this.state.counter += 1;
+      }
+    }
+
+    const initializer = decorateMethod(MissingRestoreFlow, "step", start() as unknown as Decorator);
+    const flow = new MissingRestoreFlow();
+    initializer.call(flow);
+
+    await flow.kickoff({ restore_from_state_id: "no-such-flow" });
+
+    expect(flow.state.counter).toBe(1);
+    expect(flow.state.id).not.toBe("no-such-flow");
+    await expect(persistence.loadState("no-such-flow")).resolves.toBeNull();
+  });
+
   it("rejects combining from_checkpoint and restore_from_state_id on kickoff", async () => {
     const directory = mkdtempSync(join(tmpdir(), "crewai-ts-flow-conflicting-restore-"));
     const persistence = new JsonFlowPersistence(directory);
