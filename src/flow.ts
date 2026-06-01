@@ -72,7 +72,6 @@ export const FlowExecutionData = Object.freeze({ kind: "FlowExecutionData" });
 export const FlowStructure = Object.freeze({ kind: "FlowStructure" });
 export const InputProvider = Object.freeze({ kind: "InputProvider" });
 export const InputResponse = Object.freeze({ kind: "InputResponse" });
-export const PendingFeedbackContext = Object.freeze({ kind: "PendingFeedbackContext" });
 export const HumanFeedbackProvider = Object.freeze({ kind: "HumanFeedbackProvider" });
 export const HumanFeedbackResult = Object.freeze({ kind: "HumanFeedbackResult" });
 export const HumanFeedbackConfig = Object.freeze({ kind: "HumanFeedbackConfig" });
@@ -720,19 +719,184 @@ export type FlowInputHistoryEntry = {
 
 export type HumanFeedbackContext = {
   flowName: string;
+  flow_name?: string;
   methodName: string;
+  method_name?: string;
   output: unknown;
+  methodOutput?: unknown;
+  method_output?: unknown;
   message: string;
   emit: readonly string[] | null;
   defaultOutcome: string | null;
+  default_outcome?: string | null;
   metadata: Record<string, unknown>;
   llm?: string | Record<string, unknown> | null;
 };
 
 export type PendingFeedbackContext = HumanFeedbackContext & {
   flowId: string | null;
+  flow_id?: string | null;
   flowClass: string;
+  flow_class?: string;
   requestedAt: Date;
+  requested_at?: Date;
+};
+
+export type PendingFeedbackContextOptions = Partial<HumanFeedbackContext> & {
+  flowId?: string | null;
+  flow_id?: string | null;
+  flowClass?: string;
+  flow_class?: string;
+  requestedAt?: Date | string | null;
+  requested_at?: Date | string | null;
+};
+
+function coercePendingFeedbackDate(value: Date | string | null | undefined): Date {
+  if (value instanceof Date) {
+    return value;
+  }
+  if (typeof value === "string" && value.length > 0) {
+    const parsed = new Date(value);
+    if (!Number.isNaN(parsed.getTime())) {
+      return parsed;
+    }
+  }
+  return new Date();
+}
+
+function jsonSafeFeedbackValue(value: unknown): unknown {
+  if (value === null || value === undefined || typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return value.map((entry) => jsonSafeFeedbackValue(entry));
+  }
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+  if (isRecord(value)) {
+    const modelDump = value.model_dump ?? value.modelDump;
+    if (typeof modelDump === "function") {
+      return jsonSafeFeedbackValue(modelDump.call(value));
+    }
+    const serialized: Record<string, unknown> = {};
+    for (const [key, entry] of Object.entries(value)) {
+      serialized[key] = jsonSafeFeedbackValue(entry);
+    }
+    return serialized;
+  }
+  if (typeof value === "symbol" || typeof value === "bigint") {
+    return value.toString();
+  }
+  if (typeof value === "function") {
+    return value.name ? `[function ${value.name}]` : "[function]";
+  }
+  return Object.prototype.toString.call(value);
+}
+
+export const PendingFeedbackContext = class PendingFeedbackContextValue {
+  readonly flowName: string;
+  readonly flow_name: string;
+  readonly flowId: string | null;
+  readonly flow_id: string | null;
+  readonly flowClass: string;
+  readonly flow_class: string;
+  readonly methodName: string;
+  readonly method_name: string;
+  readonly output: unknown;
+  readonly methodOutput: unknown;
+  readonly method_output: unknown;
+  readonly message: string;
+  readonly emit: readonly string[] | null;
+  readonly defaultOutcome: string | null;
+  readonly default_outcome: string | null;
+  readonly metadata: Record<string, unknown>;
+  readonly llm: string | Record<string, unknown> | null;
+  readonly requestedAt: Date;
+  readonly requested_at: Date;
+
+  constructor(options: PendingFeedbackContextOptions) {
+    const flowClass = options.flowClass ?? options.flow_class ?? options.flowName ?? options.flow_name ?? "";
+    const flowName = options.flowName ?? options.flow_name ?? flowClass;
+    const methodName = options.methodName ?? options.method_name ?? "";
+    const output = options.output ?? options.methodOutput ?? options.method_output;
+    const defaultOutcome = options.defaultOutcome ?? options.default_outcome ?? null;
+    const requestedAt = coercePendingFeedbackDate(options.requestedAt ?? options.requested_at);
+    this.flowName = flowName;
+    this.flow_name = flowName;
+    this.flowId = options.flowId ?? options.flow_id ?? null;
+    this.flow_id = this.flowId;
+    this.flowClass = flowClass;
+    this.flow_class = flowClass;
+    this.methodName = methodName;
+    this.method_name = methodName;
+    this.output = output;
+    this.methodOutput = output;
+    this.method_output = output;
+    this.message = options.message ?? "";
+    this.emit = options.emit ?? null;
+    this.defaultOutcome = defaultOutcome;
+    this.default_outcome = defaultOutcome;
+    this.metadata = options.metadata ?? {};
+    this.llm = options.llm ?? null;
+    this.requestedAt = requestedAt;
+    this.requested_at = requestedAt;
+  }
+
+  to_dict(): Record<string, unknown> {
+    return {
+      flow_id: this.flowId,
+      flow_class: this.flowClass,
+      method_name: this.methodName,
+      method_output: jsonSafeFeedbackValue(this.output),
+      message: this.message,
+      emit: this.emit,
+      default_outcome: this.defaultOutcome,
+      metadata: jsonSafeFeedbackValue(this.metadata),
+      llm: this.llm,
+      requested_at: this.requestedAt.toISOString(),
+    };
+  }
+
+  toDict(): Record<string, unknown> {
+    return this.to_dict();
+  }
+
+  toJSON(): Record<string, unknown> {
+    return this.to_dict();
+  }
+
+  static from_dict(data: Record<string, unknown>): PendingFeedbackContextValue {
+    return new PendingFeedbackContext({
+      flowId: typeof data.flowId === "string" || data.flowId === null ? data.flowId : typeof data.flow_id === "string" || data.flow_id === null ? data.flow_id : null,
+      flowClass: typeof data.flowClass === "string" ? data.flowClass : typeof data.flow_class === "string" ? data.flow_class : "",
+      flowName: typeof data.flowName === "string"
+        ? data.flowName
+        : typeof data.flow_name === "string"
+          ? data.flow_name
+          : typeof data.flowClass === "string"
+            ? data.flowClass
+            : typeof data.flow_class === "string"
+              ? data.flow_class
+              : "",
+      methodName: typeof data.methodName === "string" ? data.methodName : typeof data.method_name === "string" ? data.method_name : "",
+      output: data.output ?? data.methodOutput ?? data.method_output,
+      message: typeof data.message === "string" ? data.message : "",
+      emit: Array.isArray(data.emit) ? data.emit.filter((entry): entry is string => typeof entry === "string") : null,
+      defaultOutcome: typeof data.defaultOutcome === "string" ? data.defaultOutcome : typeof data.default_outcome === "string" ? data.default_outcome : null,
+      metadata: isRecord(data.metadata) ? data.metadata : {},
+      llm: typeof data.llm === "string" || isRecord(data.llm) ? data.llm : null,
+      requestedAt: data.requestedAt instanceof Date || typeof data.requestedAt === "string"
+        ? data.requestedAt
+        : data.requested_at instanceof Date || typeof data.requested_at === "string"
+          ? data.requested_at
+          : null,
+    });
+  }
+
+  static fromDict(data: Record<string, unknown>): PendingFeedbackContextValue {
+    return PendingFeedbackContext.from_dict(data);
+  }
 };
 
 export type HumanFeedbackProvider = {
@@ -2348,7 +2512,7 @@ export class Flow<TState extends object = Record<string, unknown>> {
       message: config.message,
       emit,
     }));
-    const context: PendingFeedbackContext = {
+    const context: PendingFeedbackContext = new PendingFeedbackContext({
       flowName,
       methodName,
       output: methodOutput,
@@ -2360,7 +2524,7 @@ export class Flow<TState extends object = Record<string, unknown>> {
       flowId: this.flowPersistenceId(),
       flowClass: this.constructor.name,
       requestedAt: new Date(),
-    };
+    });
     const provider = config.provider ?? flowConfig.hitlProvider;
     if (isHumanFeedbackProvider(provider)) {
       const request = provider.requestFeedback ?? provider.request_feedback;

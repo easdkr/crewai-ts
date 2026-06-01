@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 795 passing tests.
+- Test suite: 796 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -386,6 +386,7 @@ When more goal budget is available, continue from the behavioral parity audits b
   - `StreamChunk.__str__` and `StreamingOutputBase.__iter__` now mirror upstream string and sync-iteration helpers.
   - `InternalInstructor.to_pydantic` now exposes upstream-style structured conversion through a provided synchronous LLM client and model validation/dump hooks.
 - `Task._export_output` / `_aexport_output` now preserve already-converted structured output model instances instead of re-validating or calling class-style models as raw-output converters.
+- `PendingFeedbackContext` now mirrors upstream value-object behavior with snake_case construction, JSON-safe `to_dict` serialization, and `from_dict` restoration while preserving existing flow pause/resume context fields.
 - Added knowledge compatibility behavior:
   - `Knowledge` now accepts storage-backed configuration and exposes upstream-style `add_sources`, `aadd_sources`, `aquery`, and `areset` helpers while preserving the in-memory deterministic path.
   - Knowledge sources now expose upstream-style `add`, `aadd`, `validate_content`, and `get_embeddings` helpers and can save their chunks through configured storage.

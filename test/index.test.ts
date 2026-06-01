@@ -181,6 +181,7 @@ import {
   HTTPBasicAuth,
   HTTPDigestAuth,
   HumanFeedbackPending,
+  PendingFeedbackContext,
   SyncHumanInputProvider,
   reset_provider,
   set_provider,
@@ -16915,6 +16916,53 @@ describe("flow runtime", () => {
     expect((pending as HumanFeedbackPending).context).toMatchObject({
       llm: { model: "gpt-4o-mini", temperature: 0 },
     });
+  });
+
+  it("serializes PendingFeedbackContext with upstream snake_case fields", () => {
+    const modelLikeOutput = {
+      model_dump: () => ({ document: "draft", approved: false }),
+    };
+    const context = new PendingFeedbackContext({
+      flow_id: "feedback-flow",
+      flow_class: "myapp.flows.ReviewFlow",
+      method_name: "review_content",
+      method_output: modelLikeOutput,
+      message: "Please review",
+      emit: ["approved", "rejected"],
+      default_outcome: "rejected",
+      metadata: { channel: "#reviews" },
+      llm: "gpt-4o-mini",
+      requested_at: "2024-01-15T10:30:00.000Z",
+    });
+
+    expect(context.flowId).toBe("feedback-flow");
+    expect(context.flowClass).toBe("myapp.flows.ReviewFlow");
+    expect(context.methodName).toBe("review_content");
+    expect(context.output).toBe(modelLikeOutput);
+    expect(context.requestedAt.toISOString()).toBe("2024-01-15T10:30:00.000Z");
+
+    const serialized = context.to_dict();
+    expect(serialized).toMatchObject({
+      flow_id: "feedback-flow",
+      flow_class: "myapp.flows.ReviewFlow",
+      method_name: "review_content",
+      method_output: { document: "draft", approved: false },
+      message: "Please review",
+      emit: ["approved", "rejected"],
+      default_outcome: "rejected",
+      metadata: { channel: "#reviews" },
+      llm: "gpt-4o-mini",
+      requested_at: "2024-01-15T10:30:00.000Z",
+    });
+
+    const restored = PendingFeedbackContext.from_dict(serialized);
+    expect(restored.flowId).toBe(context.flowId);
+    expect(restored.flowClass).toBe(context.flowClass);
+    expect(restored.methodName).toBe(context.methodName);
+    expect(restored.output).toEqual({ document: "draft", approved: false });
+    expect(restored.emit).toEqual(["approved", "rejected"]);
+    expect(restored.defaultOutcome).toBe("rejected");
+    expect(restored.llm).toBe("gpt-4o-mini");
   });
 
   it("uses ConsoleProvider for upstream feedback and input provider protocols", async () => {

@@ -457,6 +457,10 @@ function databaseSync(): typeof import("node:sqlite").DatabaseSync {
 }
 
 export function serializePendingFeedbackContext(context: PendingFeedbackContext): Record<string, unknown> {
+  const upstreamSerializer = (context as unknown as { to_dict?: () => Record<string, unknown> }).to_dict;
+  if (typeof upstreamSerializer === "function") {
+    return upstreamSerializer.call(context);
+  }
   return {
     ...context,
     requestedAt: context.requestedAt.toISOString(),
@@ -464,18 +468,39 @@ export function serializePendingFeedbackContext(context: PendingFeedbackContext)
 }
 
 export function deserializePendingFeedbackContext(value: Record<string, unknown>): PendingFeedbackContext {
+  const flowName = stringValue(value.flowName) || stringValue(value.flow_name) || stringValue(value.flowClass) || stringValue(value.flow_class);
+  const flowClass = stringValue(value.flowClass) || stringValue(value.flow_class) || flowName;
+  const methodName = stringValue(value.methodName) || stringValue(value.method_name);
+  const output = value.output ?? value.methodOutput ?? value.method_output;
+  const defaultOutcome = typeof value.defaultOutcome === "string" ? value.defaultOutcome : typeof value.default_outcome === "string" ? value.default_outcome : null;
+  const requestedAt = typeof value.requestedAt === "string" || value.requestedAt instanceof Date
+    ? new Date(value.requestedAt)
+    : typeof value.requested_at === "string" || value.requested_at instanceof Date
+      ? new Date(value.requested_at)
+      : new Date();
   return {
-    flowName: stringValue(value.flowName),
-    flowClass: stringValue(value.flowClass),
-    flowId: typeof value.flowId === "string" ? value.flowId : null,
-    methodName: stringValue(value.methodName),
-    output: value.output,
+    flowName,
+    flow_name: flowName,
+    flowClass,
+    flow_class: flowClass,
+    flowId: typeof value.flowId === "string" || value.flowId === null
+      ? value.flowId
+      : typeof value.flow_id === "string" || value.flow_id === null
+        ? value.flow_id
+        : null,
+    methodName,
+    method_name: methodName,
+    output,
+    methodOutput: output,
+    method_output: output,
     message: stringValue(value.message),
     emit: Array.isArray(value.emit) ? value.emit.filter((entry): entry is string => typeof entry === "string") : null,
-    defaultOutcome: typeof value.defaultOutcome === "string" ? value.defaultOutcome : null,
+    defaultOutcome,
+    default_outcome: defaultOutcome,
     metadata: isRecord(value.metadata) ? value.metadata : {},
     llm: typeof value.llm === "string" || isRecord(value.llm) ? value.llm : null,
-    requestedAt: typeof value.requestedAt === "string" ? new Date(value.requestedAt) : new Date(),
+    requestedAt,
+    requested_at: requestedAt,
   };
 }
 
