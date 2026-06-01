@@ -18522,6 +18522,41 @@ describe("LLM providers", () => {
     expect(metrics.modelDump()).toEqual(metrics.model_dump());
   });
 
+  it("normalizes model-like usage objects through their dump methods", () => {
+    const camelUsage = {
+      promptTokens: 999,
+      modelDump() {
+        return {
+          prompt_tokens: 10,
+          completion_tokens: 20,
+          total_tokens: 30,
+        };
+      },
+    };
+    const snakeUsage = {
+      model_dump() {
+        return {
+          prompt_tokens: 5,
+          total_tokens: 7,
+        };
+      },
+    };
+
+    expect(BaseLLM._usage_to_dict(camelUsage)).toEqual({
+      prompt_tokens: 10,
+      completion_tokens: 20,
+      total_tokens: 30,
+    });
+    expect(BaseLLM._usage_to_dict(snakeUsage)).toEqual({
+      prompt_tokens: 5,
+      total_tokens: 7,
+    });
+    expect(BaseLLM._usage_to_dict({ total_tokens: 42, _internal: "hidden" })).toEqual({
+      total_tokens: 42,
+    });
+    expect(BaseLLM._usage_to_dict(42)).toBeNull();
+  });
+
   it("exposes upstream provider model constants for non-native LLM providers", () => {
     expect(PROVIDERS).toEqual([
       "openai",

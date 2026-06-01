@@ -2405,7 +2405,7 @@ export abstract class BaseLLM implements LLMClient {
       return null;
     }
     if (isRecord(usage)) {
-      const modelDump = usage.model_dump;
+      const modelDump = usage.model_dump ?? usage.modelDump;
       if (typeof modelDump === "function") {
         const dumped = (modelDump as () => unknown)();
         return isRecord(dumped) ? dumped : null;
