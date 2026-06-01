@@ -27868,7 +27868,11 @@ describe("memory", () => {
   });
 
   it("embeds memory batch saves in one upstream-style call", () => {
-    const embedder = vi.fn((texts: readonly string[]) => texts.map((text, index) => [text.length, index]));
+    const embedder = vi.fn((texts: readonly string[]) => texts.map((_text, index) => [
+      index === 0 ? 1 : 0,
+      index === 1 ? 1 : 0,
+      index === 2 ? 1 : 0,
+    ]));
     const memory = new Memory({ embedder });
 
     expect(memory.remember_many([
@@ -27886,10 +27890,31 @@ describe("memory", () => {
     expect(embedder).toHaveBeenCalledTimes(1);
     expect(embedder).toHaveBeenCalledWith(["Fact A.", "Fact B.", "Fact C."]);
     expect(Object.fromEntries(memory.list_records("/batch").map((record) => [record.content, record.embedding]))).toEqual({
-      "Fact A.": [7, 0],
-      "Fact B.": [7, 1],
-      "Fact C.": [7, 2],
+      "Fact A.": [1, 0, 0],
+      "Fact B.": [0, 1, 0],
+      "Fact C.": [0, 0, 1],
     });
+  });
+
+  it("deduplicates memory batch saves by upstream embedding similarity", () => {
+    const embedder = vi.fn((texts: readonly string[]) => texts.map(() => [0.5, 0.5]));
+    const memory = new Memory({ embedder });
+
+    expect(memory.remember_many([
+      "CrewAI is great.",
+      "CrewAI is wonderful.",
+    ], {
+      scope: "/batch",
+      categories: ["review"],
+      importance: 0.7,
+    })).toEqual([]);
+
+    memory.drain_writes();
+
+    expect(embedder).toHaveBeenCalledTimes(1);
+    expect(memory.list_records("/batch").map((record) => record.content)).toEqual([
+      "CrewAI is great.",
+    ]);
   });
 
   it("consolidates async batch saves against existing memories with first action winning", async () => {

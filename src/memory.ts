@@ -2759,7 +2759,10 @@ export class Memory {
     }));
     const start = performance.now();
     try {
-      const activeItems = this.attachBatchEmbeddings(deduplicateMemoryBatch(items, this.config));
+      const activeItems = deduplicateEmbeddedMemoryBatch(
+        this.attachBatchEmbeddings(deduplicateMemoryBatch(items, this.config)),
+        this.config,
+      );
       const records = this.applyBatchSavePlans(activeItems);
       crewaiEventBus.emit(this, new MemorySaveCompletedEvent({
         value: `${String(records.length)} memories saved`,
@@ -3837,6 +3840,22 @@ function deduplicateMemoryBatch<T extends { content: string }>(items: readonly T
     const duplicate = active.some((existing) =>
       tokenCosineSimilarity(existing.content, item.content) >= config.batchDedupThreshold,
     );
+    if (!duplicate) {
+      active.push(item);
+    }
+  }
+  return active;
+}
+
+function deduplicateEmbeddedMemoryBatch<T extends { embedding?: readonly number[] | null }>(items: readonly T[], config = new MemoryConfig()): T[] {
+  const active: T[] = [];
+  for (const item of items) {
+    const duplicate = active.some((existing) => {
+      if (!existing.embedding?.length || !item.embedding?.length) {
+        return false;
+      }
+      return cosineSimilarity(existing.embedding, item.embedding) >= config.batchDedupThreshold;
+    });
     if (!duplicate) {
       active.push(item);
     }
