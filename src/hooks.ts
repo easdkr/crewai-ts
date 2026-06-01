@@ -32,10 +32,8 @@ export class LLMCallHookContext {
     this.response = options.response ?? null;
   }
 
-  requestHumanInput(_prompt: string, _defaultMessage?: string): string {
-    void _prompt;
-    void _defaultMessage;
-    return "";
+  requestHumanInput(prompt: string, defaultMessage?: string): string {
+    return requestHookHumanInput(this, prompt, defaultMessage);
   }
 
   request_human_input(prompt: string, defaultMessage = "Press Enter to continue, or provide feedback:"): string {
@@ -79,10 +77,8 @@ export class ToolCallHookContext {
     this.tool_result = this.toolResult;
   }
 
-  requestHumanInput(_prompt: string, _defaultMessage?: string): string {
-    void _prompt;
-    void _defaultMessage;
-    return "";
+  requestHumanInput(prompt: string, defaultMessage?: string): string {
+    return requestHookHumanInput(this, prompt, defaultMessage);
   }
 
   request_human_input(prompt: string, defaultMessage = "Press Enter to continue, or provide feedback:"): string {
@@ -583,6 +579,71 @@ function hasStringProperty<T extends string>(value: unknown, key: T): value is R
 
 function sanitizeHookToolName(name: string): string {
   return name.trim().replace(/[^\w-]/g, "_");
+}
+
+function requestHookHumanInput(source: unknown, prompt: string, defaultMessage?: string): string {
+  const formatter = resolveHookFormatter(source);
+  pauseHookFormatter(formatter);
+  try {
+    const promptFn = getObjectProperty(globalThis, "prompt");
+    const response = isHookPromptFunction(promptFn) ? promptFn(defaultMessage ?? prompt) : "";
+    if (response == null) {
+      return "";
+    }
+    if (typeof response === "string") {
+      return response.trim();
+    }
+    if (typeof response === "number" || typeof response === "boolean" || typeof response === "bigint") {
+      return response.toString().trim();
+    }
+    return "";
+  } finally {
+    resumeHookFormatter(formatter);
+  }
+}
+
+function isHookPromptFunction(value: unknown): value is (message?: string) => unknown {
+  return typeof value === "function";
+}
+
+function resolveHookFormatter(source: unknown): unknown {
+  for (const candidate of hookContextCandidates(source)) {
+    const formatter = getObjectProperty(candidate, "formatter");
+    if (formatter) {
+      return formatter;
+    }
+    const eventListener = getObjectProperty(candidate, "event_listener") ?? getObjectProperty(candidate, "eventListener");
+    const listenerFormatter = getObjectProperty(eventListener, "formatter");
+    if (listenerFormatter) {
+      return listenerFormatter;
+    }
+  }
+  return null;
+}
+
+function hookContextCandidates(source: unknown): unknown[] {
+  const candidates: unknown[] = [source];
+  for (const key of ["executor", "tool", "agent", "task", "crew"] as const) {
+    const value = getObjectProperty(source, key);
+    if (value) {
+      candidates.push(value);
+    }
+  }
+  return candidates;
+}
+
+function pauseHookFormatter(formatter: unknown): void {
+  const pause = getObjectProperty(formatter, "pause_live_updates") ?? getObjectProperty(formatter, "pauseLiveUpdates");
+  if (typeof pause === "function") {
+    pause.call(formatter);
+  }
+}
+
+function resumeHookFormatter(formatter: unknown): void {
+  const resume = getObjectProperty(formatter, "resume_live_updates") ?? getObjectProperty(formatter, "resumeLiveUpdates");
+  if (typeof resume === "function") {
+    resume.call(formatter);
+  }
 }
 
 function readHookExecutor(executor: unknown): {

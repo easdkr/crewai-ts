@@ -27866,6 +27866,75 @@ describe("global hooks", () => {
     expect(executor.messages).toContain(newMessage);
   });
 
+  it("requests human input from LLM hook contexts with live update pause/resume", () => {
+    const originalPrompt = Object.getOwnPropertyDescriptor(globalThis, "prompt");
+    const pauseLiveUpdates = vi.fn();
+    const resumeLiveUpdates = vi.fn();
+    const prompt = vi.fn(() => "  approved  ");
+    const executor = {
+      messages: [],
+      formatter: {
+        pause_live_updates: pauseLiveUpdates,
+        resume_live_updates: resumeLiveUpdates,
+      },
+    };
+    Object.defineProperty(globalThis, "prompt", { configurable: true, writable: true, value: prompt });
+    try {
+      const context = new LLMCallHookContext({ executor });
+
+      expect(context.request_human_input("Approve?", "Type 'approved':")).toBe("approved");
+      expect(pauseLiveUpdates).toHaveBeenCalledTimes(1);
+      expect(prompt).toHaveBeenCalledWith("Type 'approved':");
+      expect(resumeLiveUpdates).toHaveBeenCalledTimes(1);
+    } finally {
+      if (originalPrompt) {
+        Object.defineProperty(globalThis, "prompt", originalPrompt);
+      } else {
+        Reflect.deleteProperty(globalThis, "prompt");
+      }
+    }
+  });
+
+  it("resumes live updates when tool hook human input throws", () => {
+    const originalPrompt = Object.getOwnPropertyDescriptor(globalThis, "prompt");
+    const resumeLiveUpdates = vi.fn();
+    Object.defineProperty(globalThis, "prompt", {
+      configurable: true,
+      writable: true,
+      value: vi.fn(() => {
+        throw new Error("Input error");
+      }),
+    });
+    try {
+      const context = new ToolCallHookContext({
+        tool: new StructuredTool({
+          name: "search",
+          description: "Search",
+          argsSchema: {},
+          func: () => "result",
+        }),
+        toolInput: {},
+        crew: {
+          event_listener: {
+            formatter: {
+              pause_live_updates: vi.fn(),
+              resume_live_updates: resumeLiveUpdates,
+            },
+          },
+        },
+      });
+
+      expect(() => context.request_human_input("Review?")).toThrow("Input error");
+      expect(resumeLiveUpdates).toHaveBeenCalledTimes(1);
+    } finally {
+      if (originalPrompt) {
+        Object.defineProperty(globalThis, "prompt", originalPrompt);
+      } else {
+        Reflect.deleteProperty(globalThis, "prompt");
+      }
+    }
+  });
+
   it("runs before and after LLM hooks around agent LLM calls", async () => {
     beforeLlmCall((context) => {
       const userMessage = context.messages.find((message) => message.role === "user");
