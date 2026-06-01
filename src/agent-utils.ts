@@ -6,6 +6,7 @@ import type { LLM, LLMMessage, MaybePromise, Tool, ToolContext } from "./types.j
 import { AgentRepositoryError } from "./errors.js";
 import { BaseLLM, callStopOverride, type LLMResponse } from "./llm.js";
 import { LLMCallHookContext, runAfterLlmCallHooks, runBeforeLlmCallHooks } from "./hooks.js";
+import { I18N_DEFAULT } from "./i18n.js";
 
 export type ToolRunner = (input?: ToolContext | Record<string, unknown> | string) => MaybePromise<unknown>;
 
@@ -369,6 +370,26 @@ export function summarizeMessages(messages: readonly LLMMessage[]): SummaryConte
 
 export const summarize_messages = summarizeMessages;
 
+export async function _asummarize_chunks(
+  chunks: readonly (readonly LLMMessage[])[],
+  llm: { acall?: (messages: readonly LLMMessage[], options?: Record<string, unknown>) => MaybePromise<unknown>; call?: (messages: readonly LLMMessage[], options?: Record<string, unknown>) => MaybePromise<unknown> },
+  callbacks: readonly unknown[] = [],
+): Promise<SummaryContent[]> {
+  return await Promise.all(chunks.map(async (chunk) => {
+    const conversationText = _format_messages_for_summary(chunk);
+    const summarizationMessages = [
+      formatMessageForLLM(I18N_DEFAULT.slice("summarizer_system_message"), "system"),
+      formatMessageForLLM(
+        I18N_DEFAULT.slice("summarize_instruction").replace("{conversation}", conversationText),
+      ),
+    ];
+    const summary = llm.acall
+      ? await llm.acall(summarizationMessages, { callbacks })
+      : await llm.call?.(summarizationMessages, { callbacks });
+    return new SummaryContent({ content: _extract_summary_tags(summaryToText(summary)) });
+  }));
+}
+
 export function _estimate_token_count(text: string): number {
   return Math.floor(text.length / 4);
 }
@@ -715,6 +736,19 @@ function withoutExecutorOptions(options: Record<string, unknown>): Record<string
   void _executorContext;
   void _executor_context;
   return rest;
+}
+
+function summaryToText(summary: unknown): string {
+  if (summary === null || summary === undefined) {
+    return "";
+  }
+  if (typeof summary === "string") {
+    return summary;
+  }
+  if (typeof summary === "number" || typeof summary === "boolean" || typeof summary === "bigint") {
+    return summary.toString();
+  }
+  return safeJsonStringify(summary);
 }
 
 export const get_tool_names = getToolNames;

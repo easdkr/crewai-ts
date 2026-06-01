@@ -765,6 +765,7 @@ import {
   _split_messages_into_chunks,
   _executor_stop_words,
   _llm_stop_words_applied,
+  _asummarize_chunks,
   _prepare_llm_call,
   _validate_and_finalize_llm_response,
   isValidTool,
@@ -5784,6 +5785,35 @@ describe("agent utility helpers", () => {
     ], 3).map((chunk) => chunk.length)).toEqual([1, 2]);
     expect(_extract_summary_tags("before <summary>Important summary</summary> after")).toBe("Important summary");
     expect(_extract_summary_tags("No tags")).toBe("No tags");
+  });
+
+  it("summarizes message chunks with upstream async helper", async () => {
+    const calls: LLMMessage[][] = [];
+    const chunks: LLMMessage[][] = [
+      [
+        { role: "user", content: "Find CrewAI facts" },
+        { role: "assistant", content: "I will search." },
+      ],
+      [
+        { role: "tool", content: "CrewAI supports crews." },
+      ],
+    ];
+
+    const summaries = await _asummarize_chunks(chunks, {
+      acall(messages) {
+        calls.push([...messages]);
+        return `<summary>${messages.at(-1)?.content.includes("TOOL_RESULT") ? "Tool result preserved" : "User request preserved"}</summary>`;
+      },
+    }, ["callback"]);
+
+    expect(calls).toHaveLength(2);
+    expect(calls[0]?.[0]).toMatchObject({ role: "system" });
+    expect(calls[0]?.[1]?.content).toContain("[USER]: Find CrewAI facts");
+    expect(calls[1]?.[1]?.content).toContain("[TOOL_RESULT (unknown)]: CrewAI supports crews.");
+    expect(summaries.map((summary) => summary.content)).toEqual([
+      "User request preserved",
+      "Tool result preserved",
+    ]);
   });
 
   it("applies executor stop words to BaseLLM calls without mutating the model", async () => {

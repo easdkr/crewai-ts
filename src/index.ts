@@ -543,6 +543,7 @@ export {
   format_message_for_llm,
   _executor_stop_words,
   _llm_stop_words_applied,
+  _asummarize_chunks,
   _prepare_llm_call,
   _validate_and_finalize_llm_response,
   formatAnswer,
