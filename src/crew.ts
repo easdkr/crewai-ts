@@ -102,6 +102,33 @@ type MemorySystemConfig = {
   reset: (system: Memory | MemoryScope | readonly Knowledge[] | Crew) => void;
 };
 
+export function _resolve_agent(value: unknown, _info: unknown = null): unknown {
+  void _info;
+  if (value === null || value instanceof Agent || !isRecord(value)) {
+    return value;
+  }
+  return createAgentFromConfig(value);
+}
+
+export function _resolve_agents(value: unknown, info: unknown = null): unknown {
+  if (!Array.isArray(value)) {
+    return value;
+  }
+  return value.map((agent) => _resolve_agent(agent, info));
+}
+
+export function default_reset(memory: { reset: () => unknown }): unknown {
+  return memory.reset();
+}
+
+export function knowledge_reset(crew: { resetKnowledge?: (knowledges: readonly Knowledge[]) => void; reset_knowledge?: (knowledges: readonly Knowledge[]) => void }, knowledges: readonly Knowledge[]): void {
+  if (crew.resetKnowledge) {
+    crew.resetKnowledge(knowledges);
+    return;
+  }
+  crew.reset_knowledge?.(knowledges);
+}
+
 export type CrewOptions = {
   id?: string;
   name?: string | null;
@@ -2352,10 +2379,14 @@ function parseProcess(value: unknown, fallback: Process): Process {
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
+  if (!isRecord(value)) {
     throw new Error("Expected object configuration.");
   }
-  return value as Record<string, unknown>;
+  return value;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 function stringifyConfigValue(value: unknown): string {

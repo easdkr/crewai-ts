@@ -640,7 +640,19 @@ export {
   type TokenResponseData,
   type ValidateJwtTokenOptions,
 } from "./auth.js";
-export { Crew, type CrewOptions, type KickoffForEachOptions, type KickoffOptions, type ReplayTaskRef, type ResetMemoriesCommandType, type TaskExecutionLog } from "./crew.js";
+export {
+  Crew,
+  _resolve_agent,
+  _resolve_agents,
+  default_reset,
+  knowledge_reset,
+  type CrewOptions,
+  type KickoffForEachOptions,
+  type KickoffOptions,
+  type ReplayTaskRef,
+  type ResetMemoriesCommandType,
+  type TaskExecutionLog,
+} from "./crew.js";
 export {
   ChatInputField,
   ChatInputs,

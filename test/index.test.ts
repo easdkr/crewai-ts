@@ -89,6 +89,10 @@ import {
   ConditionalTask,
   ConsoleFormatter,
   Crew,
+  _resolve_agent,
+  _resolve_agents,
+  default_reset,
+  knowledge_reset,
   CrewJSONEncoder,
   CrewOutput,
   CrewAIPlugin,
@@ -20519,6 +20523,34 @@ describe("crew memory reset", () => {
 
     crewInstance._reset_all_memories();
     expect(agentKnowledge.query("helper", { scoreThreshold: null })).toEqual([]);
+  });
+
+  it("exposes upstream-style crew agent resolver and memory reset callbacks", () => {
+    const existing = new Agent({
+      role: "Existing",
+      goal: "Stay",
+      backstory: "Already built",
+    });
+    const resolved = _resolve_agents([
+      existing,
+      { role: "Researcher", goal: "Find facts", backstory: "Careful analyst" },
+    ]);
+    const single = _resolve_agent({ role: "Writer", goal: "Write", backstory: "Clear" });
+    const reset = vi.fn();
+    const knowledge = new Knowledge({
+      sources: [new StringKnowledgeSource("Crew helper knowledge reset.")],
+    });
+    const crewInstance = new Crew({ knowledge });
+
+    expect(resolved).toHaveLength(2);
+    expect((resolved as Agent[])[0]).toBe(existing);
+    expect((resolved as Agent[])[1]).toBeInstanceOf(Agent);
+    expect((resolved as Agent[])[1]?.role).toBe("Researcher");
+    expect(single).toBeInstanceOf(Agent);
+    default_reset({ reset });
+    expect(reset).toHaveBeenCalledOnce();
+    knowledge_reset(crewInstance, [knowledge]);
+    expect(knowledge.query("helper", { scoreThreshold: null })).toEqual([]);
   });
 
   it("sets trigger context injection on the first task through the upstream helper", () => {
