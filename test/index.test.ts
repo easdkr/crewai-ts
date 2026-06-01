@@ -2462,6 +2462,29 @@ describe("schema utilities", () => {
     expect(() => Model.model_validate({ code: "AB", score: 11 })).toThrow(/maximum/);
     expect(() => Model.model_validate({ code: "AB", score: 3 })).toThrow(/multipleOf/);
   });
+
+  it("forbids additional properties in created schema models", () => {
+    const Model = create_model_from_schema({
+      type: "object",
+      properties: {
+        query: { type: "string" },
+        filters: {
+          type: "object",
+          properties: {
+            category: { type: "string" },
+          },
+        },
+      },
+      required: ["query", "filters"],
+    });
+
+    expect(Model.model_validate({ query: "crew", filters: { category: "docs" } })).toEqual({
+      query: "crew",
+      filters: { category: "docs" },
+    });
+    expect(() => Model.model_validate({ query: "crew", filters: { category: "docs" }, unexpected: true })).toThrow(/unexpected/);
+    expect(() => Model.model_validate({ query: "crew", filters: { category: "docs", extra: "nope" } })).toThrow(/filters\.extra/);
+  });
 });
 
 describe("i18n and prompt utilities", () => {

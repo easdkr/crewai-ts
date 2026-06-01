@@ -703,6 +703,13 @@ function validateSchemaValue(schema: JsonSchema, value: unknown, path: string, r
       if (!properties) {
         return { ...value };
       }
+      if (resolved.additionalProperties === false) {
+        for (const key of Object.keys(value)) {
+          if (!(key in properties)) {
+            throw createValidationError(`${path}.${key}`, "extra field not permitted");
+          }
+        }
+      }
       const required = Array.isArray(resolved.required) ? resolved.required.filter((entry): entry is string => typeof entry === "string") : [];
       const output: Record<string, unknown> = {};
       for (const [propertyName, propertySchema] of Object.entries(properties)) {
@@ -776,7 +783,7 @@ export function createModelFromSchema(
     ?? options.model_name
     ?? (typeof schema.title === "string" ? schema.title : "DynamicModel");
   const enrichDescriptions = options.enrichDescriptions ?? options.enrich_descriptions ?? false;
-  const resolvedSchema = resolveRefs(cloneSchema(schema));
+  const resolvedSchema = forceAdditionalPropertiesFalse(resolveRefs(cloneSchema(schema)));
   const normalizedSchema = Array.isArray(resolvedSchema.allOf) ? _merge_all_of_schemas(resolvedSchema.allOf.filter(isSchemaRecord), resolvedSchema) : resolvedSchema;
   const modelFields = buildModelFields(normalizedSchema, normalizedSchema, enrichDescriptions);
   return {
