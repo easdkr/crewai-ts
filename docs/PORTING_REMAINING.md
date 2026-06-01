@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 788 passing tests.
+- Test suite: 789 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -403,6 +403,7 @@ When more goal budget is available, continue from the behavioral parity audits b
   - `FlowMethod.__call__` now mirrors upstream flow wrapper direct invocation for bound and unbound flow methods.
 - Added agent adapter compatibility behavior:
   - `OpenAIAgentAdapter` and `LangGraphAgentAdapter` now expose upstream-style direct `execute_task`, `configure_tools`, `configure_structured_output`, delegation-tool creation, and LangGraph output converter helpers while staying deterministic and SDK-free in the default gate.
+  - `BaseToolAdapter` now mirrors upstream instance `sanitize_tool_name` usage and returns Python-style `converted_tools` storage from `tools()`.
 - Added hooks compatibility behavior:
   - Filtered hook decorator factories now register upstream-style global wrappers for function hooks, preserve snake_case marker metadata, and apply sanitized tool/agent filters.
   - Filtered hook wrapper classes now expose upstream-style `__call__` aliases while preserving existing `call` helpers.

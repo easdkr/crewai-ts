@@ -77,6 +77,7 @@ import {
   OpenAIAgentAdapter,
   OpenAIAgentToolAdapter,
   BaseConverterAdapter,
+  BaseToolAdapter,
   LangGraphAgentAdapter,
   LangGraphConverterAdapter,
   LangGraphToolAdapter,
@@ -13322,6 +13323,29 @@ describe("core crew runtime", () => {
     expect(toolCalls).toEqual(["raw input"]);
     expect(events).toContain("agent_execution_started");
     expect(events.some((event) => event.startsWith("agent_execution_completed:"))).toBe(true);
+  });
+
+  it("mirrors upstream BaseToolAdapter instance helpers and converted tool storage", () => {
+    class ConcreteToolAdapter extends BaseToolAdapter {
+      configureTools(tools: readonly BaseTool[]): void {
+        this.converted_tools = tools.map((tool) => `converted_${tool.name}`);
+      }
+    }
+    const tools = [
+      { name: "Mock Tool 1" },
+      { name: "MockTool2" },
+    ] as unknown as readonly BaseTool[];
+
+    const adapter = new ConcreteToolAdapter(tools);
+
+    expect(adapter.original_tools).toBe(tools);
+    expect(adapter.tools()).toEqual([]);
+    adapter.configure_tools(tools);
+    expect(adapter.converted_tools).toEqual(["converted_Mock Tool 1", "converted_MockTool2"]);
+    expect(adapter.tools()).toBe(adapter.converted_tools);
+    expect(adapter.sanitize_tool_name("Tool With Spaces")).toBe("tool_with_spaces");
+    expect(adapter.sanitizeToolName("ToolWithoutSpaces")).toBe("tool_without_spaces");
+    expect(adapter.sanitize_tool_name("")).toBe("");
   });
 
   it("exposes upstream Crew validation, knowledge, train, and test lifecycle methods", async () => {

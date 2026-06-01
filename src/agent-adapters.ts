@@ -26,7 +26,15 @@ export abstract class BaseToolAdapter {
   }
 
   tools(): unknown[] {
-    return this.convertedTools;
+    return this.converted_tools;
+  }
+
+  sanitizeToolName(toolName: string): string {
+    return BaseToolAdapter.sanitizeToolName(toolName);
+  }
+
+  sanitize_tool_name(toolName: string): string {
+    return this.sanitizeToolName(toolName);
   }
 
   static sanitizeToolName(toolName: string): string {
