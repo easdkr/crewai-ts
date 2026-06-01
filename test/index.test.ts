@@ -1128,6 +1128,9 @@ describe("platform settings and user data", () => {
 
       process.env.CREWAI_TRACING_ENABLED = "true";
       expect(isTracingEnabled()).toBe(true);
+
+      process.env.CREWAI_TRACING_ENABLED = "FALSE";
+      expect(isTracingEnabled()).toBe(false);
     } finally {
       if (previousDataDir === undefined) {
         delete process.env.CREWAI_TS_DATA_DIR;

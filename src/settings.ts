@@ -301,6 +301,9 @@ export function isTracingEnabled(): boolean {
   if (env === "true" || env === "1") {
     return true;
   }
+  if (env === "false" || env === "0") {
+    return false;
+  }
   if (hasUserDeclinedTracing()) {
     return false;
   }

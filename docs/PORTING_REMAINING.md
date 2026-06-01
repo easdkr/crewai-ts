@@ -120,6 +120,7 @@ High-value behavior audits still worth running:
 
 5. **Tracing/exporter integration**
    - Current behavior records deterministic local spans/events.
+   - `CREWAI_TRACING_ENABLED=false` / `0` now mirrors upstream explicit tracing opt-out behavior even when local user consent state would otherwise allow tracing.
    - Remote exporter behavior remains intentionally unsupported unless the project decides to add an optional integration gate.
    - `Telemetry()` now mirrors upstream singleton construction behavior, and telemetry disable env vars such as `CREWAI_DISABLE_TELEMETRY=TRUE` / `OTEL_SDK_DISABLED=TRUE` dynamically suppress local telemetry operations after singleton creation.
 
