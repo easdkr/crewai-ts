@@ -86,7 +86,7 @@ export function parseAgentOutput(text: string): AgentAction | AgentFinish {
 
 export const parse = parseAgentOutput;
 
-function extractThought(text: string): string {
+export function extractThought(text: string): string {
   let thoughtIndex = text.indexOf("\nAction");
   if (thoughtIndex === -1) {
     thoughtIndex = text.indexOf("\nFinal Answer");
@@ -97,11 +97,11 @@ function extractThought(text: string): string {
   return text.slice(0, thoughtIndex).trim().replaceAll("```", "").trim();
 }
 
-function cleanAction(text: string): string {
+export function cleanAction(text: string): string {
   return text.trim().replace(/^\*+|\*+$/g, "").trim();
 }
 
-function safeRepairJson(toolInput: string): string {
+export function safeRepairJson(toolInput: string): string {
   if (toolInput.startsWith("[") && toolInput.endsWith("]")) {
     return toolInput;
   }
@@ -131,3 +131,6 @@ function repairLooseJsonObject(value: string): string | null {
 }
 
 export const parse_agent_output = parseAgentOutput;
+export const _extract_thought = extractThought;
+export const _clean_action = cleanAction;
+export const _safe_repair_json = safeRepairJson;

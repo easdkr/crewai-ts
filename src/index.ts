@@ -608,9 +608,15 @@ export {
   MISSING_ACTION_INPUT_AFTER_ACTION_ERROR_MESSAGE,
   OutputParserError,
   UNABLE_TO_REPAIR_JSON_RESULTS,
+  _clean_action,
+  _extract_thought,
+  _safe_repair_json,
+  cleanAction,
+  extractThought,
   parse,
   parseAgentOutput,
   parse_agent_output,
+  safeRepairJson,
 } from "./agent-parser.js";
 export {
   ALGORITHMS,

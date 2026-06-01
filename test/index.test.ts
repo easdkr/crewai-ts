@@ -48,10 +48,12 @@ import {
   _AuthStore,
   _auth_store,
   _build_task_description,
+  _clean_action,
   _create_grpc_channel_factory,
   _create_grpc_interceptors,
   _create_file_parts,
   _create_result_artifact,
+  _extract_thought,
   _extract_response_schema,
   _find_compatible_modes,
   _inject_metadata,
@@ -61,6 +63,7 @@ import {
   _normalize_grpc_metadata,
   _parse_redis_url,
   _raise_auth_mismatch,
+  _safe_repair_json,
   _validate_metadata,
   Agent,
   AgentCardSigningConfig,
@@ -5356,6 +5359,12 @@ describe("agent utility helpers", () => {
   });
 
   it("parses ReAct agent output and normalizes string tool calls", async () => {
+    expect(_extract_thought("Thought: I should search\nAction: Search Tool")).toBe("Thought: I should search");
+    expect(_extract_thought("Thought: done\nFinal Answer: Complete")).toBe("Thought: done");
+    expect(_clean_action(" **Search Tool** ")).toBe("Search Tool");
+    expect(_safe_repair_json("{query: 'CrewAI'}")).toBe(JSON.stringify({ query: "CrewAI" }));
+    expect(_safe_repair_json("[not json]")).toBe("[not json]");
+
     const parsedAction = parseAgentOutput([
       "Thought: I should search",
       "Action: **Search Tool**",
