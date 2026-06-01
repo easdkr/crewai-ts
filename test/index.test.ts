@@ -24053,6 +24053,35 @@ describe("task markdown prompts", () => {
 
     expect(taskInstance.prompt()).not.toContain("Your final answer MUST be formatted in Markdown syntax.");
   });
+
+  it("keeps markdown prompt instructions with empty descriptions", () => {
+    const taskInstance = new Task({
+      description: "",
+      expectedOutput: "A summary",
+      markdown: true,
+    });
+
+    const prompt = taskInstance.prompt();
+
+    expect(prompt.trim()).not.toBe("");
+    expect(prompt).toContain("A summary");
+    expect(prompt).toContain("Your final answer MUST be formatted in Markdown syntax.");
+  });
+
+  it("keeps markdown prompt instructions with JSON output tasks", () => {
+    const taskInstance = new Task({
+      description: "Research topic",
+      expectedOutput: "Research results",
+      markdown: true,
+      output_json: true,
+    });
+
+    const prompt = taskInstance.prompt();
+
+    expect(prompt).toContain("Research topic");
+    expect(prompt).toContain("Research results");
+    expect(prompt).toContain("Your final answer MUST be formatted in Markdown syntax.");
+  });
 });
 
 describe("task output files", () => {
