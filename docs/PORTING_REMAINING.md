@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 721 passing tests.
+- Test suite: 724 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -77,7 +77,7 @@ High-value behavior audits still worth running:
    - Any failing local example becomes the next behavior test.
 
 2. **Experimental `AgentExecutor` plan-and-execute behavior**
-   - Current TS implementation covers deterministic finalization, dynamic replanning triggers, object-style invoke setup, tool observations, native tool messages, memory save, human feedback, and plan refinement semantics.
+   - Current TS implementation covers deterministic finalization, dynamic replanning triggers, object-style invoke setup, ReAct/native LLM routing, tool observations, native tool messages, memory save, human feedback, and plan refinement semantics.
    - TodoList behavior now covers upstream terminal dependency handling plus empty-string result preservation for completed/failed steps.
    - Continue auditing only with behavior tests for end-to-end plan generation, isolated step execution, observation/replan decisions, native tool execution, and human feedback loops.
    - Do not add private helper aliases unless the behavior test requires them.
@@ -148,6 +148,7 @@ When more goal budget is available, continue from the behavioral parity audits b
 - `AgentExecutor.check_todo_completion` now requires ReAct tool actions to match the running todo's expected tool when one is specified, while still accepting final answers and todos without a specified tool.
 - `AgentExecutor.execute_native_tool` now records the upstream assistant `tool_calls` message and named tool result messages before continuing or short-circuiting.
 - `AgentExecutor` replanning now builds previous-execution context, temporarily enhances the task description for the planner, preserves completed/failed history, and replaces only pending todos when a ready structured plan is returned.
+- `AgentExecutor.call_llm_and_parse` and `call_llm_native_tools` now execute deterministic LLM calls, enforce local RPM hooks, omit structured `response_model` requests while tools are active, and route native tool-call lists into `pending_tool_calls`.
 - `StepExecutor.execute` now runs `TodoItem` inputs through isolated step execution and returns a failed `StepResult` when an expected upstream `tool_to_use` is available but was not called.
 
 ## Completed In Current Flow/Persistence Pass

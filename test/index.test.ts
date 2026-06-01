@@ -10517,6 +10517,54 @@ describe("core crew runtime", () => {
     expect((executor.state.current_answer as AgentFinish).thought).toBe("");
   });
 
+  it("omits structured response models during AgentExecutor ReAct tool loops", () => {
+    const seen: Array<Record<string, unknown> | undefined> = [];
+    const responseModel = { name: "StructuredAnswer" };
+    const executor = new AgentExecutor({
+      llm: {
+        supportsStopWords: () => true,
+        call(_messages: readonly LLMMessage[], options?: Record<string, unknown>) {
+          seen.push(options);
+          return "Thought: done\nFinal Answer: complete";
+        },
+      },
+      originalTools: [new StructuredTool({ name: "lookup", description: "Lookup", func: () => "found" })],
+      responseModel,
+      messages: [{ role: "user", content: "Use a tool" }],
+    });
+
+    expect(executor.call_llm_and_parse()).toBe("parsed");
+    expect(seen[0]?.responseModel).toBeNull();
+    expect(seen[0]?.response_model).toBeNull();
+    expect(executor.state.current_answer).toBeInstanceOf(AgentFinish);
+    expect((executor.state.current_answer as AgentFinish).output).toBe("complete");
+  });
+
+  it("omits structured response models during AgentExecutor native tool calls", () => {
+    const seen: Array<Record<string, unknown> | undefined> = [];
+    const toolCalls = [{ id: "call_1", function: { name: "lookup", arguments: "{\"query\":\"CrewAI\"}" } }];
+    const executor = new AgentExecutor({
+      llm: {
+        call(_messages: readonly LLMMessage[], options?: Record<string, unknown>) {
+          seen.push(options);
+          return toolCalls;
+        },
+      },
+      originalTools: [new StructuredTool({ name: "lookup", description: "Lookup", func: () => "found" })],
+      responseModel: { name: "StructuredAnswer" },
+      messages: [{ role: "user", content: "Use a tool" }],
+    });
+    Object.assign(executor, {
+      _openai_tools: [{ type: "function", function: { name: "lookup" } }],
+    });
+
+    expect(executor.call_llm_native_tools()).toBe("native_tool_calls");
+    expect(seen[0]?.responseModel).toBeNull();
+    expect(seen[0]?.response_model).toBeNull();
+    expect(seen[0]?.tools).toEqual([{ type: "function", function: { name: "lookup" } }]);
+    expect(executor.state.pending_tool_calls).toEqual(toolCalls);
+  });
+
   it("preserves pending todo status when AgentExecutor handles early goal achievement", () => {
     const executor = new AgentExecutor();
     executor.state.todos.items = [

@@ -2,15 +2,18 @@ import { Agent, type AgentExecutionOptions, type AgentOptions } from "./agent.js
 import type { CheckpointConfig } from "./state.js";
 import type { Crew } from "./crew.js";
 import { AgentReasoning, StepObservation, TodoItem, TodoList, TodoStatus } from "./agent-planning.js";
-import { AgentAction, AgentFinish, parseAgentOutput } from "./agent-parser.js";
+import { AgentAction, AgentFinish, OutputParserError, parseAgentOutput } from "./agent-parser.js";
 import {
   executeSingleNativeToolCall,
+  enforceRpmLimit,
   extractTaskSection,
   extractToolCallInfo,
   formatMessageForLLM,
   handleAgentActionCore,
   _executor_stop_words,
+  isContextLengthExceeded,
   isToolCallList,
+  processLlmResponse,
 } from "./agent-utils.js";
 import { Converter } from "./converter.js";
 import { get_provider } from "./human-input.js";
@@ -307,6 +310,9 @@ export type BaseAgentExecutorOptions = {
   tools_description?: string;
   stop?: readonly string[];
   stop_words?: readonly string[];
+  requestWithinRpmLimit?: (() => boolean | Promise<boolean>) | null;
+  request_within_rpm_limit?: (() => boolean | Promise<boolean>) | null;
+  callbacks?: readonly unknown[];
   responseModel?: unknown;
   response_model?: unknown;
 };
@@ -318,10 +324,15 @@ export class BaseAgentExecutor {
   readonly agent: Agent | null;
   readonly task: unknown;
   readonly tools: readonly Tool[];
+  readonly originalTools: readonly Tool[];
+  readonly original_tools: readonly Tool[];
   readonly llm: unknown;
   readonly prompt: Record<string, string> | null;
   readonly stop: readonly string[];
   readonly stop_words: readonly string[];
+  readonly requestWithinRpmLimit: (() => boolean | Promise<boolean>) | null;
+  readonly request_within_rpm_limit: (() => boolean | Promise<boolean>) | null;
+  readonly callbacks: readonly unknown[];
   responseModel: unknown;
   response_model: unknown;
   readonly maxIter: number;
@@ -336,10 +347,15 @@ export class BaseAgentExecutor {
     this.agent = options.agent ?? null;
     this.task = options.task ?? null;
     this.tools = options.tools ?? this.agent?.tools ?? [];
+    this.originalTools = options.originalTools ?? options.original_tools ?? this.tools;
+    this.original_tools = this.originalTools;
     this.llm = options.llm ?? this.agent?.llm ?? null;
     this.prompt = options.prompt ?? null;
     this.stop = options.stop ?? options.stop_words ?? [];
     this.stop_words = this.stop;
+    this.requestWithinRpmLimit = options.requestWithinRpmLimit ?? options.request_within_rpm_limit ?? null;
+    this.request_within_rpm_limit = this.requestWithinRpmLimit;
+    this.callbacks = options.callbacks ?? [];
     this.responseModel = options.responseModel ?? options.response_model ?? null;
     this.response_model = this.responseModel;
     this.maxIter = options.maxIter ?? options.max_iter ?? this.agent?.maxIter ?? 25;
@@ -717,13 +733,48 @@ export class AgentExecutor extends BaseAgentExecutor {
   }
 
   callLlmAndParse(): "parsed" | "parser_error" | "context_error" {
+    if (this.state.is_finished) {
+      return "parsed";
+    }
     try {
-      const content = this.messages.at(-1)?.content ?? "";
-      this.state.current_answer = parseAgentOutput(content);
+      enforceRpmLimit(this.requestWithinRpmLimit);
+      const effectiveResponseModel = this.hasOriginalTools() ? null : this.activeResponseModel();
+      const answer = this.callExecutorLlm({
+        callbacks: this.callbacks,
+        fromTask: this.task,
+        from_task: this.task,
+        fromAgent: this.agent,
+        from_agent: this.agent,
+        responseModel: effectiveResponseModel,
+        response_model: effectiveResponseModel,
+        executorContext: this,
+        executor_context: this,
+        verbose: Boolean(this.agent?.verbose),
+      });
+      if (answer instanceof AgentAction || answer instanceof AgentFinish) {
+        this.state.current_answer = answer;
+        return "parsed";
+      }
+      if (typeof answer !== "string") {
+        this.state.current_answer = new AgentFinish({
+          thought: "",
+          output: answer,
+          text: stringifyStepResult(answer),
+        });
+        return "parsed";
+      }
+      this.state.current_answer = processLlmResponse(answer, this.use_stop_words);
       return "parsed";
     } catch (error) {
-      this.lastParserError = error instanceof Error ? error : new Error(String(error));
-      return "parser_error";
+      if (error instanceof OutputParserError) {
+        this.lastParserError = error;
+        return "parser_error";
+      }
+      if (isContextLengthExceeded(error)) {
+        this.lastContextError = error instanceof Error ? error : new Error(String(error));
+        return "context_error";
+      }
+      throw error;
     }
   }
 
@@ -732,7 +783,44 @@ export class AgentExecutor extends BaseAgentExecutor {
   }
 
   callLlmNativeTools(): "native_tool_calls" | "native_finished" | "context_error" | "todo_satisfied" {
-    return this.state.pending_tool_calls.length > 0 ? "native_tool_calls" : "native_finished";
+    if (this.state.is_finished) {
+      return "native_finished";
+    }
+    try {
+      this.state.pending_tool_calls = [];
+      enforceRpmLimit(this.requestWithinRpmLimit);
+      const answer = this.callExecutorLlm({
+        callbacks: this.callbacks,
+        tools: this.openAiToolsForNativeCall(),
+        availableFunctions: null,
+        available_functions: null,
+        fromTask: this.task,
+        from_task: this.task,
+        fromAgent: this.agent,
+        from_agent: this.agent,
+        responseModel: null,
+        response_model: null,
+        executorContext: this,
+        executor_context: this,
+        verbose: Boolean(this.agent?.verbose),
+      });
+      if (Array.isArray(answer) && answer.length > 0 && isToolCallList(answer)) {
+        this.state.pending_tool_calls = Array.from(answer as readonly unknown[]);
+        return "native_tool_calls";
+      }
+      const text = stringifyStepResult(answer);
+      const finish = new AgentFinish({ thought: "", output: answer, text });
+      this.state.current_answer = finish;
+      this.invokeStepCallback(finish);
+      this.state.messages.push({ role: "assistant", content: text });
+      return this.routeFinishWithTodos("native_finished");
+    } catch (error) {
+      if (isContextLengthExceeded(error)) {
+        this.lastContextError = error instanceof Error ? error : new Error(String(error));
+        return "context_error";
+      }
+      throw error;
+    }
   }
 
   call_llm_native_tools(): ReturnType<AgentExecutor["callLlmNativeTools"]> {
@@ -1207,6 +1295,44 @@ export class AgentExecutor extends BaseAgentExecutor {
       return await asyncHandler.call(this, answer);
     }
     return this.applyHumanFeedback(answer);
+  }
+
+  private hasOriginalTools(): boolean {
+    return this.originalTools.length > 0 || this.original_tools.length > 0;
+  }
+
+  private activeResponseModel(): unknown {
+    return this.responseModel ?? this.response_model ?? null;
+  }
+
+  private openAiToolsForNativeCall(): unknown {
+    const record = this as unknown as { _openai_tools?: unknown; openAiTools?: unknown; openai_tools?: unknown };
+    return record._openai_tools ?? record.openAiTools ?? record.openai_tools ?? [];
+  }
+
+  private callExecutorLlm(options: Record<string, unknown>): unknown {
+    const llm = this.llm;
+    if (typeof llm === "function") {
+      const result = (llm as (messages: readonly LLMMessage[], options?: Record<string, unknown>) => unknown)(
+        this.state.messages,
+        options,
+      );
+      if (isPromiseLike(result)) {
+        throw new Error("AgentExecutor synchronous LLM call returned a Promise.");
+      }
+      return result;
+    }
+    const call = llm && typeof llm === "object"
+      ? (llm as { call?: (messages: readonly LLMMessage[], options?: Record<string, unknown>) => unknown }).call
+      : null;
+    if (typeof call !== "function") {
+      return this.state.messages.at(-1)?.content ?? "";
+    }
+    const result = call.call(llm, this.state.messages, options);
+    if (isPromiseLike(result)) {
+      throw new Error("AgentExecutor synchronous LLM call returned a Promise.");
+    }
+    return result;
   }
 
   private routeFinishWithTodos<T extends string>(defaultRoute: T): T | "todo_satisfied" {
