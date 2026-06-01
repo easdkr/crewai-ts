@@ -15307,6 +15307,53 @@ describe("flow runtime", () => {
     });
   });
 
+  it("applies and stores HITL learning lessons through flow memory", async () => {
+    const memory = new Memory({ rootScope: "/hitl-test" });
+    memory.remember("Always mention TypeScript decorators.", { source: "review-notes" });
+    const llmCalls: Array<{ prompt: string; responseModel: unknown }> = [];
+    const llm = {
+      model: "local/hitl",
+      call(messages: readonly LLMMessage[], options?: LLMCallOptions) {
+        const prompt = messages.at(-1)?.content ?? "";
+        llmCalls.push({ prompt, responseModel: options?.responseModel });
+        if (prompt.includes("Revise this output")) {
+          return JSON.stringify({ improved_output: "Draft with TypeScript decorators." });
+        }
+        if (prompt.includes("Extract generalizable lessons")) {
+          return JSON.stringify({ lessons: ["Mention release readiness evidence."] });
+        }
+        return "approved";
+      },
+    };
+    class ReviewFlow extends Flow {}
+    const flow = new ReviewFlow({ memory });
+    const providerOutputs: unknown[] = [];
+
+    const output = await flow.requestHumanFeedback("review", "Draft.", {
+      message: "Review",
+      learn: true,
+      learnSource: "review-notes",
+      llm,
+      provider: {
+        requestFeedback: (context) => {
+          providerOutputs.push(context.output);
+          return "Looks good, add release readiness evidence next time.";
+        },
+      },
+    });
+
+    expect(output).toMatchObject({
+      output: "Draft with TypeScript decorators.",
+      feedback: "Looks good, add release readiness evidence next time.",
+    });
+    expect(providerOutputs).toEqual(["Draft with TypeScript decorators."]);
+    expect(llmCalls).toHaveLength(2);
+    expect(llmCalls[0]?.prompt).toContain("Always mention TypeScript decorators.");
+    expect(llmCalls[1]?.prompt).toContain("Looks good, add release readiness evidence next time.");
+    expect(memory.recall("release readiness evidence", { source: "review-notes", scoreThreshold: null })
+      .some((match) => match.record.content === "Mention release readiness evidence.")).toBe(true);
+  });
+
   it("includes human feedback metadata in flow structure", () => {
     class ReviewFlow extends Flow {
       generate() {

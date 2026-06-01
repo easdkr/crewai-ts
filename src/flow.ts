@@ -1965,16 +1965,18 @@ export class Flow<TState extends object = Record<string, unknown>> {
     methodOutput: unknown,
     config: HumanFeedbackConfig,
   ): Promise<HumanFeedbackResult | string> {
-    const feedback = await this.collectHumanFeedback(methodName, methodOutput, config);
+    const reviewedOutput = await preReviewHumanFeedbackOutput(this, methodName, methodOutput, config);
+    const feedback = await this.collectHumanFeedback(methodName, reviewedOutput, config);
     const result = this.recordHumanFeedbackResult({
       methodName,
-      output: methodOutput,
+      output: reviewedOutput,
       feedback,
       emit: config.emit ?? null,
       defaultOutcome: config.defaultOutcome ?? null,
       metadata: config.metadata ?? null,
       outcome: await collapseFeedbackToOutcomeAsync(feedback, config.emit ?? null, config.defaultOutcome ?? null, config.llm ?? null),
     });
+    await distillHumanFeedbackLessons(this, methodName, reviewedOutput, feedback, config);
     crewaiEventBus.emit(this, new HumanFeedbackReceivedEvent({
       flowName: this.flowName(),
       methodName,
@@ -2615,6 +2617,127 @@ function humanFeedbackLlmModelName(llm: string | Record<string, unknown> | LLM |
     return typeof model === "string" ? model : null;
   }
   return null;
+}
+
+async function preReviewHumanFeedbackOutput(
+  flow: Flow<object>,
+  methodName: string,
+  methodOutput: unknown,
+  config: HumanFeedbackConfig,
+): Promise<unknown> {
+  if (!config.learn || !flow.memory) {
+    return methodOutput;
+  }
+  try {
+    const source = config.learnSource ?? config.learn_source ?? "hitl";
+    const matches = flow.memory.recall(`human feedback lessons for ${methodName}: ${String(methodOutput)}`, { source });
+    if (matches.length === 0) {
+      return methodOutput;
+    }
+    const llmClient = resolveHumanFeedbackLlmClient(config.llm ?? null);
+    if (!llmClient) {
+      return methodOutput;
+    }
+    const lessons = matches.map((match) => `- ${match.record.content}`).join("\n");
+    const prompt = [
+      "Revise this output using the previous human feedback lessons.",
+      `Output: ${String(methodOutput)}`,
+      "Lessons:",
+      lessons,
+      "Return JSON with improved_output, or return the improved output text.",
+    ].join("\n");
+    const response = await callLLM(llmClient, [{ role: "user", content: prompt }], {
+      responseModel: { name: "PreReviewResult" },
+      metadata: { model: humanFeedbackLlmModelName(config.llm ?? null) ?? "human-feedback" },
+    });
+    return extractPreReviewOutput(response) ?? methodOutput;
+  } catch (error) {
+    if (config.learnStrict ?? config.learn_strict ?? false) {
+      throw error;
+    }
+    return methodOutput;
+  }
+}
+
+async function distillHumanFeedbackLessons(
+  flow: Flow<object>,
+  methodName: string,
+  methodOutput: unknown,
+  feedback: string,
+  config: HumanFeedbackConfig,
+): Promise<void> {
+  if (!config.learn || !flow.memory || !feedback.trim()) {
+    return;
+  }
+  try {
+    const llmClient = resolveHumanFeedbackLlmClient(config.llm ?? null);
+    if (!llmClient) {
+      return;
+    }
+    const prompt = [
+      "Extract generalizable lessons from this human feedback.",
+      `Method: ${methodName}`,
+      `Output: ${String(methodOutput)}`,
+      `Feedback: ${feedback}`,
+      "Return JSON with a lessons array, newline-delimited lessons, or NONE.",
+    ].join("\n");
+    const response = await callLLM(llmClient, [{ role: "user", content: prompt }], {
+      responseModel: { name: "DistilledLessons" },
+      metadata: { model: humanFeedbackLlmModelName(config.llm ?? null) ?? "human-feedback" },
+    });
+    const lessons = extractDistilledLessons(response);
+    if (lessons.length > 0) {
+      flow.memory.remember_many(lessons, { source: config.learnSource ?? config.learn_source ?? "hitl" });
+    }
+  } catch (error) {
+    if (config.learnStrict ?? config.learn_strict ?? false) {
+      throw error;
+    }
+  }
+}
+
+function extractPreReviewOutput(response: unknown): string | null {
+  if (typeof response === "string") {
+    const trimmed = response.trim();
+    try {
+      const parsed: unknown = JSON.parse(trimmed);
+      const improved = parsed && typeof parsed === "object" ? (parsed as { improved_output?: unknown; improvedOutput?: unknown }).improved_output ?? (parsed as { improvedOutput?: unknown }).improvedOutput : null;
+      return typeof improved === "string" ? improved : trimmed;
+    } catch {
+      return trimmed;
+    }
+  }
+  if (response && typeof response === "object") {
+    const improved = (response as { improved_output?: unknown; improvedOutput?: unknown }).improved_output
+      ?? (response as { improvedOutput?: unknown }).improvedOutput;
+    return typeof improved === "string" ? improved : null;
+  }
+  return null;
+}
+
+function extractDistilledLessons(response: unknown): string[] {
+  const value = typeof response === "string" ? parseDistilledLessonsString(response) : response;
+  if (value && typeof value === "object" && "lessons" in value) {
+    const lessons = (value as { lessons?: unknown }).lessons;
+    if (Array.isArray(lessons)) {
+      return lessons.filter((lesson): lesson is string => typeof lesson === "string" && lesson.trim() !== "NONE" && lesson.trim().length > 0)
+        .map((lesson) => lesson.trim());
+    }
+  }
+  return [];
+}
+
+function parseDistilledLessonsString(response: string): unknown {
+  const trimmed = response.trim();
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    return {
+      lessons: trimmed.split(/\r?\n/)
+        .map((line) => line.replace(/^-+\s*/, "").trim())
+        .filter((line) => line.length > 0 && line !== "NONE"),
+    };
+  }
 }
 
 function formatFeedbackPrompt(message: string, output: unknown): string {
