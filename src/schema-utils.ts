@@ -556,7 +556,43 @@ function numericConstraint(schema: JsonSchema, key: string): number | null {
   return typeof value === "number" && !Number.isNaN(value) ? value : null;
 }
 
+function isValidDateString(value: string): boolean {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) {
+    return false;
+  }
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
+}
+
+function isValidTimeString(value: string): boolean {
+  const match = /^(\d{2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?$/.exec(value);
+  if (!match) {
+    return false;
+  }
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
+  const second = match[3] === undefined ? 0 : Number(match[3]);
+  return hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59 && second >= 0 && second <= 59;
+}
+
+function assertStringFormat(schema: JsonSchema, value: string, path: string): void {
+  if (schema.format === "date" && !isValidDateString(value)) {
+    throw createValidationError(path, "format date");
+  }
+  if (schema.format === "date-time" && Number.isNaN(Date.parse(value))) {
+    throw createValidationError(path, "format date-time");
+  }
+  if (schema.format === "time" && !isValidTimeString(value)) {
+    throw createValidationError(path, "format time");
+  }
+}
+
 function assertStringConstraints(schema: JsonSchema, value: string, path: string): void {
+  assertStringFormat(schema, value, path);
   const minLength = numericConstraint(schema, "minLength");
   if (minLength !== null && value.length < minLength) {
     throw createValidationError(path, `minLength ${String(minLength)}`);

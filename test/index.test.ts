@@ -2485,6 +2485,52 @@ describe("schema utilities", () => {
     expect(() => Model.model_validate({ query: "crew", filters: { category: "docs" }, unexpected: true })).toThrow(/unexpected/);
     expect(() => Model.model_validate({ query: "crew", filters: { category: "docs", extra: "nope" } })).toThrow(/filters\.extra/);
   });
+
+  it("keeps allOf-created schema models closed to extra fields", () => {
+    const Model = create_model_from_schema({
+      type: "object",
+      allOf: [
+        {
+          type: "object",
+          properties: { name: { type: "string" } },
+          required: ["name"],
+        },
+        {
+          type: "object",
+          properties: { age: { type: "integer" } },
+          required: ["age"],
+        },
+      ],
+    });
+
+    expect(Model.model_validate({ name: "Alice", age: 30 })).toEqual({ name: "Alice", age: 30 });
+    expect(() => Model.model_validate({ name: "Alice", age: 30, extra: true })).toThrow(/extra/);
+  });
+
+  it("validates supported string formats in created schema models", () => {
+    const Model = create_model_from_schema({
+      type: "object",
+      properties: {
+        birthday: { type: "string", format: "date" },
+        created_at: { type: "string", format: "date-time" },
+        alarm: { type: "string", format: "time" },
+      },
+      required: ["birthday", "created_at", "alarm"],
+    });
+
+    expect(Model.model_validate({
+      birthday: "2026-06-01",
+      created_at: "2026-06-01T12:30:00Z",
+      alarm: "08:30:00",
+    })).toEqual({
+      birthday: "2026-06-01",
+      created_at: "2026-06-01T12:30:00Z",
+      alarm: "08:30:00",
+    });
+    expect(() => Model.model_validate({ birthday: "2026-99-99", created_at: "2026-06-01T12:30:00Z", alarm: "08:30:00" })).toThrow(/format/);
+    expect(() => Model.model_validate({ birthday: "2026-06-01", created_at: "not-a-date-time", alarm: "08:30:00" })).toThrow(/format/);
+    expect(() => Model.model_validate({ birthday: "2026-06-01", created_at: "2026-06-01T12:30:00Z", alarm: "25:30:00" })).toThrow(/format/);
+  });
 });
 
 describe("i18n and prompt utilities", () => {
