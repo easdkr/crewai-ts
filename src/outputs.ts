@@ -20,6 +20,7 @@ export class TaskOutput {
   readonly description: string;
   readonly name: string | null;
   readonly expectedOutput: string | null;
+  readonly expected_output: string | null;
   summary: string;
   readonly raw: string;
   readonly jsonDict: Record<string, unknown> | null;
@@ -34,6 +35,7 @@ export class TaskOutput {
     this.description = options.description;
     this.name = options.name ?? null;
     this.expectedOutput = options.expectedOutput ?? options.expected_output ?? null;
+    this.expected_output = this.expectedOutput;
     this.raw = options.raw ?? "";
     this.jsonDict = options.jsonDict ?? options.json_dict ?? null;
     this.json_dict = this.jsonDict;

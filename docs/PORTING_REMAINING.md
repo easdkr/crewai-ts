@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 827 passing tests.
+- Test suite: 829 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -396,6 +396,7 @@ When more goal budget is available, continue from the behavioral parity audits b
   - Task markdown prompts now preserve upstream markdown instructions for empty descriptions and JSON output tasks.
   - `Task.aexecute_sync` now routes through the async agent execution path while preserving task context, tools, response model options, timestamps, and processed-agent tracking.
   - `TaskOutput.messages` now captures the agent execution messages from the task run, matching upstream task-output inspection behavior.
+  - `TaskOutput.expected_output` now mirrors `expectedOutput`, and async task outputs have default-gate coverage for raw output format and metadata aliases.
   - `TaskOutput.set_summary` now exposes the upstream summary recomputation hook while preserving constructor-time summary defaults.
   - `TaskOutput`, `CrewOutput`, and `LiteAgentOutput` now expose upstream-style `__str__` aliases, and `CrewOutput.__getitem__` mirrors keyed pydantic/json access.
   - `CrewStreamingOutput.results` now exposes upstream-style list access for completed streaming crew results.
@@ -493,6 +494,7 @@ When more goal budget is available, continue from the behavioral parity audits b
   - `Task._execute_task_async` now routes through the upstream `_execute_core` hook point and propagates failures to future-style `reject` / `set_exception` handlers.
   - `Task.execute_async` now returns an awaitable future-style promise with `result()` / `exception()` helpers, preserving Promise awaiting while matching upstream `.result()` usage.
   - `Task.aexecute_sync` now has default-gate coverage for upstream callback invocation and end-time recording when async execution raises.
+  - `Task.aexecute_sync` now has default-gate coverage for multiple guardrails on the async path.
 - Added conditional task compatibility behavior:
   - Final conditional tasks now have default-gate coverage for upstream final raw output behavior: executed conditionals become the final output, while skipped final conditionals leave the previous non-empty task output as the crew result.
 - Added skills compatibility behavior:

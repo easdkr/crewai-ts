@@ -24072,6 +24072,66 @@ describe("LLM providers", () => {
     }
     expect(endTime.getTime()).toBeGreaterThanOrEqual(startTime.getTime());
   });
+
+  it("runs multiple guardrails from aexecute_sync", async () => {
+    const seen: string[] = [];
+    const agentInstance = new Agent({
+      role: "Async Guardrail Agent",
+      goal: "Run guardrails",
+      backstory: "Careful async worker",
+      llm: async () => {
+        await Promise.resolve();
+        return "async result";
+      },
+    });
+    const taskInstance = new Task({
+      description: "Run guardrails",
+      expectedOutput: "Done",
+      agent: agentInstance,
+      guardrails: [
+        (output) => {
+          seen.push(`first:${output.raw}`);
+          return [true, output.raw];
+        },
+        (output) => {
+          seen.push(`second:${output.raw}`);
+          return [true, output.raw];
+        },
+      ],
+    });
+
+    const output = await taskInstance.aexecute_sync();
+
+    expect(output.raw).toBe("async result");
+    expect(seen).toEqual(["first:async result", "second:async result"]);
+  });
+
+  it("keeps raw output format and task metadata from aexecute_sync outputs", async () => {
+    const agentInstance = new Agent({
+      role: "Async Metadata Agent",
+      goal: "Return metadata",
+      backstory: "Careful async worker",
+      llm: async () => {
+        await Promise.resolve();
+        return "{\"key\":\"value\"}";
+      },
+    });
+    const taskInstance = new Task({
+      name: "Async Task Name",
+      description: "Async description",
+      expectedOutput: "Async expected",
+      agent: agentInstance,
+    });
+
+    const output = await taskInstance.aexecute_sync();
+
+    expect(output.output_format).toBe(OutputFormat.RAW);
+    expect(output.name).toBe("Async Task Name");
+    expect(output.description).toBe("Async description");
+    expect(output.expected_output).toBe("Async expected");
+    expect(output.raw).toBe("{\"key\":\"value\"}");
+    expect(output.agent).toBe("Async Metadata Agent");
+  });
 });
 
 describe("task markdown prompts", () => {
