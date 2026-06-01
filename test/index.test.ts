@@ -370,6 +370,7 @@ import {
   StreamChunk,
   StreamChunkType,
   StructuredTool,
+  ToolUsageLimitExceededError,
   SemanticQualityEvaluator,
   Task,
   _serialize_model_class,
@@ -15354,6 +15355,23 @@ describe("tools", () => {
     expect(addTool.has_reached_max_usage_count()).toBe(false);
   });
 
+  it("raises upstream structured-tool usage limit errors from invoke aliases", async () => {
+    const limited = new StructuredTool({
+      name: "limited lookup",
+      description: "Lookup once",
+      maxUsageCount: 1,
+      func: ({ query }) => `found:${String(query)}`,
+    });
+
+    expect(limited.invoke({ query: "CrewAI" })).toBe("found:CrewAI");
+    expect(() => limited.invoke({ query: "CrewAI" })).toThrow(
+      "Tool 'limited_lookup' has reached its maximum usage limit of 1. You should not use the limited_lookup tool again.",
+    );
+    limited.reset_usage_count();
+    await expect(limited.ainvoke({ query: "CrewAI" })).resolves.toBe("found:CrewAI");
+    await expect(limited.ainvoke({ query: "CrewAI" })).rejects.toThrow(ToolUsageLimitExceededError);
+  });
+
   it("exposes upstream BaseTool metadata and LangChain conversion helpers", () => {
     const langchainTool = {
       name: "lookup docs",
@@ -15406,7 +15424,7 @@ describe("tools", () => {
     expect(original.current_usage_count).toBe(1);
     expect(structured.invoke({ value: "second" })).toBe("second");
     expect(original.has_reached_max_usage_count()).toBe(true);
-    expect(structured.invoke({ value: "third" })).toBe("Tool 'echo_tool' has reached its usage limit of 2 times and cannot be used anymore.");
+    expect(() => structured.invoke({ value: "third" })).toThrow("Tool 'echo_tool' has reached its maximum usage limit of 2. You should not use the echo_tool tool again.");
     expect(original.current_usage_count).toBe(2);
 
     const alreadyStructured = new StructuredTool({

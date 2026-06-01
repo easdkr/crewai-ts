@@ -843,6 +843,30 @@ export class StructuredTool extends BaseTool {
     return this.func(args);
   }
 
+  override invoke(input?: ToolInvocationInput, _config?: Record<string, unknown> | null): MaybePromise<unknown> {
+    void _config;
+    const parsedArgs = this._parseArgs(input);
+    if (this.hasReachedMaxUsageCount()) {
+      throw new ToolUsageLimitExceededError(
+        `Tool '${sanitizeToolName(this.name)}' has reached its maximum usage limit of ${String(this.maxUsageCount)}. You should not use the ${sanitizeToolName(this.name)} tool again.`,
+      );
+    }
+    this._incrementUsageCount();
+    return this.func(parsedArgs);
+  }
+
+  override async ainvoke(input?: ToolInvocationInput, _config?: Record<string, unknown> | null): Promise<unknown> {
+    void _config;
+    const parsedArgs = this._parseArgs(input);
+    if (this.hasReachedMaxUsageCount()) {
+      throw new ToolUsageLimitExceededError(
+        `Tool '${sanitizeToolName(this.name)}' has reached its maximum usage limit of ${String(this.maxUsageCount)}. You should not use the ${sanitizeToolName(this.name)} tool again.`,
+      );
+    }
+    this._incrementUsageCount();
+    return await this.func(parsedArgs);
+  }
+
   override async arun(input?: ToolInvocationInput): Promise<unknown> {
     return await this.run(input);
   }
