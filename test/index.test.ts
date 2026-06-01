@@ -316,6 +316,12 @@ import {
   SecretStr,
   SkillActivatedEvent,
   StorageBackend,
+  _duplicate_separator_pattern,
+  _is_codex_env,
+  _is_cursor_env,
+  _llm_via_environment_or_fallback,
+  _normalize_key_name,
+  _validate_type,
   _coerce_secret_str,
   _deserialize_initial_state,
   _resolve_persistence,
@@ -1417,6 +1423,8 @@ describe("environment, logging, and file store utilities", () => {
     resetEnvContextForTesting();
     getEnvContext({});
     expect(events.at(-1)).toBeInstanceOf(DefaultEnvEvent);
+    expect(_is_codex_env({ CODEX_THREAD_ID: "thread" })).toBe(true);
+    expect(_is_cursor_env({ CURSOR_TRACE_ID: "trace" })).toBe(true);
   });
 
   it("logs only in verbose mode with colored timestamped output", async () => {
@@ -16728,6 +16736,14 @@ describe("LLM providers", () => {
       base_url: "https://env.example.test",
       api_base: "https://env.example.test",
     });
+    const directEnv = _llm_via_environment_or_fallback({
+      MODEL_NAME: "test/env-model",
+      BASE_URL: "https://env.example.test",
+    }) as ConfiguredLLM;
+    expect(directEnv.to_config_dict()).toMatchObject({
+      model: "test/env-model",
+      base_url: "https://env.example.test",
+    });
 
     const openaiEnv = create_llm(null, {
       OPENAI_MODEL_NAME: "gpt-4o",
@@ -16753,6 +16769,7 @@ describe("LLM providers", () => {
       additional_params: { api_version: "2024-02-15-preview" },
     });
     expect(normalize_llm_env_key_name("azure_api_base")).toBe("api_base");
+    expect(_normalize_key_name("custom_api_key")).toBe("api_key");
 
     registerLLMProvider("test/configured-model", () => "delegated");
     await expect(fromString?.call([{ role: "user", content: "hello" }])).resolves.toBe("delegated");
@@ -17668,6 +17685,12 @@ describe("task interpolation", () => {
     expect(() => interpolateOnly("{data}", { data: new Set(["x"]) })).toThrow("Unsupported type Set");
     expect(() => interpolateOnly("{data}", { data: { valid: 1, invalid: () => "x" } }))
       .toThrow("Unsupported type function");
+    expect(() => {
+      _validate_type({ valid: [1, "two", true, null] });
+    }).not.toThrow();
+    expect(() => {
+      _validate_type(new Set(["x"]));
+    }).toThrow("Unsupported type Set");
   });
 
   it("sanitizes tool names and slugifies strings using upstream-compatible rules", () => {
@@ -17676,6 +17699,7 @@ describe("task interpolation", () => {
     expect(sanitizeToolName("검색 Tool!")).toBe("tool");
     expect(sanitizeToolName("x".repeat(80))).toMatch(/^x{55}_[a-f0-9]{8}$/);
     expect(slugify("CrewAI: Hello World!", "-")).toBe("crewai-hello-world");
+    expect("crew---ai".replace(_duplicate_separator_pattern("-"), "-")).toBe("crew-ai");
   });
 
   it("extracts and validates provider tool schemas like upstream", () => {

@@ -38,14 +38,16 @@ export function sanitizeToolName(name: string, maxLength = maxToolNameLength): s
 export const sanitize_tool_name = sanitizeToolName;
 
 export function slugify(text: string, separator = "_"): string {
-  const escapedSeparator = escapeRegExp(separator);
-  const duplicateSeparatorPattern = new RegExp(`(?:${escapedSeparator}){2,}`, "g");
   let normalized = normalizeAscii(text);
   normalized = normalized.toLowerCase();
   normalized = normalized.replace(quotePattern, "");
   normalized = normalized.replace(disallowedCharsPattern, separator);
-  normalized = normalized.replace(duplicateSeparatorPattern, separator);
+  normalized = normalized.replace(_duplicate_separator_pattern(separator), separator);
   return trimSeparator(normalized, separator);
+}
+
+export function _duplicate_separator_pattern(separator: string): RegExp {
+  return new RegExp(`(?:${escapeRegExp(separator)}){2,}`, "g");
 }
 
 export function interpolateOnly(
@@ -93,7 +95,7 @@ function validateInterpolationInputs(inputs: Record<string, unknown>): void {
   }
 }
 
-function validateInterpolationValue(value: unknown): void {
+export function _validate_type(value: unknown): void {
   if (
     value === null
     || typeof value === "string"
@@ -103,17 +105,19 @@ function validateInterpolationValue(value: unknown): void {
     return;
   }
   if (Array.isArray(value)) {
-    value.forEach(validateInterpolationValue);
+    value.forEach(_validate_type);
     return;
   }
   if (value && typeof value === "object" && isPlainObject(value)) {
-    Object.values(value).forEach(validateInterpolationValue);
+    Object.values(value).forEach(_validate_type);
     return;
   }
   throw new Error(
     `Unsupported type ${typeName(value)} in inputs. Only str, int, float, bool, dict, and list are allowed.`,
   );
 }
+
+const validateInterpolationValue = _validate_type;
 
 function stringifyInterpolationValue(value: unknown): string {
   if (typeof value === "string") {

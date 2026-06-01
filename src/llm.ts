@@ -1204,6 +1204,7 @@ export function llmViaEnvironmentOrFallback(env: CreateLLMEnvironment = process.
 }
 
 export const llm_via_environment_or_fallback = llmViaEnvironmentOrFallback;
+export const _llm_via_environment_or_fallback = llmViaEnvironmentOrFallback;
 
 export function normalizeLLMEnvKeyName(keyName: string): string {
   for (const pattern of LITELLM_PARAMS) {
@@ -1215,6 +1216,7 @@ export function normalizeLLMEnvKeyName(keyName: string): string {
 }
 
 export const normalize_llm_env_key_name = normalizeLLMEnvKeyName;
+export const _normalize_key_name = normalizeLLMEnvKeyName;
 
 export type BaseLLMOptions = {
   model: string;

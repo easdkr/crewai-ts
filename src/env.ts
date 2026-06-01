@@ -29,12 +29,14 @@ export function isCodexEnv(env: NodeJS.ProcessEnv = process.env): boolean {
 }
 
 export const is_codex_env = isCodexEnv;
+export const _is_codex_env = isCodexEnv;
 
 export function isCursorEnv(env: NodeJS.ProcessEnv = process.env): boolean {
   return CURSOR_ENV_VARS.some((name) => Boolean(env[name]));
 }
 
 export const is_cursor_env = isCursorEnv;
+export const _is_cursor_env = isCursorEnv;
 
 export function getEnvContext(env: NodeJS.ProcessEnv = process.env): void {
   if (envContextEmitted) {
