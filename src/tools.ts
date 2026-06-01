@@ -232,9 +232,17 @@ export class ToolResult {
 }
 
 export function build_schema_hint(argsSchema: ToolArgsSchema | null = null): string {
-  return argsSchema && Object.keys(argsSchema).length > 0
-    ? `Tool input schema: ${JSON.stringify(argsSchema)}`
-    : "";
+  if (!argsSchema || Object.keys(argsSchema).length === 0) {
+    return "";
+  }
+  const properties = Object.fromEntries(Object.entries(argsSchema).map(([name, spec]) => {
+    const property = Object.fromEntries(Object.entries(spec).filter(([key]) => key !== "required"));
+    return [name, property];
+  }));
+  const required = Object.entries(argsSchema)
+    .filter(([, spec]) => spec.required)
+    .map(([name]) => name);
+  return `\nExpected arguments: ${jsonDumpsForHint(properties)}\nRequired: ${jsonDumpsForHint(required)}`;
 }
 
 export class ToolUsageLimitExceededError extends Error {
@@ -899,7 +907,14 @@ export class StructuredTool extends BaseTool {
   }
 
   _parseArgs(input: ToolInvocationInput): Record<string, unknown> {
-    return validateArgs(this.name, this.argsSchema, normalizeStructuredToolInput(input));
+    const rawArgs = normalizeStructuredToolInput(input);
+    try {
+      return validateArgs(this.name, this.argsSchema, rawArgs);
+    } catch (error) {
+      throw new Error(`Arguments validation failed: ${error instanceof Error ? error.message : String(error)}${build_schema_hint(this.argsSchema)}`, {
+        cause: error,
+      });
+    }
   }
 
   _parse_args(input: ToolInvocationInput): Record<string, unknown> {
@@ -2129,6 +2144,24 @@ function normalizeStructuredToolInput(input: ToolInvocationInput): Record<string
     return { input: input.input, inputs: input.inputs };
   }
   return { ...input };
+}
+
+function jsonDumpsForHint(value: unknown): string {
+  if (value === null || value === undefined) {
+    return "null";
+  }
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    return JSON.stringify(value);
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => jsonDumpsForHint(item)).join(", ")}]`;
+  }
+  if (typeof value === "object") {
+    return `{${Object.entries(value as Record<string, unknown>)
+      .map(([key, item]) => `${JSON.stringify(key)}: ${jsonDumpsForHint(item)}`)
+      .join(", ")}}`;
+  }
+  return JSON.stringify(value);
 }
 
 export function validateArgs(
