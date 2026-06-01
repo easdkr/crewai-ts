@@ -19071,10 +19071,10 @@ describe("task interpolation", () => {
       metrics: [1, 2, { active: true, optional: null }],
     });
 
-    expect(seenPrompts[0]).toContain('Task: Analyze {"name":"CrewAI","departments":["research","engineering"]}');
-    expect(seenPrompts[0]).toContain('Expected output: Summarize [1,2,{"active":true,"optional":null}]');
-    expect(output.description).toBe('Analyze {"name":"CrewAI","departments":["research","engineering"]}');
-    expect(output.expectedOutput).toBe('Summarize [1,2,{"active":true,"optional":null}]');
+    expect(seenPrompts[0]).toContain("Task: Analyze {'name': 'CrewAI', 'departments': ['research', 'engineering']}");
+    expect(seenPrompts[0]).toContain("Expected output: Summarize [1, 2, {'active': True, 'optional': None}]");
+    expect(output.description).toBe("Analyze {'name': 'CrewAI', 'departments': ['research', 'engineering']}");
+    expect(output.expectedOutput).toBe("Summarize [1, 2, {'active': True, 'optional': None}]");
   });
 
   it("interpolates outputFile from inputs without mutating the original template", async () => {
@@ -19102,6 +19102,10 @@ describe("task interpolation", () => {
   it("validates unsupported interpolation values", () => {
     expect(interpolateOnly("Hello {name}", { name: "CrewAI" })).toBe("Hello CrewAI");
     expect(interpolateOnly("Value: {value}", { value: 42 })).toBe("Value: 42");
+    expect(interpolateOnly("Flag: {value}", { value: true })).toBe("Flag: True");
+    expect(interpolateOnly("Missing: {value}", { value: null })).toBe("Missing: None");
+    expect(interpolateOnly("Data: {value}", { value: { enabled: false, tags: ["a", null] } }))
+      .toBe("Data: {'enabled': False, 'tags': ['a', None]}");
     expect(interpolateOnly("This {123} and {!var} should stay but {valid_var} changes", { valid_var: "ok" }))
       .toBe("This {123} and {!var} should stay but ok changes");
     expect(interpolateOnly(null, { name: "CrewAI" })).toBe("");

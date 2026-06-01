@@ -123,11 +123,46 @@ function stringifyInterpolationValue(value: unknown): string {
   if (typeof value === "string") {
     return value;
   }
-  if (typeof value === "number" || typeof value === "boolean") {
+  if (typeof value === "number") {
     return String(value);
   }
+  if (typeof value === "boolean") {
+    return value ? "True" : "False";
+  }
   if (value === null) {
-    return "null";
+    return "None";
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => pythonRepr(item)).join(", ")}]`;
+  }
+  if (value && typeof value === "object" && isPlainObject(value)) {
+    return `{${Object.entries(value)
+      .map(([key, item]) => `${pythonRepr(key)}: ${pythonRepr(item)}`)
+      .join(", ")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function pythonRepr(value: unknown): string {
+  if (typeof value === "string") {
+    return `'${value.replaceAll("\\", "\\\\").replaceAll("'", "\\'")}'`;
+  }
+  if (typeof value === "number") {
+    return String(value);
+  }
+  if (typeof value === "boolean") {
+    return value ? "True" : "False";
+  }
+  if (value === null) {
+    return "None";
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => pythonRepr(item)).join(", ")}]`;
+  }
+  if (value && typeof value === "object" && isPlainObject(value)) {
+    return `{${Object.entries(value)
+      .map(([key, item]) => `${pythonRepr(key)}: ${pythonRepr(item)}`)
+      .join(", ")}}`;
   }
   return JSON.stringify(value);
 }
