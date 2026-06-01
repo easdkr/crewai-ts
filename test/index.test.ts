@@ -19452,8 +19452,9 @@ describe("task guardrails", () => {
 
     expect(guarded.raw).toBe("fixed");
     expect(guarded.json_dict).toEqual({ summary: "fixed" });
-    expect(prompts[0]).toContain("Validation error: needs revision");
-    expect(prompts[0]).toContain("Task output: draft");
+    expect(prompts[0]).toContain("### Previous attempt failed validation: needs revision");
+    expect(prompts[0]).toContain("### Previous result:\ndraft");
+    expect(prompts[0]).toContain("Try again, making sure to address the validation error.");
     expect(attempts).toBe(2);
   });
 
@@ -19525,7 +19526,7 @@ describe("task guardrails", () => {
       llm: (messages) => {
         const prompt = messages.at(-1)?.content ?? "";
         prompts.push(prompt);
-        return prompt.includes("Validation error: draft fixed") ? "draft fixed" : "draft";
+        return prompt.includes("Previous attempt failed validation: draft fixed") ? "draft fixed" : "draft";
       },
     });
     const taskInstance = new Task({
@@ -19547,8 +19548,9 @@ describe("task guardrails", () => {
     const output = await taskInstance.execute();
 
     expect(output.raw).toBe("draft fixed accepted");
-    expect(prompts[1]).toContain("Validation error: draft fixed");
-    expect(prompts[1]).toContain("Task output: draft");
+    expect(prompts[1]).toContain("### Previous attempt failed validation: draft fixed");
+    expect(prompts[1]).toContain("### Previous result:\ndraft");
+    expect(prompts[1]).toContain("Try again, making sure to address the validation error.");
     expect(attempts).toBe(2);
     expect(events.map((event) => event.type)).toEqual([
       "llm_guardrail_started",

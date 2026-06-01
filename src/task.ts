@@ -852,10 +852,7 @@ export class Task {
         currentRetryCount += 1;
         this.guardrailRetryCounts.set(guardrailIndex, currentRetryCount);
       }
-      const context = [
-        `Validation error: ${String(nextValue)}`,
-        `Task output: ${output.raw}`,
-      ].join("\n");
+      const context = formatGuardrailValidationError(nextValue, output.raw);
       const raw = await agent.executeTask(context, {}, tools, { task: this });
       output = await this.createOutput(raw, agent, {
         description: output.description,
@@ -1171,10 +1168,7 @@ export class Task {
         currentRetryCount += 1;
         this.guardrailRetryCounts.set(index, currentRetryCount);
       }
-      const context = [
-        `Validation error: ${String(nextValue)}`,
-        `Task output: ${output.raw}`,
-      ].join("\n");
+      const context = formatGuardrailValidationError(nextValue, output.raw);
       const raw = await agent.executeTask(context, inputs, tools, {
         task: this,
         ...(renderedTask === undefined ? {} : { inputFiles: renderedTask.inputFiles }),
@@ -1404,6 +1398,12 @@ function stringifyGuardrailValue(value: unknown): string {
     return value.toString();
   }
   return JSON.stringify(value);
+}
+
+function formatGuardrailValidationError(error: unknown, taskOutput: string): string {
+  return I18N_DEFAULT.errors("validation_error")
+    .replace("{guardrail_result_error}", stringifyGuardrailValue(error))
+    .replace("{task_output}", taskOutput);
 }
 
 function normalizeTaskDate(value: Date | string | null): Date | null {
