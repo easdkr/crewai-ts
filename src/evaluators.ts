@@ -1406,7 +1406,7 @@ export class ExperimentResults {
 
     baselineRuns.sort((left, right) => stringFromJsonScalar(right.timestamp).localeCompare(stringFromJsonScalar(left.timestamp)));
     const latestRun = baselineRuns[0] ?? {};
-    const comparison = this.compareWithRun(latestRun);
+    const comparison = this._compare_with_run(latestRun);
 
     if (print_summary) {
       this.display.comparison_summary(comparison, stringFromJsonScalar(latestRun.timestamp, "unknown"));
@@ -1427,7 +1427,7 @@ export class ExperimentResults {
     return this.compare_with_baseline(baselineFilepath, saveCurrent, printSummary);
   }
 
-  private compareWithRun(baselineRun: Record<string, unknown>): Record<string, unknown> {
+  _compare_with_run(baselineRun: Record<string, unknown>): Record<string, unknown> {
     const baselineResults = Array.isArray(baselineRun.results) ? baselineRun.results.filter(isRecord) : [];
     const baselineLookup = new Map<string, Record<string, unknown>>();
     for (const result of baselineResults) {
@@ -1471,6 +1471,10 @@ export class ExperimentResults {
       total_compared: improved.length + regressed.length + unchanged.length,
       baseline_timestamp: stringFromJsonScalar(baselineRun.timestamp, "unknown"),
     };
+  }
+
+  compareWithRun(baselineRun: Record<string, unknown>): Record<string, unknown> {
+    return this._compare_with_run(baselineRun);
   }
 }
 

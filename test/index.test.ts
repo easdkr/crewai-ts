@@ -5942,6 +5942,7 @@ describe("evaluator utilities", () => {
         results: Array<Record<string, unknown>>;
       };
       const savedRuns = JSON.parse(readFileSync(baselineFile, "utf8")) as unknown as Array<Record<string, unknown>>;
+      const directComparison = results._compare_with_run(savedRuns[0] as Record<string, unknown>);
 
       expect(currentJson.metadata).toEqual({ suite: "current" });
       expect(currentJson.results).toEqual(expect.arrayContaining([expect.objectContaining({ identifier: "improved", passed: true })]));
@@ -5955,6 +5956,7 @@ describe("evaluator utilities", () => {
         total_compared: 3,
         baseline_timestamp: "2026-05-30T00:00:00.000Z",
       });
+      expect(directComparison).toMatchObject(comparison);
       expect(savedRuns).toHaveLength(2);
       expect(savedRuns[1]).toMatchObject({ metadata: { suite: "current" } });
     } finally {
