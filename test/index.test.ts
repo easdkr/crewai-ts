@@ -19394,7 +19394,10 @@ describe("LLM providers", () => {
         response: "done",
         callType: LLMCallType.LLM_CALL,
         messages: "hello",
-        usage: { total_tokens: 3 },
+        usage: {
+          total_tokens: 3,
+          _internal: "hidden",
+        },
       });
       llm._emit_call_failed_event({ error: "boom" });
 
@@ -19414,6 +19417,42 @@ describe("LLM providers", () => {
     expect((events[2] as LLMThinkingChunkEvent).chunk).toBe("thinking");
     expect((events[3] as LLMCallCompletedEvent).usage).toEqual({ total_tokens: 3 });
     expect((events[4] as LLMCallFailedEvent).error).toBe("boom");
+  });
+
+  it("normalizes completed LLM event usage payloads before emission", () => {
+    const events: CrewAIEvent[] = [];
+    crewaiEventBus.on("llm_call_completed", (_source, event) => {
+      events.push(event);
+    });
+
+    class EventLLM extends BaseLLM {
+      call(): string {
+        return "done";
+      }
+    }
+    const llm = new EventLLM({ model: "demo/model" });
+    const usage = {
+      model_dump() {
+        return {
+          prompt_tokens: 8,
+          completion_tokens: 5,
+          total_tokens: 13,
+        };
+      },
+    };
+
+    llm._emit_call_completed_event({
+      response: "done",
+      callType: LLMCallType.LLM_CALL,
+      messages: "hello",
+      usage,
+    });
+
+    expect((events[0] as LLMCallCompletedEvent).usage).toEqual({
+      prompt_tokens: 8,
+      completion_tokens: 5,
+      total_tokens: 13,
+    });
   });
 
   it("handles BaseLLM tool execution with tool usage and LLM completion events", async () => {

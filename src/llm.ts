@@ -1550,7 +1550,7 @@ export abstract class BaseLLM implements LLMClient {
         : serializeLLMEventMessages(options.messages),
       response: options.response,
       call_type: options.callType ?? options.call_type ?? LLMCallType.LLM_CALL,
-      usage: options.usage ?? null,
+      usage: BaseLLM.usageToDict(options.usage),
     }));
   }
 
