@@ -1154,6 +1154,9 @@ export class Task {
         from_agent: agent,
       }));
       if (success) {
+        if (nextValue === null || nextValue === undefined) {
+          throw new Error("Task guardrail returned None as result. This is not allowed.");
+        }
         return await this.normalizeGuardrailOutput(nextValue, output, agent);
       }
       if (attempt === this.guardrailMaxRetries) {

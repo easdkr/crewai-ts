@@ -19595,6 +19595,25 @@ describe("task guardrails", () => {
     expect(events.map((event) => event.type)).toEqual(["llm_guardrail_started"]);
   });
 
+  it("rejects successful task guardrails that return null results", async () => {
+    const agentInstance = new Agent({
+      role: "Writer",
+      goal: "Write reports",
+      backstory: "Careful writer",
+      llm: () => "draft",
+    });
+    const taskInstance = new Task({
+      description: "Write",
+      expectedOutput: "A report",
+      agent: agentInstance,
+      guardrail: (output) => [true, output.raw === "draft" ? null : output.raw],
+    });
+
+    await expect(taskInstance.execute()).rejects.toThrow(
+      "Task guardrail returned None as result. This is not allowed.",
+    );
+  });
+
   it("reports single guardrail retry exhaustion without a list index", async () => {
     const agentInstance = new Agent({
       role: "Writer",
