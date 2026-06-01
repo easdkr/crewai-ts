@@ -899,6 +899,18 @@ export class AgentExecutor extends BaseAgentExecutor {
       if (this.kickoffInput) {
         this.state.messages.push({ role: "user", content: this.kickoffInput });
       }
+      const kickoff = (this as unknown as { kickoff?: () => unknown }).kickoff;
+      if (typeof kickoff === "function") {
+        const kickoffResult = kickoff.call(this);
+        if (isPromiseLike(kickoffResult)) {
+          throw new Error("AgentExecutor.invoke does not support async kickoff results; use ainvoke instead.");
+        }
+        if (!(this.state.current_answer instanceof AgentFinish)) {
+          throw new Error("AgentExecutor finished without reaching a final answer.");
+        }
+        this.state.is_finished = true;
+        return { output: this.state.current_answer.output };
+      }
       const result = super.invoke(this.kickoffInput);
       const output = result instanceof AgentFinish ? result.output : result;
       this.state.current_answer = result instanceof AgentFinish ? result : new AgentFinish({ thought: "", output, text: String(output) });

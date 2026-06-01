@@ -10225,6 +10225,37 @@ describe("core crew runtime", () => {
     expect(executor.state.messages.at(-1)).toEqual({ role: "user", content: "Summarize CrewAI" });
   });
 
+  it("requires AgentExecutor object-style invoke to reach an AgentFinish when kickoff is provided", () => {
+    const success = new AgentExecutor();
+    Object.assign(success, {
+      kickoff() {
+        success.state.current_answer = new AgentFinish({
+          thought: "done",
+          output: "Final result",
+          text: "complete",
+        });
+      },
+    });
+
+    expect(success.invoke({ input: "test", tool_names: "", tools: "" })).toEqual({ output: "Final result" });
+
+    const failure = new AgentExecutor();
+    Object.assign(failure, {
+      kickoff() {
+        failure.state.current_answer = new AgentAction({
+          thought: "thinking",
+          tool: "search",
+          tool_input: "query",
+          text: "action text",
+        });
+      },
+    });
+
+    expect(() => {
+      failure.invoke({ input: "test", tool_names: "", tools: "" });
+    }).toThrow("without reaching a final answer");
+  });
+
   it("executes AgentExecutor pending native tool calls and records tool messages", () => {
     const executor = new AgentExecutor();
     Object.assign(executor, {
