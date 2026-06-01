@@ -10170,6 +10170,24 @@ describe("RAG configuration and factories", () => {
     expect(() => watsonx.validateSpaceOrProject()).toThrow("One of 'space_id' or 'project_id' must be provided");
   });
 
+  it("accepts upstream legacy model config keys for embedding providers", () => {
+    const openai = new OpenAIProvider({
+      api_key: "sk-test",
+      model: "text-embedding-3-small",
+    });
+    const generative = new GenerativeAiProvider({
+      api_key: "google-test",
+      model: "text-embedding-005",
+      task_type: "retrieval_document",
+    });
+
+    expect(openai.model_name).toBe("text-embedding-3-small");
+    expect(openai.config.model_name).toBe("text-embedding-3-small");
+    expect(generative.model_name).toBe("text-embedding-005");
+    expect(generative.config.model_name).toBe("text-embedding-005");
+    expect(generative.task_type).toBe("retrieval_document");
+  });
+
   it("calls OpenAI and Azure embeddings APIs for OpenAI-compatible providers", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch")
       .mockResolvedValueOnce({

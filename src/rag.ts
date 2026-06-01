@@ -346,6 +346,7 @@ export const CustomProviderSpec = providerSpecMarker("CustomProviderSpec");
 
 export type GenerativeAiProviderConfig = {
   api_key?: string;
+  model?: "gemini-embedding-001" | "text-embedding-005" | "text-multilingual-embedding-002";
   model_name?: "gemini-embedding-001" | "text-embedding-005" | "text-multilingual-embedding-002";
   task_type?: string;
   api_url?: string;
@@ -434,6 +435,7 @@ export const ONNXProviderSpec = providerSpecMarker("ONNXProviderSpec");
 
 export type OpenAIProviderConfig = {
   api_key?: string;
+  model?: string;
   model_name?: string;
   api_base?: string;
   api_type?: string;
@@ -577,7 +579,7 @@ export class OpenAIEmbeddingFunction {
 
   constructor(options: OpenAIProviderConfig = {}) {
     this.api_key = options.api_key ?? null;
-    this.model_name = options.model_name ?? "text-embedding-ada-002";
+    this.model_name = options.model_name ?? options.model ?? "text-embedding-ada-002";
     this.api_base = options.api_base ?? null;
     this.api_type = options.api_type ?? null;
     this.api_version = options.api_version ?? null;
@@ -935,7 +937,7 @@ export class GoogleGenerativeAiEmbeddingFunction {
 
   constructor(options: GenerativeAiProviderConfig = {}) {
     this.api_key = options.api_key ?? null;
-    this.model_name = options.model_name ?? "gemini-embedding-001";
+    this.model_name = options.model_name ?? options.model ?? "gemini-embedding-001";
     this.task_type = options.task_type ?? "RETRIEVAL_DOCUMENT";
     this.api_url = options.api_url ?? null;
   }
@@ -1010,7 +1012,7 @@ export class GenerativeAiProvider extends BaseEmbeddingsProvider {
 
   constructor(options: GenerativeAiProviderConfig = {}) {
     const config = {
-      model_name: "gemini-embedding-001" as const,
+      model_name: options.model_name ?? options.model ?? "gemini-embedding-001" as const,
       task_type: "RETRIEVAL_DOCUMENT",
       ...options,
     };
@@ -1621,7 +1623,7 @@ export class OpenAIProvider extends BaseEmbeddingsProvider {
 
   constructor(options: OpenAIProviderConfig = {}) {
     const config = {
-      model_name: "text-embedding-ada-002",
+      model_name: options.model_name ?? options.model ?? "text-embedding-ada-002",
       ...options,
     };
     super({
