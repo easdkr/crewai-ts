@@ -18332,6 +18332,104 @@ describe("flow runtime", () => {
     await second.kickoff({ inputs: { id: "poem-flow" } });
 
     expect(second.state.sentenceCount).toBe(3);
+
+    const third = new DefaultOverrideFlow();
+    initializer.call(third);
+    await third.kickoff({
+      inputs: {
+        id: "poem-flow",
+        hasSetCount: true,
+        sentenceCount: 5,
+      },
+    });
+
+    expect(third.state.sentenceCount).toBe(5);
+
+    const fourth = new DefaultOverrideFlow();
+    initializer.call(fourth);
+    await fourth.kickoff({ inputs: { id: "fresh-poem-flow", hasSetCount: true } });
+
+    expect(fourth.state.sentenceCount).toBe(1000);
+  });
+
+  it("carries persisted default overrides through multi-step flow listeners", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "crewai-ts-flow-multistep-default-"));
+    const persistence = new JsonFlowPersistence(directory);
+
+    class MultiStepDefaultOverrideFlow extends Flow<{
+      id: string;
+      sentenceCount: number;
+      hasSetCount: boolean;
+      poemType: string;
+    }> {
+      constructor() {
+        super({
+          initialState: {
+            id: "multi-poem-flow",
+            sentenceCount: 1000,
+            hasSetCount: false,
+            poemType: "",
+          },
+          persistence,
+        });
+      }
+
+      setSentenceCount() {
+        if (!this.state.hasSetCount) {
+          this.state.sentenceCount = 3;
+          this.state.hasSetCount = true;
+        }
+      }
+
+      setPoemType() {
+        if (this.state.sentenceCount === 3) {
+          this.state.poemType = "haiku";
+        } else if (this.state.sentenceCount === 5) {
+          this.state.poemType = "limerick";
+        } else {
+          this.state.poemType = "free_verse";
+        }
+      }
+
+      finished() {
+        return this.state.poemType;
+      }
+    }
+
+    const setCountInitializer = decorateMethod(MultiStepDefaultOverrideFlow, "setSentenceCount", start() as unknown as Decorator);
+    const setTypeInitializer = decorateMethod(MultiStepDefaultOverrideFlow, "setPoemType", listen("setSentenceCount") as unknown as Decorator);
+    const finishedInitializer = decorateMethod(MultiStepDefaultOverrideFlow, "finished", listen("setPoemType") as unknown as Decorator);
+    const initialize = (flow: MultiStepDefaultOverrideFlow) => {
+      setCountInitializer.call(flow);
+      setTypeInitializer.call(flow);
+      finishedInitializer.call(flow);
+    };
+
+    const first = new MultiStepDefaultOverrideFlow();
+    initialize(first);
+    await first.kickoff();
+
+    expect(first.state.sentenceCount).toBe(3);
+    expect(first.state.poemType).toBe("haiku");
+
+    const second = new MultiStepDefaultOverrideFlow();
+    initialize(second);
+    await second.kickoff({
+      inputs: {
+        id: "multi-poem-flow",
+        sentenceCount: 5,
+      },
+    });
+
+    expect(second.state.sentenceCount).toBe(5);
+    expect(second.state.poemType).toBe("limerick");
+
+    const third = new MultiStepDefaultOverrideFlow();
+    initialize(third);
+    await third.kickoff({ inputs: { id: "multi-poem-flow" } });
+
+    expect(third.state.sentenceCount).toBe(5);
+    expect(third.state.poemType).toBe("limerick");
   });
 
   it("resumes persisted flows without re-executing completed listener methods", async () => {

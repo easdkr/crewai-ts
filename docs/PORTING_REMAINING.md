@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 837 passing tests.
+- Test suite: 838 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -325,6 +325,7 @@ When more goal budget is available, continue from the behavioral parity audits b
   - `Flow.model_post_init` now exposes the upstream post-init hook, emits `flow_created` idempotently, and preserves explicit disabled-memory configuration.
   - `Flow` now uses upstream-style static `initialState` / `initial_state` defaults when no constructor `initialState` is provided.
   - `Flow.kickoff` / `kickoffAsync` / `kickoff_async` / `akickoff` now accept upstream-style direct `inputs` arguments in addition to the TS options object.
+- Flow persistence default-override behavior is release-gated from upstream tests: restored persisted state wins over class defaults, explicit kickoff inputs can override restored values, and multi-step listeners observe the effective restored/overridden state.
 - `humanFeedback` now validates upstream HITL routing configuration before decoration: `emit` requires a usable LLM, `defaultOutcome` requires `emit`, and defaults must be one of the emitted outcomes.
 - Flow HITL routing now supports deterministic LLM-backed outcome collapse for injected local LLM clients, including JSON `outcome` responses and first-outcome fallback on LLM failure.
 - Flow HITL learning now has deterministic local behavior for injected LLM clients: recalled memory lessons can pre-review method output before provider display, and non-empty feedback can distill new lessons into flow memory.
