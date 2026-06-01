@@ -13,7 +13,9 @@ import {
   CheckpointRestoreFailedEvent,
   CheckpointRestoreStartedEvent,
   CheckpointStartedEvent,
+  CheckpointPrunedEvent,
   crewaiEventBus,
+  is_replaying,
   BaseEvent,
   type EventType,
 } from "./events.js";
@@ -22,6 +24,8 @@ import { captureExecutionContext } from "./context.js";
 
 const requireNodeBuiltin = createRequire(import.meta.url);
 let cachedDatabaseSync: typeof import("node:sqlite").DatabaseSync | null = null;
+let checkpointHandlersRegistered = false;
+const CHECKPOINT_SENTINEL = Symbol("checkpoint-opt-out");
 
 export type CheckpointEventType = EventType | "lite_agent_execution_started" | "lite_agent_execution_completed" | "lite_agent_execution_error";
 export const CheckpointEventType = Object.freeze({ kind: "CheckpointEventType" });
@@ -97,6 +101,170 @@ function checkpointEventTypes(): EventType[] {
     "mcp_connection_failed",
     "default_env",
   ];
+}
+
+export function _ensure_handlers_registered(): void {
+  if (checkpointHandlersRegistered) {
+    return;
+  }
+  _register_all_handlers(crewaiEventBus);
+  checkpointHandlersRegistered = true;
+}
+
+function resolveCheckpointValue(value: unknown): CheckpointConfig | typeof CHECKPOINT_SENTINEL | null {
+  if (value instanceof CheckpointConfig) {
+    _ensure_handlers_registered();
+    return value;
+  }
+  if (value === true) {
+    _ensure_handlers_registered();
+    return new CheckpointConfig();
+  }
+  if (value === false) {
+    return CHECKPOINT_SENTINEL;
+  }
+  return null;
+}
+
+export function _resolve_from_agent(agent: unknown): CheckpointConfig | null {
+  if (!isRecord(agent)) {
+    return null;
+  }
+  const result = resolveCheckpointValue(agent.checkpoint);
+  if (result instanceof CheckpointConfig) {
+    return result;
+  }
+  if (result === CHECKPOINT_SENTINEL) {
+    return null;
+  }
+  const crew = agent.crew;
+  if (!isRecord(crew)) {
+    return null;
+  }
+  const crewResult = resolveCheckpointValue(crew.checkpoint);
+  return crewResult instanceof CheckpointConfig ? crewResult : null;
+}
+
+export function _find_checkpoint(source: unknown): CheckpointConfig | null {
+  if (!isRecord(source)) {
+    return null;
+  }
+  if ("checkpoint" in source) {
+    const result = resolveCheckpointValue(source.checkpoint);
+    if (result instanceof CheckpointConfig) {
+      return result;
+    }
+    if (result === CHECKPOINT_SENTINEL) {
+      return null;
+    }
+  }
+  if (isRecord(source.agent)) {
+    return _resolve_from_agent(source.agent);
+  }
+  return null;
+}
+
+export function _do_checkpoint(state: RuntimeState, cfg: CheckpointConfig, event: BaseEvent | null = null): void {
+  const providerName = cfg.provider.constructor.name;
+  const trigger = event?.type ?? null;
+  const parentIdSnapshot = state.parentId;
+  const branchSnapshot = state.branch;
+  crewaiEventBus.emit(cfg, new CheckpointStartedEvent({
+    location: cfg.location,
+    provider: providerName,
+    trigger,
+    branch: branchSnapshot,
+    parent_id: parentIdSnapshot,
+  }));
+
+  const startedAt = Date.now();
+  try {
+    _prepare_entities(state.root.filter((entity): entity is object => typeof entity === "object" && entity !== null));
+    const payload = state._serialize();
+    if (event) {
+      payload.trigger = event.type;
+    }
+    const location = cfg.provider.checkpoint(JSON.stringify(payload), cfg.location, {
+      parentId: parentIdSnapshot,
+      parent_id: parentIdSnapshot,
+      branch: branchSnapshot,
+    });
+    if (typeof location !== "string") {
+      throw new Error("Provider returned a Promise from synchronous checkpoint(). Use acheckpoint() instead.");
+    }
+    state._chain_lineage(cfg.provider, location);
+    const checkpointId = cfg.provider.extract_id(location);
+    crewaiEventBus.emit(cfg, new CheckpointCompletedEvent({
+      location,
+      provider: providerName,
+      trigger,
+      branch: branchSnapshot,
+      parent_id: parentIdSnapshot,
+      checkpoint_id: checkpointId,
+      duration_ms: Date.now() - startedAt,
+    }));
+    if (cfg.max_checkpoints !== null) {
+      const removedCount = cfg.provider.prune(cfg.location, cfg.max_checkpoints, { branch: branchSnapshot });
+      if (typeof removedCount !== "number") {
+        throw new Error("Provider returned a Promise from synchronous prune().");
+      }
+      crewaiEventBus.emit(cfg, new CheckpointPrunedEvent({
+        location: cfg.location,
+        provider: providerName,
+        trigger,
+        branch: branchSnapshot,
+        parent_id: parentIdSnapshot,
+        removed_count: removedCount,
+        max_checkpoints: cfg.max_checkpoints,
+      }));
+    }
+  } catch (error) {
+    crewaiEventBus.emit(cfg, new CheckpointFailedEvent({
+      location: cfg.location,
+      provider: providerName,
+      trigger,
+      branch: branchSnapshot,
+      parent_id: parentIdSnapshot,
+      error,
+    }));
+    throw error;
+  }
+}
+
+export function _should_checkpoint(source: unknown, event: BaseEvent): CheckpointConfig | null {
+  const cfg = _find_checkpoint(source);
+  if (!cfg) {
+    return null;
+  }
+  if (!cfg.trigger_all && !cfg.trigger_events.has(event.type)) {
+    return null;
+  }
+  return cfg;
+}
+
+export function _on_any_event(source: unknown, event: BaseEvent, state: unknown = null): void {
+  if (is_replaying() || event.type.startsWith("checkpoint_")) {
+    return;
+  }
+  const cfg = _should_checkpoint(source, event);
+  if (!cfg) {
+    return;
+  }
+  const runtime = state instanceof RuntimeState
+    ? state
+    : crewaiEventBus.runtimeState ?? new RuntimeState({
+      root: source && typeof source === "object" ? [source] : [],
+      provider: cfg.provider,
+    });
+  _do_checkpoint(runtime, cfg, event);
+}
+
+export function _register_all_handlers(event_bus: typeof crewaiEventBus): void {
+  for (const eventType of checkpointEventTypes()) {
+    if (!eventType.startsWith("checkpoint_")) {
+      event_bus.register_handler(eventType, _on_any_event);
+    }
+  }
 }
 
 export type EdgeType =
@@ -889,6 +1057,7 @@ export class CheckpointConfig {
     if (this.provider instanceof SqliteProvider && !extname(this.location)) {
       this.location = `${this.location}.db`;
     }
+    _ensure_handlers_registered();
     return this;
   }
 

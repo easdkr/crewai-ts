@@ -1,5 +1,5 @@
 import { generateKeyPairSync, sign, type KeyObject } from "node:crypto";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -98,10 +98,17 @@ import {
   _build_event_type_map,
   _build_path,
   _coerce_checkpoint,
+  _do_checkpoint,
+  _ensure_handlers_registered,
+  _find_checkpoint,
   _make_id,
+  _on_any_event,
   _prepare_entities,
+  _register_all_handlers,
   _resolve_event,
+  _resolve_from_agent,
   _safe_branch,
+  _should_checkpoint,
   _sync_checkpoint_fields,
   ConditionalTask,
   ConsoleFormatter,
@@ -21556,6 +21563,104 @@ describe("runtime state", () => {
     expect(crew.checkpoint_kickoff_event_id).toBe("crew-kickoff");
     expect(task.checkpoint_original_description).toBe("Original {topic}");
     expect(task.checkpoint_original_expected_output).toBe("Original output");
+  });
+
+  it("resolves checkpoint configs from event sources and trigger filters", () => {
+    const crewConfig = new CheckpointConfig({ on_events: ["task_completed"] });
+    const agentConfig = new CheckpointConfig({ on_events: ["agent_execution_completed"] });
+    const crew = new Crew({ agents: [], tasks: [], checkpoint: crewConfig });
+    const inheritingAgent = new Agent({
+      role: "Inheriting Agent",
+      goal: "checkpoint",
+      backstory: "inherits",
+      checkpoint: null,
+    });
+    const optedOutAgent = new Agent({
+      role: "Opted Out Agent",
+      goal: "checkpoint",
+      backstory: "opts out",
+      checkpoint: false,
+    });
+    const directAgent = new Agent({
+      role: "Direct Agent",
+      goal: "checkpoint",
+      backstory: "direct",
+      checkpoint: agentConfig,
+    });
+    (inheritingAgent as unknown as Record<string, unknown>).crew = crew;
+    (optedOutAgent as unknown as Record<string, unknown>).crew = crew;
+
+    const task = new Task({
+      description: "Checkpoint",
+      expectedOutput: "Checkpointed",
+      agent: inheritingAgent,
+    });
+    const taskEvent = new BaseEvent({ type: "task_completed" });
+    const agentEvent = new BaseEvent({ type: "agent_execution_completed" });
+
+    expect(_resolve_from_agent(inheritingAgent)).toBe(crewConfig);
+    expect(_resolve_from_agent(optedOutAgent)).toBeNull();
+    expect(_find_checkpoint(task)).toBe(crewConfig);
+    expect(_find_checkpoint(directAgent)).toBe(agentConfig);
+    expect(_should_checkpoint(task, taskEvent)).toBe(crewConfig);
+    expect(_should_checkpoint(task, agentEvent)).toBeNull();
+  });
+
+  it("writes automatic checkpoints from listener helpers", () => {
+    const directory = mkdtempSync(join(tmpdir(), "crewai-ts-auto-checkpoint-"));
+    const provider = new SqliteProvider();
+    const db = join(directory, "auto.db");
+    const cfg = new CheckpointConfig({
+      location: db,
+      provider,
+      on_events: ["task_completed"],
+      max_checkpoints: 1,
+    });
+    const agent = new Agent({
+      role: "Auto Checkpoint Agent",
+      goal: "checkpoint",
+      backstory: "automatic",
+      checkpoint: cfg,
+    });
+    const state = new RuntimeState({ root: [agent], provider, branch: "auto" });
+    const events: unknown[] = [];
+
+    void crewaiEventBus.scoped_handlers(() => {
+      crewaiEventBus.on("checkpoint_completed", (_source, event) => {
+        events.push(event);
+      });
+      crewaiEventBus.on("checkpoint_pruned", (_source, event) => {
+        events.push(event);
+      });
+
+      _do_checkpoint(state, cfg, new BaseEvent({ type: "task_completed" }));
+      _on_any_event(agent, new BaseEvent({ type: "task_completed" }), state);
+    });
+
+    expect(state.checkpoint_id).not.toBeNull();
+    expect(existsSync(db)).toBe(true);
+    expect(provider.from_checkpoint(`${db}#${state.checkpoint_id ?? ""}`)).toContain("Auto Checkpoint Agent");
+    expect(events).toEqual([
+      expect.objectContaining({ type: "checkpoint_completed", trigger: "task_completed" }),
+      expect.objectContaining({ type: "checkpoint_pruned", removed_count: 0 }),
+      expect.objectContaining({ type: "checkpoint_completed", trigger: "task_completed" }),
+      expect.objectContaining({ type: "checkpoint_pruned", removed_count: 1 }),
+    ]);
+  });
+
+  it("exposes checkpoint listener registration helpers", () => {
+    const registered: string[] = [];
+    const eventBus = {
+      register_handler(eventType: string): void {
+        registered.push(eventType);
+      },
+    };
+
+    _register_all_handlers(eventBus as unknown as typeof crewaiEventBus);
+    _ensure_handlers_registered();
+
+    expect(registered).toContain("task_completed");
+    expect(registered).not.toContain("checkpoint_completed");
   });
 
   it("serializes entities, event records, and lineage fields", () => {
