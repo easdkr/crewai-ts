@@ -19510,6 +19510,101 @@ describe("LLM providers", () => {
     });
   });
 
+  it("groups Bedrock Converse tool results per assistant tool-call turn like upstream", () => {
+    const bedrock = new BedrockCompletion({ model: "anthropic.claude-3-5-sonnet-20241022-v2:0" });
+    const format = (messages: Array<LLMMessage & Record<string, unknown>>) => (bedrock as unknown as {
+      _format_messages_for_converse(messages: Array<LLMMessage & Record<string, unknown>>): [Record<string, unknown>[], string | null];
+    })._format_messages_for_converse(messages)[0];
+
+    const threeToolMessages = format([
+      { role: "user", content: "Use all three tools, then continue." },
+      {
+        role: "assistant",
+        content: "",
+        tool_calls: [
+          { id: "tool-1", type: "function", function: { name: "lookup_weather", arguments: "{\"location\":\"New York\"}" } },
+          { id: "tool-2", type: "function", function: { name: "lookup_news", arguments: "{\"topic\":\"AI\"}" } },
+          { id: "tool-3", type: "function", function: { name: "lookup_stock", arguments: "{\"ticker\":\"AMZN\"}" } },
+        ],
+      },
+      { role: "tool", tool_call_id: "tool-1", content: "72F and sunny" },
+      { role: "tool", tool_call_id: "tool-2", content: "AI news summary" },
+      { role: "tool", tool_call_id: "tool-3", content: "AMZN up 1.2%" },
+    ]);
+
+    expect(threeToolMessages.map((message) => message.role)).toEqual(["user", "assistant", "user"]);
+    expect(threeToolMessages[1]?.content).toHaveLength(3);
+    expect(threeToolMessages[2]?.content).toEqual([
+      { toolResult: { toolUseId: "tool-1", content: [{ text: "72F and sunny" }] } },
+      { toolResult: { toolUseId: "tool-2", content: [{ text: "AI news summary" }] } },
+      { toolResult: { toolUseId: "tool-3", content: [{ text: "AMZN up 1.2%" }] } },
+    ]);
+
+    const parallelToolMessages = format([
+      { role: "user", content: "Calculate 25 + 17 AND 10 * 5" },
+      {
+        role: "assistant",
+        content: "",
+        tool_calls: [
+          { id: "call_add", type: "function", function: { name: "add_tool", arguments: "{\"a\":25,\"b\":17}" } },
+          { id: "call_mul", type: "function", function: { name: "multiply_tool", arguments: "{\"a\":10,\"b\":5}" } },
+        ],
+      },
+      { role: "tool", tool_call_id: "call_add", content: "42" },
+      { role: "tool", tool_call_id: "call_mul", content: "50" },
+    ]);
+    const parallelToolResultMessages = parallelToolMessages.filter((message) => (
+      message.role === "user" && Array.isArray(message.content) && message.content.some((block) => "toolResult" in block)
+    ));
+
+    expect(parallelToolResultMessages).toHaveLength(1);
+    expect(parallelToolResultMessages[0]?.content).toHaveLength(2);
+    expect(new Set((parallelToolResultMessages[0]?.content as Array<Record<string, { toolUseId: string }>>)
+      .map((block) => block.toolResult.toolUseId))).toEqual(new Set(["call_add", "call_mul"]));
+
+    const singleToolMessages = format([
+      { role: "user", content: "Add 1 + 2" },
+      {
+        role: "assistant",
+        content: "",
+        tool_calls: [{ id: "call_single", type: "function", function: { name: "add_tool", arguments: "{\"a\":1,\"b\":2}" } }],
+      },
+      { role: "tool", tool_call_id: "call_single", content: "3" },
+    ]);
+    expect(singleToolMessages.at(-1)?.content).toEqual([
+      { toolResult: { toolUseId: "call_single", content: [{ text: "3" }] } },
+    ]);
+
+    const separatedToolMessages = format([
+      { role: "user", content: "First task" },
+      {
+        role: "assistant",
+        content: "",
+        tool_calls: [{ id: "call_a", type: "function", function: { name: "tool_a", arguments: "{}" } }],
+      },
+      { role: "tool", tool_call_id: "call_a", content: "result_a" },
+      { role: "assistant", content: "Now doing second task" },
+      { role: "user", content: "Second task" },
+      {
+        role: "assistant",
+        content: "",
+        tool_calls: [{ id: "call_b", type: "function", function: { name: "tool_b", arguments: "{}" } }],
+      },
+      { role: "tool", tool_call_id: "call_b", content: "result_b" },
+    ]);
+    const separatedToolResultMessages = separatedToolMessages.filter((message) => (
+      message.role === "user" && Array.isArray(message.content) && message.content.some((block) => "toolResult" in block)
+    ));
+
+    expect(separatedToolResultMessages).toHaveLength(2);
+    expect(separatedToolResultMessages[0]?.content).toEqual([
+      { toolResult: { toolUseId: "call_a", content: [{ text: "result_a" }] } },
+    ]);
+    expect(separatedToolResultMessages[1]?.content).toEqual([
+      { toolResult: { toolUseId: "call_b", content: [{ text: "result_b" }] } },
+    ]);
+  });
+
   it("extracts and tracks Bedrock token usage from Converse responses", () => {
     const bedrock = new BedrockCompletion({ model: "anthropic.claude-3-5-sonnet-20241022-v2:0" });
 
