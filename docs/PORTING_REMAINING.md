@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 744 passing tests.
+- Test suite: 745 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -117,6 +117,7 @@ When more goal budget is available, continue from the behavioral parity audits b
 - Added `KnowledgeStorage` tests for collection naming, save/search, async aliases, and reset through the RAG client wrapper.
 - `Knowledge.query` / `aquery` now honor upstream `results_limit` and `score_threshold` option names when forwarding to storage search.
 - Agent knowledge search query generation now uses the upstream I18N prompt slices for the system and user messages before querying knowledge sources.
+- Agent task execution now forwards upstream-style `knowledge_config` options such as `results_limit` and `score_threshold` into `Knowledge.query`.
 - `Knowledge.add_sources` / `aadd_sources` now attach configured storage to each source and delegate through source `add` / `aadd` hooks before falling back to direct chunk saves.
 - `KnowledgeStorage.reset` / `areset` now mirror upstream best-effort reset semantics by ignoring client deletion failures after attempting the reset.
 - RAG optional-provider placeholders now mirror upstream missing optional import behavior by raising clear provider-specific errors instead of silently creating shim configs.

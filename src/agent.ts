@@ -63,7 +63,7 @@ import {
   crewaiEventBus,
 } from "./events.js";
 import { Converter, type StructuredModel } from "./converter.js";
-import { Knowledge, extractKnowledgeContext, type KnowledgeSource } from "./knowledge.js";
+import { Knowledge, extractKnowledgeContext, type KnowledgeQueryOptions, type KnowledgeSource } from "./knowledge.js";
 import { coerceSecurityConfig, type Fingerprint, type SecurityConfig } from "./security.js";
 import { coerceCheckpointConfig, RuntimeState, type CheckpointConfig, type CheckpointOption } from "./state.js";
 import type { ExecutionContext } from "./context.js";
@@ -2009,8 +2009,9 @@ export class Agent {
       from_agent: this,
     }));
     try {
+      const knowledgeConfig = normalizeKnowledgeQueryOptions(this.knowledgeConfig);
       const contexts = knowledgeSources
-        .map((knowledge) => extractKnowledgeContext(knowledge.query(query)))
+        .map((knowledge) => extractKnowledgeContext(knowledge.query([query], knowledgeConfig)))
         .filter(Boolean);
       crewaiEventBus.emit(this, new KnowledgeQueryCompletedEvent({
         query,
@@ -2734,6 +2735,20 @@ function formatDate(date: Date, format: string): string | null {
 
 function isTaskLike(value: unknown): value is { description: string } {
   return Boolean(value && typeof value === "object" && typeof (value as { description?: unknown }).description === "string");
+}
+
+function normalizeKnowledgeQueryOptions(config: Record<string, unknown> | null): KnowledgeQueryOptions {
+  if (!config) {
+    return {};
+  }
+  const dumped = hasModelDump(config) ? config.model_dump() : config;
+  return typeof dumped === "object" && dumped !== null && !Array.isArray(dumped)
+    ? dumped
+    : {};
+}
+
+function hasModelDump(value: unknown): value is { model_dump: () => unknown } {
+  return Boolean(value && typeof value === "object" && typeof (value as { model_dump?: unknown }).model_dump === "function");
 }
 
 const MONTH_NAMES = [

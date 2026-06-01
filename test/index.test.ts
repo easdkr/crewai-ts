@@ -25904,6 +25904,48 @@ describe("knowledge", () => {
     expect(seenPrompts[0]).toContain("Crew knowledge keeps Nest DI separate.");
   });
 
+  it("passes agent knowledge_config to knowledge query during task execution", async () => {
+    const agentKnowledge = new Knowledge();
+    const querySpy = vi.spyOn(agentKnowledge, "query").mockReturnValue([
+      {
+        content: "Brandon's favorite color is red.",
+        score: 0.9,
+        source: null,
+        metadata: {},
+      },
+    ]);
+    const prompts: string[] = [];
+    const agent = new Agent({
+      role: "Information Agent",
+      goal: "Provide information based on knowledge sources",
+      backstory: "You have access to specific knowledge sources.",
+      knowledge: agentKnowledge,
+      knowledge_config: { results_limit: 10, score_threshold: 0.5 },
+      knowledge_search_query: "Brandon's favorite color",
+      llm: (messages) => {
+        prompts.push(messages.at(-1)?.content ?? "");
+        return "red";
+      },
+    });
+
+    await new Crew({
+      agents: [agent],
+      tasks: [
+        new Task({
+          description: "What is Brandon's favorite color?",
+          expectedOutput: "Brandon's favorite color.",
+          agent,
+        }),
+      ],
+    }).kickoff();
+
+    expect(querySpy).toHaveBeenCalledWith(
+      ["Brandon's favorite color"],
+      { results_limit: 10, score_threshold: 0.5 },
+    );
+    expect(prompts[0]).toContain("Brandon's favorite color is red.");
+  });
+
   it("loads text, JSON, and CSV files as knowledge sources", async () => {
     const baseDirectory = mkdtempSync(join(tmpdir(), "crewai-ts-knowledge-"));
     const textPath = join(baseDirectory, "notes.txt");
