@@ -18045,6 +18045,50 @@ describe("flow runtime", () => {
     });
   });
 
+  it("serializes inherited flows and lets child methods override parent metadata", () => {
+    class BaseFlow extends Flow {
+      begin() {
+        return "base begin";
+      }
+
+      process() {
+        return "base process";
+      }
+    }
+
+    decorateMethod(BaseFlow, "begin", start() as unknown as Decorator).call(new BaseFlow());
+    decorateMethod(BaseFlow, "process", listen("begin") as unknown as Decorator).call(new BaseFlow());
+
+    class ExtendedFlow extends BaseFlow {
+      override process() {
+        return "extended process";
+      }
+
+      finalize() {
+        return "extended finalize";
+      }
+    }
+
+    const flow = new ExtendedFlow();
+    decorateMethod(ExtendedFlow, "process", listen("begin") as unknown as Decorator).call(flow);
+    decorateMethod(ExtendedFlow, "finalize", listen("process") as unknown as Decorator).call(flow);
+
+    const structure = flowStructure(flow);
+    const methodNames = structure.methods.map((method) => method.name);
+
+    expect(methodNames).toEqual(["begin", "process", "finalize"]);
+    expect(structure.methods.find((method) => method.name === "process")).toMatchObject({
+      type: "listen",
+      trigger_methods: ["begin"],
+    });
+    expect(structure.edges).toContainEqual({
+      from_method: "process",
+      to_method: "finalize",
+      edge_type: "listen",
+      condition: null,
+    });
+  });
+
   it("serializes upstream-compatible flow_structure metadata", () => {
     class SerializerFlow extends Flow<{ id: string; events: string[] }> {
       static description = "Serializer flow for Studio";

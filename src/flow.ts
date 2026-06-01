@@ -2880,15 +2880,12 @@ export function getFlowMetadata(instanceOrConstructor: object | FlowMetadataTarg
     current = prototype ? prototype.constructor as FlowMetadataTarget : null;
   }
 
-  const seen = new Set<string>();
-  return inherited.filter((entry) => {
+  const byKey = new Map<string, FlowMethodEntry>();
+  for (const entry of inherited) {
     const key = `${String(entry.name)}:${entry.kind}`;
-    if (seen.has(key)) {
-      return false;
-    }
-    seen.add(key);
-    return true;
-  });
+    byKey.set(key, entry);
+  }
+  return [...byKey.values()];
 }
 
 export function getHumanFeedbackMetadata(instanceOrConstructor: object | FlowMetadataTarget): ReadonlyMap<string, HumanFeedbackConfig> {
