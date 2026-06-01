@@ -1250,6 +1250,9 @@ describe("serialization and project utilities", () => {
       created: "2026-05-28T00:00:00.000Z",
       value: "1",
     }));
+    expect(crewJsonStringify({ bytes: Buffer.from("CrewAI") })).toBe(JSON.stringify({
+      bytes: Buffer.from("CrewAI").toString("base64"),
+    }));
   });
 
   it("supports Python-compatible task and crew output field aliases", () => {

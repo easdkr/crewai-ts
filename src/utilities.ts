@@ -599,6 +599,9 @@ export function crewJsonReplacer(_key: string, value: unknown): unknown {
   if (value instanceof Uint8Array) {
     return Buffer.from(value).toString("base64");
   }
+  if (isNodeBufferJson(value)) {
+    return Buffer.from(value.data).toString("base64");
+  }
   return value;
 }
 
@@ -607,6 +610,18 @@ export function crewJsonStringify(value: unknown, space?: number): string {
 }
 
 export const crew_json_stringify = crewJsonStringify;
+
+function isNodeBufferJson(value: unknown): value is { type: "Buffer"; data: number[] } {
+  return Boolean(
+    value
+    && typeof value === "object"
+    && (value as { type?: unknown }).type === "Buffer"
+    && Array.isArray((value as { data?: unknown }).data)
+    && (value as { data: unknown[] }).data.every((item) => (
+      typeof item === "number" && Number.isInteger(item) && item >= 0 && item <= 255
+    )),
+  );
+}
 
 export type SerializableCallable = (...args: readonly unknown[]) => unknown;
 export const SerializableCallable = Function;
