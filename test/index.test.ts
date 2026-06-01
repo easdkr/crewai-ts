@@ -778,6 +778,8 @@ import {
   chunkPDF,
   resizeImage,
   getConstraintsForProvider,
+  getUploadCache,
+  resetUploadCache,
   platformContext,
   QdrantClient,
   QdrantConfig,
@@ -2151,6 +2153,42 @@ describe("environment, logging, and file store utilities", () => {
     expect(cache.get(otherFile, "gemini")).toMatchObject({ file_id: "valid" });
     await expect(cache.aclear()).resolves.toBe(1);
     expect(cache.length).toBe(0);
+  });
+
+  it("mirrors upstream upload cache singleton reset and max-entry eviction", async () => {
+    resetUploadCache();
+    try {
+      const first = getUploadCache({ ttl: 10, namespace: "first", max_entries: 2 });
+      const second = getUploadCache({ ttl: 99, namespace: "ignored", max_entries: 99 });
+      expect(second).toBe(first);
+      expect(second.ttl).toBe(10);
+      expect(second.namespace).toBe("first");
+      expect(second.max_entries).toBe(2);
+
+      resetUploadCache();
+      const reset = getUploadCache({ ttl: 20, namespace: "second" });
+      expect(reset).not.toBe(first);
+      expect(reset.ttl).toBe(20);
+      expect(first.length).toBe(0);
+
+      const cache = new UploadCache({ max_entries: 3 });
+      const files = Array.from({ length: 4 }, (_, index) => new ImageFile({
+        source: new FileBytes({
+          data: Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from(`file-${String(index)}`)]),
+          filename: `file-${String(index)}.png`,
+        }),
+      }));
+      files.forEach((file, index) => {
+        cache.set(file, "gemini", `file-${String(index)}`);
+      });
+
+      expect(cache.length).toBe(3);
+      expect(cache.get(files[0] as ImageFile, "gemini")).toBeNull();
+      expect(cache.get_all_for_provider("gemini").map((entry) => entry.file_id)).toEqual(["file-1", "file-2", "file-3"]);
+      expect(await cache.aget_all_for_provider("gemini")).toHaveLength(3);
+    } finally {
+      resetUploadCache();
+    }
   });
 
   it("exposes resolver upload cache controls from upstream crewai-files", () => {

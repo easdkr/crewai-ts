@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 783 passing tests.
+- Test suite: 784 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -92,7 +92,7 @@ This register is the source of truth for continuing porting work while parity sc
 - Google Vertex legacy `textembedding-gecko*` embeddings remain intentionally unsupported in the TypeScript runtime without Vertex AI SDK credentials; the current behavior raises a clear error.
 - PDF/Excel/Docling-style optional parsing uses built-in or injected local extractors where possible. Python-only optional dependencies such as `pdfplumber` or Docling converters are not bundled.
 - `crewai-files` typed file inputs are represented by deterministic local wrappers for path, bytes, stream, URL, image, PDF, text, audio, and video sources; URL references, inline base64/bytes resolution, and injected-fetch URL reads are release-gated, while live provider uploaders and unmocked remote fetching remain outside the default gate.
-- `crewai-files` upload tracking is represented by a deterministic in-memory `UploadCache` / `CachedUpload` shim with content-hash lookup, provider isolation, expiry cleanup, removal, async wrapper methods, and resolver cache controls; live provider uploaders remain outside the default gate.
+- `crewai-files` upload tracking is represented by a deterministic in-memory `UploadCache` / `CachedUpload` shim with content-hash lookup, provider isolation, expiry cleanup, max-entry eviction, default cache reset, removal, async wrapper methods, and resolver cache controls; live provider uploaders remain outside the default gate.
 - `crewai-files` provider constraints, file validators, and `FileProcessor` mode handling are deterministic local shims for size/type/duration checks, provider alias lookup, strict/warn/default processing, and async processing wrappers; image/PDF/audio/video metadata extraction and transformations stay best-effort or optional rather than adding Python-only dependencies.
 - `crewai-files` text transformation is release-gated through deterministic `chunk_text` / `chunkText` behavior, including filenames, extension preservation, newline splitting, overlap, and `FileProcessor` CHUNK routing; Pillow/pypdf-backed image and PDF transformations remain explicit optional-dependency boundaries.
 - `PickleHandler` remains a deterministic JSON-backed `.pkl` shim in the TypeScript runtime, but mirrors upstream corrupted-load behavior by surfacing a `pickle data was truncated` error instead of silently resetting damaged persistence files.

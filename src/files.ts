@@ -978,6 +978,29 @@ export class UploadCache {
   }
 }
 
+let defaultUploadCache: UploadCache | null = null;
+
+export function getUploadCache(options: {
+  ttl?: number;
+  namespace?: string;
+  cacheType?: string;
+  cache_type?: string;
+  maxEntries?: number | null;
+  max_entries?: number | null;
+} = {}): UploadCache {
+  defaultUploadCache ??= new UploadCache(options);
+  return defaultUploadCache;
+}
+
+export const get_upload_cache = getUploadCache;
+
+export function resetUploadCache(): void {
+  defaultUploadCache?.clear();
+  defaultUploadCache = null;
+}
+
+export const reset_upload_cache = resetUploadCache;
+
 export abstract class FileSource {
   abstract readonly filename: string | null;
   abstract readonly contentType: string;
