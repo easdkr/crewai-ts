@@ -7384,6 +7384,17 @@ describe("agent utility helpers", () => {
       tool: "Search Tool",
       toolInput: JSON.stringify({ query: "CrewAI", limit: 2 }),
     });
+    const markdownPrefixedInput = parseAgentOutput([
+      "Thought: I should ask",
+      "Action: query",
+      "Action Input: ** {\"task\": \"What barriers exist?\", \"context\": \"As we've discussed AI in healthcare\", \"coworker\": \"Senior Researcher\"}",
+    ].join("\n"));
+    expect(markdownPrefixedInput).toBeInstanceOf(AgentAction);
+    expect((markdownPrefixedInput as AgentAction).toolInput).toBe(JSON.stringify({
+      task: "What barriers exist?",
+      context: "As we've discussed AI in healthcare",
+      coworker: "Senior Researcher",
+    }));
 
     const parsedFinish = parseAgentOutput("Thought: done\nFinal Answer: Complete\n```");
     expect(parsedFinish).toBeInstanceOf(AgentFinish);

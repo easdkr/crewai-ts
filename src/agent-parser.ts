@@ -65,7 +65,7 @@ export function parseAgentOutput(text: string): AgentAction | AgentFinish {
 
   if (actionMatch) {
     const action = actionMatch[1] ?? "";
-    const actionInput = (actionMatch[2] ?? "").trim();
+    const actionInput = cleanActionInput(actionMatch[2] ?? "");
     const toolInput = actionInput.trim().replace(/^"|"$/g, "");
     return new AgentAction({
       thought,
@@ -99,6 +99,10 @@ export function extractThought(text: string): string {
 
 export function cleanAction(text: string): string {
   return text.trim().replace(/^\*+|\*+$/g, "").trim();
+}
+
+function cleanActionInput(text: string): string {
+  return text.trim().replace(/^\*+\s+/, "").trim();
 }
 
 export function safeRepairJson(toolInput: string): string {
