@@ -209,6 +209,7 @@ export type AzureProviderConfig = {
   api_base?: string;
   api_type?: string;
   api_version?: string;
+  model?: string;
   model_name?: string;
   default_headers?: Record<string, unknown>;
   dimensions?: number;
@@ -331,7 +332,7 @@ function extractBedrockEmbedding(payload: unknown): Embedding {
   throw new Error("Amazon Bedrock embeddings response did not include an embedding.");
 }
 
-export type CohereProviderConfig = { api_key?: string; model_name?: string };
+export type CohereProviderConfig = { api_key?: string; model?: string; model_name?: string };
 export const CohereProviderConfig = Object.freeze({ kind: "CohereProviderConfig" });
 export type CohereProviderSpec = BaseProviderSpec<"cohere", CohereProviderConfig>;
 export const CohereProviderSpec = providerSpecMarker("CohereProviderSpec");
@@ -705,7 +706,7 @@ export class AzureProvider extends BaseEmbeddingsProvider {
     const config = {
       api_type: "azure",
       api_version: "2024-02-01",
-      model_name: "text-embedding-ada-002",
+      model_name: options.model_name ?? options.model ?? "text-embedding-ada-002",
       ...options,
     };
     super({
@@ -779,7 +780,7 @@ export class CohereProvider extends BaseEmbeddingsProvider {
 
   constructor(options: CohereProviderConfig = {}) {
     const config = {
-      model_name: "large",
+      model_name: options.model_name ?? options.model ?? "large",
       ...options,
     };
     super({

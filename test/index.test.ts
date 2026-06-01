@@ -10180,12 +10180,25 @@ describe("RAG configuration and factories", () => {
       model: "text-embedding-005",
       task_type: "retrieval_document",
     });
+    const cohere = new CohereProvider({
+      api_key: "cohere-test",
+      model: "embed-multilingual-v3.0",
+    });
+    const azure = new AzureProvider({
+      api_key: "azure-test",
+      deployment_id: "test-deployment",
+      model: "text-embedding-3-large",
+    });
 
     expect(openai.model_name).toBe("text-embedding-3-small");
     expect(openai.config.model_name).toBe("text-embedding-3-small");
     expect(generative.model_name).toBe("text-embedding-005");
     expect(generative.config.model_name).toBe("text-embedding-005");
     expect(generative.task_type).toBe("retrieval_document");
+    expect(cohere.model_name).toBe("embed-multilingual-v3.0");
+    expect(cohere.config.model_name).toBe("embed-multilingual-v3.0");
+    expect(azure.model_name).toBe("text-embedding-3-large");
+    expect(azure.config.model_name).toBe("text-embedding-3-large");
   });
 
   it("calls OpenAI and Azure embeddings APIs for OpenAI-compatible providers", async () => {
