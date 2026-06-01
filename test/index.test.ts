@@ -764,6 +764,7 @@ import {
   InlineBase64,
   InlineBytes,
   ProviderConstraints,
+  ProcessingDependencyError,
   UnsupportedFileTypeError,
   UploadCache,
   VideoConstraints,
@@ -773,6 +774,9 @@ import {
   validatePDF,
   validateText,
   validateVideo,
+  chunkText,
+  chunkPDF,
+  resizeImage,
   getConstraintsForProvider,
   platformContext,
   QdrantClient,
@@ -2247,6 +2251,65 @@ describe("environment, logging, and file store utilities", () => {
     expect(processed).toEqual({ one: autoFile, two: autoFile });
     await expect(validProcessor.aprocess_files({ one: autoFile })).resolves.toEqual({ one: autoFile });
     expect(FileHandling.CHUNK).toBe("chunk");
+  });
+
+  it("chunks upstream crewai-files text inputs without Python-only dependencies", () => {
+    const large = new TextFile({
+      source: new FileBytes({ data: Buffer.from("A".repeat(500)), filename: "data.txt" }),
+    });
+    const chunks = chunkText(large, 200, { overlap_chars: 0 });
+
+    expect(chunks).toHaveLength(3);
+    expect(chunks.map((chunk) => chunk.filename)).toEqual([
+      "data_chunk_0.txt",
+      "data_chunk_1.txt",
+      "data_chunk_2.txt",
+    ]);
+    expect(chunks.map((chunk) => Buffer.from(chunk.read()).toString("utf8").length)).toEqual([200, 200, 100]);
+
+    const script = new TextFile({
+      source: new FileBytes({ data: Buffer.from("B".repeat(450)), filename: "script.py" }),
+    });
+    expect(chunkText(script, 200, { overlap_chars: 0 }).every((chunk) => chunk.filename?.endsWith(".py"))).toBe(true);
+
+    const lines = new TextFile({
+      source: new FileBytes({ data: Buffer.from("Line one\nLine two\nLine three\nLine four\nLine five"), filename: "lines.txt" }),
+    });
+    const lineChunks = chunkText(lines, 25, { overlap_chars: 0, split_on_newlines: true });
+    expect(lineChunks[0]).toBeInstanceOf(TextFile);
+    expect(Buffer.from((lineChunks[0] as TextFile).read()).toString("utf8").endsWith("\n")).toBe(true);
+
+    const overlapping = chunkText(new TextFile({
+      source: new FileBytes({ data: Buffer.from("ABCDEFGHIJ".repeat(10)), filename: "overlap.txt" }),
+    }), 30, { overlap_chars: 5 });
+    expect(overlapping.length).toBeGreaterThanOrEqual(3);
+
+    const guarded = chunkText(new TextFile({
+      source: new FileBytes({ data: Buffer.from("A".repeat(100)), filename: "guard.txt" }),
+    }), 20, { overlap_chars: 50 });
+    expect(guarded.length).toBeGreaterThan(1);
+  });
+
+  it("routes FileProcessor chunk mode through deterministic text chunking", () => {
+    const file = new TextFile({
+      source: new FileBytes({ data: Buffer.from("0123456789".repeat(8)), filename: "notes.md" }),
+      mode: FileHandling.CHUNK,
+    });
+    const processor = new FileProcessor({
+      constraints: new ProviderConstraints({ name: "test", general_max_size_bytes: 25 }),
+    });
+    const processed = processor.process(file);
+
+    expect(Array.isArray(processed)).toBe(true);
+    expect((processed as TextFile[]).length).toBeGreaterThan(3);
+    expect((processed as TextFile[]).slice(0, 4).map((chunk) => chunk.filename)).toEqual([
+      "notes_chunk_0.md",
+      "notes_chunk_1.md",
+      "notes_chunk_2.md",
+      "notes_chunk_3.md",
+    ]);
+    expect(() => chunkPDF(new PDFFile({ source: Buffer.from("%PDF-1.4") }), 1)).toThrow(ProcessingDependencyError);
+    expect(() => resizeImage(new ImageFile({ source: Buffer.from([0x89, 0x50, 0x4e, 0x47]) }), 100, 100)).toThrow("Pillow is required");
   });
 
   it("lets upstream ReadFileTool consume typed text and binary files", () => {

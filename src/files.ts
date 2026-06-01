@@ -151,6 +151,20 @@ export class FileProcessingError extends FileValidationError {
   }
 }
 
+export class ProcessingDependencyError extends FileProcessingError {
+  readonly dependency: string | null;
+  readonly installCommand: string | null;
+  readonly install_command: string | null;
+
+  constructor(message: string, options: { dependency?: string | null; installCommand?: string | null; install_command?: string | null } = {}) {
+    super(message);
+    this.name = "ProcessingDependencyError";
+    this.dependency = options.dependency ?? null;
+    this.installCommand = options.installCommand ?? options.install_command ?? null;
+    this.install_command = this.installCommand;
+  }
+}
+
 const DEFAULT_IMAGE_FORMATS = ["image/png", "image/jpeg", "image/gif", "image/webp"] as const;
 const GEMINI_IMAGE_FORMATS = [...DEFAULT_IMAGE_FORMATS, "image/heic", "image/heif"] as const;
 const DEFAULT_AUDIO_FORMATS = ["audio/mp3", "audio/mpeg", "audio/wav", "audio/ogg", "audio/flac", "audio/aac", "audio/m4a"] as const;
@@ -543,6 +557,9 @@ export class FileProcessor {
     if (mode === FileHandling.STRICT) {
       throw new FileValidationError(errors.join("; "), { fileName: file.filename });
     }
+    if (mode === FileHandling.CHUNK) {
+      return this.chunkProcess(file);
+    }
     return file;
   }
 
@@ -576,7 +593,80 @@ export class FileProcessor {
   private fileMode(file: FileInput): FileHandling {
     return Object.values(FileHandling).includes(file.mode as FileHandling) ? file.mode as FileHandling : FileHandling.AUTO;
   }
+
+  private chunkProcess(file: FileInput): FileInput | FileInput[] {
+    if (this.constraints === null) {
+      return file;
+    }
+    if (file instanceof TextFile && this.constraints.generalMaxSizeBytes !== null) {
+      return chunkText(file, this.constraints.generalMaxSizeBytes);
+    }
+    return file;
+  }
 }
+
+export function chunkText(
+  file: TextFile,
+  maxChars: number,
+  options: { overlapChars?: number; overlap_chars?: number; splitOnNewlines?: boolean; split_on_newlines?: boolean } = {},
+): TextFile[] {
+  const overlapChars = Math.max(0, options.overlapChars ?? options.overlap_chars ?? 200);
+  const splitOnNewlines = options.splitOnNewlines ?? options.split_on_newlines ?? true;
+  const text = Buffer.from(file.read()).toString("utf8");
+  if (text.length <= maxChars) {
+    return [file];
+  }
+  const filename = file.filename ?? "text.txt";
+  const dotIndex = filename.lastIndexOf(".");
+  const base = dotIndex >= 0 ? filename.slice(0, dotIndex) : filename;
+  const extension = dotIndex >= 0 ? filename.slice(dotIndex + 1) : "txt";
+  const chunks: TextFile[] = [];
+  let start = 0;
+  while (start < text.length) {
+    let end = Math.min(start + maxChars, text.length);
+    if (end < text.length && splitOnNewlines) {
+      const lastNewline = text.lastIndexOf("\n", end - 1);
+      if (lastNewline > start + Math.floor(maxChars / 2)) {
+        end = lastNewline + 1;
+      }
+    }
+    chunks.push(new TextFile({
+      source: new FileBytes({
+        data: Buffer.from(text.slice(start, end), "utf8"),
+        filename: `${base}_chunk_${String(chunks.length)}.${extension}`,
+      }),
+    }));
+    start = end < text.length ? Math.max(start + 1, end - overlapChars) : text.length;
+  }
+  return chunks;
+}
+
+export const chunk_text = chunkText;
+
+export function chunkPDF(_file: PDFFile, _maxPages: number): PDFFile[] {
+  void _file;
+  void _maxPages;
+  throw new ProcessingDependencyError("pypdf is required for PDF chunking", { dependency: "pypdf", installCommand: "pip install pypdf" });
+}
+
+export const chunk_pdf = chunkPDF;
+
+export function resizeImage(_file: ImageFile, _maxWidth: number, _maxHeight: number): ImageFile {
+  void _file;
+  void _maxWidth;
+  void _maxHeight;
+  throw new ProcessingDependencyError("Pillow is required for image resizing", { dependency: "Pillow", installCommand: "pip install Pillow" });
+}
+
+export const resize_image = resizeImage;
+
+export function optimizeImage(_file: ImageFile, _targetSizeBytes: number): ImageFile {
+  void _file;
+  void _targetSizeBytes;
+  throw new ProcessingDependencyError("Pillow is required for image optimization", { dependency: "Pillow", installCommand: "pip install Pillow" });
+}
+
+export const optimize_image = optimizeImage;
 
 export class CachedUpload {
   readonly fileId: string;
