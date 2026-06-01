@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 799 passing tests.
+- Test suite: 800 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -70,6 +70,7 @@ This register is the source of truth for continuing porting work while parity sc
 | --- | --- | --- | --- |
 | Root/subpath exports and class method names | Parity gate green | None while export and method parity stay at `missing=0`. New aliases require a failing upstream example or behavior test. | Name-only compatibility churn is out of scope for release readiness. |
 | Core Agent/Task/Crew/Flow/Memory/Knowledge/Tool workflows | Deterministically covered, audit by examples | Only workflows from current upstream examples or tests that fail with local LLM/tool fixtures. | None known beyond cloud/platform and live provider dependencies listed below. |
+| LiteAgent direct kickoff behavior | Deterministically covered, audit by examples | Only upstream LiteAgent workflows that fail with local LLM/tool/memory fixtures, such as execution-loop semantics rather than helper-name parity. | Deprecated upstream API is supported for compatibility, but new work should be behavior-test driven only. |
 | Experimental `AgentExecutor` plan-and-execute | Deterministically covered, behavior audit continuing | End-to-end upstream gaps in planning execution, isolated step execution, observation/replan decisions, native tool execution, or human feedback loops. | Private helper parity without behavior impact is out of scope. |
 | LLM providers and provider storage/files | Deterministic shim | SDK-shaped fixtures that fail request construction, response parsing, streaming accumulation, usage extraction, file conversion, or error classification. | Live OpenAI/Azure/Anthropic/Bedrock/Gemini credentials, network SDK calls, provider-hosted state, and remote file storage are optional integration scope only. |
 | RAG/vector storage and embedding providers | Deterministic shim | Fake-client or in-memory behavior that fails lifecycle, filtering, reset, async, error-conversion, embedding config, or collection semantics. | Real Qdrant, LanceDB, ChromaDB, Vertex AI, hosted embedding services, and provider network credentials are optional integration scope only. |
@@ -195,6 +196,7 @@ When more goal budget is available, continue from the behavioral parity audits b
 - Flow visualization router paths now prefer statically inferred return constants for each router before falling back to listener-trigger discovery, preventing chained/shared router output strings from creating extra route edges or self loops while preserving deterministic graph rendering.
 - Flow visualization now emits upstream-style diagnostics when router return paths cannot be determined and when listeners wait on string triggers that no router explicitly outputs, keeping graph gaps visible in the deterministic gate.
 - Flow structure serialization now lets child flow methods override inherited parent method metadata by method/kind, matching upstream inheritance behavior while still preserving inherited methods that are not overridden.
+- LiteAgent kickoff now mirrors upstream memory behavior with deterministic memory fixtures: it recalls memories into the execution messages, exposes memory tools without delegating custom memory objects to the internal Agent memory path, and saves extracted memories through `extract_memories` / `remember_many`.
 
 ## Completed In Current Tool Behavior Pass
 

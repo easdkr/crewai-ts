@@ -18,7 +18,7 @@ import { I18N_DEFAULT } from "./i18n.js";
 import { extractInputFilesFromInputs, type InputFiles } from "./input-files.js";
 import { createLLM, emptyUsageMetrics, type LLM, type LLMClient, type UsageMetrics } from "./llm.js";
 import { LiteAgentOutput } from "./lite-agent-output.js";
-import { Memory, type MemoryScope } from "./memory.js";
+import { createMemoryTools, Memory, type MemoryScope } from "./memory.js";
 import { getToolNames, parseTools, renderTextDescriptionAndArgs } from "./agent-utils.js";
 import { AgentFinish } from "./agent-parser.js";
 import type { AgentStepCallback, LLMMessage, Tool } from "./types.js";
@@ -347,16 +347,20 @@ export class LiteAgent {
     this.toolsResults = [];
     this.tools_results = this.toolsResults;
     const agentInfo = this.agentInfo();
-    crewaiEventBus.emit(this, new LiteAgentExecutionStartedEvent({ agentInfo, messages: this.currentMessages }));
     try {
-      const agent = this.toAgent();
+      this._injectMemoryContext();
+      crewaiEventBus.emit(this, new LiteAgentExecutionStartedEvent({ agentInfo, messages: this.currentMessages }));
+      const executionPrompt = this.currentMessages.map((message) => message.content).filter(Boolean).join("\n");
+      const executionTools = this.toolsWithMemoryTools();
+      const agent = this.toAgent({ memory: null, tools: executionTools });
       const beforeUsage = agent.getUsageMetrics();
-      const raw = await agent.executeTask(formatted.prompt, {}, this.tools, {
+      const raw = await agent.executeTask(executionPrompt || formatted.prompt, {}, executionTools, {
         responseModel: responseFormat,
         inputFiles: formatted.inputFiles,
         stepCallbacks: [this.captureStepCallback.bind(this)],
       });
       this.usageMetrics = subtractUsageForLiteAgent(agent.getUsageMetrics(), beforeUsage);
+      this._saveToMemory(raw);
       let output = new LiteAgentOutput({
         raw,
         pydantic: parseStructuredOutput(raw, responseFormat),
@@ -398,14 +402,17 @@ export class LiteAgent {
   }
 
   async _invokeLoop(responseModel: unknown = null): Promise<AgentFinish> {
+    this._injectMemoryContext();
     const prompt = this.currentMessages.map((message) => message.content).filter(Boolean).join("\n");
-    const agent = this.toAgent();
+    const executionTools = this.toolsWithMemoryTools();
+    const agent = this.toAgent({ memory: null, tools: executionTools });
     const beforeUsage = agent.getUsageMetrics();
-    const raw = await agent.executeTask(prompt, {}, this.tools, {
+    const raw = await agent.executeTask(prompt, {}, executionTools, {
       responseModel: responseModel ?? this.responseFormat,
       stepCallbacks: [this.captureStepCallback.bind(this)],
     });
     this.usageMetrics = subtractUsageForLiteAgent(agent.getUsageMetrics(), beforeUsage);
+    this._saveToMemory(raw);
     return new AgentFinish({ thought: "", output: raw, text: raw });
   }
 
@@ -600,18 +607,30 @@ export class LiteAgent {
     this._saveToMemory(output_text);
   }
 
-  private toAgent(): Agent {
+  private toolsWithMemoryTools(): readonly Tool[] {
+    if (!this.memory) {
+      return this.tools;
+    }
+    const names = new Set(this.tools.map((tool) => tool.name.toLowerCase().replace(/\s+/g, "_")));
+    const memoryTools = createMemoryTools(this.memory).filter((tool) => {
+      const name = tool.name.toLowerCase().replace(/\s+/g, "_");
+      return !names.has(name);
+    });
+    return memoryTools.length > 0 ? [...this.tools, ...memoryTools] : this.tools;
+  }
+
+  private toAgent(options: { memory?: Memory | MemoryScope | null; tools?: readonly Tool[] } = {}): Agent {
     return new Agent({
       role: this.role,
       goal: this.goal,
       backstory: this.backstory,
       llm: this.llm,
-      tools: this.tools,
+      tools: options.tools ?? this.tools,
       verbose: this.verbose,
       maxIter: this.maxIterations,
       maxExecutionTime: this.maxExecutionTime,
       respectContextWindow: this.respectContextWindow,
-      memory: this.memory,
+      memory: options.memory === undefined ? this.memory : options.memory,
       stepCallback: this.stepCallback,
       codeExecutionMode: this.codeExecutionMode,
     });

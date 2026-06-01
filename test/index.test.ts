@@ -29945,6 +29945,46 @@ describe("lite agent", () => {
       .toContain("Use existing project patterns.");
   });
 
+  it("recalls and saves LiteAgent memories during kickoff like upstream", async () => {
+    const prompts: string[] = [];
+    const recall = vi.fn(() => [
+      {
+        format: () => "- Prefer behavior parity over alias churn",
+        record: { content: "Prefer behavior parity over alias churn" },
+      },
+    ]);
+    const extractMemories = vi.fn(() => ["Release readiness is the priority."]);
+    const rememberMany = vi.fn();
+    const memory = {
+      readOnly: false,
+      read_only: false,
+      recall,
+      extract_memories: extractMemories,
+      extractMemories,
+      remember_many: rememberMany,
+      rememberMany,
+    } as unknown as Memory;
+    const agent = new LiteAgent({
+      role: "Memory Agent",
+      goal: "Use memory",
+      backstory: "Remembers useful facts",
+      llm: (messages) => {
+        prompts.push(messages.map((message) => message.content).join("\n"));
+        return "final answer";
+      },
+      memory,
+    });
+
+    const output = await agent.kickoff("What should we prioritize?");
+
+    expect(output.raw).toBe("final answer");
+    expect(recall).toHaveBeenCalledWith("What should we prioritize?", { limit: 10 });
+    expect(prompts[0]).toContain("Prefer behavior parity over alias churn");
+    expect(extractMemories.mock.calls[0]?.[0]).toContain("What should we prioritize?");
+    expect(extractMemories.mock.calls[0]?.[0]).toContain("final answer");
+    expect(rememberMany).toHaveBeenCalledWith(["Release readiness is the priority."], { agentRole: "Memory Agent" });
+  });
+
   it("runs direct messages and returns a LiteAgentOutput with metrics and messages", async () => {
     const agent = new LiteAgent({
       role: "Research Assistant",
