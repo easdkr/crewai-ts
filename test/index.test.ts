@@ -488,6 +488,8 @@ import {
   HallucinationGuardrail,
   LLMGuardrail,
   LLMGuardrailResult,
+  _is_coroutine,
+  _run_coroutine_sync,
   PRINTER,
   Printer,
   StandardGuardrailResult,
@@ -1611,6 +1613,14 @@ describe("formatter and guardrail utilities", () => {
     await expect(guardrail.asGuardrail()(output)).resolves.toEqual([false, "Missing citations"]);
     expect(prompts[0]).toContain("Must mention citations");
     expect(prompts[0]).toContain("answer");
+  });
+
+  it("exposes upstream-style LLM guardrail coroutine helpers", async () => {
+    const promise = Promise.resolve(new LLMGuardrailResult({ valid: true }));
+
+    expect(_is_coroutine(promise)).toBe(true);
+    expect(_is_coroutine(new LLMGuardrailResult({ valid: false }))).toBe(false);
+    await expect(_run_coroutine_sync(promise)).resolves.toMatchObject({ valid: true });
   });
 
   it("keeps HallucinationGuardrail as the upstream OSS no-op with an override hook", () => {

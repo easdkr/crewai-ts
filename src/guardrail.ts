@@ -16,6 +16,16 @@ export type GuardrailsType = readonly GuardrailType[] | GuardrailType;
 export const GuardrailsType = Object.freeze({ kind: "GuardrailsType" });
 export type AsyncGuardrailCallable = (output: TaskOutput | LiteAgentOutput) => Promise<readonly [boolean, unknown]>;
 
+export function _is_coroutine<T>(obj: T | PromiseLike<T>): obj is PromiseLike<T> {
+  return Boolean(obj)
+    && (typeof obj === "object" || typeof obj === "function")
+    && typeof (obj as { then?: unknown }).then === "function";
+}
+
+export async function _run_coroutine_sync<T>(coro: PromiseLike<T>): Promise<T> {
+  return await coro;
+}
+
 export class GuardrailResult {
   readonly success: boolean;
   readonly result: unknown;

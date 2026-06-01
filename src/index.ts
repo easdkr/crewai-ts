@@ -1443,6 +1443,8 @@ export {
   HallucinationGuardrail,
   LLMGuardrail,
   LLMGuardrailResult,
+  _is_coroutine,
+  _run_coroutine_sync,
   processGuardrail,
   process_guardrail,
   serializeGuardrailForJson,
