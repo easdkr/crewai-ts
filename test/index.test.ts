@@ -1272,6 +1272,42 @@ describe("serialization and project utilities", () => {
     }));
   });
 
+  it("serializes model dump outputs before object entries", () => {
+    const modelLike = {
+      internalOnly: "should not leak",
+      modelDump(options?: { exclude?: ReadonlySet<string> | readonly string[] | null }) {
+        return {
+          name: "John Doe",
+          hidden: "secret",
+          birthday: new Date("1994-01-01T00:00:00.000Z"),
+          nested: {
+            city: "Tech City",
+            hidden: "nested secret",
+          },
+          excludedByModel: options?.exclude instanceof Set ? options.exclude.has("hidden") : false,
+        };
+      },
+    };
+    const snakeCaseModel = {
+      model_dump() {
+        return { summary: "ok", created: new Date("2026-06-02T00:00:00.000Z") };
+      },
+    };
+
+    expect(toSerializable(modelLike, { exclude: ["hidden"] })).toEqual({
+      name: "John Doe",
+      birthday: "1994-01-01T00:00:00.000Z",
+      nested: {
+        city: "Tech City",
+      },
+      excludedByModel: true,
+    });
+    expect(toSerializable(snakeCaseModel)).toEqual({
+      summary: "ok",
+      created: "2026-06-02T00:00:00.000Z",
+    });
+  });
+
   it("supports Python-compatible task and crew output field aliases", () => {
     const output = new TaskOutput({
       description: "Summarize field alias compatibility for CrewAI task output",

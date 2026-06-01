@@ -155,15 +155,35 @@ function isPydanticLike(value: unknown): boolean {
   return typeof record.model_dump === "function" || typeof record.modelDump === "function";
 }
 
-function modelDump(value: unknown): unknown {
-  const record = value as { model_dump?: () => unknown; modelDump?: () => unknown };
-  if (typeof record.model_dump === "function") {
-    return record.model_dump();
-  }
-  if (typeof record.modelDump === "function") {
-    return record.modelDump();
+type ModelDumpOptions = {
+  exclude?: ReadonlySet<string> | readonly string[] | null;
+};
+
+type ModelDumpLike = {
+  model_dump?: (options?: ModelDumpOptions) => unknown;
+  modelDump?: (options?: ModelDumpOptions) => unknown;
+};
+
+function modelDump(value: unknown, options?: ModelDumpOptions): unknown {
+  const dump = getModelDumpFunction(value);
+  if (dump) {
+    return dump(options);
   }
   return value;
+}
+
+function getModelDumpFunction(value: unknown): ((options?: ModelDumpOptions) => unknown) | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const record = value as ModelDumpLike;
+  if (typeof record.model_dump === "function") {
+    return record.model_dump.bind(value);
+  }
+  if (typeof record.modelDump === "function") {
+    return record.modelDump.bind(value);
+  }
+  return null;
 }
 
 export class CrewContext {
@@ -535,6 +555,14 @@ export function toSerializable(
     const nextAncestors = new Set(ancestors);
     nextAncestors.add(obj);
     const exclude = normalizeExclude(options.exclude);
+    const dump = getModelDumpFunction(obj);
+    if (dump) {
+      try {
+        return toSerializable(dump({ exclude }), options, currentDepth + 1, nextAncestors);
+      } catch {
+        return repr(obj);
+      }
+    }
     const withToJSON = obj as { toJSON?: () => unknown };
     if (typeof withToJSON.toJSON === "function" && !isPlainObject(obj)) {
       try {
