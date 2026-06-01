@@ -20,6 +20,7 @@ import { createLLM, emptyUsageMetrics, type LLM, type LLMClient, type UsageMetri
 import { LiteAgentOutput } from "./lite-agent-output.js";
 import { Memory, type MemoryScope } from "./memory.js";
 import { getToolNames, parseTools, renderTextDescriptionAndArgs } from "./agent-utils.js";
+import { AgentFinish } from "./agent-parser.js";
 import type { AgentStepCallback, LLMMessage, Tool } from "./types.js";
 import {
   _execute_task_with_a2a,
@@ -372,16 +373,68 @@ export class LiteAgent {
     return await this.kickoffAsync(messages, responseFormatOrOptions, inputFiles);
   }
 
+  async _invokeLoop(responseModel: unknown = null): Promise<AgentFinish> {
+    const prompt = this.currentMessages.map((message) => message.content).filter(Boolean).join("\n");
+    const agent = this.toAgent();
+    const beforeUsage = agent.getUsageMetrics();
+    const raw = await agent.executeTask(prompt, {}, this.tools, {
+      responseModel: responseModel ?? this.responseFormat,
+      stepCallbacks: [this.captureStepCallback.bind(this)],
+    });
+    this.usageMetrics = subtractUsageForLiteAgent(agent.getUsageMetrics(), beforeUsage);
+    return new AgentFinish({ thought: "", output: raw, text: raw });
+  }
+
+  async _invoke_loop(response_model: unknown = null): Promise<AgentFinish> {
+    return await this._invokeLoop(response_model);
+  }
+
+  async _executeCore(agentInfo: Record<string, unknown> | null = null): Promise<LiteAgentOutput> {
+    const executionAgentInfo = agentInfo ?? this.agentInfo();
+    try {
+      const finish = await this._invokeLoop(this.responseFormat);
+      let output = new LiteAgentOutput({
+        raw: String(finish.output),
+        pydantic: parseStructuredOutput(String(finish.output), this.responseFormat),
+        agentRole: this.role,
+        usageMetrics: this.usageMetrics,
+        messages: this.currentMessages,
+      });
+      output = await this.applyGuardrail(output);
+      crewaiEventBus.emit(this, new LiteAgentExecutionCompletedEvent({ agentInfo: executionAgentInfo, output }));
+      return output;
+    } catch (error) {
+      crewaiEventBus.emit(this, new LiteAgentExecutionErrorEvent({ agentInfo: executionAgentInfo, error }));
+      throw error;
+    }
+  }
+
+  async _execute_core(agent_info: Record<string, unknown> | null = null): Promise<LiteAgentOutput> {
+    return await this._executeCore(agent_info);
+  }
+
   getUsageMetrics(): UsageMetrics {
     return { ...this.usageMetrics };
+  }
+
+  get_usage_metrics(): UsageMetrics {
+    return this.getUsageMetrics();
   }
 
   getTokenUsageSummary(): UsageMetrics {
     return this.getUsageMetrics();
   }
 
+  get_token_usage_summary(): UsageMetrics {
+    return this.getTokenUsageSummary();
+  }
+
   resetUsageMetrics(): void {
     this.usageMetrics = emptyUsageMetrics();
+  }
+
+  reset_usage_metrics(): void {
+    this.resetUsageMetrics();
   }
 
   _formatMessages(

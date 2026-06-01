@@ -24827,6 +24827,7 @@ describe("lite agent", () => {
     expect(agent._get_default_system_prompt({ name: "SummaryModel" })).toContain("SummaryModel");
     expect(agent._serialize_response_format({ type: "json_object" })).toEqual({ type: "json_object" });
     expect(agent._serialize_response_format({ name: "SummaryModel" })).toBe("SummaryModel");
+    expect(agent.iterations).toBe(0);
     agent._append_message({ role: "system", content: "System prompt" });
     agent._append_message({ role: "user", content: "Latest question" });
     expect(agent._get_last_user_content()).toBe("Latest question");
@@ -24843,6 +24844,36 @@ describe("lite agent", () => {
     expect(logs[0]?.agent_role).toBe("Helper Agent");
     expect(() => LiteAgent.validate_guardrail_function(() => [true, "ok"]))
       .toThrow("Guardrail function must accept exactly 1 parameter");
+  });
+
+  it("executes upstream LiteAgent core loop helper aliases", async () => {
+    const completions: string[] = [];
+    const agent = new LiteAgent({
+      role: "Loop Agent",
+      goal: "Run private helpers",
+      backstory: "Compatibility focused",
+      llm: (messages) => {
+        completions.push(messages.map((message) => message.content).join("\n"));
+        return "loop result";
+      },
+    });
+    agent._append_message({ role: "user", content: "Run the loop" });
+
+    const finish = await agent._invoke_loop();
+
+    expect(finish.output).toBe("loop result");
+    expect(completions[0]).toContain("Run the loop");
+    expect(agent.get_usage_metrics().successfulRequests).toBe(1);
+
+    const events: CrewAIEvent[] = [];
+    crewaiEventBus.on("lite_agent_execution_completed", (_source, event) => {
+      events.push(event);
+    });
+    const output = await agent._execute_core({ role: agent.role });
+
+    expect(output.raw).toBe("loop result");
+    expect(events).toHaveLength(1);
+    expect(events[0]).toBeInstanceOf(LiteAgentExecutionCompletedEvent);
   });
 
   it("exposes upstream LiteAgent A2A kickoff adapters", async () => {
