@@ -18866,17 +18866,21 @@ describe("task output files", () => {
   });
 
   it("saves output through the upstream-compatible task file helper", () => {
-    const baseDirectory = mkdtempSync(join(tmpdir(), "crewai-ts-save-file-"));
-    const outputFile = join(baseDirectory, "result.json");
-    const taskInstance = new Task({
-      description: "Save",
-      expectedOutput: "A saved file",
-      output_file: outputFile,
-    });
+    const relativeDirectory = `.tmp-crewai-ts-save-file-${String(Date.now())}`;
+    const outputFile = join(relativeDirectory, "result.json");
+    try {
+      const taskInstance = new Task({
+        description: "Save",
+        expectedOutput: "A saved file",
+        output_file: outputFile,
+      });
 
-    taskInstance._save_file({ summary: "done" });
+      taskInstance._save_file({ summary: "done" });
 
-    expect(readFileSync(outputFile, "utf8")).toBe("{\n  \"summary\": \"done\"\n}");
+      expect(readFileSync(join(process.cwd(), outputFile), "utf8")).toBe("{\n  \"summary\": \"done\"\n}");
+    } finally {
+      rmSync(join(process.cwd(), relativeDirectory), { recursive: true, force: true });
+    }
   });
 
   it("exposes the upstream-style task representation", () => {
@@ -18990,7 +18994,41 @@ describe("task output files", () => {
       expectedOutput: "A report",
       agent: agentInstance,
       outputFile: "../result.txt",
-    })).toThrow("Path traversal");
+    })).toThrow("Path traversal attempts are not allowed in output_file paths");
+    expect(() => new Task({
+      description: "Write",
+      expectedOutput: "A report",
+      agent: agentInstance,
+      output_file: "$HOME/result.txt",
+    })).toThrow("Shell expansion characters are not allowed in output_file paths");
+    expect(() => new Task({
+      description: "Write",
+      expectedOutput: "A report",
+      agent: agentInstance,
+      output_file: "result|bad.txt",
+    })).toThrow("Shell special characters are not allowed in output_file paths");
+    expect(() => new Task({
+      description: "Write",
+      expectedOutput: "A report",
+      agent: agentInstance,
+      output_file: "reports/{bad-name}.txt",
+    })).toThrow("Invalid template variable name: bad-name");
+  });
+
+  it("normalizes output_file paths with upstream leading-slash rules", () => {
+    const absoluteTask = new Task({
+      description: "Write",
+      expectedOutput: "A report",
+      output_file: "/tmp/result.txt",
+    });
+    const templatedAbsoluteTask = new Task({
+      description: "Write",
+      expectedOutput: "A report",
+      output_file: "/tmp/{topic}/result.txt",
+    });
+
+    expect(absoluteTask.output_file).toBe("tmp/result.txt");
+    expect(templatedAbsoluteTask.output_file).toBe("/tmp/{topic}/result.txt");
   });
 });
 

@@ -1449,19 +1449,25 @@ function validateOutputFile(value: string | null): string | null {
     return null;
   }
   if (value.includes("..")) {
-    throw new Error("Path traversal attempts are not allowed in outputFile paths.");
+    throw new Error("Path traversal attempts are not allowed in output_file paths");
   }
   if (value.startsWith("~") || value.startsWith("$")) {
-    throw new Error("Shell expansion characters are not allowed in outputFile paths.");
+    throw new Error("Shell expansion characters are not allowed in output_file paths");
   }
   if (/[|><&;]/.test(value)) {
-    throw new Error("Shell special characters are not allowed in outputFile paths.");
+    throw new Error("Shell special characters are not allowed in output_file paths");
   }
-  for (const templateName of value.matchAll(/\{([^}]+)\}/g)) {
-    const key = templateName[1] ?? "";
-    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) {
-      throw new Error(`Invalid template variable name: ${key}`);
+  if (value.includes("{") || value.includes("}")) {
+    for (const part of value.split("{").slice(1)) {
+      const key = part.split("}")[0] ?? "";
+      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) {
+        throw new Error(`Invalid template variable name: ${key}`);
+      }
     }
+    return value;
+  }
+  if (value.startsWith("/")) {
+    return value.slice(1);
   }
   return value;
 }
