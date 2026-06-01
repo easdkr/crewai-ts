@@ -15341,6 +15341,7 @@ describe("tools", () => {
     expect(addTool.description_updated).toBe(false);
     expect(addTool.env_vars).toEqual([]);
     expect(addTool._parse_args(JSON.stringify({ a: 5, b: 6 }))).toEqual({ a: 5, b: 6 });
+    expect(() => addTool._parse_args("{a: 5}")).toThrow("Failed to parse arguments as JSON:");
     expect(addTool.__repr__()).toBe("CrewStructuredTool(name='add_numbers', description='Add two numbers')");
     expect(addTool.toString()).toBe(addTool.__repr__());
     expect(addTool.invoke({ a: 2, b: 4 })).toBe(6);

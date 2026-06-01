@@ -899,7 +899,7 @@ export class StructuredTool extends BaseTool {
   }
 
   _parseArgs(input: ToolInvocationInput): Record<string, unknown> {
-    return this.parseArgs(input);
+    return validateArgs(this.name, this.argsSchema, normalizeStructuredToolInput(input));
   }
 
   _parse_args(input: ToolInvocationInput): Record<string, unknown> {
@@ -2101,6 +2101,28 @@ export function normalizeToolInput(input: ToolInvocationInput): Record<string, u
         : { input };
     } catch {
       return { input };
+    }
+  }
+  if (isToolContext(input)) {
+    return { input: input.input, inputs: input.inputs };
+  }
+  return { ...input };
+}
+
+function normalizeStructuredToolInput(input: ToolInvocationInput): Record<string, unknown> {
+  if (input === undefined) {
+    return {};
+  }
+  if (typeof input === "string") {
+    try {
+      const parsed: unknown = JSON.parse(input);
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+        ? parsed as Record<string, unknown>
+        : {};
+    } catch (error) {
+      throw new Error(`Failed to parse arguments as JSON: ${error instanceof Error ? error.message : String(error)}`, {
+        cause: error,
+      });
     }
   }
   if (isToolContext(input)) {
