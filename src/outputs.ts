@@ -124,9 +124,12 @@ export class CrewOutput {
 
   get json(): string | null {
     const lastTask = this.tasksOutput.at(-1);
-    if (!lastTask || lastTask.outputFormat !== OutputFormat.JSON) {
+    if (!lastTask) {
+      throw new RangeError("list index out of range");
+    }
+    if (lastTask.outputFormat !== OutputFormat.JSON) {
       throw new Error(
-        "No JSON output found in the final task. Set outputJson on the final task before reading json.",
+        "No JSON output found in the final task. Please make sure to set the output_json property in the final task in your crew.",
       );
     }
     return jsonDumps(this.jsonDict);

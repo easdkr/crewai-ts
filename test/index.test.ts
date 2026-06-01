@@ -1288,6 +1288,14 @@ describe("serialization and project utilities", () => {
     expect(crewOutput.json).toBe('{"summary": "done"}');
     expect(crewOutput.__str__()).toBe("{'summary': 'done'}");
     expect(() => crewOutput.__getitem__("missing")).toThrow("Key 'missing' not found in CrewOutput.");
+    expect(() => new CrewOutput().json).toThrow("list index out of range");
+    expect(() => new CrewOutput({
+      tasks_output: [new TaskOutput({
+        description: "Raw only",
+        raw: "done",
+        agent: "Researcher",
+      })],
+    }).json).toThrow("No JSON output found in the final task. Please make sure to set the output_json property in the final task in your crew.");
 
     const pydanticLike = {
       summary: "attribute should not win",
