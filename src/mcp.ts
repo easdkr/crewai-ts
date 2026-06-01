@@ -1008,7 +1008,12 @@ export class MCPToolResolver {
           serverName,
         }));
       }
+      if (tools.length === 0) {
+        this.log("warning", `No tools discovered from MCP server '${serverName}'.`);
+      }
       return tools;
+    } catch (error) {
+      throw new Error(`Failed to get native MCP tools: ${formatMCPError(error)}`, { cause: error });
     } finally {
       await discoveryClient.disconnect();
     }

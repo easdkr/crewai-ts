@@ -3306,6 +3306,56 @@ describe("mcp configuration", () => {
     }
   });
 
+  it("warns and returns no native MCP clients when discovery yields no usable tools", async () => {
+    const logger = { log: vi.fn() };
+    const connectSpy = vi.spyOn(MCPClient.prototype, "connect").mockImplementation(function (this: MCPClient) {
+      return Promise.resolve(this);
+    });
+    const listToolsSpy = vi.spyOn(MCPClient.prototype, "listTools").mockResolvedValue([
+      { name: "search", description: "Search", inputSchema: {} },
+    ]);
+    const disconnectSpy = vi.spyOn(MCPClient.prototype, "disconnect").mockResolvedValue();
+    try {
+      const resolver = new MCPToolResolver({ logger });
+      const [tools, clients] = await resolver._resolve_native(new MCPServerHTTP({
+        url: "https://mcp.example.com/api",
+        tool_filter: () => false,
+      }));
+
+      expect(tools).toEqual([]);
+      expect(clients).toEqual([]);
+      expect(logger.log).toHaveBeenCalledWith(
+        "warning",
+        expect.stringContaining("No tools discovered from MCP server"),
+      );
+      expect(connectSpy).toHaveBeenCalledTimes(1);
+      expect(listToolsSpy).toHaveBeenCalledTimes(1);
+      expect(disconnectSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      connectSpy.mockRestore();
+      listToolsSpy.mockRestore();
+      disconnectSpy.mockRestore();
+    }
+  });
+
+  it("wraps unexpected native MCP discovery failures", async () => {
+    const connectSpy = vi.spyOn(MCPClient.prototype, "connect").mockImplementation(function (this: MCPClient) {
+      return Promise.resolve(this);
+    });
+    const listToolsSpy = vi.spyOn(MCPClient.prototype, "listTools").mockRejectedValue(new Error("some other failure"));
+    const disconnectSpy = vi.spyOn(MCPClient.prototype, "disconnect").mockResolvedValue();
+    try {
+      const resolver = new MCPToolResolver({ logger: { log: vi.fn() } });
+      await expect(resolver._resolve_native(new MCPServerHTTP({ url: "https://mcp.example.com/api" })))
+        .rejects.toThrow("Failed to get native MCP tools: some other failure");
+      expect(disconnectSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      connectSpy.mockRestore();
+      listToolsSpy.mockRestore();
+      disconnectSpy.mockRestore();
+    }
+  });
+
   it("exposes upstream-style MCP resolver helpers", async () => {
     const resolver = new MCPToolResolver({ logger: { log: vi.fn() } });
     const stdioConfig = new MCPServerStdio({ command: "node", args: ["server.js"] });
