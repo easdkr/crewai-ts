@@ -358,6 +358,7 @@ export const GenerativeAiProviderSpec = providerSpecMarker("GenerativeAiProvider
 
 export type VertexAIProviderConfig = {
   api_key?: string;
+  model?: string;
   model_name?: string;
   project_id?: string;
   location?: string;
@@ -412,7 +413,7 @@ export const InstructorProviderConfig = Object.freeze({ kind: "InstructorProvide
 export type InstructorProviderSpec = BaseProviderSpec<"instructor", InstructorProviderConfig>;
 export const InstructorProviderSpec = providerSpecMarker("InstructorProviderSpec");
 
-export type JinaProviderConfig = { api_key?: string; model_name?: string };
+export type JinaProviderConfig = { api_key?: string; model?: string; model_name?: string };
 export const JinaProviderConfig = Object.freeze({ kind: "JinaProviderConfig" });
 export type JinaProviderSpec = BaseProviderSpec<"jina", JinaProviderConfig>;
 export const JinaProviderSpec = providerSpecMarker("JinaProviderSpec");
@@ -834,7 +835,7 @@ export class GoogleGenAIVertexEmbeddingFunction {
 
   constructor(options: VertexAIProviderConfig = {}) {
     this.api_key = options.api_key ?? null;
-    this.model_name = options.model_name ?? "textembedding-gecko";
+    this.model_name = options.model_name ?? options.model ?? "textembedding-gecko";
     this.project_id = options.project_id ?? null;
     this.location = options.location ?? options.region ?? "us-central1";
     this.task_type = options.task_type ?? "RETRIEVAL_DOCUMENT";
@@ -1029,7 +1030,7 @@ export class VertexAIProvider extends BaseEmbeddingsProvider {
 
   constructor(options: VertexAIProviderConfig = {}) {
     const config = {
-      model_name: "textembedding-gecko",
+      model_name: options.model_name ?? options.model ?? "textembedding-gecko",
       location: "us-central1",
       task_type: "RETRIEVAL_DOCUMENT",
       ...options,
@@ -1460,7 +1461,7 @@ export class JinaEmbeddingFunction {
 
   constructor(options: JinaProviderConfig & { api_url?: string } = {}) {
     this.api_key = options.api_key ?? null;
-    this.model_name = options.model_name ?? "jina-embeddings-v2-base-en";
+    this.model_name = options.model_name ?? options.model ?? "jina-embeddings-v2-base-en";
     this.api_url = options.api_url ?? "https://api.jina.ai/v1/embeddings";
   }
 
@@ -1507,7 +1508,7 @@ export class JinaProvider extends BaseEmbeddingsProvider {
 
   constructor(options: JinaProviderConfig = {}) {
     const config = {
-      model_name: "jina-embeddings-v2-base-en",
+      model_name: options.model_name ?? options.model ?? "jina-embeddings-v2-base-en",
       ...options,
     };
     super({

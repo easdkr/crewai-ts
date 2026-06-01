@@ -10189,6 +10189,14 @@ describe("RAG configuration and factories", () => {
       deployment_id: "test-deployment",
       model: "text-embedding-3-large",
     });
+    const vertex = new VertexAIProvider({
+      api_key: "vertex-test",
+      model: "text-embedding-004",
+    });
+    const jina = new JinaProvider({
+      api_key: "jina-test",
+      model: "jina-embeddings-v3",
+    });
 
     expect(openai.model_name).toBe("text-embedding-3-small");
     expect(openai.config.model_name).toBe("text-embedding-3-small");
@@ -10199,6 +10207,10 @@ describe("RAG configuration and factories", () => {
     expect(cohere.config.model_name).toBe("embed-multilingual-v3.0");
     expect(azure.model_name).toBe("text-embedding-3-large");
     expect(azure.config.model_name).toBe("text-embedding-3-large");
+    expect(vertex.model_name).toBe("text-embedding-004");
+    expect(vertex.config.model_name).toBe("text-embedding-004");
+    expect(jina.model_name).toBe("jina-embeddings-v3");
+    expect(jina.config.model_name).toBe("jina-embeddings-v3");
   });
 
   it("calls OpenAI and Azure embeddings APIs for OpenAI-compatible providers", async () => {
