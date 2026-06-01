@@ -2721,7 +2721,7 @@ function serializeHumanFeedbackLlm(value: unknown): string | Record<string, unkn
       ? withConfig.to_config_dict()
       : null;
   if (config && typeof config === "object" && !Array.isArray(config)) {
-    return { ...(config as Record<string, unknown>) };
+    return redactHumanFeedbackLlmSecrets({ ...(config as Record<string, unknown>) });
   }
   const record = value as Record<string, unknown>;
   const model = record.model;
@@ -2730,16 +2730,22 @@ function serializeHumanFeedbackLlm(value: unknown): string | Record<string, unkn
   }
   const provider = record.provider;
   if (typeof record.call !== "function") {
-    return {
+    return redactHumanFeedbackLlmSecrets({
       ...record,
       model: typeof provider === "string" && provider && !model.includes("/")
         ? `${provider}/${model}`
         : model,
-    };
+    });
   }
   return typeof provider === "string" && provider && !model.includes("/")
     ? `${provider}/${model}`
     : model;
+}
+
+function redactHumanFeedbackLlmSecrets(config: Record<string, unknown>): Record<string, unknown> {
+  delete config.api_key;
+  delete config.apiKey;
+  return config;
 }
 
 function isHumanFeedbackPending(value: unknown): value is HumanFeedbackPending {

@@ -17195,6 +17195,55 @@ describe("flow runtime", () => {
     });
   });
 
+  it("redacts human feedback LLM secrets while preserving provider config", async () => {
+    class ReviewFlow extends Flow {
+      review() {
+        return "draft";
+      }
+    }
+
+    const llm = new GeminiCompletion({
+      model: "gemini-2.0-flash",
+      api_key: "gemini-secret",
+      project: "demo-project",
+      location: "europe-west1",
+      temperature: 0.3,
+    });
+    const initializers = [
+      decorateMethod(ReviewFlow, "review", humanFeedback({
+        message: "Review",
+        emit: ["approved", "rejected"],
+        llm,
+        provider: {
+          requestFeedback: (context) => {
+            expect(context.llm).toMatchObject({
+              provider: "gemini",
+              project: "demo-project",
+              location: "europe-west1",
+              temperature: 0.3,
+            });
+            expect(context.llm).not.toHaveProperty("api_key");
+            throw new HumanFeedbackPending({ context });
+          },
+        },
+      }) as unknown as Decorator),
+      decorateMethod(ReviewFlow, "review", start() as unknown as Decorator),
+    ];
+    const flow = new ReviewFlow();
+    initializers.forEach((initializer) => {
+      initializer.call(flow);
+    });
+
+    const pending = await flow.kickoff();
+
+    expect(pending).toBeInstanceOf(HumanFeedbackPending);
+    expect((pending as HumanFeedbackPending).context.llm).not.toHaveProperty("api_key");
+    expect((pending as HumanFeedbackPending).context.llm).toMatchObject({
+      project: "demo-project",
+      location: "europe-west1",
+    });
+  });
+
   it("serializes PendingFeedbackContext with upstream snake_case fields", () => {
     const modelLikeOutput = {
       model_dump: () => ({ document: "draft", approved: false }),
