@@ -2804,7 +2804,7 @@ describe("mcp configuration", () => {
 
   it("exposes MCP wrapper retry and execution helper methods", async () => {
     class TestMCPToolWrapper extends MCPToolWrapper {
-      override async _execute_tool(args: Record<string, unknown> = {}): Promise<string> {
+      override async _do_mcp_call(args: Record<string, unknown> = {}): Promise<string> {
         await Promise.resolve();
         const query = typeof args.query === "string" ? args.query : "";
         return `Echo ${query}`;
@@ -2835,6 +2835,7 @@ describe("mcp configuration", () => {
       return "retried";
     }, { query: "CrewAI" }))
       .resolves.toBe("retried");
+    await expect(wrapper._do_mcp_call({ query: "CrewAI" })).resolves.toBe("Echo CrewAI");
     await expect(wrapper._execute_tool_with_timeout({ query: "CrewAI" })).resolves.toContain("Echo");
   });
 });
@@ -22604,6 +22605,22 @@ describe("streaming output", () => {
     expect(streaming.is_cancelled).toBe(true);
     expect(streaming.is_completed).toBe(true);
     expect(runCount).toBe(0);
+  });
+
+  it("exposes upstream-style streaming async iterator helper", async () => {
+    const streaming = new FlowStreamingOutput(async () => {
+      await Promise.resolve();
+      return "async helper";
+    });
+    const chunks: StreamChunk[] = [];
+
+    for await (const chunk of streaming._async_iterate()) {
+      chunks.push(chunk);
+    }
+
+    expect(chunks.map((chunk) => chunk.content)).toEqual(["async helper"]);
+    expect(streaming.result).toBe("async helper");
+    expect(streaming.is_completed).toBe(true);
   });
 
   it("exposes upstream-style streaming result setters", () => {

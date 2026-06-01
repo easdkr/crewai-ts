@@ -181,7 +181,13 @@ export abstract class StreamingOutputBase<TResult> implements AsyncIterable<Stre
     yield* this;
   }
 
-  async *[Symbol.asyncIterator](): AsyncIterator<StreamChunk> {
+  async *[Symbol.asyncIterator](): AsyncIterableIterator<StreamChunk> {
+    for await (const chunk of this._async_iterate()) {
+      yield chunk;
+    }
+  }
+
+  async *_async_iterate(): AsyncIterableIterator<StreamChunk> {
     if (this.iteratorStarted) {
       for (const chunk of this.collectedChunks) {
         yield chunk;

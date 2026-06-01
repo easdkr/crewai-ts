@@ -1336,6 +1336,10 @@ export class MCPToolWrapper extends BaseTool {
   }
 
   async _execute_tool(args: Record<string, unknown> = {}): Promise<string> {
+    return await this._do_mcp_call(args);
+  }
+
+  async _do_mcp_call(args: Record<string, unknown> = {}): Promise<string> {
     const { MCPClient, HTTPTransport } = await import("./mcp.js");
     const url = this.mcpServerParamsValue.url;
     if (typeof url !== "string") {
