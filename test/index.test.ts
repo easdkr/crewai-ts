@@ -244,8 +244,11 @@ import {
   PDFKnowledgeSource,
   PollingConfig,
   PollingHandler,
+  _poll_task_until_complete,
   PushNotificationConfig,
   PushNotificationHandler,
+  _coerce_signature,
+  WebhookSignatureConfig,
   StreamingConfig,
   StreamingHandler,
   UpdateConfig,
@@ -554,6 +557,7 @@ import {
   BaseRAGStorage,
   ChromaDBClient,
   ChromaDBConfig,
+  _MissingProvider,
   AnthropicCompletion,
   AzureCompletion,
   BedrockProvider,
@@ -690,9 +694,11 @@ import {
   registerRagClientFactory,
   restoreEventScope,
   resolveRefs,
+  resetEmissionCounter,
   setCreatePlusClientHook,
   runWithExecutionContext,
   runCrewTool,
+  run_crew_tool_with_messages,
   _extract_files_from_inputs,
   _resolve_crew_skills,
   checkConditionalSkip,
@@ -748,6 +754,7 @@ import {
   renderColoredText,
   renderTextDescriptionAndArgs,
   reset_memories_command,
+  _reset_flow_memory,
   resetEnvContextForTesting,
   setSuppressConsoleOutput,
   shouldSuppressConsoleOutput,
@@ -757,6 +764,10 @@ import {
   stringToCallable,
   toSerializable,
   _to_serializable_key,
+  _get_or_create_counter,
+  _set_agent_fingerprint,
+  _set_task_fingerprint,
+  wrapped_call,
   toString,
   validateImportPath,
   validateModel,
@@ -3132,6 +3143,41 @@ describe("orchestration lifecycle events", () => {
 });
 
 describe("crew tool and memory lifecycle events", () => {
+  it("exposes upstream base event counter and fingerprint helpers", () => {
+    resetEmissionCounter();
+    const counter = _get_or_create_counter();
+    expect(counter.next().value).toBe(1);
+    expect(counter.next().value).toBe(2);
+
+    const agentEvent = new BaseEvent({ type: "agent_execution_started" });
+    _set_agent_fingerprint(agentEvent, {
+      security_config: {
+        fingerprint: {
+          uuid_str: "agent-fp",
+          metadata: { role: "researcher" },
+        },
+      },
+    });
+    expect(agentEvent.sourceFingerprint).toBe("agent-fp");
+    expect(agentEvent.sourceType).toBe("agent");
+    expect(agentEvent.fingerprint_metadata).toEqual({ role: "researcher" });
+
+    const taskEvent = new BaseEvent({ type: "task_started" });
+    _set_task_fingerprint(taskEvent, {
+      id: 7,
+      name: "Draft report",
+      fingerprint: {
+        uuid_str: "task-fp",
+        metadata: { kind: "task" },
+      },
+    });
+    expect(taskEvent.task_id).toBe("7");
+    expect(taskEvent.task_name).toBe("Draft report");
+    expect(taskEvent.sourceFingerprint).toBe("task-fp");
+    expect(taskEvent.sourceType).toBe("task");
+    expect(taskEvent.fingerprint_metadata).toEqual({ kind: "task" });
+  });
+
   it("applies CrewBaseEvent fingerprint serialization to kickoff events", () => {
     const crew = {
       fingerprint: {
@@ -4320,7 +4366,45 @@ describe("a2a utilities", () => {
     expect(get_handler(null)).toBe(StreamingHandler);
     expect(get_handler(new StreamingConfig())).toBe(StreamingHandler);
     expect(get_handler(new PollingConfig())).toBe(PollingHandler);
-    expect(get_handler(new PushNotificationConfig({ url: "https://push.example.com/callback" }))).toBe(PushNotificationHandler);
+    const pushConfig = new PushNotificationConfig({
+      url: "https://push.example.com/callback",
+      signature: "push-secret",
+    });
+    expect(pushConfig.signature).toBeInstanceOf(WebhookSignatureConfig);
+    expect(pushConfig.signature?.secret).toBe("push-secret");
+    expect(_coerce_signature(null)).toBeNull();
+    expect(_coerce_signature(pushConfig.signature)).toBe(pushConfig.signature);
+    expect(get_handler(pushConfig)).toBe(PushNotificationHandler);
+  });
+
+  it("polls A2A tasks through the upstream helper signature", async () => {
+    const seen: unknown[] = [];
+    const client = {
+      get_task(params: unknown) {
+        seen.push(params);
+        return Promise.resolve({
+          id: "task-1",
+          context_id: "ctx-1",
+          status: { state: A2ATaskState.completed },
+        });
+      },
+    };
+
+    await expect(_poll_task_until_complete(
+      client,
+      "task-1",
+      0,
+      5,
+      null,
+      12,
+      1,
+      null,
+      null,
+      "ctx-fallback",
+      "https://agent.example.com/a2a",
+      "remote-agent",
+    )).resolves.toMatchObject({ id: "task-1" });
+    expect(seen).toEqual([{ id: "task-1", history_length: 12, historyLength: 12 }]);
   });
 
   it("extracts A2A server interfaces with upstream helper name", () => {
@@ -5229,6 +5313,7 @@ describe("a2a utilities", () => {
     expect(_coerce_secret_str(null)).toBeNull();
 
     const auth = new SimpleTokenAuth({ token: "expected" });
+    expect(auth._get_expected_token()).toBe("expected");
     await expect(auth.authenticate("expected")).resolves.toBeInstanceOf(AuthenticatedUser);
     await expect(auth.authenticate("expected")).resolves.toMatchObject({
       token: "expected",
@@ -7601,6 +7686,7 @@ describe("crew chat utilities", () => {
     const messages: LLMMessage[] = [{ role: "user", content: "topic is CrewAI" }];
 
     await expect(runCrewTool(crewInstance, messages, { topic: "CrewAI" })).resolves.toContain("Research CrewAI");
+    await expect(run_crew_tool_with_messages(crewInstance, messages, { topic: "CrewAI" })).resolves.toContain("Research CrewAI");
     await expect(createToolFunction(crewInstance, messages)({ topic: "TS" })).resolves.toContain("Research TS");
     expect(crewInstance.chatLlm).toBe("gpt-4o-mini");
     expect(seenInputs[0]?.crew_chat_messages).toBe(JSON.stringify(messages));
@@ -7971,6 +8057,28 @@ describe("RAG configuration and factories", () => {
     expect(batched).toEqual([first, different]);
     expect(new ChromaDBClient(new FakeChromaClient()).embedding_function).toBe(defaultRagEmbeddingFunction);
     expect(new QdrantClient(new FakeQdrantClient()).embedding_function).toBe(defaultRagEmbeddingFunction);
+  });
+
+  it("exposes upstream optional-provider, embedding wrapper, and Chroma async lock helpers", async () => {
+    expect(() => new _MissingProvider({ provider: "chromadb" })).toThrow(
+      "provider 'chromadb' requested but not installed",
+    );
+    expect(wrapped_call(() => [1, 2, 3], "query")).toEqual([[1, 2, 3]]);
+    expect(() => wrapped_call(() => null, "query")).toThrow("Embedding function returned None");
+
+    const client = new ChromaDBClient(new FakeChromaClient(), defaultRagEmbeddingFunction, 5, 0.6, 100, "rag-lock");
+    const order: string[] = [];
+    await Promise.all([
+      client._alocked(async () => {
+        order.push("first-start");
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        order.push("first-end");
+      }),
+      client._alocked(() => {
+        order.push("second");
+      }),
+    ]);
+    expect(order).toEqual(["first-start", "first-end", "second"]);
   });
 
   it("creates RAG clients through registered provider factories", () => {
@@ -21215,6 +21323,24 @@ describe("crew memory reset", () => {
     expect(reset).toHaveBeenCalledOnce();
     knowledge_reset(crewInstance, [knowledge]);
     expect(knowledge.query("helper", { scoreThreshold: null })).toEqual([]);
+  });
+
+  it("resets flow memory with upstream storage-error handling", () => {
+    const reset = vi.fn();
+    _reset_flow_memory({ memory: { reset } });
+    expect(reset).toHaveBeenCalledOnce();
+
+    const errors: string[] = [];
+    _reset_flow_memory({
+      memory: {
+        reset() {
+          const error = new Error("disk unavailable");
+          error.name = "OSError";
+          throw error;
+        },
+      },
+    }, { error: (message) => errors.push(String(message)) });
+    expect(errors).toEqual(["Memory reset skipped: storage I/O error (disk unavailable)."]);
   });
 
   it("sets trigger context injection on the first task through the upstream helper", () => {

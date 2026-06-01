@@ -5,6 +5,7 @@ import {
   SCOPE_ENDING_EVENTS,
   SCOPE_STARTING_EVENTS,
   VALID_EVENT_PAIRS,
+  getEmissionSequence,
   getEnclosingParentId,
   getCurrentParentId,
   getLastEventId,
@@ -15,6 +16,7 @@ import {
   popEventScope,
   pushEventScope,
   resetEmissionCounter,
+  setEmissionCounter,
   setLastEventId,
 } from "./context.js";
 import type { LiteAgentOutput } from "./lite-agent-output.js";
@@ -607,6 +609,52 @@ function setAgentExecutionFingerprintData<TEvent extends AgentFingerprintAssigna
   event.fingerprintMetadata = getAgentFingerprintMetadata(event.agent);
   event.fingerprint_metadata = event.fingerprintMetadata;
   return event;
+}
+
+export function _set_agent_fingerprint(event: BaseEvent, agent: unknown): void {
+  const fingerprint = getAgentFingerprint(agent);
+  const uuid = getStringProperty(fingerprint, "uuid_str") ?? getStringProperty(fingerprint, "uuidStr");
+  if (uuid === null) {
+    return;
+  }
+  event.sourceFingerprint = uuid;
+  (event as unknown as { source_fingerprint?: string | null }).source_fingerprint = uuid;
+  event.sourceType = "agent";
+  (event as unknown as { source_type?: string | null }).source_type = "agent";
+  const metadata = getRecordMetadata(fingerprint);
+  if (metadata !== null) {
+    event.fingerprintMetadata = metadata;
+    event.fingerprint_metadata = metadata;
+  }
+}
+
+export function _set_task_fingerprint(event: BaseEvent, task: unknown): void {
+  if (task === null || task === undefined) {
+    return;
+  }
+  const taskId = getStringProperty(task, "id");
+  if (taskId !== null) {
+    event.taskId = taskId;
+    event.task_id = taskId;
+  }
+  const taskName = getStringProperty(task, "name") ?? getStringProperty(task, "description");
+  if (taskName !== null) {
+    event.taskName = taskName;
+    event.task_name = taskName;
+  }
+  const fingerprint = getObjectProperty(task, "fingerprint");
+  const uuid = getStringProperty(fingerprint, "uuid_str") ?? getStringProperty(fingerprint, "uuidStr");
+  if (uuid !== null) {
+    event.sourceFingerprint = uuid;
+    (event as unknown as { source_fingerprint?: string | null }).source_fingerprint = uuid;
+    event.sourceType = "task";
+    (event as unknown as { source_type?: string | null }).source_type = "task";
+    const metadata = getRecordMetadata(fingerprint);
+    if (metadata !== null) {
+      event.fingerprintMetadata = metadata;
+      event.fingerprint_metadata = metadata;
+    }
+  }
 }
 
 export class AgentExecutionStartedEvent extends BaseEvent {
@@ -3715,6 +3763,21 @@ export const ExecutionPlan = Object.freeze({ kind: "ExecutionPlan" });
 export const EventT_co = Object.freeze({ kind: "EventT_co" });
 export const EventTypes = Object.freeze({ kind: "EventTypes" });
 const replayingContext = new AsyncLocalStorage<boolean>();
+
+export function _get_or_create_counter(): IterableIterator<number> {
+  let nextValue = getEmissionSequence() + 1;
+  return {
+    next(): IteratorResult<number> {
+      const current = nextValue;
+      setEmissionCounter(current);
+      nextValue += 1;
+      return { done: false, value: current };
+    },
+    [Symbol.iterator](): IterableIterator<number> {
+      return this;
+    },
+  };
+}
 
 export function get_next_emission_sequence(): number {
   return getNextEmissionSequence();

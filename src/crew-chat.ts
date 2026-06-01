@@ -165,11 +165,19 @@ export async function runCrewTool(
 
 export const run_crew_tool = runCrewTool;
 
+export async function run_crew_tool_with_messages(
+  crew: Crew,
+  messages: readonly LLMMessage[],
+  kwargs: Record<string, unknown> = {},
+): Promise<string> {
+  return runCrewTool(crew, messages, kwargs);
+}
+
 export function createToolFunction(
   crew: Crew,
   messages: readonly LLMMessage[],
 ): (kwargs?: Record<string, unknown>) => Promise<string> {
-  return async (kwargs: Record<string, unknown> = {}) => await runCrewTool(crew, messages, kwargs);
+  return async (kwargs: Record<string, unknown> = {}) => await run_crew_tool_with_messages(crew, messages, kwargs);
 }
 
 export const create_tool_function = createToolFunction;

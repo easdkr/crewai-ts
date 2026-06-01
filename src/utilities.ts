@@ -250,12 +250,12 @@ export function reset_memories_command(
     for (const flow of flows) {
       const flowLabel = flowDisplayName(flow);
       if (all) {
-        resetFlowMemory(flow);
+        resetFlowMemory(flow, output);
         output.log(`[Flow (${flowLabel})] Reset memories command has been completed.`);
         continue;
       }
       if (memory) {
-        resetFlowMemory(flow);
+        resetFlowMemory(flow, output);
         output.log(`[Flow (${flowLabel})] Memory has been reset.`);
       }
     }
@@ -280,7 +280,11 @@ function getCallable(target: unknown, ...names: string[]): ((value: string) => v
   return null;
 }
 
-function resetFlowMemory(flow: unknown): void {
+export function _reset_flow_memory(flow: unknown, output: Pick<Console, "error"> = console): void {
+  resetFlowMemory(flow, output);
+}
+
+function resetFlowMemory(flow: unknown, output: Pick<Console, "error"> = console): void {
   if (!flow || typeof flow !== "object") {
     return;
   }
@@ -294,7 +298,7 @@ function resetFlowMemory(flow: unknown): void {
       (directReset as (this: unknown) => void).call(memoryValue);
     } catch (error) {
       if (!isMissingStorageError(error)) {
-        throw error;
+        handleFlowMemoryResetError(error, output);
       }
     }
     return;
@@ -309,15 +313,32 @@ function resetFlowMemory(flow: unknown): void {
       (nestedReset as (this: unknown) => void).call(nestedMemory);
     } catch (error) {
       if (!isMissingStorageError(error)) {
-        throw error;
+        handleFlowMemoryResetError(error, output);
       }
     }
   }
 }
 
+function handleFlowMemoryResetError(error: unknown, output: Pick<Console, "error">): void {
+  if (isOSError(error)) {
+    output.error(`Memory reset skipped: storage I/O error (${error instanceof Error ? error.message : String(error)}).`);
+    return;
+  }
+  if (error instanceof Error && error.name === "RuntimeError") {
+    output.error(`Memory reset skipped: ${error.message}`);
+    return;
+  }
+  throw error;
+}
+
 function isMissingStorageError(error: unknown): boolean {
   return error instanceof Error
     && (error.name === "FileNotFoundError" || error.name === "ENOENT" || "code" in error && (error as { code?: unknown }).code === "ENOENT");
+}
+
+function isOSError(error: unknown): boolean {
+  return error instanceof Error
+    && (error.name === "OSError" || error.name === "EIO" || "code" in error && typeof (error as { code?: unknown }).code === "string");
 }
 
 function crewDisplayName(crew: unknown): string {

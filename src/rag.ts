@@ -2007,6 +2007,17 @@ export class BaseRagConfig {
   }
 }
 
+export type MissingProviderName = "chromadb" | "qdrant" | "__missing__";
+
+export class _MissingProvider {
+  readonly provider: MissingProviderName;
+
+  constructor(options: { provider?: MissingProviderName } = {}) {
+    this.provider = options.provider ?? "__missing__";
+    throw new Error(`provider '${this.provider}' requested but not installed. Install the extra: \`uv add crewai'[${this.provider}]'\`.`);
+  }
+}
+
 export type ChromaDBSettings = {
   persistDirectory?: string;
   persist_directory?: string;
@@ -2115,6 +2126,26 @@ let currentRagConfig: RagConfigType | null = null;
 let currentRagClient: RagClient | null = null;
 type SimpleEmbeddingFunction = (...args: never[]) => unknown;
 const DEFAULT_RAG_EMBEDDING_DIMENSIONS = 384;
+const namedRagLocks = new Map<string, Promise<void>>();
+
+async function runNamedLock<T>(name: string, fn: () => T | Promise<T>): Promise<T> {
+  const previous = namedRagLocks.get(name) ?? Promise.resolve();
+  let release!: () => void;
+  const current = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const queued = previous.then(() => current, () => current);
+  namedRagLocks.set(name, queued);
+  await previous;
+  try {
+    return await fn();
+  } finally {
+    release();
+    if (namedRagLocks.get(name) === queued) {
+      namedRagLocks.delete(name);
+    }
+  }
+}
 
 export function defaultRagEmbeddingFunction(input: unknown): Embedding | Embeddings {
   if (Array.isArray(input)) {
@@ -2151,6 +2182,8 @@ export class ChromaDBClient {
   readonly default_score_threshold: number;
   readonly defaultBatchSize: number;
   readonly default_batch_size: number;
+  private readonly lockName: string;
+  private readonly lock_name: string;
 
   constructor(
     client: unknown,
@@ -2158,6 +2191,7 @@ export class ChromaDBClient {
     defaultLimit = 5,
     defaultScoreThreshold = 0.6,
     defaultBatchSize = 100,
+    lockName = "",
   ) {
     this.client = client as Record<string, unknown>;
     this.embeddingFunction = embeddingFunction;
@@ -2168,6 +2202,20 @@ export class ChromaDBClient {
     this.default_score_threshold = defaultScoreThreshold;
     this.defaultBatchSize = defaultBatchSize;
     this.default_batch_size = defaultBatchSize;
+    this.lockName = lockName;
+    this.lock_name = lockName;
+  }
+
+  _locked<T>(fn: () => T): T {
+    void this.lockName;
+    return fn();
+  }
+
+  async _alocked<T>(fn: () => T | Promise<T>): Promise<T> {
+    if (!this.lock_name) {
+      return await fn();
+    }
+    return await runNamedLock(this.lock_name, fn);
   }
 
   create_collection(params: BaseCollectionParams): void {
@@ -2830,6 +2878,17 @@ export function validateEmbeddings(embeddings: Embeddings): Embeddings {
 }
 
 export const validate_embeddings = validateEmbeddings;
+
+export function wrapped_call<TInput>(
+  embeddingFunction: (input: TInput) => Embedding | Embeddings | null | undefined,
+  input: TInput,
+): Embeddings {
+  const result = embeddingFunction(input);
+  if (result === null || result === undefined) {
+    throw new Error("Embedding function returned None");
+  }
+  return validateEmbeddings(normalizeEmbeddings(result));
+}
 
 export function registerEmbeddingProviderBuilder<TSpec extends ProviderSpec>(
   provider: TSpec["provider"],

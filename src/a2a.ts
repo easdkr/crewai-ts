@@ -298,6 +298,8 @@ function coerceSignature(value: SignatureInput | undefined): WebhookSignatureCon
   return typeof value === "string" ? WebhookSignatureConfig.hmacSha256(value) : value;
 }
 
+export const _coerce_signature = coerceSignature;
+
 export class PushNotificationConfig {
   readonly url: string;
   readonly id: string | null;
@@ -1158,6 +1160,40 @@ async function pollTaskUntilComplete(
   }
 }
 
+export async function _poll_task_until_complete(
+  client: A2AUpdateClient,
+  task_id: string,
+  polling_interval: number,
+  polling_timeout: number,
+  agent_branch: unknown = null,
+  history_length = 100,
+  max_polls: number | null = null,
+  from_task: unknown = null,
+  from_agent: unknown = null,
+  context_id: string | null = null,
+  endpoint: string | null = null,
+  a2a_agent_name: string | null = null,
+): Promise<A2ATaskLike> {
+  return pollTaskUntilComplete(client, {
+    taskId: task_id,
+    historyLength: history_length,
+    pollingInterval: polling_interval,
+    pollingTimeout: polling_timeout,
+    maxPolls: max_polls,
+    params: new CommonParams({
+      from_task,
+      from_agent,
+      context_id,
+      endpoint: endpoint ?? "",
+      a2a_agent_name,
+    }),
+    agentBranch: agent_branch,
+    agentCard: a2a_agent_name === null
+      ? { url: endpoint ?? "" }
+      : { name: a2a_agent_name, url: endpoint ?? "" },
+  });
+}
+
 async function getClientTask(client: A2AUpdateClient, taskId: string, historyLength: number): Promise<A2ATaskLike> {
   const params = { id: taskId, historyLength, history_length: historyLength };
   if (client.get_task) {
@@ -1970,6 +2006,10 @@ export class SimpleTokenAuth extends ServerAuthScheme {
   }
 
   get_expected_token(): string | null {
+    return this.getExpectedToken();
+  }
+
+  _get_expected_token(): string | null {
     return this.getExpectedToken();
   }
 
