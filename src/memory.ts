@@ -2960,7 +2960,10 @@ export function compute_composite_score(record: MemoryRecord, semantic_score: nu
   return [score, reasons];
 }
 
-export function sanitize_scope_name(name: string): string {
+export function sanitize_scope_name(name: unknown): string {
+  if (typeof name !== "string") {
+    return "unknown";
+  }
   const sanitized = name.toLowerCase().trim().replace(/[^a-z0-9_-]/g, "-").replace(/-+/g, "-").replace(/^-+|-+$/g, "");
   return sanitized || "unknown";
 }

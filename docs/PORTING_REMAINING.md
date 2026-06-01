@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 773 passing tests.
+- Test suite: 774 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -248,6 +248,7 @@ When more goal budget is available, continue from the behavioral parity audits b
   - `Memory.reset` now honors `root_scope` by resetting only that subtree when no explicit scope is provided
   - `Memory.list_scopes`, `list_categories`, `info`, and their `MemorySlice` variants now accept upstream-style path arguments while preserving existing boolean full-detail calls
   - `Memory.tree` and `MemoryScope.tree` now accept upstream-style path arguments and return formatted scope trees while preserving existing object-tree calls
+  - `sanitize_scope_name` now mirrors upstream root-scope name behavior for spaces, punctuation, unicode replacement, underscores, empty values, and null inputs.
   - consolidation plan execution now deduplicates actions by record so the first update/delete wins, matching upstream batch execution semantics
   - background batch memory writes now perform deterministic intra-batch duplicate dropping before persistence
   - `EncodingFlow.batch_embed`, `intra_batch_dedup`, and `parallel_find_similar` now expose upstream-style batch embedding, vector-similarity duplicate marking, effective-scope similar-record lookup, and result scoring for exported memory flow compatibility.

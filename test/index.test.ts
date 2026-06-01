@@ -767,6 +767,7 @@ import {
   restoreEventScope,
   resolveRefs,
   resetEmissionCounter,
+  sanitize_scope_name,
   setCreatePlusClientHook,
   setPlatformIntegrationToken,
   runWithExecutionContext,
@@ -25784,6 +25785,15 @@ describe("memory", () => {
     expect(memory.listCategories()).toEqual({ decorators: 2, mcp: 1, nest: 1 });
     expect(memory.list_scopes()).toEqual(["/projects/alpha", "/projects/beta"]);
     expect(memory.tree(true).children.projects?.children.alpha?.count).toBe(2);
+  });
+
+  it("sanitizes upstream root-scope names with unicode and null inputs", () => {
+    expect(sanitize_scope_name("Research Crew")).toBe("research-crew");
+    expect(sanitize_scope_name("Agent #1 (Main)")).toBe("agent-1-main");
+    expect(sanitize_scope_name("café_worker")).toBe("caf-_worker");
+    expect(sanitize_scope_name("test_agent")).toBe("test_agent");
+    expect(sanitize_scope_name("@#$%")).toBe("unknown");
+    expect(sanitize_scope_name(null)).toBe("unknown");
   });
 
   it("limits memory slice recall after merging scoped oversampled results", () => {
