@@ -1244,6 +1244,8 @@ describe("serialization and project utilities", () => {
     expect(_to_serializable_key(42)).toBe("42");
     expect(_to_serializable_key({ key: true })).toContain("key_");
     expect(toString(null)).toBeNull();
+    expect(toString({ name: "CrewAI", values: [1, true, null], text: "검색" }))
+      .toBe('{"name": "CrewAI", "values": [1, true, null], "text": "\\uac80\\uc0c9"}');
     expect(crewJsonStringify({ created: date, value: 1n })).toBe(JSON.stringify({
       created: "2026-05-28T00:00:00.000Z",
       value: "1",

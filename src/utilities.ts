@@ -555,10 +555,39 @@ export const to_serializable = toSerializable;
 
 export function toString(obj: unknown): string | null {
   const serializable = toSerializable(obj);
-  return serializable === null ? null : JSON.stringify(serializable);
+  return serializable === null ? null : pythonJsonDumps(serializable);
 }
 
 export const to_string = toString;
+
+function pythonJsonDumps(value: Serializable): string {
+  if (value === null) {
+    return "null";
+  }
+  if (typeof value === "string") {
+    return ensureAsciiJsonString(value);
+  }
+  if (typeof value === "number" || typeof value === "boolean") {
+    return JSON.stringify(value);
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => pythonJsonDumps(item)).join(", ")}]`;
+  }
+  return `{${Object.entries(value)
+    .map(([key, item]) => `${ensureAsciiJsonString(key)}: ${pythonJsonDumps(item)}`)
+    .join(", ")}}`;
+}
+
+function ensureAsciiJsonString(value: string): string {
+  const json = JSON.stringify(value);
+  let ascii = "";
+  for (let index = 0; index < json.length; index += 1) {
+    const char = json[index] ?? "";
+    const codePoint = char.charCodeAt(0);
+    ascii += codePoint > 127 ? `\\u${codePoint.toString(16).padStart(4, "0")}` : char;
+  }
+  return ascii;
+}
 
 export function crewJsonReplacer(_key: string, value: unknown): unknown {
   if (typeof value === "bigint") {
