@@ -525,6 +525,7 @@ import {
   type MethodExecutionPausedEvent,
   type LLMCallOptions,
   type LLMMessage,
+  type LLMResponse,
   type RagClient,
   UsageMetrics,
   version,
@@ -19358,6 +19359,73 @@ describe("LLM providers", () => {
       messages: [{ role: "user", content: "Find CrewAI" }],
       max_tokens: 100,
     });
+  });
+
+  it("delegates Azure Responses API behavior through the OpenAI Responses adapter", async () => {
+    const azure = new AzureCompletion({
+      model: "azure/gpt-5.2-chat",
+      api: "responses",
+      api_key: "azure-key",
+      endpoint: "https://example.openai.azure.com:8443/openai/deployments/gpt-5.2-chat",
+      temperature: 0.2,
+      top_p: 0.8,
+      max_tokens: 1000,
+      max_completion_tokens: 800,
+      reasoning_effort: "medium",
+      instructions: "Be concise",
+      store: true,
+      previous_response_id: "resp-prev",
+      include: ["reasoning.encrypted_content"],
+      builtin_tools: ["web_search"],
+      parse_tool_outputs: true,
+      auto_chain: true,
+      auto_chain_reasoning: true,
+      stream: true,
+    });
+
+    const delegate = azure._responses_delegate as OpenAICompletion;
+    expect(azure.api).toBe("responses");
+    expect(delegate).toBeInstanceOf(OpenAICompletion);
+    expect(delegate.to_config_dict()).toMatchObject({
+      model: "gpt-5.2-chat",
+      provider: "openai",
+      api_key: "azure-key",
+      base_url: "https://example.openai.azure.com:8443/openai/v1/",
+    });
+
+    const params = (azure as unknown as {
+      _prepare_responses_params(messages: LLMMessage[]): Record<string, unknown>;
+    })._prepare_responses_params([
+      { role: "system", content: "System prompt" },
+      { role: "user", content: "Hello" },
+    ]);
+
+    expect(params).toMatchObject({
+      model: "gpt-5.2-chat",
+      instructions: "Be concise\n\nSystem prompt",
+      input: [{ role: "user", content: "Hello" }],
+      stream: true,
+      store: true,
+      previous_response_id: "resp-prev",
+      include: ["reasoning.encrypted_content"],
+      temperature: 0.2,
+      top_p: 0.8,
+      max_output_tokens: 800,
+      reasoning: { effort: "medium" },
+      tools: [{ type: "web_search_preview" }],
+    });
+    expect(azure.supports_stop_words()).toBe(false);
+    expect(azure.to_config_dict()).toMatchObject({
+      api: "responses",
+      reasoning_effort: "medium",
+      instructions: "Be concise",
+      store: true,
+      max_completion_tokens: 800,
+    });
+
+    (delegate as unknown as { call: (messages: readonly LLMMessage[]) => Promise<LLMResponse> }).call = (messages) =>
+      Promise.resolve(`delegated:${messages[0]?.content ?? ""}`);
+    await expect(azure.call([{ role: "user", content: "ping" }])).resolves.toBe("delegated:ping");
   });
 
   it("prepares Anthropic completion request parameters with thinking and tool search", () => {

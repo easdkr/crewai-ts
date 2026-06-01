@@ -1,5 +1,6 @@
 import { ConfiguredLLM, CONTEXT_WINDOW_USAGE_RATIO, LocalFileUploader, type BaseLLMOptions, type LLMAvailableFunction, type LLMCallOptions, type LLMMessageInput, type LLMResponse } from "./llm.js";
 import { convertToolsToOpenAISchema } from "./agent-utils.js";
+import { OpenAICompletion } from "./openai-completion.js";
 import type { LLMMessage, Tool } from "./types.js";
 
 export const TOOL_SEARCH_TOOL_TYPES = Object.freeze([
@@ -2006,6 +2007,25 @@ export class AzureCompletion extends ConfiguredLLM {
   readonly is_azure_openai_endpoint: boolean;
   readonly credentialScopes: readonly string[] | null;
   readonly credential_scopes: readonly string[] | null;
+  readonly api: "completions" | "responses";
+  readonly reasoningEffort: string | null;
+  readonly reasoning_effort: string | null;
+  readonly instructions: string | null;
+  readonly store: boolean | null;
+  readonly previousResponseId: string | null;
+  readonly previous_response_id: string | null;
+  readonly include: readonly string[] | null;
+  readonly builtinTools: readonly string[] | null;
+  readonly builtin_tools: readonly string[] | null;
+  readonly parseToolOutputs: boolean;
+  readonly parse_tool_outputs: boolean;
+  readonly autoChain: boolean;
+  readonly auto_chain: boolean;
+  readonly autoChainReasoning: boolean;
+  readonly auto_chain_reasoning: boolean;
+  readonly maxCompletionTokens: number | null;
+  readonly max_completion_tokens: number | null;
+  readonly _responses_delegate: OpenAICompletion | null;
   private responseChainId: string | null;
   private reasoningChainItems: unknown[];
 
@@ -2054,15 +2074,78 @@ export class AzureCompletion extends ConfiguredLLM {
       ? configuredCredentialScopes
       : AzureCompletion.credentialScopesFromEnv();
     this.credential_scopes = this.credentialScopes;
-    this.responseChainId = options.previousResponseId ?? options.previous_response_id ?? null;
+    this.api = options.api ?? "completions";
+    this.reasoningEffort = options.reasoningEffort ?? options.reasoning_effort ?? null;
+    this.reasoning_effort = this.reasoningEffort;
+    this.instructions = options.instructions ?? null;
+    this.store = options.store ?? null;
+    this.previousResponseId = options.previousResponseId ?? options.previous_response_id ?? null;
+    this.previous_response_id = this.previousResponseId;
+    this.include = options.include ? [...options.include] : null;
+    this.builtinTools = options.builtinTools ?? options.builtin_tools ?? null;
+    this.builtin_tools = this.builtinTools ? [...this.builtinTools] : null;
+    this.parseToolOutputs = options.parseToolOutputs ?? options.parse_tool_outputs ?? false;
+    this.parse_tool_outputs = this.parseToolOutputs;
+    this.autoChain = options.autoChain ?? options.auto_chain ?? false;
+    this.auto_chain = this.autoChain;
+    this.autoChainReasoning = options.autoChainReasoning ?? options.auto_chain_reasoning ?? false;
+    this.auto_chain_reasoning = this.autoChainReasoning;
+    this.maxCompletionTokens = options.maxCompletionTokens ?? options.max_completion_tokens ?? null;
+    this.max_completion_tokens = this.maxCompletionTokens;
+    this.responseChainId = this.previousResponseId;
     this.reasoningChainItems = [];
+    this._responses_delegate = this.api === "responses"
+      ? new OpenAICompletion(stripUndefined({
+        model: azureResponsesModelName(options.model),
+        provider: "openai",
+        api: "responses",
+        apiKey: options.apiKey,
+        api_key: options.api_key ?? process.env.AZURE_API_KEY ?? null,
+        baseUrl: azureResponsesBaseUrl(endpoint ?? this.baseUrl),
+        base_url: azureResponsesBaseUrl(endpoint ?? this.baseUrl),
+        temperature: options.temperature,
+        topP: this.topP,
+        top_p: this.topP,
+        maxTokens: this.maxTokens,
+        max_tokens: this.maxTokens,
+        maxCompletionTokens: this.maxCompletionTokens,
+        max_completion_tokens: this.maxCompletionTokens,
+        reasoningEffort: this.reasoningEffort,
+        reasoning_effort: this.reasoningEffort,
+        instructions: this.instructions,
+        store: this.store,
+        previousResponseId: this.previousResponseId,
+        previous_response_id: this.previousResponseId,
+        include: this.include ? [...this.include] : null,
+        builtinTools: this.builtinTools ? [...this.builtinTools] : null,
+        builtin_tools: this.builtinTools ? [...this.builtinTools] : null,
+        parseToolOutputs: this.parseToolOutputs,
+        parse_tool_outputs: this.parseToolOutputs,
+        autoChain: this.autoChain,
+        auto_chain: this.autoChain,
+        autoChainReasoning: this.autoChainReasoning,
+        auto_chain_reasoning: this.autoChainReasoning,
+        stream: this.stream,
+        stop: options.stop,
+        stopSequences: options.stopSequences,
+        stop_sequences: options.stop_sequences,
+        additionalParams: options.additionalParams,
+        additional_params: options.additional_params,
+      }) as ConstructorParameters<typeof OpenAICompletion>[0])
+      : null;
   }
 
   override call(messages: readonly LLMMessage[], options?: LLMCallOptions): Promise<LLMResponse> {
+    if (this._responses_delegate) {
+      return this._responses_delegate.call(messages, options);
+    }
     return super.call(messages, options);
   }
 
   override async acall(messages: LLMMessageInput, options?: LLMCallOptions): Promise<LLMResponse> {
+    if (this._responses_delegate) {
+      return await this._responses_delegate.acall(messages, options);
+    }
     return await super.acall(messages, options);
   }
 
@@ -2071,6 +2154,9 @@ export class AzureCompletion extends ConfiguredLLM {
   }
 
   override supportsFunctionCalling(): boolean {
+    if (this._responses_delegate) {
+      return this._responses_delegate.supportsFunctionCalling();
+    }
     return this.isOpenAIModel;
   }
 
@@ -2108,6 +2194,9 @@ export class AzureCompletion extends ConfiguredLLM {
   }
 
   override get lastResponseId(): string | null {
+    if (this._responses_delegate) {
+      return this._responses_delegate.lastResponseId;
+    }
     return this.responseChainId;
   }
 
@@ -2116,6 +2205,9 @@ export class AzureCompletion extends ConfiguredLLM {
   }
 
   override get lastReasoningItems(): readonly unknown[] {
+    if (this._responses_delegate) {
+      return this._responses_delegate.lastReasoningItems;
+    }
     return [...this.reasoningChainItems];
   }
 
@@ -2124,6 +2216,10 @@ export class AzureCompletion extends ConfiguredLLM {
   }
 
   override resetChain(): void {
+    if (this._responses_delegate) {
+      this._responses_delegate.resetChain();
+      return;
+    }
     this.responseChainId = null;
   }
 
@@ -2132,6 +2228,10 @@ export class AzureCompletion extends ConfiguredLLM {
   }
 
   override resetReasoningChain(): void {
+    if (this._responses_delegate) {
+      this._responses_delegate.resetReasoningChain();
+      return;
+    }
     this.reasoningChainItems = [];
   }
 
@@ -2140,7 +2240,28 @@ export class AzureCompletion extends ConfiguredLLM {
   }
 
   override toConfigDict(): Record<string, unknown> {
-    return super.toConfigDict();
+    return {
+      ...super.toConfigDict(),
+      ...(this.endpoint === null ? {} : { endpoint: this.endpoint }),
+      ...(this.apiVersion === null ? {} : { api_version: this.apiVersion }),
+      ...(this.timeout === null ? {} : { timeout: this.timeout }),
+      ...(this.maxRetries === 2 ? {} : { max_retries: this.maxRetries }),
+      ...(this.topP === null ? {} : { top_p: this.topP }),
+      ...(this.frequencyPenalty === null ? {} : { frequency_penalty: this.frequencyPenalty }),
+      ...(this.presencePenalty === null ? {} : { presence_penalty: this.presencePenalty }),
+      ...(this.maxTokens === null ? {} : { max_tokens: this.maxTokens }),
+      ...(this.api === "responses" ? { api: "responses" } : {}),
+      ...(this.reasoningEffort === null ? {} : { reasoning_effort: this.reasoningEffort }),
+      ...(this.instructions === null ? {} : { instructions: this.instructions }),
+      ...(this.store === null ? {} : { store: this.store }),
+      ...(this.previousResponseId === null ? {} : { previous_response_id: this.previousResponseId }),
+      ...(this.include === null ? {} : { include: [...this.include] }),
+      ...(this.builtinTools === null ? {} : { builtin_tools: [...this.builtinTools] }),
+      ...(this.parseToolOutputs ? { parse_tool_outputs: true } : {}),
+      ...(this.autoChain ? { auto_chain: true } : {}),
+      ...(this.autoChainReasoning ? { auto_chain_reasoning: true } : {}),
+      ...(this.maxCompletionTokens === null ? {} : { max_completion_tokens: this.maxCompletionTokens }),
+    };
   }
 
   override to_config_dict(): Record<string, unknown> {
@@ -2199,6 +2320,25 @@ export class AzureCompletion extends ConfiguredLLM {
 
   _prepare_completion_params(messages: readonly LLMMessage[], tools: readonly Tool[] | null = null): AzureCompletionParams {
     return this.prepareCompletionParams(messages, tools);
+  }
+
+  prepareResponsesParams(
+    messages: readonly LLMMessage[],
+    tools: readonly Tool[] | null = null,
+    responseModel: unknown = null,
+  ): Record<string, unknown> {
+    if (!this._responses_delegate) {
+      throw new Error("Azure Responses API is only available when api is set to 'responses'.");
+    }
+    return this._responses_delegate.prepareResponsesParams(messages, tools, responseModel);
+  }
+
+  _prepare_responses_params(
+    messages: readonly LLMMessage[],
+    tools: readonly Tool[] | null = null,
+    responseModel: unknown = null,
+  ): Record<string, unknown> {
+    return this.prepareResponsesParams(messages, tools, responseModel);
   }
 
   convertToolsForInterference(tools: readonly Tool[]): Record<string, unknown>[] {
@@ -2532,6 +2672,27 @@ function isAzureOpenAIEndpoint(endpoint: string | null): boolean {
     return (url.hostname === "openai.azure.com" || url.hostname.endsWith(".openai.azure.com")) && url.pathname.includes("/openai/deployments/");
   } catch {
     return false;
+  }
+}
+
+function azureResponsesModelName(model: string): string {
+  return model.replace(/^azure\//i, "");
+}
+
+function azureResponsesBaseUrl(endpoint: string | null | undefined): string | null {
+  if (!endpoint) {
+    return null;
+  }
+  try {
+    const url = new URL(endpoint);
+    return `${url.origin}/openai/v1/`;
+  } catch {
+    const trimmed = endpoint.replace(/\/+$/, "");
+    const deploymentIndex = trimmed.toLowerCase().indexOf("/openai/deployments/");
+    if (deploymentIndex >= 0) {
+      return `${trimmed.slice(0, deploymentIndex)}/openai/v1/`;
+    }
+    return `${trimmed.replace(/\/openai(?:\/v1)?$/i, "")}/openai/v1/`;
   }
 }
 

@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 720 passing tests.
+- Test suite: 721 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -58,6 +58,7 @@ Use this map before starting any new porting change. If a behavior lands in **co
 - Telemetry and trace upload paths are deterministic local span/event recordings. OpenTelemetry/remote trace exporters remain out of the default gate.
 - RAG/vector storage integrations use deterministic in-memory or fake-client-backed shims in the default gate. Real Qdrant, LanceDB, ChromaDB, and provider SDK integration can be added later as optional peer-dependency coverage, but should not be required for release validation.
 - LLM provider classes model request construction, capability flags, response parsing, usage extraction, streaming accumulation, file conversion, and error classification with SDK-like test doubles. Live OpenAI/Azure/Anthropic/Bedrock/Gemini SDK calls and real API credentials are intentionally outside the default gate.
+- Azure `api: "responses"` is modeled as a deterministic shim over the OpenAI Responses adapter: endpoint-to-`/openai/v1/` base URL normalization, Responses request preparation, response-chain state delegation, config fields, and call/acall routing are release-gated without creating Azure SDK clients or making live calls.
 - Google Vertex legacy `textembedding-gecko*` embeddings remain intentionally unsupported in the TypeScript runtime without Vertex AI SDK credentials; the current behavior raises a clear error.
 - PDF/Excel/Docling-style optional parsing uses built-in or injected local extractors where possible. Python-only optional dependencies such as `pdfplumber` or Docling converters are not bundled.
 - MCP transports may use the installed JS SDK shape, but release tests should continue to rely on local/fake clients and error classification rather than live MCP servers.
@@ -81,6 +82,7 @@ High-value behavior audits still worth running:
 
 3. **SDK-backed provider response translation**
    - Current provider shims cover deterministic request building and SDK-like response parsing.
+   - Azure Responses API delegation is covered by local OpenAI Responses adapter fixtures; continue auditing other provider gaps with SDK-shaped responses rather than live credentials.
    - Audit upstream edge cases with SDK-shaped fixtures only.
    - Keep live API calls out of the default gate.
 
