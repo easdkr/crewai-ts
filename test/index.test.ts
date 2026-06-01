@@ -15136,6 +15136,41 @@ describe("flow runtime", () => {
     expect(state).toEqual({ items: [1], done: true });
   });
 
+  it("mirrors upstream dunder collection operations on locked flow proxies", () => {
+    const list = new LockedListProxy(["a", "b"]);
+
+    expect(list.__len__()).toBe(2);
+    expect(list.__bool__()).toBe(true);
+    expect(new LockedListProxy().__bool__()).toBe(false);
+    expect(list.__repr__()).toBe("[\"a\",\"b\"]");
+    expect(list.toString()).toBe(list.__repr__());
+    expect(list.__add__(["c"])).toEqual(["a", "b", "c"]);
+    expect(list.__radd__(["z"])).toEqual(["z", "a", "b"]);
+    expect(list.__mul__(2)).toEqual(["a", "b", "a", "b"]);
+    expect(list.__rmul__(2)).toEqual(["a", "b", "a", "b"]);
+    expect([...list.__reversed__()]).toEqual(["b", "a"]);
+    expect(list.__eq__(["a", "b"])).toBe(true);
+    expect(list.__ne__(["a"])).toBe(true);
+    expect(list.__iadd__(["c"])).toBe(list);
+    expect([...list]).toEqual(["a", "b", "c"]);
+    expect(list.__imul__(2)).toBe(list);
+    expect([...list]).toEqual(["a", "b", "c", "a", "b", "c"]);
+
+    const dict = new LockedDictProxy({ a: 1 });
+    expect(dict.__len__()).toBe(1);
+    expect(dict.__bool__()).toBe(true);
+    expect(new LockedDictProxy().__bool__()).toBe(false);
+    expect(dict.__repr__()).toBe("{\"a\":1}");
+    expect(dict.toString()).toBe(dict.__repr__());
+    expect(dict.__or__({ b: 2 })).toEqual({ a: 1, b: 2 });
+    expect(dict.__ror__({ b: 2 })).toEqual({ b: 2, a: 1 });
+    expect([...dict.__reversed__()]).toEqual(["a"]);
+    expect(dict.__eq__({ a: 1 })).toBe(true);
+    expect(dict.__ne__({ a: 2 })).toBe(true);
+    expect(dict.__ior__({ b: 2 })).toBe(dict);
+    expect(dict.toJSON()).toEqual({ a: 1, b: 2 });
+  });
+
   it("emits flow and method execution lifecycle events", async () => {
     class EventFlow extends Flow<{ value?: string }> {
       begin() {

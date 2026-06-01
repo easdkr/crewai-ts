@@ -348,6 +348,48 @@ export class LockedDictProxy<TValue extends Record<string, unknown> = Record<str
     return this.keys();
   }
 
+  __len__(): number {
+    return Object.keys(this.value).length;
+  }
+
+  __repr__(): string {
+    return JSON.stringify(this.value);
+  }
+
+  toString(): string {
+    return this.__repr__();
+  }
+
+  __bool__(): boolean {
+    return this.__len__() > 0;
+  }
+
+  __or__(other: Record<string, unknown>): Record<string, unknown> {
+    return { ...this.value, ...other };
+  }
+
+  __ror__(other: Record<string, unknown>): Record<string, unknown> {
+    return { ...other, ...this.value };
+  }
+
+  __ior__(other: Record<string, unknown>): this {
+    this.update(other);
+    return this;
+  }
+
+  __reversed__(): IterableIterator<string> {
+    return Object.keys(this.value).reverse()[Symbol.iterator]();
+  }
+
+  __eq__(other: unknown): boolean {
+    const otherValue: unknown = other instanceof LockedDictProxy ? other.value : other;
+    return JSON.stringify(this.value) === JSON.stringify(otherValue);
+  }
+
+  __ne__(other: unknown): boolean {
+    return !this.__eq__(other);
+  }
+
   toJSON(): TValue {
     return this.value;
   }
@@ -499,6 +541,62 @@ export class LockedListProxy<TValue = unknown> {
     return this[Symbol.iterator]();
   }
 
+  __len__(): number {
+    return this.value.length;
+  }
+
+  __repr__(): string {
+    return JSON.stringify(this.value);
+  }
+
+  toString(): string {
+    return this.__repr__();
+  }
+
+  __bool__(): boolean {
+    return this.value.length > 0;
+  }
+
+  __add__(other: readonly TValue[]): TValue[] {
+    return [...this.value, ...other];
+  }
+
+  __radd__(other: readonly TValue[]): TValue[] {
+    return [...other, ...this.value];
+  }
+
+  __iadd__(other: Iterable<TValue>): this {
+    this.extend(other);
+    return this;
+  }
+
+  __mul__(count: number): TValue[] {
+    return repeatArray(this.value, count);
+  }
+
+  __rmul__(count: number): TValue[] {
+    return this.__mul__(count);
+  }
+
+  __imul__(count: number): this {
+    this.value.splice(0, this.value.length, ...repeatArray(this.value, count));
+    return this;
+  }
+
+  __reversed__(): IterableIterator<TValue> {
+    return [...this.value].reverse()[Symbol.iterator]();
+  }
+
+  __eq__(other: unknown): boolean {
+    const otherValue = other instanceof LockedListProxy ? other.value : other;
+    return Array.isArray(otherValue) && this.value.length === otherValue.length
+      && this.value.every((item, index) => Object.is(item, otherValue[index]));
+  }
+
+  __ne__(other: unknown): boolean {
+    return !this.__eq__(other);
+  }
+
   toJSON(): TValue[] {
     return [...this.value];
   }
@@ -586,6 +684,14 @@ function compareSortValues(left: unknown, right: unknown): number {
     return left - right;
   }
   return String(left).localeCompare(String(right));
+}
+
+function repeatArray<TValue>(items: readonly TValue[], count: number): TValue[] {
+  const normalized = Math.trunc(count);
+  if (!Number.isFinite(normalized) || normalized <= 0) {
+    return [];
+  }
+  return Array.from({ length: normalized }).flatMap(() => [...items]);
 }
 
 export type FlowAskOptions = {
