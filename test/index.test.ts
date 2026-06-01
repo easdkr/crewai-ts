@@ -17991,6 +17991,48 @@ describe("tools", () => {
     expect(add.current_usage_count).toBe(1);
   });
 
+  it("strips hallucinated tool kwargs before execution and preserves usage on validation errors", async () => {
+    class CodeExecutorTool extends BaseTool {
+      seenArgs: Record<string, unknown> | null = null;
+
+      constructor() {
+        super({
+          name: "code executor",
+          description: "Execute code snippets",
+          argsSchema: {
+            code: { type: "string", required: true },
+            language: { type: "string", default: "python" },
+          },
+        });
+      }
+
+      protected _run(args: Record<string, unknown>): string {
+        this.seenArgs = args;
+        return `Executed ${String(args.language)}: ${String(args.code)}`;
+      }
+
+      protected override async _arun(args: Record<string, unknown>): Promise<string> {
+        this.seenArgs = args;
+        return await Promise.resolve(`Async executed ${String(args.language)}: ${String(args.code)}`);
+      }
+    }
+
+    const syncTool = new CodeExecutorTool();
+    expect(syncTool.run({ code: "1+1", extra_hallucinated_field: "junk" })).toBe("Executed python: 1+1");
+    expect(syncTool.seenArgs).toEqual({ code: "1+1", language: "python" });
+    expect(syncTool.current_usage_count).toBe(1);
+
+    expect(() => syncTool.run({ wrong_arg: "value" })).toThrow("missing required argument 'code'");
+    expect(syncTool.current_usage_count).toBe(1);
+
+    const asyncTool = new CodeExecutorTool();
+    await expect(asyncTool.arun({ code: "2+2", extra_field: "junk" })).resolves.toBe("Async executed python: 2+2");
+    expect(asyncTool.seenArgs).toEqual({ code: "2+2", language: "python" });
+    expect(asyncTool.current_usage_count).toBe(1);
+    await expect(asyncTool.arun({ wrong_arg: "value" })).rejects.toThrow("missing required argument 'code'");
+    expect(asyncTool.current_usage_count).toBe(1);
+  });
+
   it("emits upstream-style ToolUsage error and finished events", () => {
     const seen: Array<ToolUsageErrorEvent | ToolUsageFinishedEvent> = [];
     crewaiEventBus.on("tool_usage_error", (_source, event) => {

@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 751 passing tests.
+- Test suite: 752 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -172,6 +172,10 @@ When more goal budget is available, continue from the behavioral parity audits b
 - `LLMCallHookContext.request_human_input` and `ToolCallHookContext.request_human_input` now mirror upstream approval-hook behavior in a deterministic TS shim: live-update formatters are paused/resumed around input, responses are trimmed, Enter returns an empty string, and resume runs even when input throws. The default Node path remains non-blocking unless a host `globalThis.prompt` is supplied.
 - `CrewBase` now registers hook-decorated class methods per instance, preserving bound `this`, tool/agent filters, global registration order, and `_registered_hook_functions` tracking without adding name-only helper surface.
 - `ConsoleFormatter.pause_live_updates` now mirrors upstream HITL behavior by stopping and clearing an active streaming session, keeping repeated pauses safe, and letting later stream chunks create a new deterministic live-session shim.
+
+## Completed In Current Tool Behavior Pass
+
+- `BaseTool.run` / `arun` argument validation now mirrors upstream schema behavior for LLM-generated kwargs: when an `argsSchema` is present, validated execution receives only schema fields plus defaults, hallucinated extra keys are stripped before `_run` / `_arun`, and usage counts do not increment on validation errors.
 
 ## Completed In Current AgentExecutor Behavior Pass
 

@@ -2181,9 +2181,13 @@ export function validateArgs(
   schema: ToolArgsSchema,
   args: Record<string, unknown>,
 ): Record<string, unknown> {
-  const validated = { ...args };
-  for (const [name, spec] of Object.entries(schema)) {
-    const value = validated[name];
+  const schemaEntries = Object.entries(schema);
+  if (schemaEntries.length === 0) {
+    return { ...args };
+  }
+  const validated: Record<string, unknown> = {};
+  for (const [name, spec] of schemaEntries) {
+    const value = args[name];
     if (value === undefined) {
       if (spec.default !== undefined) {
         validated[name] = spec.default;
@@ -2199,6 +2203,7 @@ export function validateArgs(
         `Tool '${toolName}' argument '${name}' expected ${spec.type}, got ${Array.isArray(value) ? "array" : typeof value}.`,
       );
     }
+    validated[name] = value;
   }
   return validated;
 }
