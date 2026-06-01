@@ -10373,6 +10373,62 @@ describe("core crew runtime", () => {
     expect(saved).toHaveLength(1);
   });
 
+  it("applies AgentExecutor object-style invoke stop words during kickoff without mutating the LLM", () => {
+    class StopAwareLLM extends BaseLLM {
+      call(messages: readonly LLMMessage[]): string {
+        return this._apply_stop_words(messages.at(-1)?.content ?? "");
+      }
+    }
+    const llm = new StopAwareLLM({ model: "demo/model", stop: ["BASE"] });
+    const executor = new AgentExecutor({
+      llm,
+      stop_words: ["TEMP"],
+    });
+    Object.assign(executor, {
+      kickoff() {
+        expect(llm.stop).toEqual(["BASE"]);
+        expect(llm.stop_sequences).toEqual(["BASE", "TEMP"]);
+        executor.state.current_answer = new AgentFinish({
+          thought: "done",
+          output: llm.call([{ role: "user", content: "alpha TEMP beta BASE gamma" }]),
+          text: "complete",
+        });
+      },
+    });
+
+    expect(executor.invoke({ input: "test" })).toEqual({ output: "alpha" });
+    expect(llm.stop).toEqual(["BASE"]);
+    expect(llm.stop_sequences).toEqual(["BASE"]);
+  });
+
+  it("applies AgentExecutor async object-style invoke stop words during kickoff_async", async () => {
+    class StopAwareLLM extends BaseLLM {
+      call(messages: readonly LLMMessage[]): string {
+        return this._apply_stop_words(messages.at(-1)?.content ?? "");
+      }
+    }
+    const llm = new StopAwareLLM({ model: "demo/model", stop: ["BASE"] });
+    const executor = new AgentExecutor({
+      llm,
+      stop: ["TEMP"],
+    });
+    Object.assign(executor, {
+      async kickoff_async() {
+        expect(llm.stop_sequences).toEqual(["BASE", "TEMP"]);
+        await Promise.resolve();
+        expect(llm.stop_sequences).toEqual(["BASE", "TEMP"]);
+        executor.state.current_answer = new AgentFinish({
+          thought: "done",
+          output: llm.call([{ role: "user", content: "async TEMP beta" }]),
+          text: "complete",
+        });
+      },
+    });
+
+    await expect(executor.ainvoke({ input: "test" })).resolves.toEqual({ output: "async" });
+    expect(llm.stop_sequences).toEqual(["BASE"]);
+  });
+
   it("requires AgentExecutor async object-style invoke to reach an AgentFinish when kickoff_async is provided", async () => {
     const success = new AgentExecutor();
     Object.assign(success, {

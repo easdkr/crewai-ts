@@ -8,12 +8,13 @@ import {
   extractTaskSection,
   extractToolCallInfo,
   formatMessageForLLM,
+  _executor_stop_words,
   isToolCallList,
 } from "./agent-utils.js";
 import { Converter } from "./converter.js";
 import { get_provider } from "./human-input.js";
 import { I18N_DEFAULT } from "./i18n.js";
-import { UsageMetrics, type LLMResponse } from "./llm.js";
+import { BaseLLM, callStopOverrideSync, UsageMetrics, type LLMResponse } from "./llm.js";
 import { sanitize_scope_name } from "./memory.js";
 import { StepExecutionContext, StepResult } from "./step-execution-context.js";
 import { sanitizeToolName } from "./tools.js";
@@ -316,7 +317,10 @@ export class BaseAgentExecutor {
   readonly agent: Agent | null;
   readonly task: unknown;
   readonly tools: readonly Tool[];
+  readonly llm: unknown;
   readonly prompt: Record<string, string> | null;
+  readonly stop: readonly string[];
+  readonly stop_words: readonly string[];
   responseModel: unknown;
   response_model: unknown;
   readonly maxIter: number;
@@ -331,7 +335,10 @@ export class BaseAgentExecutor {
     this.agent = options.agent ?? null;
     this.task = options.task ?? null;
     this.tools = options.tools ?? this.agent?.tools ?? [];
+    this.llm = options.llm ?? this.agent?.llm ?? null;
     this.prompt = options.prompt ?? null;
+    this.stop = options.stop ?? options.stop_words ?? [];
+    this.stop_words = this.stop;
     this.responseModel = options.responseModel ?? options.response_model ?? null;
     this.response_model = this.responseModel;
     this.maxIter = options.maxIter ?? options.max_iter ?? this.agent?.maxIter ?? 25;
@@ -950,7 +957,7 @@ export class AgentExecutor extends BaseAgentExecutor {
       this.resetInvocationState(inputs);
       const kickoff = (this as unknown as { kickoff?: () => unknown }).kickoff;
       if (typeof kickoff === "function") {
-        const kickoffResult = kickoff.call(this);
+        const kickoffResult = this.withLlmStopWords(() => kickoff.call(this));
         if (isPromiseLike(kickoffResult)) {
           throw new Error("AgentExecutor.invoke does not support async kickoff results; use ainvoke instead.");
         }
@@ -987,7 +994,7 @@ export class AgentExecutor extends BaseAgentExecutor {
       const kickoffAsync = (this as unknown as { kickoff_async?: () => Promise<unknown>; kickoffAsync?: () => Promise<unknown> }).kickoff_async
         ?? (this as unknown as { kickoffAsync?: () => Promise<unknown> }).kickoffAsync;
       if (typeof kickoffAsync === "function") {
-        await kickoffAsync.call(this);
+        await this.withLlmStopWordsAsync(() => kickoffAsync.call(this));
         const currentAnswer = this.state.current_answer;
         if (!(currentAnswer instanceof AgentFinish)) {
           throw new Error("AgentExecutor finished without reaching a final answer.");
@@ -1000,7 +1007,7 @@ export class AgentExecutor extends BaseAgentExecutor {
       }
       const kickoff = (this as unknown as { kickoff?: () => unknown }).kickoff;
       if (typeof kickoff === "function") {
-        await Promise.resolve(kickoff.call(this));
+        await this.withLlmStopWordsAsync(() => Promise.resolve(kickoff.call(this)));
         const currentAnswer = this.state.current_answer;
         if (!(currentAnswer instanceof AgentFinish)) {
           throw new Error("AgentExecutor finished without reaching a final answer.");
@@ -1064,6 +1071,21 @@ export class AgentExecutor extends BaseAgentExecutor {
         return;
       }
     }
+  }
+
+  private withLlmStopWords<T>(callback: () => T): T {
+    if (!(this.llm instanceof BaseLLM)) {
+      return callback();
+    }
+    const extraStops = _executor_stop_words(this);
+    if (extraStops.length === 0 || extraStops.every((stop) => this.llm instanceof BaseLLM && this.llm.stop.includes(stop))) {
+      return callback();
+    }
+    return callStopOverrideSync(this.llm, [...new Set([...this.llm.stop, ...extraStops])], callback);
+  }
+
+  private async withLlmStopWordsAsync<T>(callback: () => Promise<T>): Promise<T> {
+    return await this.withLlmStopWords(callback);
   }
 
   private applyHumanFeedback(answer: AgentFinish): AgentFinish {

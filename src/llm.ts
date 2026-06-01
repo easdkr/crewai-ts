@@ -1123,6 +1123,23 @@ export async function callStopOverride<T>(
 
 export const call_stop_override = callStopOverride;
 
+export function callStopOverrideSync<T>(
+  llm: BaseLLM,
+  stop: string | readonly string[] | null,
+  callback: () => T,
+): T {
+  const current = callStopOverrideStore.getStore();
+  const overrides = new Map(current ?? []);
+  if (stop === null) {
+    overrides.delete(llm);
+  } else {
+    overrides.set(llm, normalizeStopSequences(stop));
+  }
+  return callStopOverrideStore.run(overrides, callback);
+}
+
+export const call_stop_override_sync = callStopOverrideSync;
+
 export class FunctionLLM implements LLMClient {
   private usageMetrics: UsageMetrics = emptyUsageMetrics();
 

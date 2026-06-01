@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 681 passing tests.
+- Test suite: 683 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -115,6 +115,7 @@ When more goal budget is available, continue from the behavioral parity audits b
 - `AgentExecutor.invoke` / `invoke_async` object-style execution now honors provided kickoff routines and requires them to produce an `AgentFinish`, raising when execution ends on an action instead of a final answer.
 - `AgentExecutor.invoke` setup now formats upstream-style `prompt.system` / `prompt.user` or `prompt.prompt` templates into state messages before kickoff.
 - `AgentExecutor.invoke` setup now injects upstream-style `files` inputs into the last user prompt message for deterministic multimodal handoff.
+- `AgentExecutor.invoke` / `invoke_async` now run kickoff inside an upstream-style LLM stop-word override scope without mutating the base LLM stop list.
 - `AgentExecutor.invoke` / `invoke_async` now preserve `ask_for_human_input` and apply sync/async human-feedback handlers to the final answer before returning output.
 - `AgentExecutor.invoke` / `invoke_async` now save final answers to unified memory through upstream-style extraction and agent root-scope routing when memory is configured.
 - `AgentExecutor` replanning now builds previous-execution context, temporarily enhances the task description for the planner, preserves completed/failed history, and replaces only pending todos when a ready structured plan is returned.
