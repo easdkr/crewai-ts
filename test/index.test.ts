@@ -12831,6 +12831,58 @@ describe("core crew runtime", () => {
     expect(String(blockedResult.result)).toContain("blocked by");
   });
 
+  it("handles native tool argument parsing and schema validation before execution", async () => {
+    const codeTool = new StructuredTool({
+      name: "execute_code",
+      description: "Run code",
+      argsSchema: {
+        code: { type: "string", required: true },
+      },
+      func: (args) => `ran: ${(args as { code?: string }).code ?? ""}`,
+    });
+    const availableFunctions = {
+      execute_code: (args: Record<string, unknown>) => codeTool.run(args),
+    };
+
+    const malformed = await executeSingleNativeToolCall({
+      id: "call_bad_json",
+      function: { name: "execute_code", arguments: "{\"code\": \"print(\"hello\")\"}" },
+    }, availableFunctions, {
+      originalTools: [codeTool],
+    });
+    expect(String(malformed.result)).toContain("Failed to parse tool arguments as JSON");
+    expect(malformed.result_as_answer).toBe(false);
+    expect(codeTool.current_usage_count).toBe(0);
+
+    const valid = await executeSingleNativeToolCall({
+      id: "call_valid_json",
+      function: { name: "execute_code", arguments: "{\"code\":\"print(1)\"}" },
+    }, availableFunctions, {
+      originalTools: [codeTool],
+    });
+    expect(valid.result).toBe("ran: print(1)");
+    expect(codeTool.current_usage_count).toBe(1);
+
+    const dictArgs = await executeSingleNativeToolCall({
+      id: "call_dict_args",
+      function: { name: "execute_code", arguments: { code: "x = 42" } },
+    }, availableFunctions, {
+      originalTools: [codeTool],
+    });
+    expect(dictArgs.result).toBe("ran: x = 42");
+    expect(codeTool.current_usage_count).toBe(2);
+
+    const missingArgs = await executeSingleNativeToolCall({
+      id: "call_missing_args",
+      function: { name: "execute_code", arguments: "{}" },
+    }, availableFunctions, {
+      originalTools: [codeTool],
+    });
+    expect(String(missingArgs.result)).toContain("Error executing tool");
+    expect(String(missingArgs.result).toLowerCase()).toMatch(/validation|missing/);
+    expect(codeTool.current_usage_count).toBe(2);
+  });
+
   it("runs after tool hooks with a blocked native tool result", async () => {
     const calls: string[] = [];
     const blockedTool = new StructuredTool({

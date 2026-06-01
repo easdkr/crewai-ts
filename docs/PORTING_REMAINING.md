@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 836 passing tests.
+- Test suite: 837 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -243,6 +243,7 @@ When more goal budget is available, continue from the behavioral parity audits b
 - `AgentExecutor.check_todo_completion` now requires ReAct tool actions to match the running todo's expected tool when one is specified, while still accepting final answers and todos without a specified tool.
 - `AgentExecutor.execute_native_tool` now records the upstream assistant `tool_calls` message and named tool result messages before continuing or short-circuiting.
 - Native result-as-answer tool failures now mirror upstream behavior: `executeSingleNativeToolCall` returns an error result with `result_as_answer=false`, hook-blocked calls do not become final answers, and `AgentExecutor.execute_native_tool` records failed tool output instead of throwing or short-circuiting.
+- Native tool argument handling now mirrors upstream deterministic behavior: malformed JSON tool-call arguments return a parse-error result before execution, dict arguments bypass parsing, valid JSON executes normally, and schema validation errors do not increment tool usage.
 - Native tool hook blocking now preserves upstream integration behavior by passing the blocked tool result through after-tool hooks without executing the tool body.
 - `CrewAgentExecutor._handle_native_tool_calls` now mirrors upstream native batch execution by running safe async tool-call batches concurrently while preserving ordered tool result messages and keeping `result_as_answer` / usage-limited tools on the sequential path.
 - `CrewAgentExecutor._execute_single_native_tool_call` now applies before/after tool hooks to direct native calls, including upstream-style blocked results that skip the tool body while still flowing through after-hook auditing.

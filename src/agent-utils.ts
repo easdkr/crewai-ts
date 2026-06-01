@@ -939,7 +939,7 @@ export function trackDelegationIfNeeded(toolName: string, args: Record<string, u
 
 export const track_delegation_if_needed = trackDelegationIfNeeded;
 
-export function extractToolCallInfo(value: unknown): { toolName: string; arguments: Record<string, unknown> | null; id: string | null } | null {
+export function extractToolCallInfo(value: unknown): { toolName: string; arguments: Record<string, unknown> | null; argumentParseError: string | null; id: string | null } | null {
   const record = value && typeof value === "object" ? value as Record<string, unknown> : null;
   if (!record) {
     return null;
@@ -949,9 +949,11 @@ export function extractToolCallInfo(value: unknown): { toolName: string; argumen
   if (typeof name !== "string") {
     return null;
   }
+  const parsed = parseToolCallArgsForNative(record.arguments ?? functionRecord?.arguments);
   return {
     toolName: name,
-    arguments: parseToolCallArgs(record.arguments ?? functionRecord?.arguments),
+    arguments: parsed.args,
+    argumentParseError: parsed.error,
     id: typeof record.id === "string" ? record.id : null,
   };
 }
@@ -1004,6 +1006,14 @@ export async function executeSingleNativeToolCall(
   if (!runner) {
     return new NativeToolCallResult({ text: `Tool '${info.toolName}' is not available.`, toolCallId: info.id, toolName: info.toolName });
   }
+  if (info.argumentParseError) {
+    return new NativeToolCallResult({
+      result: `Failed to parse tool arguments as JSON: ${info.argumentParseError}`,
+      resultAsAnswer: false,
+      toolCallId: info.id,
+      toolName: info.toolName,
+    });
+  }
   const originalTools = options.originalTools ?? options.original_tools ?? [];
   const originalTool = originalTools.find((tool) => sanitizeToolName(tool.name) === sanitizeToolName(info.toolName)) ?? null;
   const resultAsAnswer = Boolean(originalTool?.resultAsAnswer);
@@ -1053,6 +1063,24 @@ export function parseToolCallArgs(value: unknown): Record<string, unknown> | nul
     }
   }
   return null;
+}
+
+function parseToolCallArgsForNative(value: unknown): { args: Record<string, unknown> | null; error: string | null } {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    return { args: value as Record<string, unknown>, error: null };
+  }
+  if (typeof value === "string") {
+    try {
+      const parsed: unknown = JSON.parse(value);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        return { args: parsed as Record<string, unknown>, error: null };
+      }
+      return { args: null, error: "tool arguments must be a JSON object" };
+    } catch (error) {
+      return { args: null, error: errorMessage(error) };
+    }
+  }
+  return { args: null, error: null };
 }
 
 export const parse_tool_call_args = parseToolCallArgs;
