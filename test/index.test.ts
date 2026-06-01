@@ -16681,6 +16681,69 @@ describe("LLM providers", () => {
     }).not.toThrow();
   });
 
+  it("handles upstream-style BaseLLM completion and response helpers", async () => {
+    const llm = new ConfiguredLLM({
+      model: "gpt-4o",
+      temperature: 0.2,
+      stop: ["STOP"],
+      additional_params: { stream: true, top_p: 0.8 },
+    });
+    const params = llm._prepare_completion_params("hello", [{ type: "function", function: { name: "search_docs" } }]);
+
+    expect(params).toMatchObject({
+      model: "gpt-4o",
+      temperature: 0.2,
+      stream: true,
+      top_p: 0.8,
+      messages: [{ role: "user", content: "hello" }],
+      stop: ["STOP"],
+      tools: [{ type: "function", function: { name: "search_docs" } }],
+    });
+
+    await expect(llm._handle_tool_call([{
+      function: { name: "search_docs", arguments: "{\"query\":\"CrewAI\"}" },
+    }], {
+      search_docs: ({ query }) => `found ${String(query)}`,
+    })).resolves.toBe("found CrewAI");
+
+    const chunks = [
+      { id: "response-1", choices: [{ delta: { content: "hel" } }] },
+      { choices: [{ delta: { content: "lo" } }], usage: { prompt_tokens: 4, completion_tokens: 2 } },
+    ];
+    const seenChunks: unknown[] = [];
+    const usageEvents: unknown[] = [];
+    const usageCallback = {
+      log_success_event: (_kwargs: Record<string, unknown>, responseObj: Record<string, unknown>) => {
+        usageEvents.push(responseObj);
+      },
+    };
+
+    await expect(llm._handle_streaming_response(
+      { chunks, messages: params.messages },
+      [(chunk: unknown) => seenChunks.push(chunk), usageCallback],
+    )).resolves.toBe("hello");
+    expect(seenChunks).toHaveLength(2);
+    expect(usageEvents).toEqual([{ usage: { prompt_tokens: 4, completion_tokens: 2 } }]);
+
+    expect(llm._handle_non_streaming_response({
+      response: { choices: [{ message: { content: "done" } }], usage: { total_tokens: 3 } },
+      messages: params.messages,
+    })).toBe("done");
+    await expect(llm._ahandle_non_streaming_response({
+      response: { choices: [{ message: { content: "async done" } }] },
+      messages: params.messages,
+    })).resolves.toBe("async done");
+    await expect(llm._ahandle_streaming_response({ chunks })).resolves.toBe("hello");
+
+    const accumulated: Record<number, AccumulatedToolArgs> = {};
+    await expect(llm._handle_streaming_tool_calls([
+      { index: 0, function: { name: "search_docs", arguments: "{\"query\":" } },
+      { index: 0, function: { arguments: "\"CrewAI\"}" } },
+    ], accumulated, {
+      search_docs: ({ query }) => `streamed ${String(query)}`,
+    })).resolves.toBe("streamed CrewAI");
+  });
+
   it("calls object providers with tools and aggregates usage metrics", async () => {
     const calls: Array<{ messages: readonly LLMMessage[]; options: LLMCallOptions | undefined }> = [];
     const events: CrewAIEvent[] = [];

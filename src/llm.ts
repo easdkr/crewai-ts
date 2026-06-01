@@ -213,6 +213,21 @@ export type LLMHandleToolExecutionOptions = {
   from_agent?: unknown;
 };
 
+export type LLMCompletionParams = Record<string, unknown> & {
+  model: string;
+  messages: LLMMessage[];
+};
+
+export type LLMStreamingCallback = ((chunk: unknown) => MaybePromise<unknown>) | {
+  logSuccessEvent?: (event: {
+    kwargs: Record<string, unknown>;
+    responseObj: Record<string, unknown>;
+    startTime: number;
+    endTime: number;
+  }) => MaybePromise<unknown>;
+  log_success_event?: (kwargs: Record<string, unknown>, response_obj: Record<string, unknown>, start_time: number, end_time: number) => MaybePromise<unknown>;
+};
+
 export type LLMMessageInput = string | readonly (Partial<LLMMessage> & Record<string, unknown>)[];
 
 export type NativeLLMProviderName =
@@ -1596,6 +1611,39 @@ export abstract class BaseLLM implements LLMClient {
     return await this.handleToolExecution(options);
   }
 
+  async handleToolCall(
+    toolCalls: unknown,
+    availableFunctions: Record<string, LLMAvailableFunction> | null = null,
+    fromTask: unknown = null,
+    fromAgent: unknown = null,
+  ): Promise<string | null> {
+    const calls = Array.isArray(toolCalls) ? toolCalls : [toolCalls];
+    const available = availableFunctions ?? {};
+    if (calls.length === 0 || Object.keys(available).length === 0) {
+      return null;
+    }
+    const parsed = parseLLMToolCall(calls[0]);
+    if (!parsed) {
+      return null;
+    }
+    return await this.handleToolExecution({
+      functionName: parsed.name,
+      functionArgs: parsed.args,
+      availableFunctions: available,
+      fromTask,
+      fromAgent,
+    });
+  }
+
+  async _handle_tool_call(
+    toolCalls: unknown,
+    availableFunctions: Record<string, LLMAvailableFunction> | null = null,
+    fromTask: unknown = null,
+    fromAgent: unknown = null,
+  ): Promise<string | null> {
+    return await this.handleToolCall(toolCalls, availableFunctions, fromTask, fromAgent);
+  }
+
   convertToolsForInterference(tools: readonly Tool[]): readonly unknown[] {
     return tools;
   }
@@ -1655,6 +1703,49 @@ export abstract class BaseLLM implements LLMClient {
     return this.formatMessagesForProvider(messages);
   }
 
+  prepareCompletionParams(
+    messages: LLMMessageInput,
+    ...args: unknown[]
+  ): Record<string, unknown> {
+    const tools = Array.isArray(args[0]) ? args[0] as readonly Record<string, unknown>[] : null;
+    const skipFileProcessing = typeof args[1] === "boolean" ? args[1] : false;
+    const normalizedMessages = typeof messages === "string"
+      ? [{ role: "user" as const, content: messages }]
+      : messages.map((message, index) => {
+          if (Array.isArray(message)) {
+            throw new Error(`Message at index ${String(index)} must be a dictionary.`);
+          }
+          if (!isLLMRole(message.role) || typeof message.content !== "string") {
+            throw new Error(`Message at index ${String(index)} must have 'role' and 'content' keys.`);
+          }
+          const copy = { ...message };
+          stripCacheBreakpoint(copy);
+          return copy as LLMMessage;
+        });
+    const processedMessages = skipFileProcessing ? normalizedMessages : this.processMessageFiles(normalizedMessages);
+    const params = removeUndefinedValues({
+      model: this.model,
+      messages: this.formatMessagesForProvider(processedMessages),
+      temperature: this.temperature,
+      stop: this.supportsStopWords() && this.stopSequences.length > 0 ? [...this.stopSequences] : null,
+      response_format: this.responseFormat === null ? null : this.serializeResponseFormat(this.responseFormat),
+      api_key: this.apiKey,
+      base_url: this.baseUrl,
+      provider: this.provider,
+      stream: booleanOrNull(this.additionalParams.stream),
+      tools,
+      ...this.additionalParams,
+    });
+    return params;
+  }
+
+  _prepare_completion_params(
+    messages: LLMMessageInput,
+    ...args: unknown[]
+  ): Record<string, unknown> {
+    return this.prepareCompletionParams(messages, ...args);
+  }
+
   processMessageFiles(messages: readonly LLMMessage[]): LLMMessage[] {
     if (!this.supportsMultimodal() && messages.some((message) => message.files && Object.keys(message.files).length > 0)) {
       throw new Error(`Model '${this.model}' does not support multimodal input, but files were provided via 'input_files'.`);
@@ -1696,6 +1787,251 @@ export abstract class BaseLLM implements LLMClient {
 
   async _aprocess_message_files(messages: readonly LLMMessage[]): Promise<LLMMessage[]> {
     return await this.aprocessMessageFiles(messages);
+  }
+
+  async handleStreamingResponse(
+    params: Record<string, unknown>,
+    callbacks: readonly LLMStreamingCallback[] | null = null,
+    availableFunctions: Record<string, LLMAvailableFunction> | null = null,
+    fromTask: unknown = null,
+    fromAgent: unknown = null,
+    responseModel: unknown = null,
+  ): Promise<unknown> {
+    void responseModel;
+    const chunks = streamingChunksFromParams(params);
+    let fullResponse = "";
+    let lastChunk: unknown = null;
+    let usageInfo: Record<string, unknown> | null = null;
+    const collectedChunks: unknown[] = [];
+
+    for await (const chunk of chunks) {
+      lastChunk = chunk;
+      collectedChunks.push(chunk);
+      usageInfo = usageRecordFromChunk(chunk) ?? usageInfo;
+      const content = streamingChunkContent(chunk);
+      if (content !== null) {
+        fullResponse += content;
+        this.emitStreamChunkEvent({
+          chunk: content,
+          callType: LLMCallType.LLM_CALL,
+          responseId: stringPropertyFromRecord(chunk, "id"),
+          fromTask,
+          fromAgent,
+        });
+      }
+      await this.invokeStreamingCallbacks(callbacks, chunk);
+    }
+
+    if (usageInfo) {
+      this.trackTokenUsageInternal(usageInfo);
+    }
+    this.handleStreamingCallbacks(callbacks, usageInfo, lastChunk);
+
+    const toolCalls = AccumulatedToolArgs.fromStreamingChunks(collectedChunks);
+    if (toolCalls.length > 0) {
+      if (availableFunctions && Object.keys(availableFunctions).length > 0) {
+        const toolResult = await this.handleToolCall(toolCalls, availableFunctions, fromTask, fromAgent);
+        if (toolResult !== null) {
+          return toolResult;
+        }
+      } else if (fullResponse.length === 0) {
+        return toolCalls;
+      }
+    }
+
+    if (!fullResponse.trim() && collectedChunks.length === 0) {
+      return await this.handleNonStreamingResponse({ ...params, stream: false }, callbacks, availableFunctions, fromTask, fromAgent, responseModel);
+    }
+
+    this.handleEmitCallEvents({
+      response: fullResponse,
+      callType: LLMCallType.LLM_CALL,
+      fromTask,
+      fromAgent,
+      messages: messagesFromParams(params),
+      usage: usageInfo ? BaseLLM.usageToDict(usageInfo) : null,
+    });
+    return fullResponse;
+  }
+
+  async _handle_streaming_response(
+    params: Record<string, unknown>,
+    callbacks: readonly LLMStreamingCallback[] | null = null,
+    availableFunctions: Record<string, LLMAvailableFunction> | null = null,
+    fromTask: unknown = null,
+    fromAgent: unknown = null,
+    responseModel: unknown = null,
+  ): Promise<unknown> {
+    return await this.handleStreamingResponse(params, callbacks, availableFunctions, fromTask, fromAgent, responseModel);
+  }
+
+  async handleStreamingToolCalls(
+    toolCalls: unknown,
+    accumulatedToolArgs: Record<string | number, AccumulatedToolArgs> | null = null,
+    availableFunctions: Record<string, LLMAvailableFunction> | null = null,
+    fromTask: unknown = null,
+    fromAgent: unknown = null,
+    responseId: string | null = null,
+  ): Promise<unknown> {
+    const deltas = Array.isArray(toolCalls) ? toolCalls : [toolCalls];
+    const accumulators = accumulatedToolArgs ?? {};
+    for (const toolCall of deltas) {
+      const record = readLLMRecord(toolCall);
+      const index = numberValue(record.index) ?? 0;
+      accumulators[index] ??= new AccumulatedToolArgs({ index });
+      accumulators[index].accumulate(toolCall);
+      this.emitStreamChunkEvent({
+        chunk: stringPropertyFromRecord(readLLMRecord(record.function), "arguments") ?? "",
+        toolCall: accumulators[index].toToolCall() as LLMToolCall,
+        callType: LLMCallType.TOOL_CALL,
+        responseId,
+        fromTask,
+        fromAgent,
+      });
+    }
+    const completeToolCalls = AccumulatedToolArgs.toToolCalls(accumulators);
+    if (!availableFunctions || Object.keys(availableFunctions).length === 0) {
+      return null;
+    }
+    return await this.handleToolCall(completeToolCalls, availableFunctions, fromTask, fromAgent);
+  }
+
+  async _handle_streaming_tool_calls(
+    toolCalls: unknown,
+    accumulatedToolArgs: Record<string | number, AccumulatedToolArgs> | null = null,
+    availableFunctions: Record<string, LLMAvailableFunction> | null = null,
+    fromTask: unknown = null,
+    fromAgent: unknown = null,
+    responseId: string | null = null,
+  ): Promise<unknown> {
+    return await this.handleStreamingToolCalls(toolCalls, accumulatedToolArgs, availableFunctions, fromTask, fromAgent, responseId);
+  }
+
+  handleStreamingCallbacks(
+    callbacks: readonly LLMStreamingCallback[] | null = null,
+    usageInfo: Record<string, unknown> | null = null,
+    lastChunk: unknown = null,
+  ): void {
+    if (!callbacks || callbacks.length === 0) {
+      return;
+    }
+    const usage = usageInfo ?? usageRecordFromChunk(lastChunk);
+    if (!usage) {
+      return;
+    }
+    for (const callback of callbacks) {
+      invokeUsageCallback(callback, usage);
+    }
+  }
+
+  _handle_streaming_callbacks(
+    callbacks: readonly LLMStreamingCallback[] | null = null,
+    usageInfo: Record<string, unknown> | null = null,
+    lastChunk: unknown = null,
+  ): void {
+    this.handleStreamingCallbacks(callbacks, usageInfo, lastChunk);
+  }
+
+  async invokeStreamingCallbacks(callbacks: readonly LLMStreamingCallback[] | null, chunk: unknown): Promise<void> {
+    if (!callbacks) {
+      return;
+    }
+    for (const callback of callbacks) {
+      if (typeof callback === "function") {
+        await callback(chunk);
+      }
+    }
+  }
+
+  handleNonStreamingResponse(
+    params: Record<string, unknown>,
+    callbacks: readonly LLMStreamingCallback[] | null = null,
+    availableFunctions: Record<string, LLMAvailableFunction> | null = null,
+    fromTask: unknown = null,
+    fromAgent: unknown = null,
+    responseModel: unknown = null,
+  ): unknown {
+    void responseModel;
+    const response = params.response ?? params.rawResponse ?? params.raw_response ?? params;
+    const usage = usageRecordFromChunk(response) ?? usageRecordFromChunk(params);
+    if (usage) {
+      this.trackTokenUsageInternal(usage);
+      this.handleStreamingCallbacks(callbacks, usage, response);
+    }
+
+    const toolCalls = extractToolCallsFromResponse(response);
+    if (toolCalls.length > 0) {
+      if (!availableFunctions || Object.keys(availableFunctions).length === 0) {
+        return toolCalls;
+      }
+      return this.handleToolCall(toolCalls, availableFunctions, fromTask, fromAgent);
+    }
+
+    const textResponse = extractResponseText(response);
+    this.handleEmitCallEvents({
+      response: textResponse,
+      callType: LLMCallType.LLM_CALL,
+      fromTask,
+      fromAgent,
+      messages: messagesFromParams(params),
+      usage: usage ? BaseLLM.usageToDict(usage) : null,
+    });
+    return textResponse;
+  }
+
+  _handle_non_streaming_response(
+    params: Record<string, unknown>,
+    callbacks: readonly LLMStreamingCallback[] | null = null,
+    availableFunctions: Record<string, LLMAvailableFunction> | null = null,
+    fromTask: unknown = null,
+    fromAgent: unknown = null,
+    responseModel: unknown = null,
+  ): unknown {
+    return this.handleNonStreamingResponse(params, callbacks, availableFunctions, fromTask, fromAgent, responseModel);
+  }
+
+  async ahandleNonStreamingResponse(
+    params: Record<string, unknown>,
+    callbacks: readonly LLMStreamingCallback[] | null = null,
+    availableFunctions: Record<string, LLMAvailableFunction> | null = null,
+    fromTask: unknown = null,
+    fromAgent: unknown = null,
+    responseModel: unknown = null,
+  ): Promise<unknown> {
+    return await Promise.resolve(this.handleNonStreamingResponse(params, callbacks, availableFunctions, fromTask, fromAgent, responseModel));
+  }
+
+  async _ahandle_non_streaming_response(
+    params: Record<string, unknown>,
+    callbacks: readonly LLMStreamingCallback[] | null = null,
+    availableFunctions: Record<string, LLMAvailableFunction> | null = null,
+    fromTask: unknown = null,
+    fromAgent: unknown = null,
+    responseModel: unknown = null,
+  ): Promise<unknown> {
+    return await this.ahandleNonStreamingResponse(params, callbacks, availableFunctions, fromTask, fromAgent, responseModel);
+  }
+
+  async ahandleStreamingResponse(
+    params: Record<string, unknown>,
+    callbacks: readonly LLMStreamingCallback[] | null = null,
+    availableFunctions: Record<string, LLMAvailableFunction> | null = null,
+    fromTask: unknown = null,
+    fromAgent: unknown = null,
+    responseModel: unknown = null,
+  ): Promise<unknown> {
+    return await this.handleStreamingResponse(params, callbacks, availableFunctions, fromTask, fromAgent, responseModel);
+  }
+
+  async _ahandle_streaming_response(
+    params: Record<string, unknown>,
+    callbacks: readonly LLMStreamingCallback[] | null = null,
+    availableFunctions: Record<string, LLMAvailableFunction> | null = null,
+    fromTask: unknown = null,
+    fromAgent: unknown = null,
+    responseModel: unknown = null,
+  ): Promise<unknown> {
+    return await this.ahandleStreamingResponse(params, callbacks, availableFunctions, fromTask, fromAgent, responseModel);
   }
 
   getCustomLlmProvider(): string | null {
@@ -2540,6 +2876,174 @@ function parseStructuredOutputJson(response: string, responseFormatName: string)
 
 function validatorName(validator: StructuredOutputValidator): string {
   return validator.name ?? "response_format";
+}
+
+function removeUndefinedValues(record: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(record).filter(([, value]) => value !== null && value !== undefined));
+}
+
+function booleanOrNull(value: unknown): boolean | null {
+  return typeof value === "boolean" ? value : null;
+}
+
+async function* streamingChunksFromParams(params: Record<string, unknown>): AsyncIterable<unknown> {
+  const source = params.chunks ?? params.stream ?? params.response;
+  if (isAsyncIterable(source)) {
+    for await (const chunk of source) {
+      yield chunk;
+    }
+    return;
+  }
+  if (isIterable(source) && typeof source !== "string") {
+    for (const chunk of source) {
+      yield chunk;
+    }
+    return;
+  }
+  if (source !== undefined && source !== null && source !== true && source !== false) {
+    yield source;
+  }
+}
+
+function isAsyncIterable(value: unknown): value is AsyncIterable<unknown> {
+  return value !== null
+    && value !== undefined
+    && typeof (value as { [Symbol.asyncIterator]?: unknown })[Symbol.asyncIterator] === "function";
+}
+
+function streamingChunkContent(chunk: unknown): string | null {
+  const direct = stringPropertyFromRecord(chunk, "content") ?? stringPropertyFromRecord(chunk, "text");
+  if (direct !== null) {
+    return direct;
+  }
+  const record = readLLMRecord(chunk);
+  const deltaContent = stringPropertyFromRecord(record.delta, "content");
+  if (deltaContent !== null) {
+    return deltaContent;
+  }
+  const choices = Array.isArray(record.choices) ? record.choices : [];
+  for (const choice of choices) {
+    const choiceRecord = readLLMRecord(choice);
+    const content = stringPropertyFromRecord(choiceRecord.delta, "content")
+      ?? stringPropertyFromRecord(choiceRecord.message, "content");
+    if (content !== null) {
+      return content;
+    }
+  }
+  return null;
+}
+
+function extractResponseText(response: unknown): string {
+  if (typeof response === "string") {
+    return response;
+  }
+  const direct = stringPropertyFromRecord(response, "content") ?? stringPropertyFromRecord(response, "text");
+  if (direct !== null) {
+    return direct;
+  }
+  const record = readLLMRecord(response);
+  const choices = Array.isArray(record.choices) ? record.choices : [];
+  for (const choice of choices) {
+    const content = stringPropertyFromRecord(readLLMRecord(choice).message, "content")
+      ?? stringPropertyFromRecord(readLLMRecord(choice).delta, "content")
+      ?? stringPropertyFromRecord(choice, "text");
+    if (content !== null) {
+      return content;
+    }
+  }
+  return "";
+}
+
+function extractToolCallsFromResponse(response: unknown): unknown[] {
+  const record = readLLMRecord(response);
+  const direct = record.tool_calls ?? readLLMRecord(record.message).tool_calls;
+  if (Array.isArray(direct)) {
+    return direct;
+  }
+  const choices = Array.isArray(record.choices) ? record.choices : [];
+  const calls: unknown[] = [];
+  for (const choice of choices) {
+    const messageCalls = readLLMRecord(readLLMRecord(choice).message).tool_calls;
+    const deltaCalls = readLLMRecord(readLLMRecord(choice).delta).tool_calls;
+    for (const candidate of [messageCalls, deltaCalls]) {
+      if (Array.isArray(candidate)) {
+        calls.push(...candidate as unknown[]);
+      }
+    }
+  }
+  return calls;
+}
+
+function parseLLMToolCall(toolCall: unknown): { name: string; args: Record<string, unknown> } | null {
+  const record = readLLMRecord(toolCall);
+  const functionRecord = readLLMRecord(record.function);
+  const name = stringPropertyFromRecord(functionRecord, "name") ?? stringPropertyFromRecord(record, "name");
+  if (name === null || name.length === 0) {
+    return null;
+  }
+  return {
+    name,
+    args: parseToolArguments(functionRecord.arguments ?? record.arguments ?? record.args),
+  };
+}
+
+function parseToolArguments(value: unknown): Record<string, unknown> {
+  if (isRecord(value)) {
+    return value;
+  }
+  if (typeof value !== "string" || value.trim().length === 0) {
+    return {};
+  }
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return isRecord(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function usageRecordFromChunk(chunk: unknown): Record<string, unknown> | null {
+  const record = readLLMRecord(chunk);
+  const usage = record.usage ?? readLLMRecord(record.model_extra).usage;
+  return isRecord(usage) ? usage : null;
+}
+
+function messagesFromParams(params: Record<string, unknown>): readonly LLMMessage[] | null {
+  const messages = params.messages;
+  if (!Array.isArray(messages)) {
+    return null;
+  }
+  const normalized: LLMMessage[] = [];
+  for (const message of messages) {
+    const record = readLLMRecord(message);
+    if (isLLMRole(record.role) && typeof record.content === "string") {
+      normalized.push({ role: record.role, content: record.content });
+    }
+  }
+  return normalized;
+}
+
+function stringPropertyFromRecord(value: unknown, key: string): string | null {
+  const record = readLLMRecord(value);
+  const property = record[key];
+  return typeof property === "string" ? property : null;
+}
+
+function invokeUsageCallback(callback: LLMStreamingCallback, usage: Record<string, unknown>): void {
+  if (typeof callback === "function") {
+    return;
+  }
+  if (typeof callback.logSuccessEvent === "function") {
+    void Promise.resolve(callback.logSuccessEvent({
+      kwargs: {},
+      responseObj: { usage },
+      startTime: 0,
+      endTime: 0,
+    }));
+  }
+  if (typeof callback.log_success_event === "function") {
+    void Promise.resolve(callback.log_success_event({}, { usage }, 0, 0));
+  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
