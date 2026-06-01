@@ -751,7 +751,51 @@ export class Crew {
   }
 
   async akickoff(options: KickoffOptions = {}): Promise<CrewOutput> {
-    return await this.kickoff(options);
+    if (this.stream) {
+      return new CrewStreamingOutput(async () => await this.withStreamDisabled(async () => await this.akickoff(options))) as unknown as CrewOutput;
+    }
+    let inputs = { ...(options.inputs ?? {}) };
+    let inputFiles = options.inputFiles ?? options.input_files;
+    const beforeUsage = this.calculateUsageMetrics();
+    this.executionLogs = [];
+    this.taskOutputStorageHandler?.reset();
+    crewaiEventBus.emit(this, new CrewKickoffStartedEvent({ crewName: this.name, inputs }));
+    try {
+      for (const callback of this.beforeKickoffCallbacks) {
+        inputs = { ...(await callback(inputs)) };
+      }
+      const extracted = extractInputFilesFromInputs(inputs);
+      inputs = extracted.inputs;
+      inputFiles = { ...(inputFiles ?? {}), ...extracted.inputFiles };
+      if (this.planning) {
+        await this.handleCrewPlanning();
+      }
+
+      let output: CrewOutput;
+      switch (this.process) {
+        case Process.sequential:
+          output = await this._arun_sequential_process(inputs, inputFiles);
+          break;
+        case Process.hierarchical:
+          output = await this._arun_hierarchical_process(inputs, inputFiles);
+          break;
+        default:
+          throw new Error(`Unsupported crew process: ${String(this.process)}`);
+      }
+      let finalOutput = output;
+      for (const callback of this.afterKickoffCallbacks) {
+        finalOutput = await callback(finalOutput);
+      }
+      finalOutput = this.postKickoff(finalOutput);
+      const usageDelta = subtractUsageMetrics(this.calculateUsageMetrics(), beforeUsage);
+      this.setUsageMetrics(addUsageMetrics(this.usageMetrics, usageDelta));
+      finalOutput = withTokenUsage(finalOutput, usageDelta);
+      crewaiEventBus.emit(this, new CrewKickoffCompletedEvent({ crewName: this.name, output: finalOutput }));
+      return finalOutput;
+    } catch (error) {
+      crewaiEventBus.emit(this, new CrewKickoffFailedEvent({ crewName: this.name, error }));
+      throw error;
+    }
   }
 
   async kickoffForEach(options: KickoffForEachOptions): Promise<CrewOutput[]> {
@@ -972,7 +1016,8 @@ export class Crew {
   }
 
   async arunSequentialProcess(inputs: InputValues = {}, inputFiles?: TaskInputFiles): Promise<CrewOutput> {
-    return await this.runSequentialProcessCompat(inputs, inputFiles);
+    this.validateSequentialTasks();
+    return await this.aexecuteTasks(this.tasks, 0, false, inputs, inputFiles);
   }
 
   async _arun_sequential_process(inputs: InputValues = {}, input_files?: TaskInputFiles): Promise<CrewOutput> {
@@ -988,7 +1033,9 @@ export class Crew {
   }
 
   async arunHierarchicalProcess(inputs: InputValues = {}, inputFiles?: TaskInputFiles): Promise<CrewOutput> {
-    return await this.runHierarchicalProcessCompat(inputs, inputFiles);
+    this.validateHierarchicalProcess();
+    this.getManagerAgent();
+    return await this.aexecuteTasks(this.tasks, 0, false, inputs, inputFiles);
   }
 
   async _arun_hierarchical_process(inputs: InputValues = {}, input_files?: TaskInputFiles): Promise<CrewOutput> {
@@ -1154,8 +1201,9 @@ export class Crew {
     startIndex: number | null = 0,
     wasReplayed = false,
     inputs: InputValues = this.checkpointInputs ?? {},
+    inputFiles?: TaskInputFiles,
   ): Promise<CrewOutput> {
-    return await this.executeTasks(tasks, startIndex, wasReplayed, inputs);
+    return await this.executeTasks(tasks, startIndex, wasReplayed, inputs, inputFiles);
   }
 
   async _aexecute_tasks(
@@ -1213,6 +1261,7 @@ export class Crew {
     startIndex: number | null = 0,
     wasReplayed = false,
     inputs: InputValues = this.checkpointInputs ?? {},
+    inputFiles?: TaskInputFiles,
   ): Promise<CrewOutput> {
     const checkpointStart = this.getExecutionStartIndex(tasks);
     const effectiveStart = checkpointStart ?? startIndex ?? 0;
@@ -1257,6 +1306,10 @@ export class Crew {
             functionCallingLlm: this.functionCallingLlm,
             memory: this.resolvedMemory,
             knowledge: this.knowledge,
+            ...(inputFiles === undefined ? {} : { inputFiles }),
+            ...(this.triggerPayloadForTask(task, taskIndex, inputs) === undefined
+              ? {}
+              : { triggerPayload: this.triggerPayloadForTask(task, taskIndex, inputs) }),
             ...(context === undefined ? {} : { context }),
           }),
         });
@@ -1274,6 +1327,10 @@ export class Crew {
         functionCallingLlm: this.functionCallingLlm,
         memory: this.resolvedMemory,
         knowledge: this.knowledge,
+        ...(inputFiles === undefined ? {} : { inputFiles }),
+        ...(this.triggerPayloadForTask(task, taskIndex, inputs) === undefined
+          ? {}
+          : { triggerPayload: this.triggerPayloadForTask(task, taskIndex, inputs) }),
         ...(context === undefined ? {} : { context }),
       });
       await this.processTaskResult(task, output);

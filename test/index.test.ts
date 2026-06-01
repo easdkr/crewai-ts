@@ -9774,6 +9774,7 @@ describe("core crew runtime", () => {
     const nativeEachOutput = await crewInstance.akickoff_for_each({
       inputs: [{ topic: "D" }],
     });
+    const nativeOutput = await crewInstance.akickoff({ inputs: { topic: "Native" } });
 
     expect(asyncOutput.raw).toContain("Research CrewAI");
     expect(eachOutput.map((output) => output.raw)).toEqual([
@@ -9782,6 +9783,8 @@ describe("core crew runtime", () => {
     ]);
     expect(eachAsyncOutput[0]?.raw).toContain("Research C");
     expect(nativeEachOutput[0]?.raw).toContain("Research D");
+    expect(nativeOutput.raw).toContain("Research Native");
+    expect(nativeOutput.token_usage.successfulRequests).toBe(1);
   });
 
   it("exposes upstream Task lifecycle compatibility methods", async () => {
