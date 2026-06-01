@@ -775,6 +775,7 @@ import {
   extractTaskSection,
   formatMessageForLLM,
   getLlmResponse,
+  handleMaxIterationsExceeded,
   hasReachedMaxIterations,
   summarizeMessages,
   lock,
@@ -5916,6 +5917,54 @@ describe("agent utility helpers", () => {
       clearBeforeLlmCallHooks();
       clearAfterLlmCallHooks();
     }
+  });
+
+  it("requests a final answer when max iterations are exceeded", async () => {
+    const messages: LLMMessage[] = [
+      { role: "user", content: "Research CrewAI" },
+    ];
+    const printerCalls: Array<{ content: string; color?: string }> = [];
+    const previousAction = new AgentAction({
+      thought: "Need search",
+      tool: "Search Tool",
+      toolInput: "{\"query\":\"CrewAI\"}",
+      text: "Thought: Need search\nAction: Search Tool\nAction Input: {\"query\":\"CrewAI\"}",
+    });
+    const result = await handleMaxIterationsExceeded({
+      formattedAnswer: previousAction,
+      printer: {
+        print(message) {
+          printerCalls.push(message);
+        },
+      },
+      messages,
+      llm: {
+        call(callMessages: readonly LLMMessage[], options?: Record<string, unknown>) {
+          expect(options?.callbacks).toEqual(["callback"]);
+          expect(callMessages.at(-1)?.role).toBe("assistant");
+          expect(callMessages.at(-1)?.content).toContain("Now it's time you MUST give your absolute best final answer");
+          return "Thought: done\nFinal Answer: CrewAI final answer";
+        },
+      },
+      callbacks: ["callback"],
+    });
+
+    expect(result).toBeInstanceOf(AgentFinish);
+    expect(result.output).toBe("CrewAI final answer");
+    expect(messages).toHaveLength(2);
+    expect(printerCalls).toEqual([
+      {
+        content: "Maximum iterations reached. Requesting final answer.",
+        color: "yellow",
+      },
+    ]);
+  });
+
+  it("keeps max-iteration fallback behavior when no LLM is provided", () => {
+    const result = handleMaxIterationsExceeded();
+
+    expect(result).toBeInstanceOf(AgentFinish);
+    expect((result as AgentFinish).output).toBe("Agent stopped due to max iterations.");
   });
 
   it("parses ReAct agent output and normalizes string tool calls", async () => {

@@ -1,6 +1,6 @@
 import { generateModelDescription, sanitizeToolParamsForOpenAIStrict, type JsonSchema } from "./schema-utils.js";
 import { sanitizeToolName } from "./string-utils.js";
-import { AgentAction, AgentFinish, OutputParserError } from "./agent-parser.js";
+import { AgentAction, AgentFinish, OutputParserError, parseAgentOutput } from "./agent-parser.js";
 import { BaseTool, ToolResult, type ToolArgsSchema, type ToolArgumentSpec } from "./tools.js";
 import type { LLM, LLMMessage, MaybePromise, Tool, ToolContext } from "./types.js";
 import { AgentRepositoryError } from "./errors.js";
@@ -213,17 +213,141 @@ export function parseTools(tools: readonly Tool[]): Tool[] {
 
 export const parse_tools = parseTools;
 
-export function handleMaxIterationsExceeded(_executor: unknown, _printer: unknown = null): AgentFinish {
-  void _executor;
-  void _printer;
-  return new AgentFinish({
-    thought: "",
-    output: "Agent stopped due to max iterations.",
-    text: "Agent stopped due to max iterations.",
-  });
+export type MaxIterationsPrinter = {
+  print?: (options: { content: string; color?: string }) => void;
+};
+
+export type MaxIterationsLLM = {
+  call?: (messages: readonly LLMMessage[], options?: Record<string, unknown>) => MaybePromise<unknown>;
+};
+
+export type HandleMaxIterationsExceededOptions = {
+  formattedAnswer?: AgentAction | AgentFinish | null | undefined;
+  formatted_answer?: AgentAction | AgentFinish | null | undefined;
+  printer?: MaxIterationsPrinter | null | undefined;
+  messages?: LLMMessage[] | undefined;
+  llm?: MaxIterationsLLM | null | undefined;
+  callbacks?: readonly unknown[] | undefined;
+  verbose?: boolean | undefined;
+};
+
+export function handleMaxIterationsExceeded(options?: HandleMaxIterationsExceededOptions): AgentFinish | Promise<AgentFinish>;
+export function handleMaxIterationsExceeded(
+  formattedAnswer?: AgentAction | AgentFinish | null,
+  printer?: MaxIterationsPrinter | null,
+  messages?: LLMMessage[],
+  llm?: MaxIterationsLLM | null,
+  callbacks?: readonly unknown[],
+  verbose?: boolean,
+): AgentFinish | Promise<AgentFinish>;
+export function handleMaxIterationsExceeded(
+  optionsOrFormattedAnswer: HandleMaxIterationsExceededOptions | AgentAction | AgentFinish | null = null,
+  printer: MaxIterationsPrinter | null = null,
+  messages?: LLMMessage[],
+  llm?: MaxIterationsLLM | null,
+  callbacks: readonly unknown[] = [],
+  verbose = true,
+): AgentFinish | Promise<AgentFinish> {
+  const options: HandleMaxIterationsExceededOptions = isHandleMaxIterationsExceededOptions(optionsOrFormattedAnswer)
+    ? optionsOrFormattedAnswer
+    : {
+      formattedAnswer: optionsOrFormattedAnswer,
+      printer,
+      messages,
+      llm,
+      callbacks,
+      verbose,
+    };
+  const resolvedMessages = options.messages;
+  const resolvedLlm = options.llm;
+  if (!resolvedMessages || !resolvedLlm?.call) {
+    return new AgentFinish({
+      thought: "",
+      output: "Agent stopped due to max iterations.",
+      text: "Agent stopped due to max iterations.",
+    });
+  }
+
+  if (options.verbose ?? true) {
+    options.printer?.print?.({
+      content: "Maximum iterations reached. Requesting final answer.",
+      color: "yellow",
+    });
+  }
+
+  const formattedAnswer = options.formattedAnswer ?? options.formatted_answer ?? null;
+  const assistantMessage = formattedAnswer?.text
+    ? `${formattedAnswer.text}\n${I18N_DEFAULT.errors("force_final_answer")}`
+    : I18N_DEFAULT.errors("force_final_answer");
+  resolvedMessages.push(formatMessageForLLM(assistantMessage, "assistant"));
+
+  const answer = resolvedLlm.call(resolvedMessages, { callbacks: options.callbacks ?? [] });
+  if (isPromiseLike(answer)) {
+    return Promise.resolve(answer).then((resolvedAnswer) => finalizeMaxIterationsAnswer(resolvedAnswer, options));
+  }
+  return finalizeMaxIterationsAnswer(answer, options);
 }
 
 export const handle_max_iterations_exceeded = handleMaxIterationsExceeded;
+
+function isHandleMaxIterationsExceededOptions(value: unknown): value is HandleMaxIterationsExceededOptions {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  return (
+    "messages" in value
+    || "llm" in value
+    || "formattedAnswer" in value
+    || "formatted_answer" in value
+    || "callbacks" in value
+  );
+}
+
+function finalizeMaxIterationsAnswer(
+  answer: unknown,
+  options: Pick<HandleMaxIterationsExceededOptions, "printer" | "verbose">,
+): AgentFinish {
+  if (!answer) {
+    if (options.verbose ?? true) {
+      options.printer?.print?.({
+        content: "Received None or empty response from LLM call.",
+        color: "red",
+      });
+    }
+    throw new Error("Invalid response from LLM call - None or empty.");
+  }
+  const parsed = formatFinalMaxIterationsAnswer(answer);
+  if (parsed instanceof AgentFinish) {
+    return parsed;
+  }
+  return new AgentFinish({
+    thought: parsed.thought,
+    output: parsed.text,
+    text: parsed.text,
+  });
+}
+
+function formatFinalMaxIterationsAnswer(answer: unknown): AgentAction | AgentFinish {
+  if (answer instanceof AgentAction || answer instanceof AgentFinish) {
+    return answer;
+  }
+  const text = typeof answer === "string" ? answer : safeJsonStringify(answer);
+  try {
+    return parseAgentOutput(text);
+  } catch {
+    return new AgentFinish({
+      thought: "Failed to parse LLM response",
+      output: text,
+      text,
+    });
+  }
+}
+
+function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
+  return Boolean(value)
+    && (typeof value === "object" || typeof value === "function")
+    && typeof (value as { then?: unknown }).then === "function";
+}
 
 export function formatAnswer(answer: unknown): string {
   if (answer instanceof AgentFinish) {
