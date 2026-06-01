@@ -10962,6 +10962,18 @@ describe("core crew runtime", () => {
       .toContain("Copied crew knowledge.");
     expect(knowledgeCopy.knowledgeSources).not.toBe(knowledgeCrew.knowledgeSources);
     expect(knowledgeCopy.knowledgeSources[0]).toBe(crewKnowledgeSource);
+
+    const managerLlm = {
+      model: "manager-model",
+      call: () => "manager",
+    };
+    const managerLlmCopy = new Crew({
+      process: Process.hierarchical,
+      tasks: [new Task({ description: "Manage", expectedOutput: "Done" })],
+      managerLlm,
+    }).copy();
+    expect(managerLlmCopy.managerLlm).not.toBe(managerLlm);
+    expect(managerLlmCopy.managerLlm).toMatchObject({ model: "manager-model" });
   });
 
   it("uses previous task outputs as default context when context is unspecified", async () => {

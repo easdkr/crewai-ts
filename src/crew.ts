@@ -1041,7 +1041,7 @@ export class Crew {
       knowledge: copyKnowledge(this.knowledge),
       knowledgeSources: [...this.knowledgeSources],
       managerAgent,
-      managerLlm: this.managerLlm,
+      managerLlm: copyLlm(this.managerLlm),
       functionCallingLlm: this.functionCallingLlm,
       planning: this.planning,
       stream: this.stream,
@@ -2840,6 +2840,14 @@ function copyKnowledge(knowledge: Knowledge | null): Knowledge | null {
   }
   const prototype = Object.getPrototypeOf(knowledge) as object | null;
   return Object.assign(Object.create(prototype) as Knowledge, knowledge);
+}
+
+function copyLlm<T extends LLM | string | null>(llm: T): T {
+  if (!llm || typeof llm !== "object") {
+    return llm;
+  }
+  const prototype = Object.getPrototypeOf(llm) as object | null;
+  return Object.assign(Object.create(prototype), llm) as T;
 }
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
