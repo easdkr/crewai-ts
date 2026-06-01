@@ -245,6 +245,8 @@ import {
   PollingConfig,
   PollingHandler,
   _poll_task_until_complete,
+  _get_default_update_config,
+  _migrate_client_transport_fields,
   PushNotificationConfig,
   PushNotificationHandler,
   _coerce_signature,
@@ -4908,6 +4910,15 @@ describe("a2a utilities", () => {
     expect(client.failFast).toBe(false);
     expect(client.transport.preferred).toBe(A2ATransport.GRPC);
     expect(client.transport.supported).toEqual([A2ATransport.GRPC, A2ATransport.HTTP_JSON]);
+    expect(_get_default_update_config()).toBeInstanceOf(StreamingConfig);
+    const migratedTransport = _migrate_client_transport_fields(
+      transport,
+      A2ATransport.HTTP_JSON,
+      [A2ATransport.HTTP_JSON],
+    );
+    expect(migratedTransport.preferred).toBe(A2ATransport.HTTP_JSON);
+    expect(migratedTransport.supported).toEqual([A2ATransport.HTTP_JSON]);
+    expect(transport.preferred).toBeNull();
     expect(client._migrate_deprecated_transport_fields()).toBe(client);
     expect(client._serialize_response_model({ name: "RemoteResponse" })).toBe("RemoteResponse");
     expect(new A2AClientConfig({ endpoint: "https://remote.example.com/a2a" }).updates).toBeInstanceOf(StreamingConfig);

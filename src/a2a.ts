@@ -158,6 +158,10 @@ export type PushNotificationHandlerKwargs = BaseHandlerKwargs & {
 export type UpdateConfig = PollingConfig | StreamingConfig | PushNotificationConfig;
 export const UpdateConfig = Object.freeze({ kind: "UpdateConfig" });
 
+export function _get_default_update_config(): StreamingConfig {
+  return new StreamingConfig();
+}
+
 export class CommonParams {
   readonly turn_number: number;
   readonly turnNumber: number;
@@ -3318,7 +3322,7 @@ export class A2AClientConfig {
     this.fail_fast = this.failFast;
     this.trustRemoteCompletionStatus = options.trustRemoteCompletionStatus ?? options.trust_remote_completion_status ?? false;
     this.trust_remote_completion_status = this.trustRemoteCompletionStatus;
-    this.updates = options.updates ?? new StreamingConfig();
+    this.updates = options.updates ?? _get_default_update_config();
     this.acceptedOutputModes = [...(options.acceptedOutputModes ?? options.accepted_output_modes ?? ["application/json"])];
     this.accepted_output_modes = this.acceptedOutputModes;
     this.extensions = [...(options.extensions ?? [])];
@@ -5496,6 +5500,14 @@ function migrateClientTransport(
     jsonrpc: transport.jsonrpc,
     grpc: transport.grpc,
   });
+}
+
+export function _migrate_client_transport_fields(
+  transport: ClientTransportConfig,
+  transport_protocol: A2ATransportProtocol | null,
+  supported_transports: readonly A2ATransportProtocol[] | null,
+): ClientTransportConfig {
+  return migrateClientTransport(transport, transport_protocol, supported_transports);
 }
 
 function validateUrl(value: string): string {
