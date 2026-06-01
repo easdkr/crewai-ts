@@ -11,6 +11,8 @@ import {
   isToolCallList,
 } from "./agent-utils.js";
 import { Converter } from "./converter.js";
+import { get_provider } from "./human-input.js";
+import { I18N_DEFAULT } from "./i18n.js";
 import { UsageMetrics, type LLMResponse } from "./llm.js";
 import { StepExecutionContext, StepResult } from "./step-execution-context.js";
 import { sanitizeToolName } from "./tools.js";
@@ -289,9 +291,19 @@ export type BaseAgentExecutorOptions = {
   agent?: Agent | null;
   task?: unknown;
   tools?: readonly Tool[];
+  originalTools?: readonly Tool[];
+  original_tools?: readonly Tool[];
   maxIter?: number;
   max_iter?: number;
   messages?: readonly LLMMessage[];
+  llm?: unknown;
+  prompt?: Record<string, string> | null;
+  toolsNames?: string;
+  tools_names?: string;
+  toolsDescription?: string;
+  tools_description?: string;
+  stop?: readonly string[];
+  stop_words?: readonly string[];
 };
 
 export class BaseAgentExecutor {
@@ -883,12 +895,43 @@ export class AgentExecutor extends BaseAgentExecutor {
 export class CrewAgentExecutorFlow extends AgentExecutor {}
 
 export class CrewAgentExecutor extends BaseAgentExecutor {
+  readonly llm: unknown;
+  readonly prompt: Record<string, string> | null;
+  readonly originalTools: readonly Tool[];
+  readonly original_tools: readonly Tool[];
+  readonly toolsNames: string;
+  readonly tools_names: string;
+  readonly toolsDescription: string;
+  readonly tools_description: string;
+  readonly stop: readonly string[];
+  askForHumanInput = false;
+  ask_for_human_input = false;
+
   constructor(options: BaseAgentExecutorOptions = {}) {
     super(options);
+    this.llm = options.llm ?? this.agent?.llm ?? null;
+    this.prompt = options.prompt ?? null;
+    this.originalTools = options.originalTools ?? options.original_tools ?? this.tools;
+    this.original_tools = this.originalTools;
+    this.toolsNames = options.toolsNames ?? options.tools_names ?? this.tools.map((tool) => sanitizeToolName(tool.name)).join(", ");
+    this.tools_names = this.toolsNames;
+    this.toolsDescription = options.toolsDescription ?? options.tools_description ?? this.tools.map((tool) => tool.description ?? "").join("\n");
+    this.tools_description = this.toolsDescription;
+    this.stop = options.stop ?? options.stop_words ?? [];
     Object.defineProperties(this, {
       executorType: { value: "crew", enumerable: true },
       executor_type: { value: "crew", enumerable: true },
     });
+  }
+
+  get use_stop_words(): boolean {
+    const llm = this.llm;
+    if (!llm || typeof llm !== "object") {
+      return false;
+    }
+    const record = llm as { supportsStopWords?: unknown; supports_stop_words?: unknown };
+    const supports = record.supportsStopWords ?? record.supports_stop_words;
+    return typeof supports === "function" ? Boolean((supports as () => unknown).call(llm)) : false;
   }
 
   invoke(input: string | readonly LLMMessage[] = ""): MaybePromise<unknown> {
@@ -896,6 +939,63 @@ export class CrewAgentExecutor extends BaseAgentExecutor {
       return this.agent.kickoff(input, { task: this.task } satisfies AgentExecutionOptions);
     }
     return super.invoke(input);
+  }
+
+  async ainvoke(input: string | readonly LLMMessage[] | Record<string, unknown> = ""): Promise<unknown> {
+    if (typeof input === "object" && !Array.isArray(input) && "input" in input) {
+      this.messages = [];
+      this.iterations = 0;
+      this._setup_messages(input);
+      await this._ainject_multimodal_files(input);
+      const result = await this._ainvoke_loop();
+      return { output: result.output };
+    }
+    return await Promise.resolve(this.invoke(input as string | readonly LLMMessage[]));
+  }
+
+  _setup_messages(inputs: Record<string, unknown>): void {
+    const provider = get_provider();
+    const setupMessages = provider.setupMessages ?? provider.setup_messages;
+    if (typeof setupMessages === "function" && setupMessages.call(provider, this)) {
+      return;
+    }
+
+    if (this.prompt && "system" in this.prompt) {
+      this.messages.push(formatMessageForLLM(this._format_prompt(this.prompt.system, inputs), "system"));
+      this.messages.push(formatMessageForLLM(this._format_prompt(this.prompt.user ?? "", inputs), "user"));
+    } else if (this.prompt) {
+      this.messages.push(formatMessageForLLM(this._format_prompt(this.prompt.prompt ?? "", inputs), "user"));
+    }
+
+    const postSetupMessages = provider.postSetupMessages ?? provider.post_setup_messages;
+    if (typeof postSetupMessages === "function") {
+      postSetupMessages.call(provider, this);
+    }
+  }
+
+  static _format_prompt(prompt: string, inputs: Record<string, unknown>): string {
+    return prompt
+      .replaceAll("{input}", stringifyCrewExecutorValue(inputs.input))
+      .replaceAll("{tool_names}", stringifyCrewExecutorValue(inputs.tool_names ?? inputs.tools_names ?? inputs.toolNames ?? ""))
+      .replaceAll("{tools}", stringifyCrewExecutorValue(inputs.tools ?? ""));
+  }
+
+  _format_prompt(prompt: string, inputs: Record<string, unknown>): string {
+    return CrewAgentExecutor._format_prompt(prompt, inputs);
+  }
+
+  _invoke_loop(): MaybePromise<AgentFinish> {
+    const llm = this.llm as { supportsFunctionCalling?: unknown; supports_function_calling?: unknown } | null;
+    const supportsFunctionCalling = llm?.supportsFunctionCalling ?? llm?.supports_function_calling;
+    const useNativeTools = typeof supportsFunctionCalling === "function"
+      && Boolean((supportsFunctionCalling as () => unknown).call(this.llm))
+      && this.originalTools.length > 0;
+    return useNativeTools ? this._invoke_loop_native_tools() : this._invoke_loop_react();
+  }
+
+  async _ainvoke_loop(): Promise<AgentFinish> {
+    const result = await this._invoke_loop();
+    return result;
   }
 
   _invoke_loop_react(): AgentFinish {
@@ -944,9 +1044,32 @@ export class CrewAgentExecutor extends BaseAgentExecutor {
     return this._invoke_loop_native_no_tools();
   }
 
+  _is_tool_call_list(response: readonly unknown[]): boolean {
+    return isToolCallList(response);
+  }
+
+  _handle_human_feedback(formattedAnswer: AgentFinish): AgentFinish {
+    const result = (get_provider().handleFeedback ?? get_provider().handle_feedback)?.call(get_provider(), formattedAnswer, this) ?? formattedAnswer;
+    return result instanceof AgentFinish ? result : formattedAnswer;
+  }
+
   async _ahandle_human_feedback(formattedAnswer: AgentFinish): Promise<AgentFinish> {
-    await Promise.resolve();
-    return formattedAnswer;
+    const provider = get_provider();
+    const handler = provider.handleFeedbackAsync ?? provider.handle_feedback_async;
+    if (!handler) {
+      return formattedAnswer;
+    }
+    const result = await handler.call(provider, formattedAnswer, this);
+    return result instanceof AgentFinish ? result : formattedAnswer;
+  }
+
+  _is_training_mode(): boolean {
+    const crew = this.crew as { _train?: unknown } | null;
+    return Boolean(crew?._train);
+  }
+
+  _format_feedback_message(feedback: string): LLMMessage {
+    return formatMessageForLLM(I18N_DEFAULT.slice("feedback_instructions").replace("{feedback}", feedback), "user");
   }
 
   _inject_multimodal_files(inputs: { files?: Record<string, unknown> } | null = null): void {
@@ -1046,6 +1169,43 @@ export class CrewAgentExecutor extends BaseAgentExecutor {
     return null;
   }
 
+  async _execute_single_native_tool_call(options: {
+    callId?: string;
+    call_id?: string;
+    funcName?: string;
+    func_name?: string;
+    funcArgs?: string | Record<string, unknown>;
+    func_args?: string | Record<string, unknown>;
+    availableFunctions?: Record<string, (input?: unknown) => MaybePromise<unknown>>;
+    available_functions?: Record<string, (input?: unknown) => MaybePromise<unknown>>;
+    originalTool?: Tool | null;
+    original_tool?: Tool | null;
+    shouldExecute?: boolean;
+    should_execute?: boolean;
+  }): Promise<Record<string, unknown>> {
+    const callId = options.callId ?? options.call_id ?? "call";
+    const funcName = options.funcName ?? options.func_name ?? "";
+    const funcArgs = options.funcArgs ?? options.func_args ?? {};
+    const availableFunctions = options.availableFunctions ?? options.available_functions ?? {};
+    const originalTool = options.originalTool ?? options.original_tool ?? this.tools.find((tool) => sanitizeToolName(tool.name) === sanitizeToolName(funcName)) ?? null;
+    const shouldExecute = options.shouldExecute ?? options.should_execute ?? true;
+    if (!shouldExecute) {
+      return { call_id: callId, func_name: funcName, result: `Tool '${funcName}' has reached its usage limit and cannot be used anymore.`, from_cache: false, original_tool: originalTool };
+    }
+    const args = typeof funcArgs === "string" ? parseNativeCrewArgs(funcArgs) : funcArgs;
+    const fn = availableFunctions[funcName] ?? availableFunctions[sanitizeToolName(funcName)];
+    const rawResult = typeof fn === "function"
+      ? await fn(args)
+      : await originalTool?.run(args);
+    return {
+      call_id: callId,
+      func_name: funcName,
+      result: stringifyCrewExecutorValue(rawResult ?? "Tool not found"),
+      from_cache: false,
+      original_tool: originalTool,
+    };
+  }
+
   _invoke_step_callback(formattedAnswer: AgentAction | AgentFinish): void {
     const callback = (this.agent?.stepCallback ?? this.agent?.step_callback ?? null) as ((value: AgentAction | AgentFinish) => unknown) | null;
     const result = callback?.(formattedAnswer);
@@ -1059,6 +1219,31 @@ export class CrewAgentExecutor extends BaseAgentExecutor {
     const result = callback?.(formattedAnswer);
     if (result && typeof result === "object" && "then" in result) {
       await (result as PromiseLike<unknown>);
+    }
+  }
+
+  _append_message(text: string, role: "user" | "assistant" | "system" = "assistant"): void {
+    this.messages.push(formatMessageForLLM(text, role));
+  }
+
+  _handle_agent_action(formattedAnswer: AgentAction, toolResult: { result?: unknown; result_as_answer?: boolean; resultAsAnswer?: boolean }): AgentAction | AgentFinish {
+    const result = stringifyCrewExecutorValue(toolResult.result);
+    this.messages.push(formatMessageForLLM(result, "assistant"));
+    if (toolResult.result_as_answer || toolResult.resultAsAnswer) {
+      return new AgentFinish({ thought: "Tool result is the final answer", output: result, text: result });
+    }
+    return formattedAnswer;
+  }
+
+  _show_logs(_formattedAnswer: AgentAction | AgentFinish): void {
+    void _formattedAnswer;
+  }
+
+  _handle_crew_training_output(result: unknown, humanFeedback: string | null = null): void {
+    const crew = this.crew as { trainingOutputs?: unknown[]; training_outputs?: unknown[] } | null;
+    const outputs = crew?.trainingOutputs ?? crew?.training_outputs;
+    if (Array.isArray(outputs)) {
+      outputs.push({ result: result instanceof AgentFinish ? result.output : result, human_feedback: humanFeedback });
     }
   }
 

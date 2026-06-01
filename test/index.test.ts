@@ -180,6 +180,8 @@ import {
   HTTPDigestAuth,
   HumanFeedbackPending,
   SyncHumanInputProvider,
+  reset_provider,
+  set_provider,
   _async_readline,
   InvalidParamsError,
   InMemoryToolCache,
@@ -10052,18 +10054,50 @@ describe("core crew runtime", () => {
       agent: agentInstance,
       task: { description: "Research CrewAI" },
       tools: [finalTool],
+      llm: { supportsStopWords: () => true, supportsFunctionCalling: () => true },
+      prompt: {
+        system: "System {input}",
+        user: "User {tools} {tool_names}",
+      },
+      tools_description: "Final Tool: returns the final answer",
       messages: [{ role: "user", content: "Use files" }],
     });
 
+    executor._setup_messages({
+      input: "Research CrewAI",
+      tools: "Final Tool: returns the final answer",
+      tool_names: "final_tool",
+    });
+    expect(executor.messages.at(-2)).toMatchObject({ role: "system", content: "System Research CrewAI" });
+    expect(executor.messages.at(-1)).toMatchObject({ role: "user", content: "User Final Tool: returns the final answer final_tool" });
+    expect(CrewAgentExecutor._format_prompt("{input}:{tools}:{tool_names}", {
+      input: "task",
+      tools: "tool description",
+      tool_names: "tool_name",
+    })).toBe("task:tool description:tool_name");
+    expect(executor.use_stop_words).toBe(true);
+
     executor._inject_multimodal_files({ files: { notes: "notes.txt" } });
-    expect((executor.messages[0] as LLMMessage & { files?: Record<string, unknown> }).files).toEqual({ notes: "notes.txt" });
+    expect((executor.messages.at(-1) as LLMMessage & { files?: Record<string, unknown> }).files).toEqual({ notes: "notes.txt" });
     await executor._ainject_multimodal_files({ files: { image: "chart.png" } });
-    expect((executor.messages[0] as LLMMessage & { files?: Record<string, unknown> }).files).toEqual({ image: "chart.png" });
+    expect((executor.messages.at(-1) as LLMMessage & { files?: Record<string, unknown> }).files).toEqual({ image: "chart.png" });
 
     expect(executor._parse_native_tool_call({
       id: "call-1",
       function: { name: "Final Tool", arguments: "{\"topic\":\"CrewAI\"}" },
     })).toEqual(["call-1", "final_tool", { topic: "CrewAI" }]);
+    expect(executor._is_tool_call_list([{ function: { name: "Final Tool", arguments: "{}" } }])).toBe(true);
+    await expect(executor._execute_single_native_tool_call({
+      call_id: "call-direct",
+      func_name: "final_tool",
+      func_args: "{\"topic\":\"Direct\"}",
+      available_functions: { final_tool: (args) => finalTool.run(args as Record<string, unknown>) },
+    })).resolves.toMatchObject({
+      call_id: "call-direct",
+      func_name: "final_tool",
+      result: "final:Direct",
+      from_cache: false,
+    });
     const finish = await executor._handle_native_tool_calls([{
       id: "call-1",
       function: { name: "Final Tool", arguments: "{\"topic\":\"CrewAI\"}" },
@@ -10088,7 +10122,32 @@ describe("core crew runtime", () => {
     await expect(executor._ainvoke_loop_native_tools()).resolves.toBeInstanceOf(AgentFinish);
     expect(executor._invoke_loop_native_no_tools()).toBeInstanceOf(AgentFinish);
     await expect(executor._ainvoke_loop_native_no_tools()).resolves.toBeInstanceOf(AgentFinish);
-    await expect(executor._ahandle_human_feedback(answer)).resolves.toBe(answer);
+    await expect(executor._ainvoke_loop()).resolves.toBeInstanceOf(AgentFinish);
+    expect(executor._format_feedback_message("Add citations").content).toContain("User feedback: Add citations");
+    const trainingOutputs: unknown[] = [];
+    const trainingExecutor = new CrewAgentExecutor({ crew: { _train: true, training_outputs: trainingOutputs } as unknown as Crew });
+    expect(trainingExecutor._is_training_mode()).toBe(true);
+    trainingExecutor._handle_crew_training_output(answer, "Needs citations");
+    expect(trainingOutputs).toEqual([{ result: "ok", human_feedback: "Needs citations" }]);
+    await expect(executor.ainvoke({ input: "Async prompt" })).resolves.toHaveProperty("output");
+
+    class TestProvider extends SyncHumanInputProvider {
+      override handleFeedback(formattedAnswer: unknown): unknown {
+        return formattedAnswer;
+      }
+
+      override async handleFeedbackAsync(formattedAnswer: unknown): Promise<unknown> {
+        await Promise.resolve();
+        return formattedAnswer;
+      }
+    }
+    const previousProvider = set_provider(new TestProvider());
+    try {
+      expect(executor._handle_human_feedback(answer)).toBe(answer);
+      await expect(executor._ahandle_human_feedback(answer)).resolves.toBe(answer);
+    } finally {
+      reset_provider(previousProvider);
+    }
   });
 
   it("exposes upstream StepExecutor execute alias for todo items", async () => {
