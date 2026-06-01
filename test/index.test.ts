@@ -542,6 +542,7 @@ import {
   AgentEvaluator,
   CrewEvaluator,
   CrewTrainingHandler,
+  TRAINING_DATA_FILE,
   CrewTestResultEvent,
   Converter,
   ConverterError,
@@ -7987,10 +7988,16 @@ describe("crew execution utilities", () => {
     expect(crewFromConfig.tasks[0]?.description).toBe("Research CrewAI");
 
     const trainingFile = join(mkdtempSync(join(tmpdir(), "crewai-ts-crew-training-helper-")), "training.json");
-    await crewFromConfig._setup_for_training(trainingFile);
-    expect(readFileSync(trainingFile, "utf8")).toBe("");
-    expect(crewFromConfig.tasks.every((task) => task.human_input)).toBe(true);
-    expect(crewFromConfig.agents.some((agent) => agent.allow_delegation)).toBe(false);
+    try {
+      rmSync(TRAINING_DATA_FILE, { force: true });
+      await crewFromConfig._setup_for_training(trainingFile);
+      expect(readFileSync(trainingFile, "utf8")).toBe("");
+      expect(readFileSync(TRAINING_DATA_FILE, "utf8")).toBe("");
+      expect(crewFromConfig.tasks.every((task) => task.human_input)).toBe(true);
+      expect(crewFromConfig.agents.some((agent) => agent.allow_delegation)).toBe(false);
+    } finally {
+      rmSync(TRAINING_DATA_FILE, { force: true });
+    }
 
     const worker = new Agent({
       role: "Worker",

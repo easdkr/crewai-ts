@@ -30,6 +30,7 @@ import { coerceSecurityConfig, type Fingerprint, type SecurityConfig } from "./s
 import { Skill, activateSkill, discoverSkills, resolveRegistryRef } from "./skills.js";
 import { coerceCheckpointConfig, RuntimeState, type CheckpointConfig, type CheckpointOption } from "./state.js";
 import { CrewStreamingOutput } from "./streaming.js";
+import { TRAINING_DATA_FILE } from "./settings.js";
 import { ConditionalTask, Task, type TaskInputFiles } from "./task.js";
 import { TaskOutputStorageHandler, type StoredTaskOutput } from "./task-output-storage.js";
 import { BaseTool, CacheHandler, StructuredTool, sanitizeToolName } from "./tools.js";
@@ -1232,8 +1233,8 @@ export class Crew {
       (agent as unknown as { allowDelegation: boolean; allow_delegation: boolean }).allowDelegation = false;
       (agent as unknown as { allow_delegation: boolean }).allow_delegation = false;
     }
-    await mkdir(dirname(filename), { recursive: true });
-    await writeFile(filename, "", { flag: "a" });
+    await initializeTrainingFile(TRAINING_DATA_FILE);
+    await initializeTrainingFile(filename);
   }
 
   async _setup_for_training(filename: string): Promise<void> {
@@ -2832,6 +2833,11 @@ function bindMemoryView(value: unknown, backing: Memory): void {
   if (typeof bind === "function") {
     bind.call(value, backing);
   }
+}
+
+async function initializeTrainingFile(filename: string): Promise<void> {
+  await mkdir(dirname(filename), { recursive: true });
+  await writeFile(filename, "", { flag: "a" });
 }
 
 function copyKnowledge(knowledge: Knowledge | null): Knowledge | null {
