@@ -40,6 +40,11 @@ export type MemoryRecordOptions = {
   embedding?: readonly number[] | null;
 };
 
+export type MemoryRecordJSON = Omit<MemoryRecordOptions, "embedding" | "lastAccessed" | "last_accessed"> & {
+  lastAccessed?: Date;
+  last_accessed?: Date;
+};
+
 export class MemoryRecord {
   readonly id: string;
   readonly content: string;
@@ -71,6 +76,26 @@ export class MemoryRecord {
     this.lastAccessed = lastAccessed;
     this.last_accessed = lastAccessed;
     this.embedding = options.embedding ?? null;
+  }
+
+  toJSON(): MemoryRecordJSON {
+    const serialized: MemoryRecordJSON = {
+      id: this.id,
+      content: this.content,
+      scope: this.scope,
+      categories: this.categories,
+      metadata: this.metadata,
+      importance: this.importance,
+      source: this.source,
+      private: this.private,
+      createdAt: this.createdAt,
+      created_at: this.createdAt,
+    };
+    if (this.lastAccessed) {
+      serialized.lastAccessed = this.lastAccessed;
+      serialized.last_accessed = this.lastAccessed;
+    }
+    return serialized;
   }
 }
 
@@ -111,6 +136,24 @@ export class MemoryMatch {
       }
     }
     return lines.join("\n");
+  }
+
+  toJSON(): {
+    record: ReturnType<MemoryRecord["toJSON"]>;
+    score: number;
+    matchReasons: readonly string[];
+    match_reasons: readonly string[];
+    evidenceGaps: readonly string[];
+    evidence_gaps: readonly string[];
+  } {
+    return {
+      record: this.record.toJSON(),
+      score: this.score,
+      matchReasons: this.matchReasons,
+      match_reasons: this.matchReasons,
+      evidenceGaps: this.evidenceGaps,
+      evidence_gaps: this.evidenceGaps,
+    };
   }
 }
 

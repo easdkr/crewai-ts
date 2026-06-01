@@ -298,6 +298,7 @@ import {
   Memory,
   MemoryAnalysis,
   MemoryConfig,
+  MemoryMatch,
   MemoryRecord,
   MemoryScope,
   MemorySlice,
@@ -25408,6 +25409,24 @@ describe("events", () => {
 });
 
 describe("memory", () => {
+  it("excludes memory embeddings from default serialization", () => {
+    const record = new MemoryRecord({
+      content: "Serialized memory",
+      embedding: [0.1, 0.2, 0.3],
+    });
+    const match = new MemoryMatch({
+      record,
+      score: 0.9,
+      matchReasons: ["semantic"],
+    });
+
+    expect(record.embedding).toEqual([0.1, 0.2, 0.3]);
+    expect(record.toJSON()).not.toHaveProperty("embedding");
+    expect(JSON.stringify(record)).not.toContain("embedding");
+    expect(match.toJSON().record).not.toHaveProperty("embedding");
+    expect(JSON.stringify(match)).not.toContain("embedding");
+  });
+
   it.each([
     ["StorageBackend", () => new StorageBackend({ vectorDim: 3 })],
     ["QdrantEdgeStorage", () => new QdrantEdgeStorage({ vectorDim: 3 })],

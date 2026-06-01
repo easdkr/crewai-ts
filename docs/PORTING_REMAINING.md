@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 794 passing tests.
+- Test suite: 795 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -385,7 +385,7 @@ When more goal budget is available, continue from the behavioral parity audits b
   - `StreamingOutputBase` now exposes upstream-style `__aenter__` / `__aexit__` async context-manager aliases that close/cancel unfinished streams.
   - `StreamChunk.__str__` and `StreamingOutputBase.__iter__` now mirror upstream string and sync-iteration helpers.
   - `InternalInstructor.to_pydantic` now exposes upstream-style structured conversion through a provided synchronous LLM client and model validation/dump hooks.
-  - `Task._export_output` / `_aexport_output` now preserve already-converted structured output model instances instead of re-validating or calling class-style models as raw-output converters.
+- `Task._export_output` / `_aexport_output` now preserve already-converted structured output model instances instead of re-validating or calling class-style models as raw-output converters.
 - Added knowledge compatibility behavior:
   - `Knowledge` now accepts storage-backed configuration and exposes upstream-style `add_sources`, `aadd_sources`, `aquery`, and `areset` helpers while preserving the in-memory deterministic path.
   - Knowledge sources now expose upstream-style `add`, `aadd`, `validate_content`, and `get_embeddings` helpers and can save their chunks through configured storage.
@@ -395,6 +395,7 @@ When more goal budget is available, continue from the behavioral parity audits b
   - File-backed knowledge sources now expose upstream-style `_load_content` and `_process_file_paths` helper aliases used by PDF/Excel/Text/JSON/CSV source implementations.
   - `StringKnowledgeSource` and file-backed text sources now expose upstream-style `source_type`, `model_post_init`, and `_chunk_text` helpers where applicable.
   - `extractKnowledgeContext` / `extract_knowledge_context` now filter empty, null, missing-content, and non-object search results before building upstream-style additional-information context.
+- `MemoryRecord` and `MemoryMatch` default JSON serialization now excludes embedding vectors while preserving embeddings for vector search, matching upstream's token-saving memory serialization boundary.
 - Added tool compatibility behavior:
   - `BaseTool` / `StructuredTool` now expose upstream-style `tool_type`, `model_post_init`, `validate_max_usage_count`, and `from_langchain` helpers.
   - `ToolUsage` now exposes upstream-style `on_tool_error` and `on_tool_use_finished` event helpers, including snake_case event payload aliases and fingerprint metadata passthrough.
