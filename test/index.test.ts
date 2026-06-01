@@ -12993,6 +12993,41 @@ describe("flow runtime", () => {
     }
   });
 
+  it("injects crewai_trigger_payload into start methods that accept it", async () => {
+    class TriggerPayloadFlow extends Flow<{ seen?: unknown }> {
+      begin(crewai_trigger_payload: unknown) {
+        this.state.seen = crewai_trigger_payload;
+        return crewai_trigger_payload;
+      }
+    }
+
+    decorateMethod(TriggerPayloadFlow, "begin", start() as unknown as Decorator).call(TriggerPayloadFlow.prototype);
+    const flow = new TriggerPayloadFlow();
+    const payload = { source: "webhook", id: "trigger-1" };
+
+    await expect(flow.kickoff({ inputs: { crewai_trigger_payload: payload, ignored: "input" } })).resolves.toBe(payload);
+    expect(flow.state.seen).toBe(payload);
+  });
+
+  it("exposes upstream Flow tracing disabled helper", () => {
+    const previous = process.env.CREWAI_TRACING_DISABLED_MESSAGE_SHOWN;
+    delete process.env.CREWAI_TRACING_DISABLED_MESSAGE_SHOWN;
+    const infoSpy = vi.spyOn(console, "info").mockImplementation(() => {});
+    try {
+      Flow._show_tracing_disabled_message();
+      Flow._show_tracing_disabled_message();
+      expect(infoSpy).toHaveBeenCalledTimes(1);
+      expect(infoSpy.mock.calls[0]?.[0]).toContain("Info: Tracing is disabled.");
+    } finally {
+      infoSpy.mockRestore();
+      if (previous === undefined) {
+        delete process.env.CREWAI_TRACING_DISABLED_MESSAGE_SHOWN;
+      } else {
+        process.env.CREWAI_TRACING_DISABLED_MESSAGE_SHOWN = previous;
+      }
+    }
+  });
+
   it("supports routers plus and/or flow conditions", async () => {
     class RoutingFlow extends Flow<{ events: string[] }> {
       constructor() {

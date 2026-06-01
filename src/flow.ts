@@ -33,6 +33,7 @@ import {
 import type { CrewOutput } from "./outputs.js";
 import { FlowStreamingOutput } from "./streaming.js";
 import { CheckpointConfig, coerceCheckpointConfig, RuntimeState, type CheckpointOption } from "./state.js";
+import { hasUserDeclinedTracing, shouldSuppressTracingMessages } from "./tracing-utils.js";
 import type { InputValues, MaybePromise } from "./types.js";
 import { _dotted_path_to_instance, _instance_to_dotted_path } from "./utilities.js";
 import { renderInteractive } from "./flow-visualization.js";
@@ -993,7 +994,25 @@ export class Flow<TState extends object = Record<string, unknown>> {
   }
 
   _injectTriggerPayloadForStartMethod<TMethod extends (...args: unknown[]) => MaybePromise<unknown>>(originalMethod: TMethod): TMethod {
-    const enhanced = originalMethod.bind(this) as TMethod;
+    const parameterNames = extractFunctionParameterNames(originalMethod.toString());
+    const acceptsTriggerPayload = parameterNames.includes("crewai_trigger_payload");
+    const enhanced = ((...args: Parameters<TMethod>): ReturnType<TMethod> => {
+      if (!acceptsTriggerPayload) {
+        return originalMethod.apply(this, args) as ReturnType<TMethod>;
+      }
+      const triggerPayload = this.lastInputs.crewai_trigger_payload;
+      if (triggerPayload === undefined || triggerPayload === null) {
+        return originalMethod.apply(this, args) as ReturnType<TMethod>;
+      }
+      if (args.length === 0) {
+        return originalMethod.call(this, triggerPayload) as ReturnType<TMethod>;
+      }
+      const [firstArg, ...remainingArgs] = args;
+      if (isRecord(firstArg) && Object.hasOwn(firstArg, "crewai_trigger_payload")) {
+        return originalMethod.apply(this, [triggerPayload, ...remainingArgs]) as ReturnType<TMethod>;
+      }
+      return originalMethod.apply(this, args) as ReturnType<TMethod>;
+    }) as TMethod;
     Object.defineProperty(enhanced, "name", { value: originalMethod.name, configurable: true });
     return enhanced;
   }
@@ -1477,6 +1496,27 @@ export class Flow<TState extends object = Record<string, unknown>> {
     return renderInteractive(buildFlowStructure(this), filename, show);
   }
 
+  static showTracingDisabledMessage(): void {
+    if (shouldSuppressTracingMessages()) {
+      return;
+    }
+    if (process.env.CREWAI_TRACING_DISABLED_MESSAGE_SHOWN === "1") {
+      return;
+    }
+    process.env.CREWAI_TRACING_DISABLED_MESSAGE_SHOWN = "1";
+    const declinedHint = hasUserDeclinedTracing() ? "\nTracing was previously declined for this user." : "";
+    console.info([
+      "Info: Tracing is disabled.",
+      "",
+      "To enable tracing, set tracing=True in your Flow code, set CREWAI_TRACING_ENABLED=true, or run `crewai traces enable`.",
+      declinedHint,
+    ].filter((line) => line.length > 0).join("\n"));
+  }
+
+  static _show_tracing_disabled_message(): void {
+    Flow.showTracingDisabledMessage();
+  }
+
   async akickoff(
     optionsOrInputs: FlowKickoffOptions | InputValues | null = {},
     inputFiles: InputFiles | null = null,
@@ -1857,7 +1897,9 @@ export class Flow<TState extends object = Record<string, unknown>> {
       flowMethodName: name,
     });
     try {
-      const flowMethod = method as (...args: unknown[]) => MaybePromise<unknown>;
+      const flowMethod = this.isStartMethod(name)
+        ? this._injectTriggerPayloadForStartMethod(method as (...args: unknown[]) => MaybePromise<unknown>)
+        : method as (...args: unknown[]) => MaybePromise<unknown>;
       const result: unknown = await flowMethod.call(this, input);
       crewaiEventBus.emit(this, new MethodExecutionFinishedEvent({
         flowName,
@@ -2137,6 +2179,10 @@ export class Flow<TState extends object = Record<string, unknown>> {
 
   private flowPersistenceId(): string {
     return flowStateId(this.state) ?? this.flowName();
+  }
+
+  private isStartMethod(methodName: string): boolean {
+    return getFlowMetadata(this).some((entry) => entry.kind === "start" && String(entry.name) === methodName);
   }
 
   private isRouterOutput(
