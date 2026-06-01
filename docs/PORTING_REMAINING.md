@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 769 passing tests.
+- Test suite: 771 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -440,6 +440,7 @@ When more goal budget is available, continue from the behavioral parity audits b
 - Added security compatibility behavior:
   - `Fingerprint` now exposes the upstream-style `__str__` alias for UUID string conversion.
   - `SecurityConfig.validate_fingerprint` now exposes upstream-style fingerprint coercion for null, seed strings, dicts, and `Fingerprint` instances.
+  - `Fingerprint` and `SecurityConfig` now pin upstream lifecycle behavior for direct UUID/timestamp construction, lazy invalid-UUID validation, metadata mutation, direct fingerprint replacement, and JSON round-trips.
 - Added guardrail compatibility behavior:
   - `GuardrailResult.validate_result_error_exclusivity` now exposes the upstream validator helper for result/error mutual exclusivity.
   - `LLMGuardrail.__call__` and `HallucinationGuardrail.__call__` now mirror upstream direct guardrail invocation while preserving the existing `call`/`asGuardrail` helpers.

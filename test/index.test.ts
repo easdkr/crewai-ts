@@ -27282,6 +27282,39 @@ describe("security fingerprints", () => {
     expect(restored.__hash__()).toBe(seeded.__hash__());
   });
 
+  it("mirrors upstream fingerprint lifecycle edge behavior", () => {
+    const suppliedUuid = "b723c6ff-95de-5e87-860b-467b72282bd8";
+    const suppliedCreatedAt = new Date(Date.now() - 86_400_000);
+    const directOptions = {
+      uuid_str: suppliedUuid,
+      created_at: suppliedCreatedAt,
+      metadata: { version: "1.0", status: "draft" },
+    };
+    const direct = new Fingerprint(directOptions);
+
+    expect(direct.uuid_str).not.toBe(suppliedUuid);
+    expect(direct.created_at.getTime()).toBeGreaterThan(suppliedCreatedAt.getTime());
+    expect(direct.uuid).toBe(direct.uuid_str);
+
+    const invalid = Fingerprint.from_dict({
+      uuid_str: "not-a-valid-uuid",
+      created_at: "2026-06-01T00:00:00.000Z",
+      metadata: {},
+    });
+    expect(invalid.uuid_str).toBe("not-a-valid-uuid");
+    expect(() => invalid.uuid).toThrow("Invalid UUID");
+
+    direct.metadata.status = "published";
+    direct.metadata.author = "Test Author";
+    const stableUuid = direct.uuid_str;
+    const stableCreatedAt = direct.created_at;
+    direct.metadata = { version: "2.0", environment: "production" };
+
+    expect(direct.metadata).toEqual({ version: "2.0", environment: "production" });
+    expect(direct.uuid_str).toBe(stableUuid);
+    expect(direct.created_at).toBe(stableCreatedAt);
+  });
+
   it("validates fingerprint metadata and security config coercion", () => {
     expect(_validate_metadata({ nested: { ok: true } })).toEqual({ nested: { ok: true } });
     expect(() => _validate_metadata("invalid")).toThrow("Metadata must be a dictionary");
@@ -27299,6 +27332,20 @@ describe("security fingerprints", () => {
     expect(() => SecurityConfig.validate_fingerprint("   ")).toThrow("Fingerprint seed cannot be empty");
     expect(fromDict.fingerprint.uuid_str).toBe(fromSeed.fingerprint.uuid_str);
     expect(new SecurityConfig({ fingerprint: null }).fingerprint).toBeInstanceOf(Fingerprint);
+  });
+
+  it("serializes security config fingerprints after direct replacement", () => {
+    const config = new SecurityConfig();
+    const fingerprint = Fingerprint.generate("security-config-seed", { version: "1.0" });
+    config.fingerprint = fingerprint;
+
+    const jsonRoundTrip = JSON.parse(JSON.stringify(config.to_dict())) as ReturnType<SecurityConfig["to_dict"]>;
+    const restored = SecurityConfig.from_dict(jsonRoundTrip);
+
+    expect(config.fingerprint).toBe(fingerprint);
+    expect(jsonRoundTrip.fingerprint.metadata).toEqual({ version: "1.0" });
+    expect(restored.fingerprint.uuid_str).toBe(fingerprint.uuid_str);
+    expect(restored.fingerprint.metadata).toEqual({ version: "1.0" });
   });
 
   it("adds security config and fingerprints to agents, crews, and tasks", () => {
