@@ -2532,6 +2532,25 @@ describe("schema utilities", () => {
     expect(() => Model.model_validate({ birthday: "2026-06-01", created_at: "2026-06-01T12:30:00Z", alarm: "25:30:00" })).toThrow(/format/);
   });
 
+  it("accepts Date objects for date and date-time schema model fields", () => {
+    const Model = create_model_from_schema({
+      type: "object",
+      properties: {
+        birthday: { type: "string", format: "date" },
+        created_at: { type: "string", format: "date-time" },
+      },
+      required: ["birthday", "created_at"],
+    });
+    const birthday = new Date(Date.UTC(2000, 0, 15));
+    const createdAt = new Date(Date.UTC(2026, 5, 1, 12, 30, 0));
+
+    expect(Model.model_validate({ birthday, created_at: createdAt })).toEqual({
+      birthday,
+      created_at: createdAt,
+    });
+    expect(() => Model.model_validate({ birthday: new Date(Number.NaN), created_at: createdAt })).toThrow(/format/);
+  });
+
   it("rejects unsupported JSON schema types while creating schema models", () => {
     expect(() => create_model_from_schema({
       type: "object",

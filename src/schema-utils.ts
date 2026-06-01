@@ -599,6 +599,10 @@ function assertStringFormat(schema: JsonSchema, value: string, path: string): vo
   }
 }
 
+function isDateFormatSchema(schema: JsonSchema): boolean {
+  return schema.format === "date" || schema.format === "date-time";
+}
+
 function assertStringConstraints(schema: JsonSchema, value: string, path: string): void {
   assertStringFormat(schema, value, path);
   const minLength = numericConstraint(schema, "minLength");
@@ -771,6 +775,12 @@ function validateSchemaValue(schema: JsonSchema, value: unknown, path: string, r
       }
       return null;
     case "string":
+      if (value instanceof Date && isDateFormatSchema(resolved)) {
+        if (Number.isNaN(value.getTime())) {
+          throw createValidationError(path, `format ${String(resolved.format)}`);
+        }
+        return value;
+      }
       if (typeof value !== "string") {
         throw createValidationError(path, "expected string");
       }
