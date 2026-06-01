@@ -12706,6 +12706,43 @@ describe("core crew runtime", () => {
     expect(String(blockedResult.result)).toContain("blocked by");
   });
 
+  it("runs after tool hooks with a blocked native tool result", async () => {
+    const calls: string[] = [];
+    const blockedTool = new StructuredTool({
+      name: "dangerous_operation",
+      description: "Blocked by hook",
+      func: () => {
+        calls.push("tool");
+        return "should not run";
+      },
+    });
+    beforeToolCall((context) => {
+      calls.push(`before:${context.tool_name}`);
+      return false;
+    });
+    afterToolCall((context) => {
+      calls.push(`after:${context.tool_name}:${String(context.tool_result)}`);
+      return `${String(context.tool_result)} [audited]`;
+    });
+
+    const blockedResult = await executeSingleNativeToolCall({
+      id: "call_blocked",
+      function: { name: "dangerous_operation", arguments: "{\"action\":\"delete_all\"}" },
+    }, {
+      dangerous_operation: (args) => blockedTool.run(args),
+    }, {
+      originalTools: [blockedTool],
+    });
+
+    expect(blockedResult.result_as_answer).toBe(false);
+    expect(String(blockedResult.result)).toContain("blocked by");
+    expect(String(blockedResult.result)).toContain("[audited]");
+    expect(calls).toEqual([
+      "before:dangerous_operation",
+      "after:dangerous_operation:Error executing tool: Tool 'dangerous_operation' execution blocked by before_tool_call hook.",
+    ]);
+  });
+
   it("exposes upstream CrewAgentExecutor multimodal, native tool, and callback helpers", async () => {
     const callbackValues: unknown[] = [];
     const agentInstance = new Agent({

@@ -11,7 +11,13 @@ import { BaseTool, ToolResult, type ToolArgsSchema, type ToolArgumentSpec } from
 import type { LLM, LLMMessage, MaybePromise, Tool, ToolContext } from "./types.js";
 import { AgentRepositoryError } from "./errors.js";
 import { BaseLLM, callStopOverride, type LLMResponse } from "./llm.js";
-import { LLMCallHookContext, runAfterLlmCallHooks, runBeforeLlmCallHooks } from "./hooks.js";
+import {
+  LLMCallHookContext,
+  ToolCallHookContext,
+  runAfterLlmCallHooks,
+  runAfterToolCallHooks,
+  runBeforeLlmCallHooks,
+} from "./hooks.js";
 import { I18N_DEFAULT } from "./i18n.js";
 import { PRINTER, Printer, type ColoredText } from "./logger.js";
 
@@ -1010,8 +1016,17 @@ export async function executeSingleNativeToolCall(
       toolName: info.toolName,
     });
   } catch (error) {
+    let result: unknown = `Error executing tool: ${errorMessage(error)}`;
+    if (originalTool && errorMessage(error).includes("blocked by before_tool_call hook")) {
+      result = await runAfterToolCallHooks(new ToolCallHookContext({
+        toolName: sanitizeToolName(info.toolName),
+        toolInput: info.arguments ?? {},
+        tool: originalTool,
+        toolResult: result,
+      }));
+    }
     return new NativeToolCallResult({
-      result: `Error executing tool: ${errorMessage(error)}`,
+      result,
       resultAsAnswer: false,
       toolCallId: info.id,
       toolName: info.toolName,
