@@ -1196,11 +1196,13 @@ export class AgentExecutor extends BaseAgentExecutor {
   }
 
   private reasoningEffort(): "low" | "medium" | "high" {
-    const config = this.agent && "planningConfig" in this.agent
-      ? this.agent.planningConfig as unknown
-      : null;
-    if (config && typeof config === "object" && "reasoningEffort" in config) {
-      const effort = (config as { reasoningEffort?: unknown }).reasoningEffort;
+    const agentRecord = this.agent && typeof this.agent === "object"
+      ? this.agent as unknown as Record<string, unknown>
+      : {};
+    const config = agentRecord.planningConfig ?? agentRecord.planning_config;
+    if (config && typeof config === "object") {
+      const configRecord = config as Record<string, unknown>;
+      const effort = configRecord.reasoningEffort ?? configRecord.reasoning_effort;
       if (effort === "low" || effort === "medium" || effort === "high") {
         return effort;
       }

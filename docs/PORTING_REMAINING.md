@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 676 passing tests.
+- Test suite: 677 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -110,6 +110,7 @@ When more goal budget is available, continue from the behavioral parity audits b
   - multiple `Error:` todo results trigger replanning even when todos are marked completed
   - agent messages containing upstream replan indicators route to `needs_replan`
   - configured `max_replans` / `maxReplans` stops further dynamic replanning
+- `AgentExecutor` observation routing now reads upstream `planning_config.reasoning_effort` as well as the TypeScript camelCase config shape.
 - `AgentExecutor.execute_native_tool` now executes pending native tool calls against deterministic available-function/tool fixtures, appends tool messages, clears pending calls, and short-circuits remaining calls for `result_as_answer` tools.
 - `AgentExecutor.invoke` / `invoke_async` object-style execution now honors provided kickoff routines and requires them to produce an `AgentFinish`, raising when execution ends on an action instead of a final answer.
 - `AgentExecutor.invoke` setup now formats upstream-style `prompt.system` / `prompt.user` or `prompt.prompt` templates into state messages before kickoff.

@@ -10313,6 +10313,28 @@ describe("core crew runtime", () => {
       .rejects.toThrow("without reaching a final answer");
   });
 
+  it("reads AgentExecutor reasoning effort from upstream planning_config", () => {
+    const executor = new AgentExecutor({
+      agent: { planning_config: { reasoning_effort: "low" } } as unknown as Agent,
+    });
+    executor.state.todos.items.push(new TodoItem({
+      stepNumber: 1,
+      description: "Try a low-effort step",
+    }));
+    executor.state.todos.markRunning(1);
+    const currentTodo = executor.state.todos.currentTodo;
+    expect(currentTodo).not.toBeNull();
+    if (!currentTodo) {
+      throw new Error("expected current todo");
+    }
+    currentTodo.result = "Error: tool failed";
+    currentTodo.status = TodoStatus.FAILED;
+
+    expect(executor.observe_step_result()).toBe("step_observed_low");
+    expect(executor.handle_step_observed_low()).toBe("continue_plan");
+    expect(executor.state.last_replan_reason).toBeNull();
+  });
+
   it("executes AgentExecutor pending native tool calls and records tool messages", () => {
     const executor = new AgentExecutor();
     Object.assign(executor, {
