@@ -18865,6 +18865,46 @@ describe("task output files", () => {
     expect(Task._unpack_model_output("not json")).toEqual([null, null]);
   });
 
+  it("applies task config attributes and inherits agent tools on construction", () => {
+    const agentTool = new StructuredTool({
+      name: "Agent Search",
+      description: "Search from the agent",
+      func: () => "agent result",
+    });
+    const taskTool = new StructuredTool({
+      name: "Task Search",
+      description: "Search from the task",
+      func: () => "task result",
+    });
+    const agentInstance = new Agent({
+      role: "Writer",
+      goal: "Write reports",
+      backstory: "Careful writer",
+      tools: [agentTool],
+    });
+
+    const configuredTask = new Task({
+      description: "Original description",
+      expectedOutput: "Original output",
+      agent: agentInstance,
+      config: {
+        description: "Configured description",
+        expected_output: "Configured output",
+      },
+    });
+    const explicitToolTask = new Task({
+      description: "Explicit tools",
+      expectedOutput: "Done",
+      agent: agentInstance,
+      tools: [taskTool],
+    });
+
+    expect(configuredTask.description).toBe("Configured description");
+    expect(configuredTask.expected_output).toBe("Configured output");
+    expect(configuredTask.tools).toEqual([agentTool]);
+    expect(explicitToolTask.tools).toEqual([taskTool]);
+  });
+
   it("saves output through the upstream-compatible task file helper", () => {
     const relativeDirectory = `.tmp-crewai-ts-save-file-${String(Date.now())}`;
     const outputFile = join(relativeDirectory, "result.json");

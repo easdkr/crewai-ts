@@ -354,6 +354,8 @@ export class Task {
     this.checkpoint_original_output_file = this.checkpointOriginalOutputFile;
     this.securityConfig = coerceSecurityConfig(options.securityConfig ?? options.security_config ?? null);
     this.security_config = this.securityConfig;
+    this.setAttributesBasedOnConfig();
+    this.checkTools();
     this.checkOutput();
     this.ensureGuardrailIsCallable();
     this.ensureGuardrailsIsListOfCallables();
@@ -473,7 +475,44 @@ export class Task {
       return this;
     }
     for (const [key, value] of Object.entries(this.config)) {
-      (this as unknown as Record<string, unknown>)[key] = value;
+      const task = this as unknown as Record<string, unknown>;
+      task[key] = value;
+      switch (key) {
+        case "description":
+          this.description = String(value);
+          break;
+        case "expectedOutput":
+        case "expected_output":
+          this.expectedOutput = String(value);
+          this.expected_output = this.expectedOutput;
+          break;
+        case "agent":
+          task.agent = value;
+          break;
+        case "tools":
+          task.tools = Array.isArray(value) ? value : [];
+          break;
+        case "outputJson":
+        case "output_json":
+          task.outputJson = value;
+          task.output_json = value;
+          break;
+        case "outputPydantic":
+        case "output_pydantic":
+          task.outputPydantic = value;
+          task.output_pydantic = value;
+          break;
+        case "outputFile":
+        case "output_file":
+          if (value !== null && value !== undefined && typeof value !== "string") {
+            throw new Error("output_file must be a string");
+          }
+          this.outputFile = validateOutputFile(value ?? null);
+          this.output_file = this.outputFile;
+          break;
+        default:
+          break;
+      }
     }
     return this;
   }
