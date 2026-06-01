@@ -140,6 +140,11 @@ export abstract class BaseInterceptor<TOutbound = unknown, TInbound = unknown> {
     return this.on_inbound(message);
   }
 }
+
+export function _validate_interceptor(value: unknown): BaseInterceptor {
+  return BaseInterceptor.validateInterceptor(value);
+}
+
 export class AsyncHTTPTransport {
   readonly interceptor: BaseInterceptor;
   readonly kwargs: HTTPTransportKwargs;

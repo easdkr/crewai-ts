@@ -3591,6 +3591,7 @@ export function getServerInterfaces(agentCard: A2AAgentCard): A2AAgentInterface[
 }
 
 export const get_server_interfaces = getServerInterfaces;
+export const _get_server_interfaces = getServerInterfaces;
 
 export function negotiateTransport(
   agentCard: A2AAgentCard,
@@ -5364,6 +5365,8 @@ function validateA2AExtension(value: unknown): A2AExtension {
   }
   return value;
 }
+
+export const _validate_a2a_extension = validateA2AExtension;
 
 function hasA2AExtensionMethod(value: object, camelName: string, snakeName: string): boolean {
   const record = value as Record<string, unknown>;

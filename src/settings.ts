@@ -26,7 +26,7 @@ export const CURSOR_ENV_VARS = [
   "CURSOR_WORKSPACE_LABEL",
 ] as const;
 
-class NotSpecified {
+export class _NotSpecified {
   toString(): string {
     return "NOT_SPECIFIED";
   }
@@ -34,9 +34,28 @@ class NotSpecified {
   toJSON(): string {
     return "NOT_SPECIFIED";
   }
+
+  static __get_pydantic_core_schema__(): {
+    type: "plain-validator";
+    validator: (value: unknown) => _NotSpecified;
+    serialization: { type: "plain-serializer"; serializer: () => string };
+  } {
+    return {
+      type: "plain-validator",
+      validator: (value: unknown) => {
+        if (value instanceof _NotSpecified || value === "NOT_SPECIFIED") {
+          return NOT_SPECIFIED;
+        }
+        const typeName = value === null ? "null" : Array.isArray(value) ? "Array" : typeof value === "object" ? value.constructor.name : typeof value;
+        throw new Error(`Expected NOT_SPECIFIED sentinel, got ${typeName}`);
+      },
+      serialization: { type: "plain-serializer", serializer: () => "NOT_SPECIFIED" },
+    };
+  }
 }
 
-export const NOT_SPECIFIED = new NotSpecified();
+export const NotSpecified = _NotSpecified;
+export const NOT_SPECIFIED = new _NotSpecified();
 
 export const DEFAULT_CREWAI_ENTERPRISE_URL = "https://app.crewai.com";
 export const CREWAI_ENTERPRISE_DEFAULT_OAUTH2_PROVIDER = "workos";

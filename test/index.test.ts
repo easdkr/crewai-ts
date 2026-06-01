@@ -84,6 +84,7 @@ import {
   LLM,
   BaseTransport,
   BaseInterceptor,
+  _validate_interceptor,
   ConfiguredLLM,
   BearerTokenAuth,
   CSVKnowledgeSource,
@@ -568,6 +569,7 @@ import {
   HuggingFaceEmbeddingFunction,
   HuggingFaceProvider,
   InternalInstructor,
+  _is_valid_llm,
   InstructorEmbeddingFunction,
   InstructorProvider,
   JinaEmbeddingFunction,
@@ -754,6 +756,7 @@ import {
   suppressLogging,
   stringToCallable,
   toSerializable,
+  _to_serializable_key,
   toString,
   validateImportPath,
   validateModel,
@@ -803,8 +806,10 @@ import {
   _create_a2a_client,
   _convert_a2a_files_to_file_inputs,
   _get_effective_modes,
+  _get_server_interfaces,
   _get_tls_verify,
   _prepare_auth_headers,
+  _validate_a2a_extension,
   get_timestamp,
   poll_for_cancel,
   watch_for_cancel,
@@ -823,6 +828,8 @@ import {
   negotiateTransport,
   negotiateContentTypes,
   processTaskState,
+  _NotSpecified,
+  NOT_SPECIFIED,
   renderA2ATemplate,
   sendMessageAndGetTaskId,
   wrap_agent_with_a2a_instance,
@@ -1005,6 +1012,9 @@ describe("platform settings and user data", () => {
       expect(settings.enterprise_base_url).toBe(DEFAULT_CLI_SETTINGS.enterprise_base_url);
       expect(settings.oauth2_provider).toBe(DEFAULT_CLI_SETTINGS.oauth2_provider);
       expect(tokenManager.getToken()).toBeNull();
+      expect(NOT_SPECIFIED).toBeInstanceOf(_NotSpecified);
+      expect(String(NOT_SPECIFIED)).toBe("NOT_SPECIFIED");
+      expect(_NotSpecified.__get_pydantic_core_schema__().validator("NOT_SPECIFIED")).toBe(NOT_SPECIFIED);
     } finally {
       rmSync(dir, { recursive: true, force: true });
       rmSync(tokenStorage, { recursive: true, force: true });
@@ -1158,6 +1168,9 @@ describe("serialization and project utilities", () => {
       output: { raw: "done", agent: "Researcher" },
       circular: { name: "root", self: "<circular_ref:Object>" },
     });
+    expect(_to_serializable_key("name")).toBe("name");
+    expect(_to_serializable_key(42)).toBe("42");
+    expect(_to_serializable_key({ key: true })).toContain("key_");
     expect(toString(null)).toBeNull();
     expect(crewJsonStringify({ created: date, value: 1n })).toBe(JSON.stringify({
       created: "2026-05-28T00:00:00.000Z",
@@ -1810,6 +1823,9 @@ describe("training utilities", () => {
     };
     const instructor = new InternalInstructor("Summarize CrewAI", model, null, llm);
 
+    expect(_is_valid_llm(llm)).toBe(true);
+    expect(_is_valid_llm("openai/gpt-4o-mini")).toBe(true);
+    expect(_is_valid_llm(null)).toBe(false);
     expect(instructor.to_pydantic()).toEqual({ summary: "CrewAI port", score: 9 });
     expect(instructor.to_json()).toBe(JSON.stringify({ summary: "CrewAI port", score: 9 }, null, 2));
     expect(instructor._extract_provider()).toBe("openai");
@@ -3959,6 +3975,8 @@ describe("a2a utilities", () => {
       ],
     }]);
     expect(deleted).toBeNull();
+    expect(_validate_a2a_extension(extension)).toBe(extension);
+    expect(() => _validate_a2a_extension({})).toThrow("Value must implement A2AExtension protocol");
   });
 
   it("keys A2A client extension states by extension type and invokes aliases once", () => {
@@ -4303,6 +4321,20 @@ describe("a2a utilities", () => {
     expect(get_handler(new StreamingConfig())).toBe(StreamingHandler);
     expect(get_handler(new PollingConfig())).toBe(PollingHandler);
     expect(get_handler(new PushNotificationConfig({ url: "https://push.example.com/callback" }))).toBe(PushNotificationHandler);
+  });
+
+  it("extracts A2A server interfaces with upstream helper name", () => {
+    expect(_get_server_interfaces({
+      url: "https://primary.example.com/a2a",
+      preferred_transport: "JSONRPC",
+      additional_interfaces: [
+        { transport: "GRPC", url: "https://grpc.example.com/a2a" },
+        { transport: "GRPC", url: "https://grpc.example.com/a2a" },
+      ],
+    })).toEqual([
+      { transport: "JSONRPC", url: "https://primary.example.com/a2a" },
+      { transport: "GRPC", url: "https://grpc.example.com/a2a" },
+    ]);
   });
 
   it("fetches A2A agent cards from resolved well-known paths and emits events", async () => {
@@ -22494,6 +22526,7 @@ describe("global hooks", () => {
     });
     expect(BaseInterceptor.validate_interceptor(new TestInterceptor())).toBeInstanceOf(TestInterceptor);
     expect(() => BaseInterceptor.validate_interceptor({})).toThrow("Expected BaseInterceptor instance");
+    expect(_validate_interceptor(new TestInterceptor())).toBeInstanceOf(TestInterceptor);
   });
 
   it("exposes upstream callable aliases on filtered hook wrappers", () => {

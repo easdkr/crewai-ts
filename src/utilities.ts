@@ -114,6 +114,10 @@ export class InternalInstructor {
   }
 }
 
+export function _is_valid_llm(llm: unknown): boolean {
+  return isValidInstructorLlm(llm);
+}
+
 export const DEFAULT_TTL = 3600;
 
 export class CrewJSONEncoder {
@@ -912,9 +916,11 @@ function normalizeExclude(exclude: ToSerializableOptions["exclude"]): Set<string
   return exclude instanceof Set ? new Set<string>(exclude) : new Set<string>(exclude);
 }
 
-function toSerializableKey(key: unknown): string {
+export function _to_serializable_key(key: unknown): string {
   return typeof key === "string" || typeof key === "number" ? String(key) : `key_${repr(key)}`;
 }
+
+const toSerializableKey = _to_serializable_key;
 
 function repr(value: unknown): string {
   if (typeof value === "string") {
