@@ -695,6 +695,7 @@ import {
   createTemporaryTokenStorage,
   dbStoragePath,
   DEFAULT_CLI_SETTINGS,
+  CachedUpload,
   detectContentType,
   EmptyStackError,
   EventContextConfig,
@@ -704,6 +705,7 @@ import {
   FileResolver,
   FileStream,
   FileUrl,
+  createResolver,
   flowStructure,
   getAuthToken,
   getCurrentParentId,
@@ -752,6 +754,7 @@ import {
   PDFFile,
   InlineBase64,
   InlineBytes,
+  UploadCache,
   platformContext,
   QdrantClient,
   QdrantConfig,
@@ -2069,6 +2072,92 @@ describe("environment, logging, and file store utilities", () => {
     expect(bedrock).toBeInstanceOf(InlineBytes);
     expect(Buffer.from((bedrock as InlineBytes).data)).toEqual(bytesImage.read());
     expect(resolver.resolve_files({ image }, "gemini").image).toBeInstanceOf(UrlReference);
+  });
+
+  it("tracks upstream crewai-files upload cache lifecycle deterministically", async () => {
+    const png = Buffer.concat([
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      Buffer.from("cache-body"),
+    ]);
+    const file = new ImageFile({ source: new FileBytes({ data: png, filename: "test.png" }) });
+    const otherFile = new ImageFile({ source: new FileBytes({ data: Buffer.concat([png, Buffer.from("x")]), filename: "other.png" }) });
+    const cache = new UploadCache();
+
+    expect(cache.length).toBe(0);
+    const uploadedAt = new Date("2026-01-01T00:00:00Z");
+    const cached = new CachedUpload({
+      file_id: "file-created",
+      provider: "gemini",
+      file_uri: "files/file-created",
+      content_type: "image/png",
+      uploaded_at: uploadedAt,
+      expires_at: new Date("2026-01-02T00:00:00Z"),
+    });
+    expect(cached.file_id).toBe("file-created");
+    expect(cached.file_uri).toBe("files/file-created");
+    expect(cached.content_type).toBe("image/png");
+    expect(cached.uploaded_at).toBe(uploadedAt);
+    expect(cached.is_expired(new Date("2026-01-01T12:00:00Z"))).toBe(false);
+    expect(cached.is_expired(new Date("2026-01-02T00:00:00Z"))).toBe(true);
+
+    cache.set(file, "gemini", "file-123", "files/file-123");
+    expect(cache.length).toBe(1);
+    expect(cache.get(file, "gemini")).toMatchObject({
+      file_id: "file-123",
+      provider: "gemini",
+      file_uri: "files/file-123",
+      content_type: "image/png",
+    });
+    expect(cache.get(file, "anthropic")).toBeNull();
+    expect(cache.get(otherFile, "gemini")).toBeNull();
+
+    await expect(cache.aget(file, "gemini")).resolves.toMatchObject({ file_id: "file-123" });
+    expect(cache.get_all_for_provider("gemini")).toHaveLength(1);
+    expect([...cache.get_providers()]).toEqual(["gemini"]);
+
+    expect(cache.remove_by_file_id("file-123", "gemini")).toBe(true);
+    expect(cache.get(file, "gemini")).toBeNull();
+    expect(cache.remove(file, "gemini")).toBe(false);
+
+    const past = new Date(Date.now() - 60_000);
+    const future = new Date(Date.now() + 60_000);
+    cache.set(file, "gemini", "expired", null, past);
+    cache.set(otherFile, "gemini", "valid", null, future);
+    expect(cache.clear_expired()).toBe(1);
+    expect(cache.length).toBe(1);
+    expect(cache.get(otherFile, "gemini")).toMatchObject({ file_id: "valid" });
+    await expect(cache.aclear()).resolves.toBe(1);
+    expect(cache.length).toBe(0);
+  });
+
+  it("exposes resolver upload cache controls from upstream crewai-files", () => {
+    const file = new ImageFile({
+      source: new FileBytes({
+        data: Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from("resolver-cache")]),
+        filename: "resolver.png",
+      }),
+    });
+    const cache = new UploadCache();
+    cache.set(file, "gemini", "file-1");
+
+    const resolver = new FileResolver({ upload_cache: cache });
+    expect(resolver.upload_cache).toBe(cache);
+    expect(resolver.get_cached_uploads("gemini")).toHaveLength(1);
+    resolver.clear_cache();
+    expect(cache.length).toBe(0);
+
+    const defaultResolver = createResolver();
+    expect(defaultResolver.config.prefer_upload).toBe(false);
+    expect(defaultResolver.upload_cache).toBeInstanceOf(UploadCache);
+
+    const customResolver = createResolver({
+      prefer_upload: true,
+      upload_threshold_bytes: 5 * 1024 * 1024,
+      enable_cache: false,
+    });
+    expect(customResolver.config.prefer_upload).toBe(true);
+    expect(customResolver.config.upload_threshold_bytes).toBe(5 * 1024 * 1024);
+    expect(customResolver.upload_cache).toBeNull();
   });
 
   it("lets upstream ReadFileTool consume typed text and binary files", () => {

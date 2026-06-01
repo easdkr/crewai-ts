@@ -1293,6 +1293,7 @@ export { FileHandler, LogEntry, PickleHandler } from "./file-handler.js";
 export {
   AudioFile,
   BaseFile,
+  CachedUpload,
   FileResolver,
   FileResolverConfig,
   File,
@@ -1309,6 +1310,7 @@ export {
   ResolvedFile,
   TextFile,
   UrlReference,
+  UploadCache,
   VideoFile,
   createResolver,
   create_resolver,

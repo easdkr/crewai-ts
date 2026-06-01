@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { readFileSync, statSync } from "node:fs";
 import { basename, extname, resolve } from "node:path";
 
@@ -88,6 +89,316 @@ export class UrlReference extends ResolvedFile {
 }
 
 export type ResolvedFileType = InlineBase64 | InlineBytes | FileReference | UrlReference;
+
+export class CachedUpload {
+  readonly fileId: string;
+  readonly file_id: string;
+  readonly provider: string;
+  readonly fileUri: string | null;
+  readonly file_uri: string | null;
+  readonly contentType: string;
+  readonly content_type: string;
+  readonly uploadedAt: Date;
+  readonly uploaded_at: Date;
+  readonly expiresAt: Date | null;
+  readonly expires_at: Date | null;
+
+  constructor(options: {
+    fileId?: string;
+    file_id?: string;
+    provider: string;
+    fileUri?: string | null;
+    file_uri?: string | null;
+    contentType?: string;
+    content_type?: string;
+    uploadedAt?: Date;
+    uploaded_at?: Date;
+    expiresAt?: Date | null;
+    expires_at?: Date | null;
+  }) {
+    this.fileId = options.fileId ?? options.file_id ?? "";
+    this.file_id = this.fileId;
+    this.provider = options.provider;
+    this.fileUri = options.fileUri ?? options.file_uri ?? null;
+    this.file_uri = this.fileUri;
+    this.contentType = options.contentType ?? options.content_type ?? "application/octet-stream";
+    this.content_type = this.contentType;
+    this.uploadedAt = options.uploadedAt ?? options.uploaded_at ?? new Date();
+    this.uploaded_at = this.uploadedAt;
+    this.expiresAt = options.expiresAt ?? options.expires_at ?? null;
+    this.expires_at = this.expiresAt;
+  }
+
+  isExpired(now = new Date()): boolean {
+    return this.expiresAt !== null && now.getTime() >= this.expiresAt.getTime();
+  }
+
+  is_expired(now = new Date()): boolean {
+    return this.isExpired(now);
+  }
+}
+
+export class UploadCache {
+  readonly ttl: number;
+  readonly namespace: string;
+  readonly maxEntries: number | null;
+  readonly max_entries: number | null;
+  private readonly entries = new Map<string, CachedUpload>();
+  private readonly providerKeys = new Map<string, Set<string>>();
+  private readonly accessOrder: string[] = [];
+
+  constructor(options: {
+    ttl?: number;
+    namespace?: string;
+    cacheType?: string;
+    cache_type?: string;
+    maxEntries?: number | null;
+    max_entries?: number | null;
+  } = {}) {
+    this.ttl = options.ttl ?? 24 * 60 * 60;
+    this.namespace = options.namespace ?? "crewai_uploads";
+    this.maxEntries = options.maxEntries ?? options.max_entries ?? 1000;
+    this.max_entries = this.maxEntries;
+  }
+
+  get size(): number {
+    return this.entries.size;
+  }
+
+  get length(): number {
+    return this.size;
+  }
+
+  get(file: FileInput, provider: FileProvider): CachedUpload | null {
+    return this.getByHash(computeFileHash(file), provider);
+  }
+
+  get_by_hash(fileHash: string, provider: FileProvider): CachedUpload | null {
+    return this.getByHash(fileHash, provider);
+  }
+
+  getByHash(fileHash: string, provider: FileProvider): CachedUpload | null {
+    const key = uploadCacheKey(fileHash, provider);
+    const cached = this.entries.get(key) ?? null;
+    if (cached === null) {
+      return null;
+    }
+    if (cached.isExpired()) {
+      this.entries.delete(key);
+      this.untrackKey(provider, key);
+      return null;
+    }
+    this.trackKey(provider, key);
+    return cached;
+  }
+
+  aget(file: FileInput, provider: FileProvider): Promise<CachedUpload | null> {
+    return Promise.resolve(this.get(file, provider));
+  }
+
+  aget_by_hash(fileHash: string, provider: FileProvider): Promise<CachedUpload | null> {
+    return Promise.resolve(this.getByHash(fileHash, provider));
+  }
+
+  agetByHash(fileHash: string, provider: FileProvider): Promise<CachedUpload | null> {
+    return Promise.resolve(this.getByHash(fileHash, provider));
+  }
+
+  set(
+    file: FileInput,
+    provider: FileProvider,
+    fileIdOrOptions: string | { fileId?: string; file_id?: string; fileUri?: string | null; file_uri?: string | null; expiresAt?: Date | null; expires_at?: Date | null },
+    fileUri: string | null = null,
+    expiresAt: Date | null = null,
+  ): CachedUpload {
+    const fileId = typeof fileIdOrOptions === "string" ? fileIdOrOptions : fileIdOrOptions.fileId ?? fileIdOrOptions.file_id ?? "";
+    const resolvedUri = typeof fileIdOrOptions === "string" ? fileUri : fileIdOrOptions.fileUri ?? fileIdOrOptions.file_uri ?? null;
+    const resolvedExpiry = typeof fileIdOrOptions === "string" ? expiresAt : fileIdOrOptions.expiresAt ?? fileIdOrOptions.expires_at ?? null;
+    return this.setByHash(computeFileHash(file), file.contentType, provider, fileId, resolvedUri, resolvedExpiry);
+  }
+
+  set_by_hash(
+    fileHash: string,
+    contentType: string,
+    provider: FileProvider,
+    fileId: string,
+    fileUri: string | null = null,
+    expiresAt: Date | null = null,
+  ): CachedUpload {
+    return this.setByHash(fileHash, contentType, provider, fileId, fileUri, expiresAt);
+  }
+
+  setByHash(
+    fileHash: string,
+    contentType: string,
+    provider: FileProvider,
+    fileId: string,
+    fileUri: string | null = null,
+    expiresAt: Date | null = null,
+  ): CachedUpload {
+    this.evictIfNeeded();
+    const key = uploadCacheKey(fileHash, provider);
+    const cached = new CachedUpload({
+      fileId,
+      provider,
+      fileUri,
+      contentType,
+      uploadedAt: new Date(),
+      expiresAt,
+    });
+    this.entries.set(key, cached);
+    this.trackKey(provider, key);
+    return cached;
+  }
+
+  aset(file: FileInput, provider: FileProvider, fileId: string, fileUri: string | null = null, expiresAt: Date | null = null): Promise<CachedUpload> {
+    return Promise.resolve(this.set(file, provider, fileId, fileUri, expiresAt));
+  }
+
+  aset_by_hash(fileHash: string, contentType: string, provider: FileProvider, fileId: string, fileUri: string | null = null, expiresAt: Date | null = null): Promise<CachedUpload> {
+    return Promise.resolve(this.setByHash(fileHash, contentType, provider, fileId, fileUri, expiresAt));
+  }
+
+  asetByHash(fileHash: string, contentType: string, provider: FileProvider, fileId: string, fileUri: string | null = null, expiresAt: Date | null = null): Promise<CachedUpload> {
+    return Promise.resolve(this.setByHash(fileHash, contentType, provider, fileId, fileUri, expiresAt));
+  }
+
+  remove(file: FileInput, provider: FileProvider): boolean {
+    const key = uploadCacheKey(computeFileHash(file), provider);
+    const removed = this.entries.delete(key);
+    if (removed) {
+      this.untrackKey(provider, key);
+    }
+    return removed;
+  }
+
+  aremove(file: FileInput, provider: FileProvider): Promise<boolean> {
+    return Promise.resolve(this.remove(file, provider));
+  }
+
+  removeByFileId(fileId: string, provider: FileProvider): boolean {
+    for (const key of [...(this.providerKeys.get(provider) ?? [])]) {
+      if (this.entries.get(key)?.fileId === fileId) {
+        this.entries.delete(key);
+        this.untrackKey(provider, key);
+        return true;
+      }
+    }
+    return false;
+  }
+
+  remove_by_file_id(fileId: string, provider: FileProvider): boolean {
+    return this.removeByFileId(fileId, provider);
+  }
+
+  aremove_by_file_id(fileId: string, provider: FileProvider): Promise<boolean> {
+    return Promise.resolve(this.removeByFileId(fileId, provider));
+  }
+
+  clearExpired(): number {
+    let removed = 0;
+    for (const [key, cached] of [...this.entries]) {
+      if (cached.isExpired()) {
+        this.entries.delete(key);
+        this.untrackKey(cached.provider, key);
+        removed += 1;
+      }
+    }
+    return removed;
+  }
+
+  clear_expired(): number {
+    return this.clearExpired();
+  }
+
+  aclear_expired(): Promise<number> {
+    return Promise.resolve(this.clearExpired());
+  }
+
+  clear(): number {
+    const count = this.entries.size;
+    this.entries.clear();
+    this.providerKeys.clear();
+    this.accessOrder.length = 0;
+    return count;
+  }
+
+  aclear(): Promise<number> {
+    return Promise.resolve(this.clear());
+  }
+
+  getAllForProvider(provider: FileProvider): CachedUpload[] {
+    return [...(this.providerKeys.get(provider) ?? [])]
+      .map((key) => this.getCachedByKey(key, provider))
+      .filter((cached): cached is CachedUpload => cached !== null);
+  }
+
+  get_all_for_provider(provider: FileProvider): CachedUpload[] {
+    return this.getAllForProvider(provider);
+  }
+
+  aget_all_for_provider(provider: FileProvider): Promise<CachedUpload[]> {
+    return Promise.resolve(this.getAllForProvider(provider));
+  }
+
+  getProviders(): Set<string> {
+    return new Set(this.providerKeys.keys());
+  }
+
+  get_providers(): Set<string> {
+    return this.getProviders();
+  }
+
+  private getCachedByKey(key: string, provider: FileProvider): CachedUpload | null {
+    const cached = this.entries.get(key) ?? null;
+    if (cached === null) {
+      this.untrackKey(provider, key);
+      return null;
+    }
+    if (cached.isExpired()) {
+      this.entries.delete(key);
+      this.untrackKey(provider, key);
+      return null;
+    }
+    return cached;
+  }
+
+  private trackKey(provider: FileProvider, key: string): void {
+    const keys = this.providerKeys.get(provider) ?? new Set<string>();
+    keys.add(key);
+    this.providerKeys.set(provider, keys);
+    const index = this.accessOrder.indexOf(key);
+    if (index >= 0) {
+      this.accessOrder.splice(index, 1);
+    }
+    this.accessOrder.push(key);
+  }
+
+  private untrackKey(provider: FileProvider, key: string): void {
+    this.providerKeys.get(provider)?.delete(key);
+    if (this.providerKeys.get(provider)?.size === 0) {
+      this.providerKeys.delete(provider);
+    }
+    const index = this.accessOrder.indexOf(key);
+    if (index >= 0) {
+      this.accessOrder.splice(index, 1);
+    }
+  }
+
+  private evictIfNeeded(): void {
+    if (this.maxEntries === null || this.entries.size < this.maxEntries) {
+      return;
+    }
+    const count = Math.max(1, Math.floor(this.maxEntries / 10));
+    for (const key of this.accessOrder.slice(0, count)) {
+      const cached = this.entries.get(key);
+      this.entries.delete(key);
+      if (cached) {
+        this.untrackKey(cached.provider, key);
+      }
+    }
+  }
+}
 
 export abstract class FileSource {
   abstract readonly filename: string | null;
@@ -410,11 +721,19 @@ export class FileResolverConfig {
 
 export class FileResolver {
   readonly config: FileResolverConfig;
+  readonly uploadCache: UploadCache | null;
+  readonly upload_cache: UploadCache | null;
 
-  constructor(options: { config?: FileResolverConfig | ConstructorParameters<typeof FileResolverConfig>[0] } = {}) {
+  constructor(options: {
+    config?: FileResolverConfig | ConstructorParameters<typeof FileResolverConfig>[0];
+    uploadCache?: UploadCache | null;
+    upload_cache?: UploadCache | null;
+  } = {}) {
     this.config = options.config instanceof FileResolverConfig
       ? options.config
       : new FileResolverConfig(options.config);
+    this.uploadCache = options.uploadCache ?? options.upload_cache ?? null;
+    this.upload_cache = this.uploadCache;
   }
 
   resolve(file: FileInput, provider: FileProvider): ResolvedFileType {
@@ -457,10 +776,38 @@ export class FileResolver {
   async aresolve_files(files: Record<string, FileInput>, provider: FileProvider): Promise<Record<string, ResolvedFileType>> {
     return await this.aresolveFiles(files, provider);
   }
+
+  getCachedUploads(provider: FileProvider): CachedUpload[] {
+    return this.uploadCache?.getAllForProvider(provider) ?? [];
+  }
+
+  get_cached_uploads(provider: FileProvider): CachedUpload[] {
+    return this.getCachedUploads(provider);
+  }
+
+  clearCache(): void {
+    this.uploadCache?.clear();
+  }
+
+  clear_cache(): void {
+    this.clearCache();
+  }
 }
 
-export function createResolver(config?: FileResolverConfig | ConstructorParameters<typeof FileResolverConfig>[0]): FileResolver {
-  return new FileResolver({ config });
+export type CreateResolverOptions = ConstructorParameters<typeof FileResolverConfig>[0] & {
+  provider?: FileProvider | null;
+  enableCache?: boolean;
+  enable_cache?: boolean;
+};
+
+export function createResolver(options: FileResolverConfig | CreateResolverOptions = {}): FileResolver {
+  const config = options instanceof FileResolverConfig
+    ? options
+    : new FileResolverConfig(options);
+  const enableCache = options instanceof FileResolverConfig
+    ? true
+    : options.enableCache ?? options.enable_cache ?? true;
+  return new FileResolver({ config, uploadCache: enableCache ? new UploadCache() : null });
 }
 
 export const create_resolver = createResolver;
@@ -487,6 +834,14 @@ function coerceFileSource(value: FileSourceInput): FileSource {
 
 function supportsUrlReferences(provider: FileProvider): boolean {
   return new Set(["anthropic", "azure", "gemini", "openai"]).has(provider.toLowerCase());
+}
+
+function computeFileHash(file: FileInput): string {
+  return createHash("sha256").update(file.read()).digest("hex");
+}
+
+function uploadCacheKey(fileHash: string, provider: FileProvider): string {
+  return `upload:${provider}:${fileHash}`;
 }
 
 function contentTypeFromFilename(filename?: string | null): string | null {
