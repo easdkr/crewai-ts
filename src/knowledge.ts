@@ -23,7 +23,9 @@ export type KnowledgeSearchResult = {
 
 export type KnowledgeQueryOptions = {
   resultsLimit?: number;
+  results_limit?: number;
   scoreThreshold?: number | null;
+  score_threshold?: number | null;
 };
 
 export type KnowledgeSource = {
@@ -894,8 +896,12 @@ export class Knowledge {
 
   query(query: string | readonly string[], options: KnowledgeQueryOptions = {}): KnowledgeSearchResult[] {
     const queries: readonly string[] = typeof query === "string" ? [query] : query;
-    const resultsLimit = options.resultsLimit ?? 5;
-    const scoreThreshold = options.scoreThreshold === undefined ? 0.1 : options.scoreThreshold;
+    const resultsLimit = options.resultsLimit ?? options.results_limit ?? 5;
+    const scoreThreshold = "scoreThreshold" in options
+      ? options.scoreThreshold
+      : "score_threshold" in options
+        ? options.score_threshold
+        : 0.1;
     if (this.storage) {
       return this.storage.search(queries, resultsLimit, null, scoreThreshold ?? 0).map(searchResultToKnowledgeResult);
     }
@@ -912,8 +918,12 @@ export class Knowledge {
 
   async aquery(query: string | readonly string[], options: KnowledgeQueryOptions = {}): Promise<KnowledgeSearchResult[]> {
     const queries: readonly string[] = typeof query === "string" ? [query] : query;
-    const resultsLimit = options.resultsLimit ?? 5;
-    const scoreThreshold = options.scoreThreshold === undefined ? 0.1 : options.scoreThreshold;
+    const resultsLimit = options.resultsLimit ?? options.results_limit ?? 5;
+    const scoreThreshold = "scoreThreshold" in options
+      ? options.scoreThreshold
+      : "score_threshold" in options
+        ? options.score_threshold
+        : 0.1;
     if (this.storage) {
       return (await this.storage.asearch(queries, resultsLimit, null, scoreThreshold ?? 0)).map(searchResultToKnowledgeResult);
     }

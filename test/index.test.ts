@@ -9636,6 +9636,38 @@ describe("RAG configuration and factories", () => {
     expect(await knowledge.aquery(["knowledge"], { scoreThreshold: 0.1 })).toEqual([]);
   });
 
+  it("passes upstream snake_case Knowledge query options to storage search", async () => {
+    const storage = {
+      save: vi.fn(),
+      asave: vi.fn(async () => {}),
+      reset: vi.fn(),
+      areset: vi.fn(async () => {}),
+      search: vi.fn(() => [
+        { content: "AI is fascinating", score: 0.9, metadata: { source: "doc1" } },
+        { content: "Machine learning rocks", score: 0.8, metadata: { source: "doc2" } },
+      ]),
+      asearch: vi.fn(() => Promise.resolve([
+        { content: "Async AI", score: 0.7, metadata: { source: "doc3" } },
+      ])),
+    } satisfies BaseKnowledgeStorage;
+    const knowledge = new Knowledge({
+      sources: [new StringKnowledgeSource("Test knowledge content")],
+      storage,
+      collection_name: "test_collection",
+    });
+
+    expect(knowledge.query(["AI technology"], { results_limit: 5, score_threshold: 0.3 })).toEqual([
+      { content: "AI is fascinating", score: 0.9, source: "doc1", metadata: { source: "doc1" } },
+      { content: "Machine learning rocks", score: 0.8, source: "doc2", metadata: { source: "doc2" } },
+    ]);
+    expect(storage.search).toHaveBeenCalledWith(["AI technology"], 5, null, 0.3);
+
+    await expect(knowledge.aquery(["AI async"], { results_limit: 2, score_threshold: null })).resolves.toEqual([
+      { content: "Async AI", score: 0.7, source: "doc3", metadata: { source: "doc3" } },
+    ]);
+    expect(storage.asearch).toHaveBeenCalledWith(["AI async"], 2, null, 0);
+  });
+
   it("lets knowledge sources save themselves through upstream add aliases", async () => {
     const fake = new FakeChromaClient();
     const client = new ChromaDBClient(fake, (texts: readonly string[]) => texts.map((text) => [text.length]));
