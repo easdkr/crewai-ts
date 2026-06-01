@@ -1,5 +1,6 @@
-import { createHash, randomUUID } from "node:crypto";
-import { cpus, hostname, machine, platform, userInfo } from "node:os";
+import { createHash } from "node:crypto";
+import { existsSync, readFileSync } from "node:fs";
+import { cpus, hostname, machine, networkInterfaces, platform, userInfo } from "node:os";
 
 import {
   hasUserDeclinedTracing,
@@ -29,6 +30,21 @@ export type SuppressTracingMessagesToken = {
 let tracingEnabled: boolean | null = null;
 let suppressTracingMessages = false;
 let firstTimeTraceHook: (() => boolean) | null = null;
+let cachedMachineId: string | null = null;
+
+export type GenericSystemIdOptions = {
+  hostname?: () => string;
+  username?: () => string;
+  machine?: () => string;
+  processor?: () => string;
+};
+
+export type MachineIdOptions = {
+  linuxMachineIdPaths?: readonly string[];
+  genericSystemId?: () => string | null;
+  macAddress?: () => string | null;
+  fallbackId?: string;
+};
 
 export function setTracingEnabled(enabled: boolean): TracingEnabledToken {
   const token = { previous: tracingEnabled };
@@ -205,18 +221,7 @@ function generateUserId(): string {
 }
 
 function getMachineId(): string {
-  const parts = [
-    platform(),
-    hostname(),
-    machine(),
-    cpus()[0]?.model ?? "",
-    process.env.HOSTNAME ?? "",
-    process.env.CONTAINER_ID ?? "",
-  ].filter((part) => part.length > 0);
-  if (parts.length === 0) {
-    parts.push("unknown-system", randomUUID());
-  }
-  return hash(parts.join("|"));
+  return _get_machine_id();
 }
 
 function safeUsername(): string {
@@ -229,6 +234,76 @@ function safeUsername(): string {
 
 function hash(value: string): string {
   return createHash("sha256").update(value).digest("hex");
+}
+
+export function _get_machine_id(options: MachineIdOptions = {}): string {
+  if (Object.keys(options).length === 0 && cachedMachineId) {
+    return cachedMachineId;
+  }
+  const parts = [
+    _get_linux_machine_id(options.linuxMachineIdPaths),
+    options.genericSystemId ? safeCall(options.genericSystemId) : _get_generic_system_id(),
+    options.macAddress ? safeCall(options.macAddress) : getMacAddress(),
+    process.env.HOSTNAME ?? null,
+    process.env.CONTAINER_ID ?? null,
+  ].filter((part): part is string => typeof part === "string" && part.length > 0);
+  const source = parts.length > 0 ? parts.join("|") : (options.fallbackId ?? "unknown-system");
+  const machineId = hash(source);
+  if (Object.keys(options).length === 0) {
+    cachedMachineId = machineId;
+  }
+  return machineId;
+}
+
+export function _get_linux_machine_id(paths: readonly string[] = ["/etc/machine-id", "/var/lib/dbus/machine-id"]): string | null {
+  for (const path of paths) {
+    try {
+      if (!existsSync(path)) {
+        continue;
+      }
+      const value = readFileSync(path, "utf8").trim();
+      if (value.length > 0) {
+        return value;
+      }
+    } catch {
+      continue;
+    }
+  }
+  return null;
+}
+
+export function _get_generic_system_id(options: GenericSystemIdOptions = {}): string | null {
+  const parts = [
+    safeCall(options.hostname ?? hostname),
+    safeCall(options.username ?? safeUsername),
+    safeCall(options.machine ?? machine),
+    safeCall(options.processor ?? (() => cpus()[0]?.model ?? platform())),
+  ].filter((part): part is string => typeof part === "string" && part.length > 0);
+  return parts.length > 0 ? parts.join("-") : null;
+}
+
+function getMacAddress(): string | null {
+  try {
+    for (const interfaces of Object.values(networkInterfaces())) {
+      for (const entry of interfaces ?? []) {
+        if (!entry.internal && entry.mac && entry.mac !== "00:00:00:00:00:00") {
+          return entry.mac;
+        }
+      }
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+function safeCall(callback: () => string | null | undefined): string | null {
+  try {
+    const value = callback();
+    return typeof value === "string" && value.length > 0 ? value : null;
+  } catch {
+    return null;
+  }
 }
 
 function isTestEnvironment(): boolean {

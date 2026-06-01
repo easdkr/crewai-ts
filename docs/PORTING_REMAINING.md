@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 697 passing tests.
+- Test suite: 698 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -259,6 +259,7 @@ When more goal budget is available, continue from the behavioral parity audits b
   - `Telemetry` now records upstream-style `crewai_version` metadata from the shared version export rather than a TypeScript package label.
   - `Telemetry.crew_creation` now records upstream-style `share_crew` platform details plus crew/agent/task fingerprint timestamps and metadata in the deterministic local span.
   - `TraceBatch` now defaults its batch version from the shared CrewAI version export, matching upstream trace batch manager metadata.
+  - Tracing machine-id helpers now expose upstream-style Linux, generic-system, MAC, and fallback hashing behavior without network exporters.
   - `EventListener.setup_listeners` and `TraceCollectionListener.setup_listeners` now expose subclass-level upstream listener setup aliases.
   - `FirstTimeTraceHandler` now exposes upstream-style first-time trace collection state hooks and records local consent/completion without enabling cloud upload behavior.
 - Added crew chat compatibility behavior:

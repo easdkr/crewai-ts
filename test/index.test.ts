@@ -763,6 +763,9 @@ import {
   setCurrentTaskId,
   setFirstTimeTraceHook,
   setLastEventId,
+  _get_generic_system_id,
+  _get_linux_machine_id,
+  _get_machine_id,
   sanitizeToolParamsForAnthropicStrict,
   sanitizeToolParamsForBedrockStrict,
   sanitizeToolParamsForOpenAIStrict,
@@ -7102,6 +7105,43 @@ describe("evaluator utilities", () => {
 });
 
 describe("telemetry compatibility", () => {
+  it("generates upstream-style deterministic machine ids with resilient fallbacks", () => {
+    const machineId = _get_machine_id();
+    expect(machineId).toMatch(/^[0-9a-f]{64}$/);
+    expect(_get_machine_id()).toBe(machineId);
+
+    const linuxId = _get_linux_machine_id(["/tmp/crewai-ts-missing-machine-id"]);
+    expect(linuxId === null || typeof linuxId === "string").toBe(true);
+
+    const genericId = _get_generic_system_id({
+      hostname: () => {
+        throw new Error("host unavailable");
+      },
+      username: () => "tester",
+      machine: () => "arm64",
+      processor: () => "node",
+    });
+    expect(genericId).toBe("tester-arm64-node");
+
+    const fallback = _get_machine_id({
+      linuxMachineIdPaths: ["/tmp/crewai-ts-missing-machine-id"],
+      genericSystemId: () => null,
+      macAddress: () => {
+        throw new Error("mac unavailable");
+      },
+      fallbackId: "fallback-only",
+    });
+    expect(fallback).toMatch(/^[0-9a-f]{64}$/);
+    expect(fallback).toBe(_get_machine_id({
+      linuxMachineIdPaths: ["/tmp/crewai-ts-missing-machine-id"],
+      genericSystemId: () => null,
+      macAddress: () => {
+        throw new Error("mac unavailable");
+      },
+      fallbackId: "fallback-only",
+    }));
+  });
+
   it("handles first-time trace collection state locally", () => {
     const previousDataDir = process.env.CREWAI_TS_DATA_DIR;
     const dataDir = mkdtempSync(join(tmpdir(), "crewai-ts-first-trace-"));

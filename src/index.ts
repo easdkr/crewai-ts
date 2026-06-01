@@ -2297,6 +2297,9 @@ export {
 export {
   getUserId,
   get_user_id,
+  _get_generic_system_id,
+  _get_linux_machine_id,
+  _get_machine_id,
   isFirstExecution,
   isTracingEnabledInContext,
   is_first_execution,
