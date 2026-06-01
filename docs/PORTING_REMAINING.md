@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 752 passing tests.
+- Test suite: 754 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -87,6 +87,7 @@ This register is the source of truth for continuing porting work while parity sc
 - Azure `api: "responses"` is modeled as a deterministic shim over the OpenAI Responses adapter: endpoint-to-`/openai/v1/` base URL normalization, Responses request preparation, response-chain state delegation, config fields, and call/acall routing are release-gated without creating Azure SDK clients or making live calls.
 - OpenAI Responses structured-output formatting is release-gated with deterministic schema-provider fixtures: local model-like schemas are converted to the flat `text.format` JSON schema shape expected by upstream Responses API requests.
 - OpenAI SDK client parameter resolution is deterministic and release-gated: explicit `base_url` wins over `api_base`, which wins over `OPENAI_BASE_URL`, and `client_params` can override the assembled SDK params without constructing a live client.
+- Provider-agnostic prompt-cache breakpoints are release-gated with deterministic OpenAI and Anthropic formatting tests: markers are stripped from wire payloads without mutating caller messages, Anthropic system/stable user blocks receive ephemeral cache control, assistant markers are ignored, and volatile tool-result carrier messages are not stamped.
 - Google Vertex legacy `textembedding-gecko*` embeddings remain intentionally unsupported in the TypeScript runtime without Vertex AI SDK credentials; the current behavior raises a clear error.
 - PDF/Excel/Docling-style optional parsing uses built-in or injected local extractors where possible. Python-only optional dependencies such as `pdfplumber` or Docling converters are not bundled.
 - MCP transports may use the installed JS SDK shape, but release tests should continue to rely on local/fake clients and error classification rather than live MCP servers.

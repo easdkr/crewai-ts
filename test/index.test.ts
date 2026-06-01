@@ -19411,6 +19411,22 @@ describe("LLM providers", () => {
       .toThrow("does not support multimodal input");
   });
 
+  it("preserves prompt-cache markers across repeated OpenAI formatting", () => {
+    const openai = new OpenAICompletion({ model: "gpt-4o-mini" });
+    const messages = [
+      mark_cache_breakpoint({ role: "system" as const, content: "stable system" }),
+      mark_cache_breakpoint({ role: "user" as const, content: "stable user" }),
+    ];
+
+    const first = openai._format_messages(messages);
+    const second = openai._format_messages(messages);
+
+    expect(first.every((message) => !("cache_breakpoint" in message))).toBe(true);
+    expect(second.every((message) => !("cache_breakpoint" in message))).toBe(true);
+    expect(messages[0]?.cache_breakpoint).toBe(true);
+    expect(messages[1]?.cache_breakpoint).toBe(true);
+  });
+
   it("formats multimodal message files and exposes provider file uploaders", () => {
     class VisionLLM extends BaseLLM {
       call(): string {
@@ -20653,6 +20669,59 @@ describe("LLM providers", () => {
         { type: "text", text: "4" },
       ],
     });
+  });
+
+  it("stamps Anthropic prompt-cache breakpoints on stable content only", () => {
+    const anthropic = new AnthropicCompletion({ model: "claude-sonnet-4-5" });
+    const [formattedMessages, systemMessage] = (anthropic as unknown as {
+      _format_messages_for_anthropic(messages: LLMMessage[]): [Record<string, unknown>[], string | Record<string, unknown>[] | null];
+    })._format_messages_for_anthropic([
+      mark_cache_breakpoint({ role: "system", content: "you are helpful" }),
+      mark_cache_breakpoint({ role: "user", content: [{ type: "text", text: "stable task prompt" }] }),
+      mark_cache_breakpoint({ role: "assistant", content: "assistant marker ignored" }),
+      {
+        role: "assistant",
+        content: "",
+        tool_calls: [{ id: "tc_1", function: { name: "ping", arguments: "{}" } }],
+      } as LLMMessage,
+      { role: "tool", tool_call_id: "tc_1", content: "volatile tool result" } as LLMMessage,
+    ]);
+
+    expect(systemMessage).toEqual([
+      { type: "text", text: "you are helpful", cache_control: { type: "ephemeral" } },
+    ]);
+    const stableUser = formattedMessages.find((message) => {
+      const content = message.content;
+      return message.role === "user"
+        && Array.isArray(content)
+        && content.some((block) => typeof block === "object" && block !== null && (block as { text?: unknown }).text === "stable task prompt");
+    });
+    expect(stableUser).toBeDefined();
+    const stableBlocks = stableUser?.content as Array<Record<string, unknown>>;
+    expect(stableBlocks.at(-1)).toMatchObject({ cache_control: { type: "ephemeral" } });
+
+    const toolCarrier = formattedMessages.find((message) => {
+      const content = message.content;
+      return message.role === "user"
+        && Array.isArray(content)
+        && content.some((block) => typeof block === "object" && block !== null && (block as { type?: unknown }).type === "tool_result");
+    });
+    expect(toolCarrier).toBeDefined();
+    for (const block of toolCarrier?.content as Array<Record<string, unknown>>) {
+      expect(block).not.toHaveProperty("cache_control");
+    }
+
+    for (const message of formattedMessages) {
+      if (message.role !== "user") {
+        continue;
+      }
+      const content = message.content;
+      if (Array.isArray(content) && content.some((block) => typeof block === "object" && block !== null && (block as { text?: unknown }).text === "assistant marker ignored")) {
+        for (const block of content as Array<Record<string, unknown>>) {
+          expect(block).not.toHaveProperty("cache_control");
+        }
+      }
+    }
   });
 
   it("executes Anthropic tool uses into Claude tool result blocks", async () => {
