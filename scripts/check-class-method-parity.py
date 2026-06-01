@@ -23,7 +23,16 @@ TARGETS = [
     ("Task", UPSTREAM / "task.py", ROOT / "src" / "task.ts"),
     ("LiteAgent", UPSTREAM / "lite_agent.py", ROOT / "src" / "lite-agent.ts"),
     ("Memory", UPSTREAM / "memory" / "unified_memory.py", ROOT / "src" / "memory.ts"),
+    ("Flow", UPSTREAM / "flow" / "flow.py", ROOT / "src" / "flow.ts"),
+    ("SkillFrontmatter", UPSTREAM / "skills" / "models.py", ROOT / "src" / "skills.ts"),
 ]
+
+IGNORED_UPSTREAM_METHODS = {
+    "__class_getitem__",
+    "__getattr__",
+    "__getattribute__",
+    "__setattr__",
+}
 
 
 def python_class_methods(path: Path, class_name: str) -> list[str]:
@@ -43,7 +52,7 @@ def typescript_class_members(path: Path) -> set[str]:
     method_pattern = re.compile(
         r"^  (?:(?:public|private|protected|async|static|override)\s+)*"
         r"([A-Za-z_][A-Za-z0-9_]*)"
-        r"(?:<[^>\n]+>)?\(",
+        r"(?:<[^\n]*>)?\(",
         re.MULTILINE,
     )
     getter_pattern = re.compile(r"^  get ([A-Za-z_][A-Za-z0-9_]*)\(", re.MULTILINE)
@@ -89,6 +98,7 @@ def main() -> int:
         missing = [
             name
             for name in upstream_methods
+            if name not in IGNORED_UPSTREAM_METHODS
             if local_candidates(name).isdisjoint(local_members)
         ]
         print(f"{class_name}: upstream_methods={len(upstream_methods)} local_members={len(local_members)} missing={len(missing)}")
