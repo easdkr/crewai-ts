@@ -1,4 +1,12 @@
-import type { LLM } from "./types.js";
+import { I18N_DEFAULT } from "./i18n.js";
+import { sanitizeToolName } from "./string-utils.js";
+import type { LLM, LLMMessage, MaybePromise } from "./types.js";
+import {
+  AgentReasoningCompletedEvent,
+  AgentReasoningFailedEvent,
+  AgentReasoningStartedEvent,
+  crewaiEventBus,
+} from "./events.js";
 
 export type ReasoningEffort = "low" | "medium" | "high";
 
@@ -40,6 +48,12 @@ export type AgentReasoningPlan = {
   plan: string;
   steps: readonly AgentPlanStep[];
   ready: boolean;
+};
+
+type ReasoningLLM = {
+  call?: (messages: readonly LLMMessage[], options?: Record<string, unknown>) => MaybePromise<unknown>;
+  supportsFunctionCalling?: () => boolean;
+  supports_function_calling?: () => boolean;
 };
 
 export const REASONING_READY_MARKER = "READY: I am ready to execute the task.";
@@ -465,6 +479,14 @@ export function createAgentPlanningPrompt(options: {
   if (options.config.planPrompt) {
     return formatTemplate(options.config.planPrompt, values);
   }
+  try {
+    const prompt = I18N_DEFAULT.retrieve("planning", "create_plan_prompt");
+    if (typeof prompt === "string") {
+      return formatTemplate(prompt, values);
+    }
+  } catch {
+    // Fall back to the compact built-in prompt below.
+  }
   return [
     `Create a concise execution plan for this task as ${options.role}.`,
     `Goal: ${options.goal}`,
@@ -546,6 +568,7 @@ export class AgentReasoning {
   readonly agent: unknown;
   readonly task: unknown;
   readonly config: PlanningConfig;
+  readonly llm: LLM | string | null;
   readonly description: string;
   readonly expectedOutput: string;
   readonly expected_output: string;
@@ -573,6 +596,7 @@ export class AgentReasoning {
     this.config = normalizePlanningConfig(agentRecord.planningConfig as PlanningConfig | PlanningConfigOptions | null | undefined)
       ?? normalizePlanningConfig(agentRecord.planning_config as PlanningConfig | PlanningConfigOptions | null | undefined)
       ?? new PlanningConfig({ maxAttempts: typeof agentRecord.max_reasoning_attempts === "number" ? agentRecord.max_reasoning_attempts : null });
+    this.llm = this._resolve_llm();
     this.description = normalized.description
       ?? (typeof taskRecord.description === "string" ? taskRecord.description : "Complete the requested task");
     this.expectedOutput = normalized.expectedOutput
@@ -581,20 +605,336 @@ export class AgentReasoning {
     this.expected_output = this.expectedOutput;
   }
 
-  handleAgentReasoning(): AgentReasoningOutput {
-    const plan = new ReasoningPlan({
-      plan: [
-        `Task: ${this.description}`,
-        `Expected output: ${this.expectedOutput}`,
-      ].join("\n"),
-      steps: [],
-      ready: true,
-    });
-    return new AgentReasoningOutput({ plan });
+  _get_planning_config(): PlanningConfig {
+    return this.config;
   }
 
-  handle_agent_reasoning(): AgentReasoningOutput {
+  _resolve_llm(): LLM | string | null {
+    if (this.config.llm !== null) {
+      return this.config.llm;
+    }
+    const agentRecord = isRecord(this.agent) ? this.agent : {};
+    return agentRecord.llm as LLM | string | null ?? null;
+  }
+
+  handleAgentReasoning(): AgentReasoningOutput | Promise<AgentReasoningOutput> {
+    const taskId = this.taskId();
+    this.emitReasoningStarted(1, taskId);
+    try {
+      const output = this._execute_planning();
+      if (isPromiseLike(output)) {
+        return Promise.resolve(output)
+          .then((resolvedOutput) => {
+            this.emitReasoningCompleted(resolvedOutput.plan.plan, resolvedOutput.plan.ready, 1, taskId);
+            return resolvedOutput;
+          })
+          .catch((error: unknown) => {
+            this.emitReasoningFailed(error, 1, taskId);
+            throw error;
+          });
+      }
+      this.emitReasoningCompleted(output.plan.plan, output.plan.ready, 1, taskId);
+      return output;
+    } catch (error) {
+      this.emitReasoningFailed(error, 1, taskId);
+      throw error;
+    }
+  }
+
+  handle_agent_reasoning(): AgentReasoningOutput | Promise<AgentReasoningOutput> {
     return this.handleAgentReasoning();
+  }
+
+  _execute_planning(): AgentReasoningOutput | Promise<AgentReasoningOutput> {
+    const created = this._create_initial_plan();
+    if (isPromiseLike(created)) {
+      return Promise.resolve(created).then(([plan, steps, ready]) => this.resolvePlanningOutput(plan, steps, ready));
+    }
+    return this.resolvePlanningOutput(created[0], created[1], created[2]);
+  }
+
+  _create_initial_plan(): [string, PlanStep[], boolean] | Promise<[string, PlanStep[], boolean]> {
+    const planningPrompt = this._create_planning_prompt();
+    if (this.llmSupportsFunctionCalling()) {
+      return this._call_with_function(planningPrompt, "create_plan");
+    }
+    const response = this._call_llm_with_prompt(planningPrompt, "create_plan");
+    if (isPromiseLike(response)) {
+      return Promise.resolve(response).then((value) => {
+        const [plan, ready] = AgentReasoning._parse_planning_response(value);
+        return [plan, [], ready];
+      });
+    }
+    const [plan, ready] = AgentReasoning._parse_planning_response(response);
+    return [plan, [], ready];
+  }
+
+  _refine_plan_if_needed(
+    plan: string,
+    steps: PlanStep[],
+    ready: boolean,
+  ): [string, PlanStep[], boolean] | Promise<[string, PlanStep[], boolean]> {
+    const maxAttempts = this.config.maxAttempts;
+    if (ready || maxAttempts === 1) {
+      return [plan, steps, ready];
+    }
+    return this.refinePlanLoop(plan, steps, ready, 1);
+  }
+
+  _call_with_function(
+    prompt: string,
+    planType: "create_plan" | "refine_plan",
+  ): [string, PlanStep[], boolean] | Promise<[string, PlanStep[], boolean]> {
+    void planType;
+    const response = this.callPlanningLlm([
+      { role: "system", content: this._get_system_prompt() },
+      { role: "user", content: prompt },
+    ], {
+      tools: [FUNCTION_SCHEMA],
+      available_functions: {
+        create_reasoning_plan: (args: Record<string, unknown>) => JSON.stringify({
+          plan: args.plan,
+          steps: args.steps ?? [],
+          ready: args.ready ?? true,
+        }),
+      },
+      from_task: this.task,
+      from_agent: this.agent,
+    });
+    if (isPromiseLike(response)) {
+      return Promise.resolve(response).then((value) => this.parseFunctionPlanResponse(value));
+    }
+    return this.parseFunctionPlanResponse(response);
+  }
+
+  _call_llm_with_prompt(
+    prompt: string,
+    planType: "create_plan" | "refine_plan",
+  ): MaybePromise<string> {
+    void planType;
+    const response = this.callPlanningLlm([
+      { role: "system", content: this._get_system_prompt() },
+      { role: "user", content: prompt },
+    ], {
+      from_task: this.task,
+      from_agent: this.agent,
+    });
+    if (isPromiseLike(response)) {
+      return Promise.resolve(response).then(String);
+    }
+    return String(response);
+  }
+
+  _get_system_prompt(): string {
+    if (this.config.systemPrompt !== null) {
+      return this.config.systemPrompt;
+    }
+    try {
+      const prompt = I18N_DEFAULT.retrieve("planning", "system_prompt");
+      if (typeof prompt === "string") {
+        return prompt;
+      }
+    } catch {
+      // Fall back to the legacy reasoning prompt below.
+    }
+    const fallbackPrompt = I18N_DEFAULT.retrieve("reasoning", "initial_plan");
+    const fallback = typeof fallbackPrompt === "string" ? fallbackPrompt : "";
+    return fallback
+      .replaceAll("{role}", this.agentRole())
+      .replaceAll("{goal}", this.agentGoal())
+      .replaceAll("{backstory}", this._get_agent_backstory());
+  }
+
+  _get_agent_backstory(): string {
+    const agentRecord = isRecord(this.agent) ? this.agent : {};
+    return typeof agentRecord.backstory === "string" ? agentRecord.backstory : "No backstory provided";
+  }
+
+  _create_planning_prompt(): string {
+    return createAgentPlanningPrompt({
+      role: this.agentRole(),
+      goal: this.agentGoal(),
+      backstory: this._get_agent_backstory(),
+      description: this.description,
+      expectedOutput: this.expectedOutput,
+      tools: this._format_available_tools(),
+      config: this.config,
+    });
+  }
+
+  _format_available_tools(): string {
+    const taskRecord = isRecord(this.task) ? this.task : {};
+    const agentRecord = isRecord(this.agent) ? this.agent : {};
+    const taskTools = Array.isArray(taskRecord.tools) ? taskRecord.tools : [];
+    const agentTools = Array.isArray(agentRecord.tools) ? agentRecord.tools : [];
+    const tools = taskTools.length > 0 ? taskTools : agentTools;
+    if (tools.length === 0) {
+      return "No tools available";
+    }
+    return tools
+      .map((tool) => isRecord(tool) && typeof tool.name === "string" ? sanitizeToolName(tool.name) : "")
+      .filter(Boolean)
+      .join(", ") || "No tools available";
+  }
+
+  _create_refine_prompt(currentPlan: string): string {
+    return createAgentRefinePlanningPrompt({
+      role: this.agentRole(),
+      goal: this.agentGoal(),
+      backstory: this._get_agent_backstory(),
+      currentPlan,
+      config: this.config,
+    });
+  }
+
+  static _parse_planning_response(response: string): [string, boolean] {
+    if (!response) {
+      return ["No plan was generated.", false];
+    }
+    return [response, response.includes(REASONING_READY_MARKER)];
+  }
+
+  _parse_planning_response(response: string): [string, boolean] {
+    return AgentReasoning._parse_planning_response(response);
+  }
+
+  private resolvePlanningOutput(
+    plan: string,
+    steps: PlanStep[],
+    ready: boolean,
+  ): AgentReasoningOutput | Promise<AgentReasoningOutput> {
+    const refined = this._refine_plan_if_needed(plan, steps, ready);
+    if (isPromiseLike(refined)) {
+      return Promise.resolve(refined).then(([refinedPlan, refinedSteps, refinedReady]) => new AgentReasoningOutput({
+        plan: new ReasoningPlan({ plan: refinedPlan, steps: refinedSteps, ready: refinedReady }),
+      }));
+    }
+    return new AgentReasoningOutput({
+      plan: new ReasoningPlan({ plan: refined[0], steps: refined[1], ready: refined[2] }),
+    });
+  }
+
+  private refinePlanLoop(
+    plan: string,
+    steps: PlanStep[],
+    ready: boolean,
+    attempt: number,
+  ): [string, PlanStep[], boolean] | Promise<[string, PlanStep[], boolean]> {
+    const maxAttempts = this.config.maxAttempts;
+    if (ready || (maxAttempts !== null && attempt >= maxAttempts)) {
+      return [plan, steps, ready];
+    }
+    const nextAttempt = attempt + 1;
+    const taskId = this.taskId();
+    this.emitReasoningStarted(nextAttempt, taskId);
+    const refinePrompt = this._create_refine_prompt(plan);
+    const next = this.llmSupportsFunctionCalling()
+      ? this._call_with_function(refinePrompt, "refine_plan")
+      : this.textRefinePlan(refinePrompt);
+    if (isPromiseLike(next)) {
+      return Promise.resolve(next).then(([nextPlan, nextSteps, nextReady]) => {
+        this.emitReasoningCompleted(nextPlan, nextReady, nextAttempt, taskId);
+        return this.refinePlanLoop(nextPlan, nextSteps, nextReady, nextAttempt);
+      });
+    }
+    this.emitReasoningCompleted(next[0], next[2], nextAttempt, taskId);
+    return this.refinePlanLoop(next[0], next[1], next[2], nextAttempt);
+  }
+
+  private textRefinePlan(refinePrompt: string): [string, PlanStep[], boolean] | Promise<[string, PlanStep[], boolean]> {
+    const response = this._call_llm_with_prompt(refinePrompt, "refine_plan");
+    if (isPromiseLike(response)) {
+      return Promise.resolve(response).then((value) => {
+        const [plan, ready] = AgentReasoning._parse_planning_response(value);
+        return [plan, [], ready];
+      });
+    }
+    const [plan, ready] = AgentReasoning._parse_planning_response(response);
+    return [plan, [], ready];
+  }
+
+  private parseFunctionPlanResponse(response: unknown): [string, PlanStep[], boolean] {
+    const raw = typeof response === "string" ? response : JSON.stringify(response);
+    const parsed = tryParseJson(raw);
+    if (isRecord(parsed) && typeof parsed.plan === "string") {
+      const rawSteps = Array.isArray(parsed.steps) ? parsed.steps : [];
+      return [
+        parsed.plan,
+        rawSteps.map((step) => new PlanStep(normalizePlanStep(step))),
+        typeof parsed.ready === "boolean" ? parsed.ready : raw.includes(REASONING_READY_MARKER),
+      ];
+    }
+    return [raw, [], raw.includes(REASONING_READY_MARKER)];
+  }
+
+  private callPlanningLlm(messages: readonly LLMMessage[], options: Record<string, unknown>): MaybePromise<unknown> {
+    const llm = this.llm;
+    if (typeof llm === "function") {
+      return llm(messages, options);
+    }
+    if (isRecord(llm) && typeof llm.call === "function") {
+      return (llm as ReasoningLLM).call?.(messages, options);
+    }
+    throw new Error("Agent reasoning requires an LLM with a call method.");
+  }
+
+  private llmSupportsFunctionCalling(): boolean {
+    const llm = this.llm;
+    if (!isRecord(llm)) {
+      return false;
+    }
+    const supports = (llm as ReasoningLLM).supportsFunctionCalling ?? (llm as ReasoningLLM).supports_function_calling;
+    return typeof supports === "function" ? supports.call(llm) : false;
+  }
+
+  private agentRole(): string {
+    const agentRecord = isRecord(this.agent) ? this.agent : {};
+    return typeof agentRecord.role === "string" ? agentRecord.role : "";
+  }
+
+  private agentGoal(): string {
+    const agentRecord = isRecord(this.agent) ? this.agent : {};
+    return typeof agentRecord.goal === "string" ? agentRecord.goal : "";
+  }
+
+  private taskId(): string {
+    const taskRecord = isRecord(this.task) ? this.task : {};
+    const rawId = taskRecord.id;
+    return typeof rawId === "string" || typeof rawId === "number" || typeof rawId === "boolean"
+      ? String(rawId)
+      : "kickoff";
+  }
+
+  private emitReasoningStarted(attempt: number, taskId: string): void {
+    crewaiEventBus.emit(this.agent, new AgentReasoningStartedEvent({
+      agentRole: this.agentRole(),
+      taskId,
+      attempt,
+      fromTask: this.task,
+    }));
+  }
+
+  private emitReasoningCompleted(plan: string, ready: boolean, attempt: number, taskId: string): void {
+    crewaiEventBus.emit(this.agent, new AgentReasoningCompletedEvent({
+      agentRole: this.agentRole(),
+      taskId,
+      plan,
+      ready,
+      attempt,
+      fromTask: this.task,
+      fromAgent: this.agent,
+    }));
+  }
+
+  private emitReasoningFailed(error: unknown, attempt: number, taskId: string): void {
+    crewaiEventBus.emit(this.agent, new AgentReasoningFailedEvent({
+      agentRole: this.agentRole(),
+      taskId,
+      error,
+      attempt,
+      fromTask: this.task,
+      fromAgent: this.agent,
+    }));
   }
 }
 
@@ -664,4 +1004,10 @@ function tryParseJson(raw: string): unknown {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function isPromiseLike<T>(value: T | PromiseLike<T>): value is PromiseLike<T> {
+  return Boolean(value)
+    && (typeof value === "object" || typeof value === "function")
+    && typeof (value as { then?: unknown }).then === "function";
 }

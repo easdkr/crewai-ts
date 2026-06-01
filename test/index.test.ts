@@ -313,6 +313,9 @@ import {
   METADATA,
   INSTRUCTIONS,
   RESOURCES,
+  AgentReasoning,
+  FUNCTION_SCHEMA,
+  PlanStep,
   PlanningConfig,
   Process,
   persist,
@@ -11311,6 +11314,121 @@ describe("agent planning", () => {
     expect(config.max_replans).toBe(2);
     expect(config.max_step_iterations).toBe(9);
     expect(config.step_timeout).toBe(30);
+  });
+
+  it("exposes upstream AgentReasoning prompt and parsing helpers", () => {
+    const reasoning = new AgentReasoning({
+      agent: {
+        role: "Researcher",
+        goal: "Find facts",
+        backstory: "Careful analyst",
+        tools: [{ name: "Search Tool" }, { name: "Summarize Tool" }],
+      },
+      description: "Research CrewAI",
+      expected_output: "Concise report",
+    });
+
+    expect(reasoning._get_planning_config()).toBeInstanceOf(PlanningConfig);
+    expect(reasoning._resolve_llm()).toBeNull();
+    expect(reasoning._get_agent_backstory()).toBe("Careful analyst");
+    expect(reasoning._format_available_tools()).toBe("search_tool, summarize_tool");
+    expect(reasoning._get_system_prompt()).toContain("strategic planning assistant");
+    expect(reasoning._create_planning_prompt()).toContain("Research CrewAI");
+    expect(reasoning._create_planning_prompt()).toContain("search_tool, summarize_tool");
+    expect(reasoning._create_refine_prompt("Draft plan")).toContain("Draft plan");
+    expect(AgentReasoning._parse_planning_response("Plan\nREADY: I am ready to execute the task.")).toEqual([
+      "Plan\nREADY: I am ready to execute the task.",
+      true,
+    ]);
+    expect(reasoning._parse_planning_response("")).toEqual(["No plan was generated.", false]);
+  });
+
+  it("runs AgentReasoning through upstream function-calling planning", async () => {
+    const calls: Array<{ messages: readonly LLMMessage[]; options?: Record<string, unknown> }> = [];
+    const events: CrewAIEvent[] = [];
+    crewaiEventBus.on("agent_reasoning_started", (_, event) => {
+      events.push(event);
+    });
+    crewaiEventBus.on("agent_reasoning_completed", (_, event) => {
+      events.push(event);
+    });
+    const llm = {
+      supports_function_calling: () => true,
+      call(messages: readonly LLMMessage[], options?: Record<string, unknown>) {
+        calls.push({ messages, options });
+        expect(options?.tools).toEqual([FUNCTION_SCHEMA]);
+        return JSON.stringify({
+          plan: "Search then summarize",
+          ready: true,
+          steps: [
+            {
+              step_number: 1,
+              description: "Search docs",
+              tool_to_use: "Search Tool",
+              depends_on: [],
+            },
+          ],
+        });
+      },
+    };
+    const reasoning = new AgentReasoning({
+      agent: {
+        role: "Researcher",
+        goal: "Find facts",
+        backstory: "Careful analyst",
+        llm,
+      },
+      task: {
+        id: "task-1",
+        description: "Research CrewAI",
+        expected_output: "Concise report",
+      },
+    });
+
+    const output = await reasoning.handle_agent_reasoning();
+
+    expect(output.plan.plan).toBe("Search then summarize");
+    expect(output.plan.ready).toBe(true);
+    expect(output.plan.steps[0]).toBeInstanceOf(PlanStep);
+    expect(output.plan.steps[0]?.tool_to_use).toBe("Search Tool");
+    expect(calls[0]?.messages[0]?.role).toBe("system");
+    expect(calls[0]?.messages[1]?.content).toContain("Research CrewAI");
+    expect(events.map((event) => event.type)).toEqual([
+      "agent_reasoning_started",
+      "agent_reasoning_completed",
+    ]);
+    expect((events[0] as AgentReasoningStartedEvent).task_id).toBe("task-1");
+    expect((events[1] as AgentReasoningCompletedEvent).plan).toBe("Search then summarize");
+  });
+
+  it("refines AgentReasoning text plans until ready", async () => {
+    const prompts: string[] = [];
+    const reasoning = new AgentReasoning({
+      agent: {
+        role: "Researcher",
+        goal: "Find facts",
+        backstory: "Careful analyst",
+        planning_config: new PlanningConfig({ max_attempts: 2 }),
+        llm: {
+          call(messages: readonly LLMMessage[]) {
+            const prompt = messages.at(-1)?.content ?? "";
+            prompts.push(prompt);
+            return prompt.includes("Refine this execution plan")
+              ? "Final plan\nREADY: I am ready to execute the task."
+              : "Initial plan needs refinement";
+          },
+        },
+      },
+      description: "Research CrewAI",
+      expectedOutput: "Concise report",
+    });
+
+    const output = await reasoning.handleAgentReasoning();
+
+    expect(output.plan.plan).toBe("Final plan\nREADY: I am ready to execute the task.");
+    expect(output.plan.ready).toBe(true);
+    expect(prompts[0]).toContain("Create an execution plan");
+    expect(prompts[1]).toContain("Refine this execution plan");
   });
 
   it("accepts upstream snake_case Agent options in direct construction", async () => {
