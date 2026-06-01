@@ -116,6 +116,7 @@ When more goal budget is available, continue from the behavioral parity audits b
 - Added fake-client-backed RAG tests for ChromaDB and Qdrant collection create/delete/reset, upsert overwrite behavior, search, metadata filters, and async aliases.
 - Added `KnowledgeStorage` tests for collection naming, save/search, async aliases, and reset through the RAG client wrapper.
 - `Knowledge.query` / `aquery` now honor upstream `results_limit` and `score_threshold` option names when forwarding to storage search.
+- Agent knowledge search query generation now uses the upstream I18N prompt slices for the system and user messages before querying knowledge sources.
 - `Knowledge.add_sources` / `aadd_sources` now attach configured storage to each source and delegate through source `add` / `aadd` hooks before falling back to direct chunk saves.
 - `KnowledgeStorage.reset` / `areset` now mirror upstream best-effort reset semantics by ignoring client deletion failures after attempting the reset.
 - RAG optional-provider placeholders now mirror upstream missing optional import behavior by raising clear provider-specific errors instead of silently creating shim configs.

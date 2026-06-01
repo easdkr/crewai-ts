@@ -12183,6 +12183,7 @@ describe("core crew runtime", () => {
 
   it("generates knowledge search queries through the upstream-compatible agent helper", async () => {
     const events: CrewAIEvent[] = [];
+    let seenMessages: readonly LLMMessage[] = [];
     crewaiEventBus.on("knowledge_query_started", (_source, event) => {
       events.push(event);
     });
@@ -12194,8 +12195,7 @@ describe("core crew runtime", () => {
       goal: "Find facts",
       backstory: "Careful analyst",
       llm: (messages) => {
-        expect(messages[0]?.role).toBe("system");
-        expect(messages[1]?.content).toContain("Explain CrewAI memory");
+        seenMessages = messages;
         return "CrewAI memory search";
       },
     });
@@ -12208,6 +12208,18 @@ describe("core crew runtime", () => {
     await expect(agentInstance._get_knowledge_search_query("Explain CrewAI memory", taskInstance))
       .resolves.toBe("CrewAI memory search");
 
+    expect(seenMessages).toEqual([
+      {
+        role: "system",
+        content: I18N_DEFAULT.slice("knowledge_search_query_system_prompt")
+          .replace("{task_prompt}", taskInstance.description),
+      },
+      {
+        role: "user",
+        content: I18N_DEFAULT.slice("knowledge_search_query")
+          .replace("{task_prompt}", "Explain CrewAI memory"),
+      },
+    ]);
     expect(events.map((event) => event.type)).toEqual([
       "knowledge_query_started",
       "knowledge_query_completed",

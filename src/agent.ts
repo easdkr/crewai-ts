@@ -78,6 +78,7 @@ import { Prompts, type StandardPromptResult, type SystemPromptResult } from "./p
 import { LiteAgentOutput, type TodoExecutionResultOptions } from "./lite-agent-output.js";
 import { loadAgentFromRepository } from "./agent-utils.js";
 import { serializeGuardrailForJson } from "./guardrail.js";
+import { I18N_DEFAULT } from "./i18n.js";
 
 export type AgentGuardrailResult =
   | readonly [boolean, unknown]
@@ -480,15 +481,15 @@ export class Agent {
       from_task: task,
       from_agent: this,
     }));
-    const query = `Generate a concise knowledge search query for the following task:\n${taskPrompt}`;
     const messages: LLMMessage[] = [
       {
         role: "system",
-        content: "Rewrite task prompts into concise search queries for a knowledge base.",
+        content: I18N_DEFAULT.slice("knowledge_search_query_system_prompt")
+          .replace("{task_prompt}", isTaskLike(task) ? task.description : taskPrompt),
       },
       {
         role: "user",
-        content: query,
+        content: I18N_DEFAULT.slice("knowledge_search_query").replace("{task_prompt}", taskPrompt),
       },
     ];
     try {
@@ -498,7 +499,7 @@ export class Agent {
       }
       const rewrittenQuery = await this.callAndTrackLLM(llmClient, messages, [], { task }, 0);
       crewaiEventBus.emit(this, new KnowledgeQueryCompletedEvent({
-        query,
+        query: messages[1]?.content ?? taskPrompt,
         from_task: task,
         from_agent: this,
       }));
@@ -2729,6 +2730,10 @@ function formatDate(date: Date, format: string): string | null {
     (formatted, [token, value]) => formatted.replaceAll(token, value),
     format,
   );
+}
+
+function isTaskLike(value: unknown): value is { description: string } {
+  return Boolean(value && typeof value === "object" && typeof (value as { description?: unknown }).description === "string");
 }
 
 const MONTH_NAMES = [
