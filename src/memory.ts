@@ -2109,36 +2109,37 @@ export class Memory {
     if (this.readOnly) {
       return null;
     }
+    const resolvedOptions = this.resolveSaveOptionsSync(content, options);
     crewaiEventBus.emit(this, new MemorySaveStartedEvent({
       value: content,
-      metadata: options.metadata ?? null,
-      agentRole: options.agentRole ?? null,
+      metadata: resolvedOptions.metadata ?? null,
+      agentRole: resolvedOptions.agentRole ?? null,
     }));
     const start = performance.now();
     try {
       const record = new MemoryRecord({
         content,
-        scope: this.scopePath(options.scope, rootScopeFromOptions(options, this.rootScope)),
-        categories: options.categories ?? [],
-        metadata: options.metadata ?? {},
-        importance: options.importance ?? this.config.defaultImportance,
-        source: options.source ?? null,
-        private: options.private ?? false,
+        scope: this.scopePath(resolvedOptions.scope, rootScopeFromOptions(resolvedOptions, this.rootScope)),
+        categories: resolvedOptions.categories ?? [],
+        metadata: resolvedOptions.metadata ?? {},
+        importance: resolvedOptions.importance ?? this.config.defaultImportance,
+        source: resolvedOptions.source ?? null,
+        private: resolvedOptions.private ?? false,
         embedding: this.embeddingForText(content),
       });
       this.records.push(record);
       crewaiEventBus.emit(this, new MemorySaveCompletedEvent({
         value: content,
         metadata: record.metadata,
-        agentRole: options.agentRole ?? null,
+        agentRole: resolvedOptions.agentRole ?? null,
         saveTimeMs: performance.now() - start,
       }));
       return record;
     } catch (error) {
       crewaiEventBus.emit(this, new MemorySaveFailedEvent({
         value: content,
-        metadata: options.metadata ?? null,
-        agentRole: options.agentRole ?? null,
+        metadata: resolvedOptions.metadata ?? null,
+        agentRole: resolvedOptions.agentRole ?? null,
         error,
       }));
       throw error;
@@ -2193,6 +2194,34 @@ export class Memory {
       scope: options.scope ?? analysis.suggestedScope,
       categories: options.categories ?? analysis.categories,
       importance: options.importance ?? analysis.importance,
+      metadata: {
+        ...(options.metadata ?? {}),
+        ...extractedMetadataToRecord(analysis.extractedMetadata),
+      },
+    };
+  }
+
+  private resolveSaveOptionsSync(
+    content: string,
+    options: Parameters<Memory["remember"]>[1] = {},
+  ): NonNullable<Parameters<Memory["remember"]>[1]> {
+    if (!this.llm || options.scope !== undefined || options.categories !== undefined || options.importance !== undefined) {
+      return options;
+    }
+    const analysis = analyzeForSaveSync(
+      content,
+      this.listScopes(false) as readonly string[],
+      Object.keys(this.listCategories(false)),
+      this.llm,
+    );
+    if (!analysis) {
+      return options;
+    }
+    return {
+      ...options,
+      scope: analysis.suggestedScope,
+      categories: analysis.categories,
+      importance: analysis.importance,
       metadata: {
         ...(options.metadata ?? {}),
         ...extractedMetadataToRecord(analysis.extractedMetadata),
@@ -3658,6 +3687,36 @@ export async function analyzeForSave(
 
 export const analyze_for_save = analyzeForSave;
 
+function analyzeForSaveSync(
+  content: string,
+  existingScopes: readonly string[],
+  existingCategories: readonly string[],
+  llm: LLM,
+): MemoryAnalysis | null {
+  const user = [
+    "Analyze this memory before saving.",
+    `Content: ${content}`,
+    `Existing scopes: ${JSON.stringify(existingScopes.length > 0 ? existingScopes : ["/"])}`,
+    `Existing categories: ${JSON.stringify(existingCategories)}`,
+    "Return JSON with suggested_scope, categories, importance, extracted_metadata.",
+  ].join("\n\n");
+  try {
+    const messages = [
+      { role: "system" as const, content: "You analyze content before saving it to memory." },
+      { role: "user" as const, content: user },
+    ];
+    const response = typeof llm === "function"
+      ? llm(messages, { responseModel: MemoryAnalysis })
+      : llm.call(messages, { responseModel: MemoryAnalysis });
+    if (isPromiseLike(response)) {
+      return null;
+    }
+    return coerceMemoryAnalysis(response);
+  } catch {
+    return null;
+  }
+}
+
 export async function analyzeForConsolidation(
   newContent: string,
   existingRecords: readonly MemoryRecord[],
@@ -3890,6 +3949,13 @@ function coerceConsolidationAction(value: ConsolidationAction | Record<string, u
     ...(typeof value.new_content === "string" ? { new_content: value.new_content } : {}),
     ...(typeof value.reason === "string" ? { reason: value.reason } : {}),
   });
+}
+
+function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
+  return (typeof value === "object" || typeof value === "function")
+    && value !== null
+    && "then" in value
+    && typeof (value as { then?: unknown }).then === "function";
 }
 
 function coerceConsolidationPlan(value: unknown): ConsolidationPlan {

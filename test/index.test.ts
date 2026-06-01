@@ -25836,6 +25836,31 @@ describe("memory", () => {
     expect(memory.recall("Override root sync", { scope: "/crew/base", scoreThreshold: null })).toEqual([]);
   });
 
+  it("uses sync LLM save analysis for upstream remember root_scope resolution", () => {
+    const seen: string[] = [];
+    const memory = new Memory({
+      rootScope: "/flow/mypipeline",
+      llm: (messages, options) => {
+        seen.push(`${options?.responseModel === MemoryAnalysis ? "analysis" : "other"}:${messages.at(-1)?.content ?? ""}`);
+        return new MemoryAnalysis({
+          suggested_scope: "/quarterly-results",
+          categories: ["finance"],
+          importance: 0.8,
+        });
+      },
+    });
+
+    const record = memory.remember("Q1 revenue was $1M");
+
+    expect(record).toMatchObject({
+      content: "Q1 revenue was $1M",
+      scope: "/flow/mypipeline/quarterly-results",
+      categories: ["finance"],
+      importance: 0.8,
+    });
+    expect(seen[0]).toContain("analysis:Analyze this memory before saving.");
+  });
+
   it("limits memory slice recall after merging scoped oversampled results", () => {
     const memory = new Memory();
     memory.remember("Alpha target memory", { scope: "/projects/alpha", importance: 0.9 });
