@@ -26572,6 +26572,63 @@ describe("crew planning", () => {
     expect(prompts[1]).not.toContain("Plan 1");
     expect(prompts[1]).toContain("Plan 2");
   });
+
+  it("matches crew planning output by task number and skips missing plans", async () => {
+    const prompts: Record<string, string[]> = { first: [], second: [], third: [] };
+    const firstAgent = new Agent({
+      role: "First",
+      goal: "Do first work",
+      backstory: "First agent",
+      llm: (messages) => {
+        const prompt = messages.at(-1)?.content ?? "";
+        prompts.first?.push(prompt);
+        return prompt;
+      },
+    });
+    const secondAgent = new Agent({
+      role: "Second",
+      goal: "Do second work",
+      backstory: "Second agent",
+      llm: (messages) => {
+        const prompt = messages.at(-1)?.content ?? "";
+        prompts.second?.push(prompt);
+        return prompt;
+      },
+    });
+    const thirdAgent = new Agent({
+      role: "Third",
+      goal: "Do third work",
+      backstory: "Third agent",
+      llm: (messages) => {
+        const prompt = messages.at(-1)?.content ?? "";
+        prompts.third?.push(prompt);
+        return prompt;
+      },
+    });
+    const planningLlm = () => JSON.stringify({
+      listOfPlansPerTask: [
+        { taskNumber: 3, task: "Third task", plan: "Plan for task 3" },
+        { taskNumber: 1, task: "First task", plan: "Plan for task 1" },
+        { taskNumber: 1, task: "First task duplicate", plan: "Duplicate plan for task 1" },
+      ],
+    });
+
+    await new Crew({
+      agents: [firstAgent, secondAgent, thirdAgent],
+      tasks: [
+        new Task({ description: "First task", expectedOutput: "First output", agent: firstAgent }),
+        new Task({ description: "Second task", expectedOutput: "Second output", agent: secondAgent }),
+        new Task({ description: "Third task", expectedOutput: "Third output", agent: thirdAgent }),
+      ],
+      planning: true,
+      planningLlm,
+    }).kickoff();
+
+    expect(prompts.first[0]).toContain("Planning:\nPlan for task 1");
+    expect(prompts.first[0]).not.toContain("Duplicate plan for task 1");
+    expect(prompts.second[0]?.split("\n\nContext:")[0]).not.toContain("Planning:");
+    expect(prompts.third[0]).toContain("Planning:\nPlan for task 3");
+  });
 });
 
 describe("events", () => {
