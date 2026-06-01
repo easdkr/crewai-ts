@@ -380,6 +380,8 @@ import {
   StringKnowledgeSource,
   StreamChunk,
   StreamChunkType,
+  createChunkGenerator,
+  createStreamingState,
   StructuredTool,
   ToolUsageLimitExceededError,
   SemanticQualityEvaluator,
@@ -31362,6 +31364,44 @@ describe("streaming output", () => {
     expect(chunk.tool_call).toBe(toolCall);
     expect(String(chunk)).toBe("searching");
     expect(chunk.__str__()).toBe("searching");
+  });
+
+  it("isolates concurrent streaming states by stream context", () => {
+    const stateA = createStreamingState({
+      index: 0,
+      name: "task_a",
+      id: "a",
+      agent_role: "A",
+      agent_id: "agent-a",
+    }, []);
+    const stateB = createStreamingState({
+      index: 1,
+      name: "task_b",
+      id: "b",
+      agent_role: "B",
+      agent_id: "agent-b",
+    }, []);
+    const emitChunks = (prefix: string, callId: string) => {
+      for (const suffix of ["1", "2", "3"]) {
+        crewaiEventBus.emit(null, new LLMStreamChunkEvent({
+          chunk: `${prefix}${suffix}`,
+          call_id: callId,
+          response_id: "r",
+        }));
+      }
+    };
+
+    const chunksA = [...createChunkGenerator(stateA, () => {
+      emitChunks("A", "ca");
+    })];
+    const chunksB = [...createChunkGenerator(stateB, () => {
+      emitChunks("B", "cb");
+    })];
+
+    expect(chunksA.map((chunk) => chunk.content)).toEqual(["A1", "A2", "A3"]);
+    expect(chunksB.map((chunk) => chunk.content)).toEqual(["B1", "B2", "B3"]);
+    expect(chunksA.every((chunk) => chunk.taskId === "a" && chunk.agentRole === "A")).toBe(true);
+    expect(chunksB.every((chunk) => chunk.taskId === "b" && chunk.agentRole === "B")).toBe(true);
   });
 
   it("returns a CrewStreamingOutput when a crew is configured for streaming", async () => {

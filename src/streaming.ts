@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
 
 import {
@@ -288,6 +289,7 @@ export type TaskInfo = {
 
 type QueueItem = StreamChunk | null | Error;
 type StreamHandler = (source: unknown, event: BaseEvent) => void;
+const currentStreamIds = new AsyncLocalStorage<readonly string[]>();
 
 class ChunkQueue {
   private readonly items: QueueItem[] = [];
@@ -370,7 +372,7 @@ export function createStreamingState(
   const syncQueue = new ChunkQueue();
   const asyncQueue = useAsync ? new ChunkQueue() : null;
   const streamId = randomUUID();
-  const handler = createStreamHandler(currentTaskInfo, syncQueue, asyncQueue);
+  const handler = createStreamHandler(currentTaskInfo, syncQueue, asyncQueue, streamId);
   crewaiEventBus.on("llm_stream_chunk", handler);
   return new StreamingState({
     currentTaskInfo,
@@ -412,7 +414,7 @@ export function* createChunkGenerator(
   outputHolder: unknown[] = [],
 ): Generator<StreamChunk> {
   try {
-    runFunc();
+    runWithStreamId(state, runFunc);
     signalEnd(state);
     for (;;) {
       const item = state.sync_queue.get();
@@ -439,7 +441,7 @@ export async function* createAsyncChunkGenerator(
   if (!state.async_queue) {
     throw new Error("Async queue not initialized. Use create_streaming_state(use_async=true).");
   }
-  const task = Promise.resolve().then(() => runCoro()).finally(() => {
+  const task = runWithStreamId(state, async () => await Promise.resolve().then(() => runCoro())).finally(() => {
     signalEnd(state, true);
   });
   try {
@@ -479,9 +481,14 @@ function createStreamHandler(
   currentTaskInfo: TaskInfo,
   syncQueue: ChunkQueue,
   asyncQueue: ChunkQueue | null,
+  streamId: string | null,
 ): StreamHandler {
   return (_source: unknown, event: BaseEvent) => {
     if (!(event instanceof LLMStreamChunkEvent)) {
+      return;
+    }
+    const activeStreamIds = currentStreamIds.getStore() ?? [];
+    if (activeStreamIds.length > 0 && streamId && !activeStreamIds.includes(streamId)) {
       return;
     }
     const chunk = createStreamChunk(event, currentTaskInfo);
@@ -491,6 +498,14 @@ function createStreamHandler(
       syncQueue.put(chunk);
     }
   };
+}
+
+function runWithStreamId<T>(state: StreamingState, callback: () => T): T {
+  if (!state.stream_id) {
+    return callback();
+  }
+  const previous = currentStreamIds.getStore() ?? [];
+  return currentStreamIds.run([...previous, state.stream_id], callback);
 }
 
 function createStreamChunk(event: LLMStreamChunkEvent, currentTaskInfo: TaskInfo): StreamChunk {
