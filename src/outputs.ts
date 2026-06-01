@@ -61,7 +61,7 @@ export class TaskOutput {
   }
 
   toDict(): Record<string, unknown> {
-    if (this.jsonDict) {
+    if (hasJsonDictContent(this.jsonDict)) {
       return { ...this.jsonDict };
     }
     const dumped = dumpPydanticLike(this.pydantic);
@@ -79,7 +79,7 @@ export class TaskOutput {
     if (this.pydantic !== null && this.pydantic !== undefined) {
       return stringifyOutput(this.pydantic);
     }
-    if (this.jsonDict) {
+    if (hasJsonDictContent(this.jsonDict)) {
       return pythonRepr(this.jsonDict);
     }
     return this.raw;
@@ -133,7 +133,7 @@ export class CrewOutput {
   }
 
   toDict(): Record<string, unknown> {
-    if (this.jsonDict) {
+    if (hasJsonDictContent(this.jsonDict)) {
       return { ...this.jsonDict };
     }
     const dumped = dumpPydanticLike(this.pydantic);
@@ -151,7 +151,7 @@ export class CrewOutput {
     if (this.pydantic && typeof this.pydantic === "object" && key in this.pydantic) {
       return (this.pydantic as Record<string, unknown>)[key];
     }
-    if (this.jsonDict && key in this.jsonDict) {
+    if (hasJsonDictContent(this.jsonDict) && key in this.jsonDict) {
       return this.jsonDict[key];
     }
     throw new Error(`Key '${key}' not found in CrewOutput.`);
@@ -165,7 +165,7 @@ export class CrewOutput {
     if (this.pydantic !== null && this.pydantic !== undefined) {
       return stringifyOutput(this.pydantic);
     }
-    if (this.jsonDict) {
+    if (hasJsonDictContent(this.jsonDict)) {
       return pythonRepr(this.jsonDict);
     }
     return this.raw;
@@ -184,6 +184,10 @@ function stringifyOutput(value: unknown): string {
     return value.toString();
   }
   return String(value);
+}
+
+function hasJsonDictContent(value: Record<string, unknown> | null): value is Record<string, unknown> {
+  return value !== null && Object.keys(value).length > 0;
 }
 
 function jsonDumps(value: unknown): string {

@@ -1299,9 +1299,23 @@ describe("serialization and project utilities", () => {
       agent: "Researcher",
     });
     const pydanticCrewOutput = new CrewOutput({ pydantic: pydanticLike });
+    const emptyJsonTaskOutput = new TaskOutput({
+      description: "Empty JSON dict should not mask pydantic output",
+      json_dict: {},
+      pydantic: pydanticLike,
+      raw: "raw fallback",
+      agent: "Researcher",
+    });
+    const emptyJsonCrewOutput = new CrewOutput({
+      json_dict: {},
+      pydantic: pydanticLike,
+      raw: "raw fallback",
+    });
 
     expect(pydanticTaskOutput.to_dict()).toEqual({ summary: "dumped", score: 9 });
     expect(pydanticCrewOutput.to_dict()).toEqual({ summary: "dumped", score: 9 });
+    expect(emptyJsonTaskOutput.to_dict()).toEqual({ summary: "dumped", score: 9 });
+    expect(emptyJsonCrewOutput.to_dict()).toEqual({ summary: "dumped", score: 9 });
 
     const spacedOutput = new TaskOutput({
       description: "Alpha  Beta\nGamma Delta Epsilon Zeta Eta Theta Iota Kappa Lambda Mu",
