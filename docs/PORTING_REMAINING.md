@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 664 passing tests.
+- Test suite: 667 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -98,6 +98,13 @@ When more goal budget is available, continue from the behavioral parity audits b
 - Added upstream-style embedding factory fallback so built-in provider specs instantiate their provider classes when no custom builder is registered.
 - Added Google Vertex, VoyageAI, and WatsonX embedding function `name()` helpers, embedding function `__call__` aliases, plus WatsonX `validate_space_or_project` parity.
 - `BaseRAGStorage` now exposes upstream-style `_initialize_agents` and `_sanitize_role` helpers alongside the TypeScript camelCase internals.
+
+## Completed In Current AgentExecutor Behavior Pass
+
+- `AgentExecutor.finalize` now mirrors upstream plan-and-execute finalization for strong final todo answers:
+  - uses the last completed todo result directly when it is a sufficiently complete prose answer and not tied to a required tool
+  - avoids the direct-answer shortcut when structured output is requested through `response_model` / `responseModel`
+  - preserves the deterministic fallback step-summary behavior when the shortcut is not applicable
 
 ## Completed In Current Flow/Persistence Pass
 

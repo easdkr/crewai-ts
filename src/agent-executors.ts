@@ -304,6 +304,8 @@ export type BaseAgentExecutorOptions = {
   tools_description?: string;
   stop?: readonly string[];
   stop_words?: readonly string[];
+  responseModel?: unknown;
+  response_model?: unknown;
 };
 
 export class BaseAgentExecutor {
@@ -313,6 +315,8 @@ export class BaseAgentExecutor {
   readonly agent: Agent | null;
   readonly task: unknown;
   readonly tools: readonly Tool[];
+  responseModel: unknown;
+  response_model: unknown;
   readonly maxIter: number;
   readonly max_iter: number;
   iterations = 0;
@@ -326,6 +330,8 @@ export class BaseAgentExecutor {
     this.agent = options.agent ?? null;
     this.task = options.task ?? null;
     this.tools = options.tools ?? this.agent?.tools ?? [];
+    this.responseModel = options.responseModel ?? options.response_model ?? null;
+    this.response_model = this.responseModel;
     this.maxIter = options.maxIter ?? options.max_iter ?? this.agent?.maxIter ?? 25;
     this.max_iter = this.maxIter;
     this.messages = [...(options.messages ?? [])];
@@ -759,16 +765,42 @@ export class AgentExecutor extends BaseAgentExecutor {
     this.finalizeCalled = true;
     if (this.state.current_answer === null) {
       const completed = this.state.todos.getCompletedTodos().filter((todo) => todo.result);
-      const output = completed.length > 0
-        ? completed.map((todo) => `Step ${String(todo.stepNumber)}: ${todo.result ?? ""}`).join("\n\n")
-        : "Agent completed execution but produced no final output.";
-      this.state.current_answer = new AgentFinish({ thought: "", output, text: output });
+      const directFinal = this.canUseLastTodoResultAsFinalAnswer(completed);
+      const output = directFinal?.result
+        ?? (completed.length > 0
+          ? completed.map((todo) => `Step ${String(todo.stepNumber)}: ${todo.result ?? ""}`).join("\n\n")
+          : "Agent completed execution but produced no final output.");
+      const thought = directFinal
+        ? "Final answer returned directly from last completed todo"
+        : "";
+      this.state.current_answer = new AgentFinish({ thought, output, text: output });
     }
     if (!(this.state.current_answer instanceof AgentFinish)) {
       return "skipped";
     }
     this.state.is_finished = true;
     return "completed";
+  }
+
+  private canUseLastTodoResultAsFinalAnswer(todosWithResults: readonly TodoItem[]): TodoItem | null {
+    if (this.responseModel !== null || this.response_model !== null || todosWithResults.length === 0) {
+      return null;
+    }
+    const lastTodo = [...todosWithResults].sort((left, right) => right.stepNumber - left.stepNumber)[0];
+    if (!lastTodo || lastTodo.toolToUse) {
+      return null;
+    }
+    const result = (lastTodo.result ?? "").trim();
+    if (!result) {
+      return null;
+    }
+    const lowered = result.toLowerCase();
+    if (lowered.startsWith("error:") || lowered.includes("tool execution error")) {
+      return null;
+    }
+    const wordCount = result.split(/\s+/).filter(Boolean).length;
+    const hasSentencePunctuation = /[.!?]/.test(result);
+    return hasSentencePunctuation && (result.length >= 200 || wordCount >= 30) ? lastTodo : null;
   }
 
   handleReplan(): "has_todos" | "no_todos" {

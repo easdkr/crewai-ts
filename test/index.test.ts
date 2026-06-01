@@ -10033,6 +10033,60 @@ describe("core crew runtime", () => {
     await expect(executor.ainvoke({ input: "Async CrewAI" })).resolves.toEqual({ output: "Async CrewAI" });
   });
 
+  it("uses a strong final todo result directly during AgentExecutor finalize", () => {
+    const executor = new AgentExecutor();
+    const finalResult = [
+      "The final recommendation is to adopt a phased rollout plan with weekly checkpoints.",
+      "Each milestone should have an explicit owner, a measured readiness signal, and a rollback path.",
+      "This keeps delivery risk controlled while preserving stakeholder visibility and operational readiness.",
+    ].join(" ");
+
+    executor.state.todos.items = [
+      new TodoItem({
+        stepNumber: 1,
+        description: "Gather source details",
+        toolToUse: "search_tool",
+        status: TodoStatus.COMPLETED,
+        result: "Source A and Source B identified.",
+      }),
+      new TodoItem({
+        stepNumber: 2,
+        description: "Write final response",
+        status: TodoStatus.COMPLETED,
+        result: finalResult,
+      }),
+    ];
+
+    expect(executor.finalize()).toBe("completed");
+    expect(executor.state.current_answer).toBeInstanceOf(AgentFinish);
+    expect((executor.state.current_answer as AgentFinish).output).toBe(finalResult);
+    expect((executor.state.current_answer as AgentFinish).thought).toBe(
+      "Final answer returned directly from last completed todo",
+    );
+  });
+
+  it("keeps AgentExecutor synthesis fallback when structured output is requested", () => {
+    const finalResult = [
+      "The final recommendation is to adopt a phased rollout plan with weekly checkpoints.",
+      "Each milestone should have an explicit owner, a measured readiness signal, and a rollback path.",
+      "This keeps delivery risk controlled while preserving stakeholder visibility and operational readiness.",
+    ].join(" ");
+    const executor = new AgentExecutor({ response_model: { name: "StructuredAnswer" } });
+
+    executor.state.todos.items = [
+      new TodoItem({
+        stepNumber: 1,
+        description: "Write final response",
+        status: TodoStatus.COMPLETED,
+        result: finalResult,
+      }),
+    ];
+
+    expect(executor.finalize()).toBe("completed");
+    expect((executor.state.current_answer as AgentFinish).output).toBe(`Step 1: ${finalResult}`);
+    expect((executor.state.current_answer as AgentFinish).thought).toBe("");
+  });
+
   it("keeps AgentExecutor iterations and messages backed by state", () => {
     const executor = new AgentExecutor({
       messages: [{ role: "system", content: "You are careful." }],
