@@ -52,7 +52,7 @@ export function resolveEvent(value: unknown): BaseEvent {
   const record = isRecord(value) ? value : {};
   buildEventTypeMap();
   const type = typeof record.type === "string" ? record.type : "default_env";
-  return new BaseEvent({
+  const event = new BaseEvent({
     type: type as EventType,
     sourceType: typeof record.sourceType === "string"
       ? record.sourceType
@@ -73,9 +73,46 @@ export function resolveEvent(value: unknown): BaseEvent {
       ? record.startedEventId
       : typeof record.started_event_id === "string" ? record.started_event_id : null,
   });
+  applySerializedEventFields(event, record);
+  return event;
 }
 
 export const _resolve_event = resolveEvent;
+
+function applySerializedEventFields(event: BaseEvent, record: Record<string, unknown>): void {
+  const writableEvent = event as unknown as {
+    timestamp: Date;
+    eventId: string;
+    emissionSequence: number;
+  };
+  const eventId = stringField(record, "eventId", "event_id");
+  if (eventId) {
+    writableEvent.eventId = eventId;
+  }
+  const timestamp = record.timestamp;
+  if (typeof timestamp === "string") {
+    const parsed = new Date(timestamp);
+    if (!Number.isNaN(parsed.getTime())) {
+      writableEvent.timestamp = parsed;
+    }
+  }
+  const emissionSequence = numberField(record, "emissionSequence", "emission_sequence");
+  if (emissionSequence !== null) {
+    writableEvent.emissionSequence = emissionSequence;
+  }
+  event.sourceType = stringField(record, "sourceType", "source_type");
+  event.sourceFingerprint = stringField(record, "sourceFingerprint", "source_fingerprint");
+  event.fingerprintMetadata = recordField(record, "fingerprintMetadata", "fingerprint_metadata");
+  event.fingerprint_metadata = event.fingerprintMetadata;
+  event.taskId = stringField(record, "taskId", "task_id");
+  event.task_id = event.taskId;
+  event.taskName = stringField(record, "taskName", "task_name");
+  event.task_name = event.taskName;
+  event.agentId = stringField(record, "agentId", "agent_id");
+  event.agent_id = event.agentId;
+  event.agentRole = stringField(record, "agentRole", "agent_role");
+  event.agent_role = event.agentRole;
+}
 
 function checkpointEventTypes(): EventType[] {
   return [
@@ -291,8 +328,8 @@ export class EventNode {
   readonly event: BaseEvent;
   readonly edges: Record<string, string[]>;
 
-  constructor(options: { event: BaseEvent; edges?: Record<string, readonly string[]> }) {
-    this.event = options.event;
+  constructor(options: { event: BaseEvent | Record<string, unknown>; edges?: Record<string, readonly string[]> }) {
+    this.event = options.event instanceof BaseEvent ? options.event : resolveEvent(options.event);
     this.edges = Object.fromEntries(
       Object.entries(options.edges ?? {}).map(([key, value]) => [key, [...value]]),
     );
@@ -319,12 +356,20 @@ export class EventNode {
       edges: this.edges,
     };
   }
+
+  modelDump(): Record<string, unknown> {
+    return this.toJSON();
+  }
+
+  model_dump(): Record<string, unknown> {
+    return this.modelDump();
+  }
 }
 
 export class EventRecord {
   nodes: Record<string, EventNode>;
 
-  constructor(options: { nodes?: Record<string, EventNode | { event: BaseEvent; edges?: Record<string, readonly string[]> }> } = {}) {
+  constructor(options: { nodes?: Record<string, EventNode | { event: BaseEvent | Record<string, unknown>; edges?: Record<string, readonly string[]> }> } = {}) {
     this.nodes = {};
     for (const [id, node] of Object.entries(options.nodes ?? {})) {
       this.nodes[id] = node instanceof EventNode ? node : new EventNode(node);
@@ -427,6 +472,42 @@ export class EventRecord {
 
   toJSON(): Record<string, unknown> {
     return { nodes: this.nodes };
+  }
+
+  modelDump(): Record<string, unknown> {
+    return this.toJSON();
+  }
+
+  model_dump(): Record<string, unknown> {
+    return this.modelDump();
+  }
+
+  modelDumpJson(): string {
+    return JSON.stringify(this.modelDump());
+  }
+
+  model_dump_json(): string {
+    return this.modelDumpJson();
+  }
+
+  static modelValidateJson(value: string): EventRecord {
+    const parsed = JSON.parse(value) as unknown;
+    const record = isRecord(parsed) ? parsed : {};
+    const nodes = isRecord(record.nodes) ? record.nodes : {};
+    const restoredNodes: Record<string, EventNode> = {};
+    for (const [id, node] of Object.entries(nodes)) {
+      if (!isRecord(node)) {
+        continue;
+      }
+      const event = isRecord(node.event) ? node.event : {};
+      const edges = normalizeEdgeRecord(node.edges);
+      restoredNodes[id] = new EventNode({ event, edges });
+    }
+    return new EventRecord({ nodes: restoredNodes });
+  }
+
+  static model_validate_json(value: string): EventRecord {
+    return EventRecord.modelValidateJson(value);
   }
 }
 
@@ -1144,6 +1225,32 @@ export const detect_provider = detectProvider;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+function stringField(record: Record<string, unknown>, camelKey: string, snakeKey: string): string | null {
+  const value = record[camelKey] ?? record[snakeKey];
+  return typeof value === "string" ? value : null;
+}
+
+function numberField(record: Record<string, unknown>, camelKey: string, snakeKey: string): number | null {
+  const value = record[camelKey] ?? record[snakeKey];
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function recordField(record: Record<string, unknown>, camelKey: string, snakeKey: string): Record<string, unknown> | null {
+  const value = record[camelKey] ?? record[snakeKey];
+  return isRecord(value) ? { ...value } : null;
+}
+
+function normalizeEdgeRecord(value: unknown): Record<string, readonly string[]> {
+  if (!isRecord(value)) {
+    return {};
+  }
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter((entry): entry is [string, unknown[]] => Array.isArray(entry[1]))
+      .map(([key, edgeIds]) => [key, edgeIds.map(String)]),
+  );
 }
 
 function normalizeRuntimeSet(value: unknown): string[] {

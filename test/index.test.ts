@@ -25364,6 +25364,36 @@ describe("event record", () => {
     expect(record.size).toBe(0);
     expect(record.get(root.eventId)).toBeNull();
   });
+
+  it("round-trips upstream EventRecord JSON with event payloads and edge symmetry", () => {
+    const record = new EventRecord();
+    const root = new BaseEvent({ type: "crew_kickoff_started", sourceType: "crew" });
+    const child = new BaseEvent({
+      type: "task_started",
+      parentEventId: root.eventId,
+      previousEventId: root.eventId,
+    });
+    child.taskId = "task-1";
+    child.task_id = "task-1";
+    child.agentRole = "Researcher";
+    child.agent_role = "Researcher";
+
+    record.add(root);
+    record.add(child);
+
+    const restored = EventRecord.model_validate_json(record.model_dump_json());
+    const restoredRoot = restored.get(root.eventId);
+    const restoredChild = restored.get(child.eventId);
+
+    expect(restored.__len__()).toBe(2);
+    expect(restored.__contains__(root.eventId)).toBe(true);
+    expect(restoredRoot?.neighbors("child")).toEqual([child.eventId]);
+    expect(restoredChild?.neighbors("parent")).toEqual([root.eventId]);
+    expect(restoredChild?.event.type).toBe("task_started");
+    expect(restoredChild?.event.task_id).toBe("task-1");
+    expect(restoredChild?.event.agent_role).toBe("Researcher");
+    expect(EventRecord.modelValidateJson(restored.modelDumpJson()).modelDump()).toEqual(restored.model_dump());
+  });
 });
 
 describe("runtime state", () => {
