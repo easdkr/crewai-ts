@@ -734,6 +734,7 @@ import {
   resolveRefs,
   resetEmissionCounter,
   setCreatePlusClientHook,
+  setPlatformIntegrationToken,
   runWithExecutionContext,
   runCrewTool,
   run_crew_tool_with_messages,
@@ -8498,6 +8499,75 @@ describe("crew chat utilities", () => {
 });
 
 describe("execution and event context", () => {
+  it("matches upstream platform integration token precedence and env fallback", () => {
+    const previousToken = process.env.CREWAI_PLATFORM_INTEGRATION_TOKEN;
+    setPlatformIntegrationToken(null);
+
+    try {
+      delete process.env.CREWAI_PLATFORM_INTEGRATION_TOKEN;
+      expect(getPlatformIntegrationToken()).toBeNull();
+
+      process.env.CREWAI_PLATFORM_INTEGRATION_TOKEN = "env-token";
+      expect(getPlatformIntegrationToken()).toBe("env-token");
+
+      setPlatformIntegrationToken("context-token");
+      expect(getPlatformIntegrationToken()).toBe("context-token");
+
+      setPlatformIntegrationToken("");
+      expect(getPlatformIntegrationToken()).toBe("");
+
+      setPlatformIntegrationToken(null);
+      process.env.CREWAI_PLATFORM_INTEGRATION_TOKEN = "";
+      expect(getPlatformIntegrationToken()).toBe("");
+    } finally {
+      setPlatformIntegrationToken(null);
+      if (previousToken === undefined) {
+        delete process.env.CREWAI_PLATFORM_INTEGRATION_TOKEN;
+      } else {
+        process.env.CREWAI_PLATFORM_INTEGRATION_TOKEN = previousToken;
+      }
+    }
+  });
+
+  it("restores upstream platform context tokens across nested and throwing scopes", async () => {
+    const previousToken = process.env.CREWAI_PLATFORM_INTEGRATION_TOKEN;
+    setPlatformIntegrationToken("initial-token");
+
+    try {
+      delete process.env.CREWAI_PLATFORM_INTEGRATION_TOKEN;
+
+      const nested = await platformContext("outer-token", async () => {
+        expect(getPlatformIntegrationToken()).toBe("outer-token");
+
+        const inner = await platformContext("inner-token", async () => {
+          await Promise.resolve();
+          return getPlatformIntegrationToken();
+        });
+
+        return { inner, outerAfterInner: getPlatformIntegrationToken() };
+      });
+
+      expect(nested).toEqual({ inner: "inner-token", outerAfterInner: "outer-token" });
+      expect(getPlatformIntegrationToken()).toBe("initial-token");
+
+      expect(() => {
+        platformContext("throwing-token", () => {
+          expect(getPlatformIntegrationToken()).toBe("throwing-token");
+          throw new Error("platform context failure");
+        });
+      }).toThrow("platform context failure");
+
+      expect(getPlatformIntegrationToken()).toBe("initial-token");
+    } finally {
+      setPlatformIntegrationToken(null);
+      if (previousToken === undefined) {
+        delete process.env.CREWAI_PLATFORM_INTEGRATION_TOKEN;
+      } else {
+        process.env.CREWAI_PLATFORM_INTEGRATION_TOKEN = previousToken;
+      }
+    }
+  });
+
   it("captures task, platform, event, and triggering context across async boundaries", async () => {
     const previousTaskId = setCurrentTaskId("outer-task");
     setLastEventId("previous-event");
