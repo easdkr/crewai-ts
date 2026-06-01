@@ -1458,8 +1458,10 @@ export class Flow<TState extends object = Record<string, unknown>> {
       const isRestoringCheckpoint = this.checkpointRestoreActive;
       const restoredCompletedMethods = [...this.runtimeCompletedMethods];
       const restoredMethodOutputs = [...this.runtimeMethodOutputs];
-      const skipCompletedMethods = new Set(isRestoringCheckpoint ? restoredCompletedMethods : []);
-      if (!isRestoringCheckpoint) {
+      const isResumingPersistedFlow = Boolean(restoredInputState && restoredCompletedMethods.length > 0);
+      const shouldSkipCompletedMethods = isRestoringCheckpoint || isResumingPersistedFlow;
+      const skipCompletedMethods = new Set(shouldSkipCompletedMethods ? restoredCompletedMethods : []);
+      if (!shouldSkipCompletedMethods) {
         this.resetRuntimeState();
       }
       const entries = getFlowMetadata(this);

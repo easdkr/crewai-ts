@@ -15211,6 +15211,73 @@ describe("flow runtime", () => {
     expect(second.state.sentenceCount).toBe(3);
   });
 
+  it("resumes persisted flows without re-executing completed listener methods", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "crewai-ts-flow-resume-listeners-"));
+    const persistence = new JsonFlowPersistence(directory);
+    const executionLog: string[] = [];
+
+    class ListenerResumeFlow extends Flow<{ id: string; step1?: string; step2?: string; step3?: string }> {
+      constructor() {
+        super({ initialState: { id: "listener-flow" }, persistence });
+      }
+
+      step1() {
+        executionLog.push("step1");
+        this.state.step1 = "done";
+        return "step1_result";
+      }
+
+      step2() {
+        executionLog.push("step2");
+        this.state.step2 = "done";
+        return "step2_result";
+      }
+
+      step3() {
+        executionLog.push("step3");
+        this.state.step3 = "done";
+        return "step3_result";
+      }
+    }
+
+    const initializers = [
+      decorateMethod(ListenerResumeFlow, "step1", start() as unknown as Decorator),
+      decorateMethod(ListenerResumeFlow, "step2", listen("step1") as unknown as Decorator),
+      decorateMethod(ListenerResumeFlow, "step3", listen("step2") as unknown as Decorator),
+    ];
+    const first = new ListenerResumeFlow();
+    initializers.forEach((initializer) => {
+      initializer.call(first);
+    });
+    await first.kickoff();
+
+    expect(executionLog).toEqual(["step1", "step2", "step3"]);
+
+    const second = new ListenerResumeFlow();
+    initializers.forEach((initializer) => {
+      initializer.call(second);
+    });
+    (second as unknown as {
+      runtimeCompletedMethods: Set<string>;
+      runtimeMethodOutputs: unknown[];
+    }).runtimeCompletedMethods = new Set(["step1", "step2"]);
+    (second as unknown as {
+      runtimeCompletedMethods: Set<string>;
+      runtimeMethodOutputs: unknown[];
+    }).runtimeMethodOutputs = ["step1_result", "step2_result"];
+    executionLog.length = 0;
+
+    await second.kickoff({ inputs: { id: "listener-flow" } });
+
+    expect(executionLog).toEqual(["step3"]);
+    expect(second.state).toMatchObject({
+      id: "listener-flow",
+      step1: "done",
+      step2: "done",
+      step3: "done",
+    });
+  });
+
   it("forks kickoff state from restore_from_state_id without reusing the source id", async () => {
     const directory = mkdtempSync(join(tmpdir(), "crewai-ts-flow-fork-state-"));
     const persistence = new JsonFlowPersistence(directory);

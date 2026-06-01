@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 690 passing tests.
+- Test suite: 691 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -205,6 +205,7 @@ When more goal budget is available, continue from the behavioral parity audits b
   - `Flow.kickoff` / `kickoffAsync` / `kickoff_async` / `akickoff` now accept upstream-style direct `inputs` arguments in addition to the TS options object.
   - `Flow.kickoff` / `kickoffAsync` now support upstream-style `restore_from_state_id` / `restoreFromStateId` fork hydration from persisted state without reusing the source flow ID and reject conflicting checkpoint restores.
   - `Flow.kickoff` / `kickoffAsync` now reload persisted state from `inputs.id` before applying non-id input overrides, matching upstream default-value override semantics.
+  - Persisted Flow resume now skips pre-completed methods and continues downstream listeners, matching upstream listener resumability semantics.
   - `Flow.plot` now emits `flow_plot` and writes an interactive HTML visualization through the existing flow structure renderer.
   - Flow visualization `CSSExtension` and `JSExtension` now expose upstream-style `parse` helpers for CSS/JS template tags.
 - Added adapter-level LLM provider parity helpers:
