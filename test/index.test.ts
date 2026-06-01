@@ -10894,6 +10894,8 @@ describe("core crew runtime", () => {
   });
 
   it("runs kickoffForEach with isolated outputs and aggregated usage", async () => {
+    const reset = vi.fn();
+    const update = vi.fn();
     const researcher = new Agent({
       role: "Researcher",
       goal: "Find facts",
@@ -10905,7 +10907,11 @@ describe("core crew runtime", () => {
       expectedOutput: "A concise brief",
       agent: researcher,
     });
-    const crewInstance = new Crew({ agents: [researcher], tasks: [taskInstance] });
+    const crewInstance = new Crew({
+      agents: [researcher],
+      tasks: [taskInstance],
+      taskOutputStorageHandler: { reset, update } as unknown as TaskOutputStorageHandler,
+    });
 
     const outputs = await crewInstance.kickoffForEach({
       inputs: [{ topic: "CrewAI" }, { topic: "TypeScript" }],
@@ -10917,6 +10923,7 @@ describe("core crew runtime", () => {
     expect(outputs[0]?.tokenUsage.successfulRequests).toBe(1);
     expect(outputs[1]?.tokenUsage.successfulRequests).toBe(1);
     expect(crewInstance.usageMetrics.successfulRequests).toBe(2);
+    expect(reset).toHaveBeenCalledTimes(3);
   });
 
   it("runs kickoffForEachAsync concurrently", async () => {

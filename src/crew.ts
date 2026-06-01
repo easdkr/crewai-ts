@@ -820,6 +820,7 @@ export class Crew {
       outputs.push(output);
     }
     this.setUsageMetrics(totalUsage);
+    this.taskOutputStorageHandler?.reset();
     return outputs;
   }
 
@@ -850,6 +851,7 @@ export class Crew {
       (total, output) => addUsageMetrics(total, output.tokenUsage),
       emptyUsageMetrics(),
     ));
+    this.taskOutputStorageHandler?.reset();
     return outputs;
   }
 
@@ -880,6 +882,7 @@ export class Crew {
       (total, output) => addUsageMetrics(total, output.tokenUsage),
       emptyUsageMetrics(),
     ));
+    this.taskOutputStorageHandler?.reset();
     return outputs;
   }
 
