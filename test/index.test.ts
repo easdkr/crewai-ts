@@ -25811,6 +25811,31 @@ describe("memory", () => {
     expect(join_scope_paths("", "inner")).toBe("/inner");
   });
 
+  it("honors upstream per-call root_scope overrides for memory saves", async () => {
+    const memory = new Memory({ rootScope: "/crew/base" });
+
+    const syncRecord = memory.remember("Override root sync memory", {
+      scope: "/inner",
+      categories: ["test"],
+      root_scope: "/override/path",
+    });
+    const asyncRecord = await memory.aremember("Override root async memory", {
+      scope: "async",
+      rootScope: "/async/root",
+    });
+    memory.remember_many(["Override root batch memory"], {
+      scope: "/batch",
+      root_scope: "/batch/root",
+    });
+    memory.drain_writes();
+
+    expect(syncRecord?.scope).toBe("/override/path/inner");
+    expect(asyncRecord?.scope).toBe("/async/root/async");
+    expect(memory.allRecords().find((record) => record.content === "Override root batch memory")?.scope)
+      .toBe("/batch/root/batch");
+    expect(memory.recall("Override root sync", { scope: "/crew/base", scoreThreshold: null })).toEqual([]);
+  });
+
   it("limits memory slice recall after merging scoped oversampled results", () => {
     const memory = new Memory();
     memory.remember("Alpha target memory", { scope: "/projects/alpha", importance: 0.9 });

@@ -2102,6 +2102,8 @@ export class Memory {
       source?: string | null;
       private?: boolean;
       agentRole?: string | null;
+      rootScope?: string | null;
+      root_scope?: string | null;
     } = {},
   ): MemoryRecord | null {
     if (this.readOnly) {
@@ -2116,7 +2118,7 @@ export class Memory {
     try {
       const record = new MemoryRecord({
         content,
-        scope: this.scopePath(options.scope),
+        scope: this.scopePath(options.scope, rootScopeFromOptions(options, this.rootScope)),
         categories: options.categories ?? [],
         metadata: options.metadata ?? {},
         importance: options.importance ?? this.config.defaultImportance,
@@ -2162,7 +2164,7 @@ export class Memory {
       return this.remember(content, options);
     }
     const resolvedOptions = await this.resolveSaveOptions(content, options);
-    const similarRecords = this.findSimilarRecords(content, resolvedOptions.scope);
+    const similarRecords = this.findSimilarRecords(content, resolvedOptions.scope, rootScopeFromOptions(resolvedOptions, this.rootScope));
     if (similarRecords.length > 0) {
       const plan = await analyzeForConsolidation(content, similarRecords, this.llm);
       const consolidated = this.applyConsolidationPlan(plan, similarRecords);
@@ -2198,9 +2200,9 @@ export class Memory {
     };
   }
 
-  private findSimilarRecords(content: string, scope: string | null | undefined): MemoryRecord[] {
+  private findSimilarRecords(content: string, scope: string | null | undefined, rootScope: string | null = this.rootScope): MemoryRecord[] {
     const terms = tokenize(content);
-    const effectiveScope = scope ? this.scopePath(scope) : this.rootScope;
+    const effectiveScope = scope ? this.scopePath(scope, rootScope) : rootScope;
     return this.records
       .filter((record) => !effectiveScope || record.scope.startsWith(effectiveScope))
       .map((record) => ({ record, score: scoreRecord(record, terms) }))
@@ -2269,7 +2271,7 @@ export class Memory {
       options: await this.resolveSaveOptions(content, options),
     })));
     const plannedItems = await Promise.all(items.map(async (item) => {
-      const similarRecords = this.findSimilarRecords(item.content, item.options.scope);
+      const similarRecords = this.findSimilarRecords(item.content, item.options.scope, rootScopeFromOptions(item.options, this.rootScope));
       const plan = similarRecords.length > 0
         ? await analyzeForConsolidation(item.content, similarRecords, this.llm as LLM)
         : new ConsolidationPlan({ actions: [], insertNew: true });
@@ -2794,7 +2796,7 @@ export class Memory {
   private createMemoryRecordFromResolvedItem(item: { content: string; options: NonNullable<Parameters<Memory["remember"]>[1]> }): MemoryRecord {
     return new MemoryRecord({
       content: item.content,
-      scope: this.scopePath(item.options.scope),
+      scope: this.scopePath(item.options.scope, rootScopeFromOptions(item.options, this.rootScope)),
       categories: item.options.categories ?? [],
       metadata: item.options.metadata ?? {},
       importance: item.options.importance ?? this.config.defaultImportance,
@@ -2836,8 +2838,8 @@ export class Memory {
     };
   }
 
-  private scopePath(scope: string | null | undefined): string {
-    return joinScopePaths(this.rootScope, scope ?? "/");
+  private scopePath(scope: string | null | undefined, rootScope: string | null = this.rootScope): string {
+    return joinScopePaths(rootScope, scope ?? "/");
   }
 
   private effectivePath(path: string | null): string {
@@ -3034,6 +3036,10 @@ export const join_scope_paths = joinScopePaths;
 type MemoryRememberOptions = NonNullable<Parameters<Memory["remember"]>[1]>;
 type MemoryRecallOptions = NonNullable<Parameters<Memory["recall"]>[1]>;
 type MemoryForgetOptions = NonNullable<Parameters<Memory["forget"]>[0]>;
+
+function rootScopeFromOptions(options: MemoryRememberOptions, fallback: string | null): string | null {
+  return options.rootScope ?? options.root_scope ?? fallback;
+}
 
 export function _ensure_memory_kind<T>(value: T): T {
   if (isRecord(value) && !("memory_kind" in value)) {
