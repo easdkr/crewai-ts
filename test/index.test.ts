@@ -22978,6 +22978,13 @@ describe("task output files", () => {
   });
 
   it("exports structured output through upstream-compatible task helpers", async () => {
+    class StructuredResult {
+      readonly value: string;
+
+      constructor(value: string) {
+        this.value = value;
+      }
+    }
     const pydanticTask = new Task({
       description: "Score",
       expectedOutput: "A score",
@@ -22996,6 +23003,15 @@ describe("task output files", () => {
     expect(jsonTask._get_output_format()).toBe(OutputFormat.JSON);
     expect(Task._unpack_model_output("{\"value\":1}")).toEqual([null, { value: 1 }]);
     expect(Task._unpack_model_output("not json")).toEqual([null, null]);
+
+    const modelTask = new Task({
+      description: "Use existing structured result",
+      expectedOutput: "Structured output",
+      output_pydantic: StructuredResult as unknown as (raw: string) => unknown,
+    });
+    const instance = new StructuredResult("ok");
+    expect(modelTask._export_output(instance)).toEqual([instance, null]);
+    await expect(modelTask._aexport_output(instance)).resolves.toEqual([instance, null]);
   });
 
   it("applies task config attributes and inherits agent tools on construction", () => {

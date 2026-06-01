@@ -792,6 +792,9 @@ export class Task {
     if (!this.outputPydantic && !this.outputJson) {
       return [null, null];
     }
+    if (this.outputPydantic && isOutputPydanticInstance(result, this.outputPydantic)) {
+      return [result, null];
+    }
     const raw = stringifyGuardrailValue(result);
     const converted = this.outputConverter ? await this.outputConverter(raw) : undefined;
     if (this.outputPydantic) {
@@ -801,10 +804,13 @@ export class Task {
   }
 
   _export_output(result: unknown): ExportedTaskOutput | Promise<ExportedTaskOutput> {
-    const raw = stringifyGuardrailValue(result);
     if (!this.outputPydantic && !this.outputJson) {
       return [null, null];
     }
+    if (this.outputPydantic && isOutputPydanticInstance(result, this.outputPydantic)) {
+      return [result, null];
+    }
+    const raw = stringifyGuardrailValue(result);
     if (!this.outputConverter) {
       if (this.outputPydantic) {
         return [this.outputPydantic(raw), null];
@@ -1468,6 +1474,16 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isGuardrailTuple(value: GuardrailResult): value is readonly [boolean, unknown] {
   return Array.isArray(value);
+}
+
+function isOutputPydanticInstance(result: unknown, outputPydantic: (raw: string) => unknown): boolean {
+  if (result === null || result === undefined || typeof result !== "object") {
+    return false;
+  }
+  if (!("prototype" in outputPydantic) || typeof outputPydantic.prototype !== "object") {
+    return false;
+  }
+  return result instanceof (outputPydantic as unknown as new (...args: unknown[]) => unknown);
 }
 
 function normalizeGuardrails(guardrails: TaskOptions["guardrails"]): readonly TaskGuardrail[] {

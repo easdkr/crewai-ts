@@ -376,6 +376,7 @@ When more goal budget is available, continue from the behavioral parity audits b
   - `StreamingOutputBase` now exposes upstream-style `__aenter__` / `__aexit__` async context-manager aliases that close/cancel unfinished streams.
   - `StreamChunk.__str__` and `StreamingOutputBase.__iter__` now mirror upstream string and sync-iteration helpers.
   - `InternalInstructor.to_pydantic` now exposes upstream-style structured conversion through a provided synchronous LLM client and model validation/dump hooks.
+  - `Task._export_output` / `_aexport_output` now preserve already-converted structured output model instances instead of re-validating or calling class-style models as raw-output converters.
 - Added knowledge compatibility behavior:
   - `Knowledge` now accepts storage-backed configuration and exposes upstream-style `add_sources`, `aadd_sources`, `aquery`, and `areset` helpers while preserving the in-memory deterministic path.
   - Knowledge sources now expose upstream-style `add`, `aadd`, `validate_content`, and `get_embeddings` helpers and can save their chunks through configured storage.
