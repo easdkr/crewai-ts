@@ -19242,6 +19242,37 @@ describe("task output files", () => {
 
     expect(get_agent_by_role([clonedAgent], "Researcher")).toBe(clonedAgent);
     expect(taskInstance.copy([clonedAgent]).agent).toBe(clonedAgent);
+
+    taskInstance.usedTools = 2;
+    taskInstance.used_tools = 2;
+    taskInstance.toolsErrors = 1;
+    taskInstance.tools_errors = 1;
+    taskInstance.delegations = 1;
+    taskInstance.retryCount = 1;
+    taskInstance.retry_count = 1;
+    taskInstance.startTime = new Date("2026-05-28T00:00:00.000Z");
+    taskInstance.start_time = taskInstance.startTime;
+    taskInstance.endTime = new Date("2026-05-28T00:00:03.000Z");
+    taskInstance.end_time = taskInstance.endTime;
+    taskInstance.promptContext = "Prior context";
+    taskInstance.prompt_context = "Prior context";
+    taskInstance.processedByAgents.add("Researcher");
+    taskInstance.output = new TaskOutput({
+      description: "Copy task",
+      raw: "copied output",
+      agent: "Researcher",
+    });
+    const copied = taskInstance.copy([clonedAgent]);
+    expect(copied.used_tools).toBe(2);
+    expect(copied.tools_errors).toBe(1);
+    expect(copied.delegations).toBe(1);
+    expect(copied.retry_count).toBe(1);
+    expect(copied.start_time).toBe(taskInstance.start_time);
+    expect(copied.end_time).toBe(taskInstance.end_time);
+    expect(copied.execution_duration).toBe(3);
+    expect(copied.prompt_context).toBe("Prior context");
+    expect([...copied.processed_by_agents]).toEqual(["Researcher"]);
+    expect(copied.output?.raw).toBe("copied output");
   });
 
   it("settles upstream-compatible task async futures", async () => {
