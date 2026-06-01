@@ -576,6 +576,11 @@ function isValidDateString(value: string): boolean {
   return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
 }
 
+function dateFromDateString(value: string): Date {
+  const [year, month, day] = value.split("-").map((part) => Number(part));
+  return new Date(Date.UTC(year ?? 0, (month ?? 1) - 1, day ?? 1));
+}
+
 function isValidTimeString(value: string): boolean {
   const match = /^(\d{2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?$/.exec(value);
   if (!match) {
@@ -597,6 +602,16 @@ function assertStringFormat(schema: JsonSchema, value: string, path: string): vo
   if (schema.format === "time" && !isValidTimeString(value)) {
     throw createValidationError(path, "format time");
   }
+}
+
+function coerceFormattedString(schema: JsonSchema, value: string): string | Date {
+  if (schema.format === "date") {
+    return dateFromDateString(value);
+  }
+  if (schema.format === "date-time") {
+    return new Date(value);
+  }
+  return value;
 }
 
 function isDateFormatSchema(schema: JsonSchema): boolean {
@@ -785,7 +800,7 @@ function validateSchemaValue(schema: JsonSchema, value: unknown, path: string, r
         throw createValidationError(path, "expected string");
       }
       assertStringConstraints(resolved, value, path);
-      return value;
+      return coerceFormattedString(resolved, value);
     case "integer":
       if (typeof value !== "number" || !Number.isInteger(value)) {
         throw createValidationError(path, "expected integer");

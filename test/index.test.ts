@@ -2421,13 +2421,13 @@ describe("schema utilities", () => {
       format: "json",
       filters: { date_from: "2026-06-01", categories: ["docs", "examples"] },
       sort_order: null,
-    }) as { query: string; format: string; max_results: null; filters: { date_from: string; categories: string[] }; sort_order: null };
+    }) as { query: string; format: string; max_results: null; filters: { date_from: Date; categories: string[] }; sort_order: null };
 
     expect(Model.__name__).toBe("SearchToolSchema");
     expect(Model.model_fields.query.description).toContain("Min length: 1");
     expect(parsed.query).toBe("crew");
     expect(parsed.max_results).toBeNull();
-    expect(parsed.filters.date_from).toBe("2026-06-01");
+    expect(parsed.filters.date_from).toEqual(new Date(Date.UTC(2026, 5, 1)));
     expect(parsed.filters.categories).toEqual(["docs", "examples"]);
     expect(parsed.sort_order).toBeNull();
     expect(() => Model.model_validate({ query: "crew", format: "yaml", filters: { date_from: "2026-06-01" } })).toThrow(/format/);
@@ -2518,15 +2518,18 @@ describe("schema utilities", () => {
       required: ["birthday", "created_at", "alarm"],
     });
 
-    expect(Model.model_validate({
+    const parsed = Model.model_validate({
       birthday: "2026-06-01",
       created_at: "2026-06-01T12:30:00Z",
       alarm: "08:30:00",
-    })).toEqual({
-      birthday: "2026-06-01",
-      created_at: "2026-06-01T12:30:00Z",
+    }) as { birthday: Date; created_at: Date; alarm: string };
+    expect(parsed).toEqual({
+      birthday: new Date(Date.UTC(2026, 5, 1)),
+      created_at: new Date("2026-06-01T12:30:00Z"),
       alarm: "08:30:00",
     });
+    expect(parsed.birthday).toBeInstanceOf(Date);
+    expect(parsed.created_at).toBeInstanceOf(Date);
     expect(() => Model.model_validate({ birthday: "2026-99-99", created_at: "2026-06-01T12:30:00Z", alarm: "08:30:00" })).toThrow(/format/);
     expect(() => Model.model_validate({ birthday: "2026-06-01", created_at: "not-a-date-time", alarm: "08:30:00" })).toThrow(/format/);
     expect(() => Model.model_validate({ birthday: "2026-06-01", created_at: "2026-06-01T12:30:00Z", alarm: "25:30:00" })).toThrow(/format/);
