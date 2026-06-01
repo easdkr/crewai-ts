@@ -1064,37 +1064,37 @@ export class EvaluationTraceCallback {
     this.disposeListeners();
     this.unsubscribeHandlers = [
       eventBus.on("agent_execution_started", (_source, event) => {
-        this.on_agent_start(event.agent, event.task);
+        this.on_agent_started(_source, event);
       }),
       eventBus.on("lite_agent_execution_started", (_source, event) => {
-        this.on_lite_agent_start(event.agentInfo);
+        this.on_lite_agent_started(_source, event);
       }),
       eventBus.on("agent_execution_completed", (_source, event) => {
-        this.on_agent_finish(event.agent, event.task, event.output);
+        this.on_agent_completed(_source, event);
       }),
       eventBus.on("lite_agent_execution_completed", (_source, event) => {
-        this.on_lite_agent_finish(event.output);
+        this.on_lite_agent_completed(_source, event);
       }),
       eventBus.on("tool_usage_finished", (_source, event) => {
-        this.on_tool_use(event.toolName, event.toolArgs, event.output, { success: true });
+        this.on_tool_completed(_source, event);
       }),
       eventBus.on("tool_usage_error", (_source, event) => {
-        this.on_tool_use(event.toolName, event.toolArgs, event.error, { success: false, error_type: "usage_error" });
+        this.on_tool_usage_error(_source, event);
       }),
       eventBus.on("tool_execution_error", (_source, event) => {
-        this.on_tool_use(event.tool_name, event.tool_args, event.error, { success: false, error_type: "execution_error" });
+        this.on_tool_execution_error(_source, event);
       }),
       eventBus.on("tool_selection_error", (_source, event) => {
-        this.on_tool_use(event.toolName, event.toolArgs, event.error, { success: false, error_type: "selection_error" });
+        this.on_tool_selection_error(_source, event);
       }),
       eventBus.on("tool_validate_input_error", (_source, event) => {
-        this.on_tool_use(event.toolName, event.toolArgs, event.error, { success: false, error_type: "validation_error" });
+        this.on_tool_validate_input_error(_source, event);
       }),
       eventBus.on("llm_call_started", (_source, event) => {
-        this.on_llm_call_start(event.messages, event.tools);
+        this.on_llm_call_started(_source, event);
       }),
       eventBus.on("llm_call_completed", (_source, event) => {
-        this.on_llm_call_end(event.messages, event.response, event.usage);
+        this.on_llm_call_completed(_source, event);
       }),
     ];
   }
@@ -1114,6 +1114,69 @@ export class EvaluationTraceCallback {
     this.disposeListeners();
   }
 
+  on_agent_started(_source: unknown, event: unknown): void {
+    void _source;
+    const record = asNullableRecord(event) ?? {};
+    this.on_agent_start(record.agent, record.task);
+  }
+
+  on_lite_agent_started(_source: unknown, event: unknown): void {
+    void _source;
+    const record = asNullableRecord(event) ?? {};
+    this.on_lite_agent_start(asNullableRecord(record.agentInfo) ?? asNullableRecord(record.agent_info) ?? {});
+  }
+
+  on_agent_completed(_source: unknown, event: unknown): void {
+    void _source;
+    const record = asNullableRecord(event) ?? {};
+    this.on_agent_finish(record.agent, record.task, record.output);
+  }
+
+  on_lite_agent_completed(_source: unknown, event: unknown): void {
+    void _source;
+    const record = asNullableRecord(event) ?? {};
+    this.on_lite_agent_finish(record.output);
+  }
+
+  on_tool_completed(_source: unknown, event: unknown): void {
+    void _source;
+    const record = asNullableRecord(event) ?? {};
+    this.on_tool_use(
+      stringifyEvaluationValue(record.toolName ?? record.tool_name ?? ""),
+      record.toolArgs ?? record.tool_args ?? {},
+      record.output,
+      { success: true },
+    );
+  }
+
+  on_tool_usage_error(_source: unknown, event: unknown): void {
+    this.recordToolError(_source, event, "usage_error");
+  }
+
+  on_tool_execution_error(_source: unknown, event: unknown): void {
+    this.recordToolError(_source, event, "execution_error");
+  }
+
+  on_tool_selection_error(_source: unknown, event: unknown): void {
+    this.recordToolError(_source, event, "selection_error");
+  }
+
+  on_tool_validate_input_error(_source: unknown, event: unknown): void {
+    this.recordToolError(_source, event, "validation_error");
+  }
+
+  on_llm_call_started(_source: unknown, event: unknown): void {
+    void _source;
+    const record = asNullableRecord(event) ?? {};
+    this.on_llm_call_start(record.messages, Array.isArray(record.tools) ? record.tools as Record<string, unknown>[] : null);
+  }
+
+  on_llm_call_completed(_source: unknown, event: unknown): void {
+    void _source;
+    const record = asNullableRecord(event) ?? {};
+    this.on_llm_call_end(record.messages, record.response, asNullableRecord(record.usage));
+  }
+
   on_agent_start(agent: unknown, task: unknown): void {
     const agentId = stringifyEvaluationValue((agent as { id?: unknown }).id ?? "");
     const taskId = stringifyEvaluationValue((task as { id?: unknown }).id ?? "");
@@ -1127,6 +1190,10 @@ export class EvaluationTraceCallback {
       start_time: new Date(),
       final_output: null,
     });
+  }
+
+  _init_trace(trace_key: string, trace: Record<string, unknown> = {}): void {
+    this.initTrace(trace_key, trace);
   }
 
   on_lite_agent_start(agentInfo: Record<string, unknown>): void {
@@ -1151,6 +1218,10 @@ export class EvaluationTraceCallback {
       trace.final_output = output;
       trace.end_time = new Date();
     }
+    this.resetCurrent();
+  }
+
+  _reset_current(): void {
     this.resetCurrent();
   }
 
@@ -1233,6 +1304,17 @@ export class EvaluationTraceCallback {
   private resetCurrent(): void {
     this.current_agent_id = null;
     this.current_task_id = null;
+  }
+
+  private recordToolError(_source: unknown, event: unknown, errorType: string): void {
+    void _source;
+    const record = asNullableRecord(event) ?? {};
+    this.on_tool_use(
+      stringifyEvaluationValue(record.toolName ?? record.tool_name ?? ""),
+      record.toolArgs ?? record.tool_args ?? {},
+      record.error,
+      { success: false, error_type: errorType },
+    );
   }
 }
 

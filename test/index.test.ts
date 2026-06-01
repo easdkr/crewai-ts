@@ -401,6 +401,7 @@ import {
   ExperimentResults,
   ExperimentResultsDisplay,
   ExperimentRunner,
+  EvaluationTraceCallback,
   create_evaluation_callbacks,
   ToolSelectionEvaluator,
   ParameterExtractionEvaluator,
@@ -6160,6 +6161,83 @@ describe("evaluator utilities", () => {
         total_tokens: 7,
       }),
     ]);
+  });
+
+  it("exposes upstream evaluation listener event handler methods", () => {
+    const callback = new EvaluationTraceCallback();
+    callback.dispose_listeners();
+    callback._reset_current();
+    callback._init_trace("manual", { marker: true });
+    expect(callback.traces.manual).toEqual({ marker: true });
+
+    const agent = { id: "agent-handler", role: "Researcher" };
+    const task = { id: "task-handler", description: "Trace handlers" };
+    callback.on_agent_started(null, new AgentExecutionStartedEvent({
+      agent,
+      task,
+      tools: [],
+      taskPrompt: "Trace handlers",
+    }));
+    callback.on_llm_call_started(null, new LLMCallStartedEvent({
+      messages: [{ role: "user", content: "Trace" }],
+      tools: [],
+      call_id: "handler-call",
+      model: "demo/model",
+    }));
+    callback.on_llm_call_completed(null, new LLMCallCompletedEvent({
+      messages: [{ role: "user", content: "Trace" }],
+      response: { text: "ok", usage: { total_tokens: 3 } },
+      usage: { total_tokens: 3 },
+      call_type: LLMCallType.LLM_CALL,
+      call_id: "handler-call",
+      model: "demo/model",
+    }));
+    callback.on_tool_completed(null, new ToolUsageFinishedEvent({
+      toolName: "Search",
+      toolArgs: { q: "CrewAI" },
+      startedAt: new Date("2026-01-01T00:00:00.000Z"),
+      output: "ok",
+    }));
+    callback.on_tool_usage_error(null, new ToolUsageErrorEvent({
+      toolName: "Search",
+      toolArgs: { q: "bad" },
+      error: "usage failed",
+    }));
+    callback.on_tool_execution_error(null, new ToolExecutionErrorEvent({
+      tool_name: "Search",
+      tool_args: { q: "boom" },
+      error: "execution failed",
+    }));
+    callback.on_tool_selection_error(null, new ToolSelectionErrorEvent({
+      toolName: "Search",
+      toolArgs: { q: "missing" },
+      error: "selection failed",
+    }));
+    callback.on_agent_completed(null, new AgentExecutionCompletedEvent({
+      agent,
+      task,
+      output: "final",
+    }));
+
+    const trace = callback.get_trace("agent-handler", "task-handler");
+    expect(trace.final_output).toBe("final");
+    expect(trace.llm_calls).toEqual([expect.objectContaining({ total_tokens: 3 })]);
+    expect(trace.tool_uses).toEqual([
+      expect.objectContaining({ success: true, result: "ok" }),
+      expect.objectContaining({ success: false, error_type: "usage_error" }),
+      expect.objectContaining({ success: false, error_type: "execution_error" }),
+      expect.objectContaining({ success: false, error_type: "selection_error" }),
+    ]);
+
+    callback.on_lite_agent_started(null, new LiteAgentExecutionStartedEvent({
+      agent_info: { id: "lite-handler", role: "Lite" },
+      messages: [],
+    }));
+    callback.on_lite_agent_completed(null, new LiteAgentExecutionCompletedEvent({
+      agent_info: { id: "lite-handler", role: "Lite" },
+      output: new LiteAgentOutput({ raw: "lite final", agentRole: "Lite" }),
+    }));
+    expect(callback.get_trace("lite-handler", "lite_task").final_output).toMatchObject({ raw: "lite final" });
   });
 
   it("evaluates task output into structured quality suggestions and emits events", async () => {
