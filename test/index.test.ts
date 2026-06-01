@@ -692,6 +692,9 @@ import {
   createTemporaryTokenStorage,
   dbStoragePath,
   DEFAULT_CLI_SETTINGS,
+  EmptyStackError,
+  EventContextConfig,
+  EventPairingError,
   flowStructure,
   getAuthToken,
   getCurrentParentId,
@@ -705,6 +708,8 @@ import {
   getPlatformIntegrationToken,
   getTaskFiles,
   getTriggeringEventId,
+  handleEmptyPop,
+  handleMismatch,
   fetchRequiredInputs,
   fetch_agent_card,
   inject_a2a_server_methods,
@@ -738,6 +743,9 @@ import {
   QdrantConfig,
   QdrantEdgeStorage,
   RWLock,
+  MismatchBehavior,
+  popEventScope,
+  pushEventScope,
   registerEmbeddingProviderBuilder,
   registerCallable,
   registerRagClientFactory,
@@ -772,8 +780,11 @@ import {
   serializeGuardrailsForJson,
   setHallucinationGuardrailHook,
   setCurrentTaskId,
+  setEventContextConfig,
   setFirstTimeTraceHook,
   setLastEventId,
+  setTriggeringEventId,
+  StackDepthExceededError,
   _get_generic_system_id,
   _get_linux_machine_id,
   _get_machine_id,
@@ -27991,6 +28002,58 @@ describe("runtime state", () => {
     expect(completed.startedEventId).toBe("task-start-latest");
     expect(completed.parentEventId).toBe("kickoff-1");
     expect(getCurrentParentId()).toBe("kickoff-1");
+  });
+
+  it("enforces upstream event context stack depth limits", () => {
+    try {
+      restoreEventScope([]);
+      setEventContextConfig(new EventContextConfig({ maxStackDepth: 2 }));
+
+      pushEventScope("event-1", "crew_kickoff_started");
+      pushEventScope("event-2", "task_started");
+
+      expect(() => {
+        pushEventScope("event-3", "llm_call_started");
+      }).toThrow(StackDepthExceededError);
+      expect(popEventScope()).toEqual(["event-2", "task_started"]);
+      expect(getCurrentParentId()).toBe("event-1");
+    } finally {
+      restoreEventScope([]);
+      setEventContextConfig(null);
+    }
+  });
+
+  it("raises upstream event pairing errors when configured", () => {
+    try {
+      setEventContextConfig({
+        mismatchBehavior: MismatchBehavior.RAISE,
+        emptyPopBehavior: MismatchBehavior.RAISE,
+      });
+
+      expect(() => {
+        handleMismatch("task_completed", "llm_call_started", "task_started");
+      }).toThrow(EventPairingError);
+      expect(() => {
+        handleEmptyPop("task_completed");
+      }).toThrow(EmptyStackError);
+    } finally {
+      setEventContextConfig(null);
+    }
+  });
+
+  it("restores upstream triggering event scope after nested async failures", async () => {
+    setTriggeringEventId(null);
+
+    await expect(triggeredByScope("outer", async () => {
+      expect(getTriggeringEventId()).toBe("outer");
+      await expect(triggeredByScope("inner", () => {
+        expect(getTriggeringEventId()).toBe("inner");
+        return Promise.reject(new Error("scope failure"));
+      })).rejects.toThrow("scope failure");
+      expect(getTriggeringEventId()).toBe("outer");
+    })).resolves.toBeUndefined();
+
+    expect(getTriggeringEventId()).toBeNull();
   });
 
   it("registers event sources and avoids duplicating agents owned by registered crews", () => {
