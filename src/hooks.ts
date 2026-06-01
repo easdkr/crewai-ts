@@ -365,10 +365,47 @@ export function clearAllGlobalHooks(): { llm_hooks: [number, number]; tool_hooks
 
 export const clear_all_global_hooks = clearAllGlobalHooks;
 
-export function beforeLlmCall(hook: BeforeLLMCallHook): BeforeLLMCallHook;
+export type RegisteredCrewScopedHook = [
+  "before_llm_call" | "after_llm_call" | "before_tool_call" | "after_tool_call",
+  BeforeLLMCallHook | AfterLLMCallHook | BeforeToolCallHook | AfterToolCallHook,
+];
+
+export function registerCrewScopedHooks(instance: object): RegisteredCrewScopedHook[] {
+  const registered: RegisteredCrewScopedHook[] = [];
+  const seen = new Set<string | symbol>();
+  let prototype = Object.getPrototypeOf(instance) as object | null;
+  while (prototype && prototype !== Object.prototype) {
+    for (const name of Reflect.ownKeys(prototype)) {
+      if (name === "constructor" || seen.has(name)) {
+        continue;
+      }
+      seen.add(name);
+      const descriptor = Object.getOwnPropertyDescriptor(prototype, name);
+      const method = getObjectProperty(descriptor, "value");
+      if (typeof method !== "function") {
+        continue;
+      }
+      registerCrewScopedHook(instance, method as (...args: unknown[]) => unknown, registered);
+    }
+    prototype = Object.getPrototypeOf(prototype) as object | null;
+  }
+  Object.defineProperty(instance, "_registered_hook_functions", {
+    configurable: true,
+    enumerable: false,
+    writable: true,
+    value: registered,
+  });
+  return registered;
+}
+
+export function beforeLlmCall(hook: BeforeLLMCallHook, context?: ClassMethodDecoratorContext): BeforeLLMCallHook;
 export function beforeLlmCall(options: { agents?: readonly string[] }): MethodDecorator;
-export function beforeLlmCall(value: BeforeLLMCallHook | { agents?: readonly string[] }): BeforeLLMCallHook | MethodDecorator {
+export function beforeLlmCall(value: BeforeLLMCallHook | { agents?: readonly string[] }, context?: ClassMethodDecoratorContext): BeforeLLMCallHook | MethodDecorator {
   if (typeof value === "function") {
+    if (context) {
+      markHook(value, "is_before_llm_call_hook", {});
+      return value;
+    }
     return registerDecoratedHook(value, registerBeforeLlmCallHook, "is_before_llm_call_hook", {});
   }
   return createHookDecorator(registerBeforeLlmCallHook, "is_before_llm_call_hook", hookFilterOptions(value));
@@ -376,10 +413,14 @@ export function beforeLlmCall(value: BeforeLLMCallHook | { agents?: readonly str
 
 export const before_llm_call = beforeLlmCall;
 
-export function afterLlmCall(hook: AfterLLMCallHook): AfterLLMCallHook;
+export function afterLlmCall(hook: AfterLLMCallHook, context?: ClassMethodDecoratorContext): AfterLLMCallHook;
 export function afterLlmCall(options: { agents?: readonly string[] }): MethodDecorator;
-export function afterLlmCall(value: AfterLLMCallHook | { agents?: readonly string[] }): AfterLLMCallHook | MethodDecorator {
+export function afterLlmCall(value: AfterLLMCallHook | { agents?: readonly string[] }, context?: ClassMethodDecoratorContext): AfterLLMCallHook | MethodDecorator {
   if (typeof value === "function") {
+    if (context) {
+      markHook(value, "is_after_llm_call_hook", {});
+      return value;
+    }
     return registerDecoratedHook(value, registerAfterLlmCallHook, "is_after_llm_call_hook", {});
   }
   return createHookDecorator(registerAfterLlmCallHook, "is_after_llm_call_hook", hookFilterOptions(value));
@@ -387,10 +428,14 @@ export function afterLlmCall(value: AfterLLMCallHook | { agents?: readonly strin
 
 export const after_llm_call = afterLlmCall;
 
-export function beforeToolCall(hook: BeforeToolCallHook): BeforeToolCallHook;
+export function beforeToolCall(hook: BeforeToolCallHook, context?: ClassMethodDecoratorContext): BeforeToolCallHook;
 export function beforeToolCall(options: { tools?: readonly string[]; agents?: readonly string[] }): MethodDecorator;
-export function beforeToolCall(value: BeforeToolCallHook | { tools?: readonly string[]; agents?: readonly string[] }): BeforeToolCallHook | MethodDecorator {
+export function beforeToolCall(value: BeforeToolCallHook | { tools?: readonly string[]; agents?: readonly string[] }, context?: ClassMethodDecoratorContext): BeforeToolCallHook | MethodDecorator {
   if (typeof value === "function") {
+    if (context) {
+      markHook(value, "is_before_tool_call_hook", {});
+      return value;
+    }
     return registerDecoratedHook(value, registerBeforeToolCallHook, "is_before_tool_call_hook", {});
   }
   return createHookDecorator(registerBeforeToolCallHook, "is_before_tool_call_hook", hookFilterOptions(value));
@@ -398,10 +443,14 @@ export function beforeToolCall(value: BeforeToolCallHook | { tools?: readonly st
 
 export const before_tool_call = beforeToolCall;
 
-export function afterToolCall(hook: AfterToolCallHook): AfterToolCallHook;
+export function afterToolCall(hook: AfterToolCallHook, context?: ClassMethodDecoratorContext): AfterToolCallHook;
 export function afterToolCall(options: { tools?: readonly string[]; agents?: readonly string[] }): MethodDecorator;
-export function afterToolCall(value: AfterToolCallHook | { tools?: readonly string[]; agents?: readonly string[] }): AfterToolCallHook | MethodDecorator {
+export function afterToolCall(value: AfterToolCallHook | { tools?: readonly string[]; agents?: readonly string[] }, context?: ClassMethodDecoratorContext): AfterToolCallHook | MethodDecorator {
   if (typeof value === "function") {
+    if (context) {
+      markHook(value, "is_after_tool_call_hook", {});
+      return value;
+    }
     return registerDecoratedHook(value, registerAfterToolCallHook, "is_after_tool_call_hook", {});
   }
   return createHookDecorator(registerAfterToolCallHook, "is_after_tool_call_hook", hookFilterOptions(value));
@@ -560,21 +609,68 @@ function hookContextMatchesFilters(context: unknown, options: HookFilterOptions)
   return true;
 }
 
+function registerCrewScopedHook(instance: object, method: (...args: unknown[]) => unknown, registered: RegisteredCrewScopedHook[]): void {
+  const options = readHookFilterOptions(method);
+  if (hasBooleanProperty(method, "is_before_llm_call_hook")) {
+    const hook = ((context: LLMCallHookContext) => method.call(instance, context)) as BeforeLLMCallHook;
+    registerFilteredHook(hook as (context: never) => unknown, registerBeforeLlmCallHook as HookRegister<(context: never) => unknown>, options);
+    registered.push(["before_llm_call", hook]);
+  }
+  if (hasBooleanProperty(method, "is_after_llm_call_hook")) {
+    const hook = ((context: LLMCallHookContext) => method.call(instance, context)) as AfterLLMCallHook;
+    registerFilteredHook(hook as (context: never) => unknown, registerAfterLlmCallHook as HookRegister<(context: never) => unknown>, options);
+    registered.push(["after_llm_call", hook]);
+  }
+  if (hasBooleanProperty(method, "is_before_tool_call_hook")) {
+    const hook = ((context: ToolCallHookContext) => method.call(instance, context)) as BeforeToolCallHook;
+    registerFilteredHook(hook as (context: never) => unknown, registerBeforeToolCallHook as HookRegister<(context: never) => unknown>, options);
+    registered.push(["before_tool_call", hook]);
+  }
+  if (hasBooleanProperty(method, "is_after_tool_call_hook")) {
+    const hook = ((context: ToolCallHookContext) => method.call(instance, context)) as AfterToolCallHook;
+    registerFilteredHook(hook as (context: never) => unknown, registerAfterToolCallHook as HookRegister<(context: never) => unknown>, options);
+    registered.push(["after_tool_call", hook]);
+  }
+}
+
+function readHookFilterOptions(method: (...args: unknown[]) => unknown): HookFilterOptions {
+  const agents = getStringArrayProperty(method, "_filter_agents") ?? getStringArrayProperty(method, "agents");
+  const tools = getStringArrayProperty(method, "_filter_tools") ?? getStringArrayProperty(method, "tools");
+  return {
+    ...(agents ? { agents } : {}),
+    ...(tools ? { tools } : {}),
+  };
+}
+
 function isStandardDecoratorContext(value: unknown): value is { kind: string } {
   return typeof value === "object" && value !== null && "kind" in value;
 }
 
 function getObjectProperty(value: unknown, key: string): unknown {
-  return typeof value === "object" && value !== null && key in value
+  return (typeof value === "object" || typeof value === "function") && value !== null && key in value
     ? (value as Record<string, unknown>)[key]
     : null;
 }
 
 function hasStringProperty<T extends string>(value: unknown, key: T): value is Record<T, string> {
-  return typeof value === "object"
+  return (typeof value === "object" || typeof value === "function")
     && value !== null
     && key in value
     && typeof (value as Record<T, unknown>)[key] === "string";
+}
+
+function hasBooleanProperty<T extends string>(value: unknown, key: T): value is Record<T, boolean> {
+  return (typeof value === "object" || typeof value === "function")
+    && value !== null
+    && key in value
+    && typeof (value as Record<T, unknown>)[key] === "boolean";
+}
+
+function getStringArrayProperty(value: unknown, key: string): readonly string[] | null {
+  const property = getObjectProperty(value, key);
+  return Array.isArray(property) && property.every((item) => typeof item === "string")
+    ? property
+    : null;
 }
 
 function sanitizeHookToolName(name: string): string {

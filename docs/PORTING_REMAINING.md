@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 749 passing tests.
+- Test suite: 750 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -170,6 +170,7 @@ When more goal budget is available, continue from the behavioral parity audits b
 - `Telemetry()` now mirrors upstream singleton construction behavior, and telemetry disable env vars such as `CREWAI_DISABLE_TELEMETRY=TRUE` / `OTEL_SDK_DISABLED=TRUE` dynamically suppress local telemetry operations after singleton creation.
 - `LLMCallHookContext` now mirrors upstream executor-derived initialization by taking `messages`, `agent`, `task`, `crew`, `llm`, and `iterations` from the executor when explicit context fields are not supplied, while preserving the mutable `messages` reference used by before-call hooks.
 - `LLMCallHookContext.request_human_input` and `ToolCallHookContext.request_human_input` now mirror upstream approval-hook behavior in a deterministic TS shim: live-update formatters are paused/resumed around input, responses are trimmed, Enter returns an empty string, and resume runs even when input throws. The default Node path remains non-blocking unless a host `globalThis.prompt` is supplied.
+- `CrewBase` now registers hook-decorated class methods per instance, preserving bound `this`, tool/agent filters, global registration order, and `_registered_hook_functions` tracking without adding name-only helper surface.
 
 ## Completed In Current AgentExecutor Behavior Pass
 

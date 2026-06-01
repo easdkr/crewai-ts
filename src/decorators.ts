@@ -2,6 +2,7 @@ import { Crew } from "./crew.js";
 import { CrewOutput } from "./outputs.js";
 import { ensureCrewProject } from "./project.js";
 import { getCrewMetadata, initializeCrewMetadata, registerCrewMethod, type MethodKind } from "./metadata.js";
+import { registerCrewScopedHooks } from "./hooks.js";
 import type { Agent } from "./agent.js";
 import type { Task } from "./task.js";
 import type { InputValues } from "./types.js";
@@ -135,7 +136,14 @@ export function CrewBase<T extends abstract new (...args: never[]) => object>(
   context.addInitializer(function init() {
     initializeCrewMetadata(constructor);
   });
-  return constructor;
+  const WrappedCrewBase = class extends (constructor as unknown as new (...args: never[]) => object) {
+    constructor(...args: never[]) {
+      super(...args);
+      registerCrewScopedHooks(this);
+    }
+  };
+  Object.defineProperty(WrappedCrewBase, "name", { value: constructor.name });
+  return WrappedCrewBase as unknown as T;
 }
 
 function callMethod(instance: object, name: string | symbol, ...args: unknown[]): unknown {

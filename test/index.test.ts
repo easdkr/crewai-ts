@@ -462,6 +462,7 @@ import {
   cache_handler,
   countOutgoingEdges,
   crew,
+  CrewBase,
   crewaiEventBus,
   createReadFileTool,
   clearAllGlobalHooks,
@@ -472,6 +473,8 @@ import {
   extract_tool_info,
   extractInputFilesFromInputs,
   flowConfig,
+  getBeforeLlmCallHooks,
+  getBeforeToolCallHooks,
   getCurrentFlowId,
   getCurrentFlowMethodName,
   getCurrentFlowRequestId,
@@ -27933,6 +27936,76 @@ describe("global hooks", () => {
         Reflect.deleteProperty(globalThis, "prompt");
       }
     }
+  });
+
+  it("registers CrewBase method hooks per instance with bound self and filters", () => {
+    const executionLog: string[] = [];
+
+    class HookedCrew {
+      callCount = 0;
+
+      countCalls(context: LLMCallHookContext): void {
+        this.callCount += 1;
+        executionLog.push(`llm:${String(this.callCount)}:${String(context.iterations)}`);
+      }
+
+      filterTool(context: ToolCallHookContext): void {
+        executionLog.push(`tool:${context.tool_name}`);
+      }
+
+      researcher(): Agent {
+        return new Agent({ role: "Researcher", goal: "Research", backstory: "Expert" });
+      }
+
+      crew(): Crew {
+        return new Crew({ agents: [], tasks: [], verbose: false });
+      }
+    }
+    const decorateBeforeLlm = beforeLlmCall as unknown as (
+      value: typeof HookedCrew.prototype.countCalls,
+      context: { kind: "method"; name: "countCalls" },
+    ) => void;
+    const decorateCrewBase = CrewBase as unknown as (
+      constructor: typeof HookedCrew,
+      context: { addInitializer: (initializer: () => void) => void },
+    ) => typeof HookedCrew;
+
+    const countCalls = Object.getOwnPropertyDescriptor(HookedCrew.prototype, "countCalls")?.value as typeof HookedCrew.prototype.countCalls;
+    decorateBeforeLlm(countCalls, { kind: "method", name: "countCalls" });
+    beforeToolCall({ tools: ["delete_file"] })(
+      HookedCrew.prototype,
+      "filterTool",
+      Object.getOwnPropertyDescriptor(HookedCrew.prototype, "filterTool"),
+    );
+    const DecoratedHookedCrew = decorateCrewBase(HookedCrew, { addInitializer: (initializer) => { initializer(); } });
+
+    expect(getBeforeLlmCallHooks()).toHaveLength(0);
+    const instance1 = new DecoratedHookedCrew();
+    const instance2 = new DecoratedHookedCrew();
+
+    const llmHooks = getBeforeLlmCallHooks();
+    expect(llmHooks).toHaveLength(2);
+    void llmHooks[0]?.(new LLMCallHookContext({ executor: { messages: [], iterations: 3 } }));
+    void llmHooks[1]?.(new LLMCallHookContext({ executor: { messages: [], iterations: 5 } }));
+
+    expect(instance1.callCount).toBe(1);
+    expect(instance2.callCount).toBe(1);
+    expect(executionLog).toEqual(["llm:1:3", "llm:1:5"]);
+
+    const toolHooks = getBeforeToolCallHooks();
+    expect(toolHooks).toHaveLength(2);
+    const tool = new StructuredTool({
+      name: "delete file",
+      description: "Delete",
+      argsSchema: {},
+      func: () => "deleted",
+    });
+    void toolHooks[0]?.(new ToolCallHookContext({ toolName: "read_file", toolInput: {}, tool }));
+    void toolHooks[0]?.(new ToolCallHookContext({ toolName: "delete_file", toolInput: {}, tool }));
+
+    expect(executionLog).toEqual(["llm:1:3", "llm:1:5", "tool:delete_file"]);
+    expect(instance1).toHaveProperty("_registered_hook_functions");
+    expect((instance1 as unknown as { _registered_hook_functions: unknown[] })._registered_hook_functions).toHaveLength(2);
   });
 
   it("runs before and after LLM hooks around agent LLM calls", async () => {
