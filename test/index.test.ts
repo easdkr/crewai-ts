@@ -24014,6 +24014,64 @@ describe("LLM providers", () => {
     expect(tools).toEqual([tool]);
     expect(options).toMatchObject({ responseModel, task: taskInstance });
   });
+
+  it("calls task callbacks from aexecute_sync with the async task output", async () => {
+    const callback = vi.fn();
+    const agentInstance = new Agent({
+      role: "Async Callback Agent",
+      goal: "Run callbacks",
+      backstory: "Careful async worker",
+      llm: async () => {
+        await Promise.resolve();
+        return "callback result";
+      },
+    });
+    const taskInstance = new Task({
+      description: "Run callback",
+      expectedOutput: "Done",
+      agent: agentInstance,
+      callback,
+    });
+
+    const output = await taskInstance.aexecute_sync();
+
+    expect(output.raw).toBe("callback result");
+    expect(callback).toHaveBeenCalledOnce();
+    expect(callback).toHaveBeenCalledWith(expect.objectContaining({
+      raw: "callback result",
+      agent: "Async Callback Agent",
+    }));
+  });
+
+  it("sets task end_time when aexecute_sync fails", async () => {
+    const agentInstance = new Agent({
+      role: "Async Error Agent",
+      goal: "Surface errors",
+      backstory: "Careful async worker",
+      llm: async () => {
+        await Promise.resolve();
+        throw new Error("async failure");
+      },
+    });
+    const taskInstance = new Task({
+      description: "Fail async",
+      expectedOutput: "Error",
+      agent: agentInstance,
+    });
+
+    await expect(taskInstance.aexecute_sync()).rejects.toThrow("async failure");
+
+    expect(taskInstance.start_time).toBeInstanceOf(Date);
+    expect(taskInstance.end_time).toBeInstanceOf(Date);
+    const startTime = taskInstance.start_time;
+    const endTime = taskInstance.end_time;
+    expect(startTime).toBeInstanceOf(Date);
+    expect(endTime).toBeInstanceOf(Date);
+    if (!(startTime instanceof Date) || !(endTime instanceof Date)) {
+      throw new Error("Task did not record async execution timestamps.");
+    }
+    expect(endTime.getTime()).toBeGreaterThanOrEqual(startTime.getTime());
+  });
 });
 
 describe("task markdown prompts", () => {
