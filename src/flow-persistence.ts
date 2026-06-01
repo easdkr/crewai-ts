@@ -18,8 +18,8 @@ export type PendingFeedbackRecord = {
 export type FlowPersistence = {
   persistenceType?: string;
   persistence_type?: string;
-  saveState?(flowId: string, methodName: string, state: unknown): Promise<void>;
-  save_state?(flowId: string, methodName: string, state: unknown): Promise<void>;
+  saveState?(flowId: string, methodName: string, state: unknown): void | Promise<void>;
+  save_state?(flowId: string, methodName: string, state: unknown): void | Promise<void>;
   loadState?(flowId: string): Promise<Record<string, unknown> | null>;
   load_state?(flowId: string): Promise<Record<string, unknown> | null>;
   savePendingFeedback(

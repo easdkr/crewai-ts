@@ -1370,8 +1370,8 @@ export class Flow<TState extends object = Record<string, unknown>> {
     return this._findTriggeredMethods(triggerMethod, routerOnly);
   }
 
-  async _checkpointStateForAsk(): Promise<void> {
-    await this.saveState("_ask_checkpoint");
+  _checkpointStateForAsk(): MaybePromise<void> {
+    return this.saveState("_ask_checkpoint");
   }
 
   async _checkpoint_state_for_ask(): Promise<void> {
@@ -2076,40 +2076,79 @@ export class Flow<TState extends object = Record<string, unknown>> {
     }));
 
     const provider = this.resolveInputProvider();
+    const context = {
+      flowName,
+      methodName,
+      message,
+      metadata,
+      timeout: options.timeout ?? null,
+    };
+    const checkpoint = this._checkpointStateForAsk();
+    if (isPromiseLike(checkpoint)) {
+      return this.requestInputAfterCheckpoint(checkpoint, provider, context);
+    }
+    return this.requestInputFromProvider(provider, context);
+  }
+
+  private requestInputFromProvider(
+    provider: InputProvider,
+    context: {
+      flowName: string;
+      methodName: string | null;
+      message: string;
+      metadata: Record<string, unknown> | null;
+      timeout: number | null;
+    },
+  ): MaybePromise<string | null> {
     try {
-      const response = provider.requestInput(message, this, metadata);
+      const response = provider.requestInput(context.message, this, context.metadata);
       if (isPromiseLike(response)) {
         return this.resolveAsyncInput(response, {
-          flowName,
-          methodName,
-          message,
-          metadata,
-          timeout: options.timeout ?? null,
+          flowName: context.flowName,
+          methodName: context.methodName,
+          message: context.message,
+          metadata: context.metadata,
+          timeout: context.timeout,
         });
       }
       const normalized = normalizeInputProviderResponse(response);
-      this.recordInput(message, normalized.text, methodName, metadata, normalized.metadata);
+      this.recordInput(context.message, normalized.text, context.methodName, context.metadata, normalized.metadata);
       crewaiEventBus.emit(this, new FlowInputReceivedEvent({
-        flowName,
-        methodName,
-        message,
+        flowName: context.flowName,
+        methodName: context.methodName,
+        message: context.message,
         response: normalized.text,
-        metadata,
+        metadata: context.metadata,
         responseMetadata: normalized.metadata,
       }));
       return normalized.text;
     } catch {
-      this.recordInput(message, null, methodName, metadata, null);
+      this.recordInput(context.message, null, context.methodName, context.metadata, null);
       crewaiEventBus.emit(this, new FlowInputReceivedEvent({
-        flowName,
-        methodName,
-        message,
+        flowName: context.flowName,
+        methodName: context.methodName,
+        message: context.message,
         response: null,
-        metadata,
+        metadata: context.metadata,
         responseMetadata: null,
       }));
       return null;
     }
+  }
+
+  private async requestInputAfterCheckpoint(
+    checkpoint: PromiseLike<void>,
+    provider: InputProvider,
+    context: {
+      flowName: string;
+      methodName: string | null;
+      message: string;
+      metadata: Record<string, unknown> | null;
+      timeout: number | null;
+    },
+  ): Promise<string | null> {
+    await checkpoint;
+    return await this.requestInputFromProvider(provider, context);
   }
 
   private resolveInputProvider(): InputProvider {
@@ -2384,11 +2423,11 @@ export class Flow<TState extends object = Record<string, unknown>> {
     }
   }
 
-  private async saveState(methodName: string): Promise<void> {
+  private saveState(methodName: string): MaybePromise<void> {
     if (!this.persistence?.saveState) {
       return;
     }
-    await this.persistence.saveState(this.flowPersistenceId(), methodName, this.stateSnapshot());
+    return this.persistence.saveState(this.flowPersistenceId(), methodName, this.stateSnapshot());
   }
 
   private recordHumanFeedbackResult(options: {

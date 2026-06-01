@@ -16510,6 +16510,51 @@ describe("flow runtime", () => {
     });
   });
 
+  it("checkpoints flow state before waiting for ask input", async () => {
+    const saves: Array<{ flowId: string; methodName: string; state: Record<string, unknown> }> = [];
+    const persistence = {
+      saveState: (flowId: string, methodName: string, state: unknown) => {
+        saves.push({ flowId, methodName, state: { ...(state as Record<string, unknown>) } });
+      },
+    };
+
+    class CheckpointAskFlow extends Flow<{ id: string; topic?: string; providerSawCheckpoint?: boolean }> {
+      gather() {
+        this.state.topic = "CrewAI";
+        return this.ask("Topic?");
+      }
+    }
+
+    const flow = new CheckpointAskFlow({
+      initialState: { id: "ask-flow", topic: undefined, providerSawCheckpoint: false },
+      persistence: persistence as unknown as JsonFlowPersistence,
+      inputProvider: {
+        requestInput: (_message, providerFlow) => {
+          providerFlow.state.providerSawCheckpoint = saves.some((save) =>
+            save.flowId === "ask-flow"
+            && save.methodName === "_ask_checkpoint"
+            && save.state.topic === "CrewAI",
+          );
+          return "confirmed";
+        },
+      },
+    });
+    decorateMethod(CheckpointAskFlow, "gather", start() as unknown as Decorator).call(flow);
+
+    await expect(flow.kickoff()).resolves.toBe("confirmed");
+    expect(flow.state.providerSawCheckpoint).toBe(true);
+    expect(saves.filter((save) => save.methodName === "_ask_checkpoint")).toEqual([{
+      flowId: "ask-flow",
+      methodName: "_ask_checkpoint",
+      state: { id: "ask-flow", topic: "CrewAI", providerSawCheckpoint: false },
+    }]);
+    expect(saves.at(-1)).toMatchObject({
+      flowId: "ask-flow",
+      methodName: "gather",
+      state: { id: "ask-flow", topic: "CrewAI", providerSawCheckpoint: true },
+    });
+  });
+
   it("returns null from ask when an async input provider times out or throws", async () => {
     class TimeoutFlow extends Flow {
       async gather() {
