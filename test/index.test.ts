@@ -22979,7 +22979,7 @@ describe("crew replay", () => {
 });
 
 describe("hierarchical process", () => {
-  it("requires a manager agent or manager LLM", async () => {
+  it("requires a manager agent or manager LLM", () => {
     const researcher = new Agent({
       role: "Researcher",
       goal: "Find facts",
@@ -22991,11 +22991,11 @@ describe("hierarchical process", () => {
       agent: researcher,
     });
 
-    await expect(new Crew({
+    expect(() => new Crew({
       agents: [researcher],
       tasks: [taskInstance],
       process: Process.hierarchical,
-    }).kickoff()).rejects.toThrow("managerLlm");
+    })).toThrow("managerLlm");
   });
 
   it("uses a manager LLM and coworker delegation tool to complete tasks", async () => {
@@ -23038,7 +23038,7 @@ describe("hierarchical process", () => {
     expect(managerCalls[0]).toContain("Research CrewAI");
   });
 
-  it("rejects manager agents that are included in regular agents", async () => {
+  it("rejects manager agents that are included in regular agents", () => {
     const manager = new Agent({
       role: "Manager",
       goal: "Coordinate",
@@ -23050,12 +23050,12 @@ describe("hierarchical process", () => {
       agent: manager,
     });
 
-    await expect(new Crew({
+    expect(() => new Crew({
       agents: [manager],
       tasks: [taskInstance],
       process: Process.hierarchical,
       managerAgent: manager,
-    }).kickoff()).rejects.toThrow("Manager agent should not be included");
+    })).toThrow("Manager agent should not be included");
   });
 });
 

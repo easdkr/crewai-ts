@@ -325,6 +325,7 @@ export class Crew {
       ?? new TaskOutputStorageHandler();
     this.task_output_storage_handler = this.taskOutputStorageHandler;
     this.checkConfig();
+    this.checkManagerLlm();
     this.validateTasks();
     this.validateEndWithAtMostOneAsyncTask();
     this.validateMustHaveNonConditionalTask();
@@ -537,7 +538,12 @@ export class Crew {
 
   checkManagerLlm(): this {
     if (this.process === Process.hierarchical) {
-      this.validateHierarchicalProcess();
+      if (!this.managerLlm && !this.managerAgent) {
+        throw new Error("Attribute `managerLlm` or `managerAgent` is required when using hierarchical process.");
+      }
+      if (this.managerAgent && this.agents.includes(this.managerAgent)) {
+        throw new Error("Manager agent should not be included in agents list.");
+      }
     }
     return this;
   }
