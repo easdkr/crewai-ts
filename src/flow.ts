@@ -30,7 +30,7 @@ import {
   flowConfig,
   isInputResponse,
 } from "./input-provider.js";
-import { callLLM, createLLMClient, type LLM, type LLMClient } from "./llm.js";
+import { callLLM, createLLM, createLLMClient, type LLM, type LLMClient } from "./llm.js";
 import type { CrewOutput } from "./outputs.js";
 import { FlowStreamingOutput } from "./streaming.js";
 import { CheckpointConfig, coerceCheckpointConfig, RuntimeState, type CheckpointOption } from "./state.js";
@@ -2843,6 +2843,9 @@ function resolveHumanFeedbackLlmClient(llm: string | Record<string, unknown> | L
   }
   if ("call" in llm && typeof (llm as { call?: unknown }).call === "function") {
     return createLLMClient(llm as LLM);
+  }
+  if ("model" in llm && typeof (llm as { model?: unknown }).model === "string") {
+    return createLLM(llm);
   }
   return null;
 }

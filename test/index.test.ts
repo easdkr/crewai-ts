@@ -517,6 +517,7 @@ import {
   strip_cache_breakpoint,
   clearLLMProviders,
   registerLLMProvider,
+  unregisterLLMProvider,
   sanitizeToolName,
   safe_tool_conversion,
   slugify,
@@ -17518,6 +17519,69 @@ describe("flow runtime", () => {
       ["review", "draft", "approved"],
       ["publish", "published:approved, looks good", null],
     ]);
+  });
+
+  it("restores serialized human feedback LLM config when resuming router outcomes", async () => {
+    const llmCalls: LLMMessage[][] = [];
+    registerLLMProvider("test/hitl-collapse", (messages) => {
+      llmCalls.push([...messages]);
+      return "{\"outcome\":\"approved\"}";
+    });
+
+    class ResumeLlmRoutingFlow extends Flow<{ events: string[] }> {
+      constructor() {
+        super({ initialState: { events: [] } });
+      }
+
+      review() {
+        this.state.events.push("review");
+        return "draft";
+      }
+
+      publish(outcome: string) {
+        this.state.events.push(`publish:${outcome}`);
+        return "published";
+      }
+    }
+
+    try {
+      const initializers = [
+        decorateMethod(ResumeLlmRoutingFlow, "review", humanFeedback({
+          message: "Approve?",
+          emit: ["approved", "rejected"],
+          defaultOutcome: "rejected",
+          llm: new ConfiguredLLM({ model: "test/hitl-collapse", temperature: 0.2 }),
+          provider: {
+            requestFeedback: (context) => {
+              expect(context.llm).toMatchObject({
+                model: "test/hitl-collapse",
+                temperature: 0.2,
+              });
+              throw new HumanFeedbackPending({ context });
+            },
+          },
+        }) as unknown as Decorator),
+        decorateMethod(ResumeLlmRoutingFlow, "review", start() as unknown as Decorator),
+        decorateMethod(ResumeLlmRoutingFlow, "publish", listen("approved") as unknown as Decorator),
+      ];
+      const flow = new ResumeLlmRoutingFlow();
+      initializers.forEach((initializer) => {
+        initializer.call(flow);
+      });
+
+      await flow.kickoff();
+      const output = await flow.resume("please ship");
+
+      expect(output).toBe("published");
+      expect(llmCalls).toHaveLength(1);
+      expect(flow.lastHumanFeedback).toMatchObject({
+        feedback: "please ship",
+        outcome: "approved",
+      });
+      expect(flow.state.events).toEqual(["review", "publish:approved"]);
+    } finally {
+      unregisterLLMProvider("test/hitl-collapse");
+    }
   });
 
   it("rejects resume when no human feedback is pending", async () => {

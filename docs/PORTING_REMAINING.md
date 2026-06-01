@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 808 passing tests.
+- Test suite: 809 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -317,6 +317,7 @@ When more goal budget is available, continue from the behavioral parity audits b
 - Flow HITL routing now supports deterministic LLM-backed outcome collapse for injected local LLM clients, including JSON `outcome` responses and first-outcome fallback on LLM failure.
 - Flow HITL learning now has deterministic local behavior for injected LLM clients: recalled memory lessons can pre-review method output before provider display, and non-empty feedback can distill new lessons into flow memory.
 - Flow HITL pending feedback context now mirrors upstream LLM serialization safety by preserving deterministic provider config fields such as temperature, project, and location while redacting `api_key` / `apiKey` secrets before provider or persistence handoff.
+- Flow HITL resume now restores serialized LLM config dictionaries into local LLM clients, so persisted pending feedback can still use LLM-backed routing collapse after reload.
 - `toSerializable` now mirrors upstream BaseModel serialization by honoring `modelDump` / `model_dump` output before object entry serialization, with recursive exclude handling.
   - `Flow.kickoff` / `kickoffAsync` now support upstream-style `restore_from_state_id` / `restoreFromStateId` fork hydration from persisted state without reusing the source flow ID and reject conflicting checkpoint restores.
   - `Flow.kickoff` / `kickoffAsync` now reload persisted state from `inputs.id` before applying non-id input overrides, matching upstream default-value override semantics.
