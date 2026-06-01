@@ -13698,6 +13698,27 @@ describe("flow runtime", () => {
     expect(Object.hasOwn(Flow.prototype, "_flow_post_init")).toBe(true);
   });
 
+  it("uses upstream-style static initial_state defaults when no constructor state is provided", async () => {
+    class StaticInitialStateFlow extends Flow<{ id: string; events: string[] }> {
+      static initial_state = { id: "static-flow", events: [] };
+
+      begin() {
+        this.state.events.push("begin");
+        return this.state.id;
+      }
+    }
+
+    const initializer = decorateMethod(StaticInitialStateFlow, "begin", start() as unknown as Decorator);
+    const flow = new StaticInitialStateFlow();
+    initializer.call(flow);
+
+    await expect(flow.kickoff()).resolves.toBe("static-flow");
+    expect(flow.state).toEqual({
+      id: "static-flow",
+      events: ["begin"],
+    });
+  });
+
   it("exposes upstream Flow OR listener and racing group helpers", () => {
     class RacingFlow extends Flow<{ events: string[] }> {
       constructor() {

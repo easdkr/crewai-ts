@@ -1004,7 +1004,13 @@ export class Flow<TState extends object = Record<string, unknown>> {
     this.memory = "memory" in options ? options.memory ?? null : (this.shouldSkipAutoMemory()
       ? null
       : new Memory({ rootScope: `/flow/${sanitize_scope_name(this.flowName())}` }));
-    const initialState = options.initialState;
+    const constructorInitialState = this.constructor as {
+      initialState?: TState | (() => TState);
+      initial_state?: TState | (() => TState);
+    };
+    const initialState = options.initialState
+      ?? constructorInitialState.initialState
+      ?? constructorInitialState.initial_state;
     this.state = typeof initialState === "function"
       ? initialState()
       : initialState
