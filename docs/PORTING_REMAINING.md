@@ -411,6 +411,7 @@ When more goal budget is available, continue from the behavioral parity audits b
   - LLM hook transport subpath now exports upstream-style synchronous `HTTPTransport.handle_request` alongside `AsyncHTTPTransport`.
   - `BaseInterceptor` now exposes upstream-style Pydantic schema and interceptor validation hooks for model compatibility.
 - Added planning compatibility behavior:
+  - ReAct agent parser `_safe_repair_json` now handles upstream loose tool-input JSON cases such as trailing commas, single quotes, missing colons/commas, unclosed objects, unquoted string values, and trailing text.
   - `StepObservation.coerce_single_refinement_to_list` now exposes the upstream validator helper for single refinement objects.
   - `PlannerObserver.apply_refinements` now applies structured observation refinements to remaining todo descriptions in place.
   - `StepExecutor.execute` now exposes the upstream todo-item execution alias while preserving the existing TypeScript `executeStep` path.

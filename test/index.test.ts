@@ -7360,6 +7360,18 @@ describe("agent utility helpers", () => {
     expect(_clean_action(" **Search Tool** ")).toBe("Search Tool");
     expect(_safe_repair_json("{query: 'CrewAI'}")).toBe(JSON.stringify({ query: "CrewAI" }));
     expect(_safe_repair_json("[not json]")).toBe("[not json]");
+    expect(_safe_repair_json("{\"task\": \"Research XAI\", \"context\": \"Explainable AI\", \"coworker\": Senior Researcher"))
+      .toBe(JSON.stringify({ task: "Research XAI", context: "Explainable AI", coworker: "Senior Researcher" }));
+    expect(_safe_repair_json("{\"task\": \"Research XAI\", \"context\": \"Explainable AI\", \"coworker\": \"Senior Researcher\",}"))
+      .toBe(JSON.stringify({ task: "Research XAI", context: "Explainable AI", coworker: "Senior Researcher" }));
+    expect(_safe_repair_json("{'task': 'Research XAI', 'context': \"Explainable AI\", 'coworker': 'Senior Researcher'}"))
+      .toBe(JSON.stringify({ task: "Research XAI", context: "Explainable AI", coworker: "Senior Researcher" }));
+    expect(_safe_repair_json("{\"task\" \"Research XAI\", \"context\": \"Explainable AI\", \"coworker\": \"Senior Researcher\"}"))
+      .toBe(JSON.stringify({ task: "Research XAI", context: "Explainable AI", coworker: "Senior Researcher" }));
+    expect(_safe_repair_json("{\"task\": \"Research XAI\" \"context\": \"Explainable AI\", \"coworker\": \"Senior Researcher\"}"))
+      .toBe(JSON.stringify({ task: "Research XAI", context: "Explainable AI", coworker: "Senior Researcher" }));
+    expect(_safe_repair_json("{\"task\": \"Research XAI\", \"context\": \"Explainable AI\", \"coworker\": \"Senior Researcher\"} random text"))
+      .toBe(JSON.stringify({ task: "Research XAI", context: "Explainable AI", coworker: "Senior Researcher" }));
 
     const parsedAction = parseAgentOutput([
       "Thought: I should search",

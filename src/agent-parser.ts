@@ -116,18 +116,74 @@ export function safeRepairJson(toolInput: string): string {
 }
 
 function repairLooseJsonObject(value: string): string | null {
-  const trimmed = value.trim();
-  if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) {
+  const trimmed = extractLooseJsonObject(value.trim());
+  if (trimmed === null) {
     return null;
   }
-  const quotedKeys = trimmed.replace(/([{,]\s*)([A-Za-z_][\w-]*)(\s*:)/g, "$1\"$2\"$3");
+  const withoutRawNewlines = trimmed.replaceAll(/\r?\n/g, "");
+  const withoutTrailingCommas = withoutRawNewlines.replace(/,\s*([}\]])/g, "$1");
+  const quotedKeys = withoutTrailingCommas.replace(/([{,]\s*)([A-Za-z_][\w-]*)(\s*:)/g, "$1\"$2\"$3");
   const singleToDouble = quotedKeys.replace(/'([^']*)'/g, (_match, inner: string) => JSON.stringify(inner));
+  const withMissingColons = singleToDouble.replace(/("([^"\\]|\\.)*")\s+("([^"\\]|\\.)*")(?=\s*[,}])/g, "$1: $3");
+  const withMissingCommas = withMissingColons.replace(/("([^"\\]|\\.)*")\s+("([^"\\]|\\.)*"\s*:)/g, "$1, $3");
+  const withQuotedBareValues = withMissingCommas.replace(
+    /:\s*([^,}]*?)(\s*[,}])/g,
+    (match: string, raw: string, suffix: string) => {
+      const value = raw.trim();
+      if (value === "" || value.startsWith("\"") || value.startsWith("{") || value.startsWith("[")) {
+        return match;
+      }
+      if (/^-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?$/.test(value) || ["true", "false", "null"].includes(value)) {
+        return `: ${value}${suffix}`;
+      }
+      return `: ${JSON.stringify(value)}${suffix}`;
+    },
+  );
   try {
-    const parsed: unknown = JSON.parse(singleToDouble);
+    const parsed: unknown = JSON.parse(withQuotedBareValues);
     return JSON.stringify(parsed);
   } catch {
     return null;
   }
+}
+
+function extractLooseJsonObject(value: string): string | null {
+  if (!value.startsWith("{")) {
+    return null;
+  }
+  let depth = 0;
+  let inString: "\"" | "'" | null = null;
+  let escaped = false;
+  for (let index = 0; index < value.length; index += 1) {
+    const char = value[index];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (char === "\\") {
+      escaped = true;
+      continue;
+    }
+    if (inString) {
+      if (char === inString) {
+        inString = null;
+      }
+      continue;
+    }
+    if (char === "\"" || char === "'") {
+      inString = char;
+      continue;
+    }
+    if (char === "{") {
+      depth += 1;
+    } else if (char === "}") {
+      depth -= 1;
+      if (depth === 0) {
+        return value.slice(0, index + 1);
+      }
+    }
+  }
+  return depth > 0 ? `${value}}` : null;
 }
 
 export const parse_agent_output = parseAgentOutput;
