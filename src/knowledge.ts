@@ -852,7 +852,14 @@ export class Knowledge {
 
   addSources(sources: readonly KnowledgeSource[] = this.sources): void {
     if (this.storage) {
-      this.storage.save(this.documentsFromSources(sources));
+      for (const source of sources) {
+        source.storage = this.storage;
+        if (source.add) {
+          source.add();
+        } else {
+          this.storage.save([...source.chunks()]);
+        }
+      }
       return;
     }
     for (const source of sources) {
@@ -866,20 +873,27 @@ export class Knowledge {
     }
   }
 
-  add_sources(): void {
-    this.addSources();
+  add_sources(sources: readonly KnowledgeSource[] = this.sources): void {
+    this.addSources(sources);
   }
 
   async aaddSources(sources: readonly KnowledgeSource[] = this.sources): Promise<void> {
     if (this.storage) {
-      await this.storage.asave(this.documentsFromSources(sources));
+      for (const source of sources) {
+        source.storage = this.storage;
+        if (source.aadd) {
+          await source.aadd();
+        } else {
+          await this.storage.asave([...source.chunks()]);
+        }
+      }
       return;
     }
     this.addSources(sources);
   }
 
-  async aadd_sources(): Promise<void> {
-    await this.aaddSources();
+  async aadd_sources(sources: readonly KnowledgeSource[] = this.sources): Promise<void> {
+    await this.aaddSources(sources);
   }
 
   add(content: string, options: { source?: string | null; metadata?: Record<string, unknown> | null } = {}): void {

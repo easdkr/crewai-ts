@@ -9668,6 +9668,47 @@ describe("RAG configuration and factories", () => {
     expect(storage.asearch).toHaveBeenCalledWith(["AI async"], 2, null, 0);
   });
 
+  it("delegates Knowledge source add hooks through configured storage", async () => {
+    const storage = {
+      search: vi.fn(() => []),
+      asearch: vi.fn(() => Promise.resolve([])),
+      save: vi.fn(),
+      asave: vi.fn(() => Promise.resolve()),
+      reset: vi.fn(),
+      areset: vi.fn(() => Promise.resolve()),
+    } satisfies BaseKnowledgeStorage;
+    type TestKnowledgeSource = {
+      storage: BaseKnowledgeStorage | null;
+      chunks: () => readonly string[];
+      add?: () => void;
+      aadd?: () => Promise<void>;
+    };
+    const syncSource: TestKnowledgeSource = {
+      storage: null,
+      chunks: () => ["sync chunk"],
+      add: vi.fn(function add(this: TestKnowledgeSource) {
+        this.storage?.save(["sync chunk"]);
+      }),
+    };
+    const asyncSource: TestKnowledgeSource = {
+      storage: null,
+      chunks: () => ["async chunk"],
+      aadd: vi.fn(function aadd(this: TestKnowledgeSource) {
+        return this.storage?.asave(["async chunk"]) ?? Promise.resolve();
+      }),
+    };
+
+    const knowledge = new Knowledge({ sources: [syncSource], storage });
+    expect(syncSource.storage).toBe(storage);
+    expect(syncSource.add).toHaveBeenCalledOnce();
+    expect(storage.save).toHaveBeenCalledWith(["sync chunk"]);
+
+    await knowledge.aadd_sources([asyncSource]);
+    expect(asyncSource.storage).toBe(storage);
+    expect(asyncSource.aadd).toHaveBeenCalledOnce();
+    expect(storage.asave).toHaveBeenCalledWith(["async chunk"]);
+  });
+
   it("lets knowledge sources save themselves through upstream add aliases", async () => {
     const fake = new FakeChromaClient();
     const client = new ChromaDBClient(fake, (texts: readonly string[]) => texts.map((text) => [text.length]));
