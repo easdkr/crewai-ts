@@ -671,6 +671,7 @@ import {
   createDynamicToolFilter,
   createErrorResponse,
   create_agent_response_model,
+  create_model_from_schema,
   createFunctionTool,
   createStaticToolFilter,
   executeToolAndCheckFinality,
@@ -2375,6 +2376,62 @@ describe("schema utilities", () => {
       oneOf: [{ title: "Cat", properties: { kind: { type: "string" } } }],
       discriminator: { propertyName: "kind", mapping: { cat: "Cat" } },
     }).oneOf).toEqual([{ title: "Cat", properties: { kind: { type: "string", const: "cat" } } }]);
+  });
+
+  it("creates validating model-like schemas from upstream MCP tool JSON schemas", () => {
+    const Model = create_model_from_schema({
+      type: "object",
+      title: "SearchToolSchema",
+      properties: {
+        query: {
+          type: "string",
+          description: "Search query",
+          minLength: 1,
+          maxLength: 500,
+        },
+        max_results: {
+          type: "integer",
+          minimum: 1,
+          maximum: 100,
+        },
+        format: {
+          type: "string",
+          enum: ["json", "csv", "xml"],
+        },
+        filters: {
+          type: "object",
+          properties: {
+            date_from: { type: "string", format: "date" },
+            categories: {
+              type: "array",
+              items: { type: "string" },
+            },
+          },
+          required: ["date_from"],
+        },
+        sort_order: {
+          anyOf: [{ type: "string" }, { type: "null" }],
+        },
+      },
+      required: ["query", "format", "filters"],
+    }, { enrich_descriptions: true });
+
+    const parsed = Model.model_validate({
+      query: "crew",
+      format: "json",
+      filters: { date_from: "2026-06-01", categories: ["docs", "examples"] },
+      sort_order: null,
+    }) as { query: string; format: string; max_results: null; filters: { date_from: string; categories: string[] }; sort_order: null };
+
+    expect(Model.__name__).toBe("SearchToolSchema");
+    expect(Model.model_fields.query.description).toContain("Min length: 1");
+    expect(parsed.query).toBe("crew");
+    expect(parsed.max_results).toBeNull();
+    expect(parsed.filters.date_from).toBe("2026-06-01");
+    expect(parsed.filters.categories).toEqual(["docs", "examples"]);
+    expect(parsed.sort_order).toBeNull();
+    expect(() => Model.model_validate({ query: "crew", format: "yaml", filters: { date_from: "2026-06-01" } })).toThrow(/format/);
+    expect(() => Model.model_validate({ query: "crew", format: "json", filters: {} })).toThrow(/date_from/);
   });
 });
 

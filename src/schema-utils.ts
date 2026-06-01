@@ -498,11 +498,251 @@ export function serializeModelClass(model: unknown): JsonSchema {
 
 export const serialize_model_class = serializeModelClass;
 
-export function createModelFromSchema(name: string, schema: JsonSchema): { name: string; schema: JsonSchema; modelValidate(value: unknown): unknown; model_validate(value: unknown): unknown } {
+export type SchemaModelField = {
+  name: string;
+  required: boolean;
+  description: string | null;
+  schema: JsonSchema;
+  annotation?: CreatedSchemaModel;
+};
+
+export type CreatedSchemaModel = {
+  name: string;
+  __name__: string;
+  schema: JsonSchema;
+  model_fields: Record<string, SchemaModelField>;
+  modelFields: Record<string, SchemaModelField>;
+  modelValidate(value: unknown): unknown;
+  model_validate(value: unknown): unknown;
+};
+
+type CreateModelOptions = {
+  modelName?: string | null;
+  model_name?: string | null;
+  enrichDescriptions?: boolean;
+  enrich_descriptions?: boolean;
+};
+
+function coerceCreateModelOptions(value: unknown): CreateModelOptions {
+  if (!isSchemaRecord(value)) {
+    return {};
+  }
+  const options: CreateModelOptions = {};
+  if (typeof value.modelName === "string") {
+    options.modelName = value.modelName;
+  }
+  if (typeof value.model_name === "string") {
+    options.model_name = value.model_name;
+  }
+  if (typeof value.enrichDescriptions === "boolean") {
+    options.enrichDescriptions = value.enrichDescriptions;
+  }
+  if (typeof value.enrich_descriptions === "boolean") {
+    options.enrich_descriptions = value.enrich_descriptions;
+  }
+  return options;
+}
+
+function createValidationError(path: string, message: string): Error {
+  return new Error(`${path}: ${message}`);
+}
+
+function schemaTypeMatches(schema: JsonSchema, expected: string): boolean {
+  return schema.type === expected || (Array.isArray(schema.type) && schema.type.includes(expected));
+}
+
+function effectiveSchema(schema: JsonSchema, rootSchema: JsonSchema): JsonSchema {
+  if (typeof schema.$ref === "string") {
+    const resolved = _resolve_ref(schema.$ref, rootSchema);
+    if (isSchemaRecord(schema.$defs) && !("$defs" in resolved)) {
+      resolved.$defs = schema.$defs;
+    }
+    return resolved;
+  }
+  if (Array.isArray(schema.allOf)) {
+    return _merge_all_of_schemas(schema.allOf.filter(isSchemaRecord), rootSchema);
+  }
+  return schema;
+}
+
+function validateSchemaValue(schema: JsonSchema, value: unknown, path: string, rootSchema: JsonSchema, seen = new Set<JsonSchema>()): unknown {
+  const resolved = effectiveSchema(schema, rootSchema);
+  if (seen.has(resolved)) {
+    return value;
+  }
+  const nextSeen = new Set(seen);
+  nextSeen.add(resolved);
+
+  const variants = Array.isArray(resolved.anyOf)
+    ? resolved.anyOf
+    : Array.isArray(resolved.oneOf) ? resolved.oneOf : null;
+  if (variants) {
+    const errors: string[] = [];
+    for (const variant of variants) {
+      if (!isSchemaRecord(variant)) {
+        continue;
+      }
+      try {
+        return validateSchemaValue(variant, value, path, rootSchema, nextSeen);
+      } catch (error) {
+        errors.push(error instanceof Error ? error.message : String(error));
+      }
+    }
+    throw createValidationError(path, `value did not match any schema${errors.length > 0 ? ` (${errors.join("; ")})` : ""}`);
+  }
+
+  if ("const" in resolved && value !== resolved.const) {
+    throw createValidationError(path, `expected const ${describeValue(resolved.const)}`);
+  }
+  if (Array.isArray(resolved.enum) && !resolved.enum.includes(value)) {
+    throw createValidationError(path, `expected one of ${resolved.enum.map((entry) => describeValue(entry)).join(", ")}`);
+  }
+
+  const typeValue = resolved.type;
+  if (Array.isArray(typeValue)) {
+    const errors: string[] = [];
+    for (const type of typeValue) {
+      if (typeof type !== "string") {
+        continue;
+      }
+      try {
+        return validateSchemaValue({ ...resolved, type }, value, path, rootSchema, nextSeen);
+      } catch (error) {
+        errors.push(error instanceof Error ? error.message : String(error));
+      }
+    }
+    throw createValidationError(path, `value did not match any declared type${errors.length > 0 ? ` (${errors.join("; ")})` : ""}`);
+  }
+
+  switch (typeValue) {
+    case undefined:
+      return value;
+    case "null":
+      if (value !== null) {
+        throw createValidationError(path, "expected null");
+      }
+      return null;
+    case "string":
+      if (typeof value !== "string") {
+        throw createValidationError(path, "expected string");
+      }
+      return value;
+    case "integer":
+      if (typeof value !== "number" || !Number.isInteger(value)) {
+        throw createValidationError(path, "expected integer");
+      }
+      return value;
+    case "number":
+      if (typeof value !== "number" || Number.isNaN(value)) {
+        throw createValidationError(path, "expected number");
+      }
+      return value;
+    case "boolean":
+      if (typeof value !== "boolean") {
+        throw createValidationError(path, "expected boolean");
+      }
+      return value;
+    case "array": {
+      if (!Array.isArray(value)) {
+        throw createValidationError(path, "expected array");
+      }
+      const itemSchema = isSchemaRecord(resolved.items) ? resolved.items : null;
+      const items: unknown[] = value;
+      return itemSchema ? items.map((item, index) => validateSchemaValue(itemSchema, item, `${path}.${String(index)}`, rootSchema, nextSeen)) : items.slice();
+    }
+    case "object": {
+      if (!isSchemaRecord(value)) {
+        throw createValidationError(path, "expected object");
+      }
+      const properties = isSchemaRecord(resolved.properties) ? resolved.properties : null;
+      if (!properties) {
+        return { ...value };
+      }
+      const required = Array.isArray(resolved.required) ? resolved.required.filter((entry): entry is string => typeof entry === "string") : [];
+      const output: Record<string, unknown> = {};
+      for (const [propertyName, propertySchema] of Object.entries(properties)) {
+        if (!isSchemaRecord(propertySchema)) {
+          continue;
+        }
+        if (!(propertyName in value)) {
+          if (required.includes(propertyName)) {
+            throw createValidationError(`${path}.${propertyName}`, "field required");
+          }
+          output[propertyName] = null;
+          continue;
+        }
+        output[propertyName] = validateSchemaValue(propertySchema, value[propertyName], `${path}.${propertyName}`, rootSchema, nextSeen);
+      }
+      return output;
+    }
+    default:
+      throw new Error(`Unsupported JSON schema type: ${String(typeValue)}`);
+  }
+}
+
+function buildModelFields(schema: JsonSchema, rootSchema: JsonSchema, enrichDescriptions: boolean): Record<string, SchemaModelField> {
+  const properties = isSchemaRecord(schema.properties) ? schema.properties : {};
+  const required = Array.isArray(schema.required) ? schema.required.filter((entry): entry is string => typeof entry === "string") : [];
+  const fields: Record<string, SchemaModelField> = {};
+  for (const [name, propertySchema] of Object.entries(properties)) {
+    if (!isSchemaRecord(propertySchema)) {
+      continue;
+    }
+    const resolved = effectiveSchema(propertySchema, rootSchema);
+    const description = enrichDescriptions
+      ? buildRichFieldDescription(resolved)
+      : typeof resolved.description === "string" ? resolved.description : null;
+    const field: SchemaModelField = {
+      name,
+      required: required.includes(name),
+      description,
+      schema: resolved,
+    };
+    if (schemaTypeMatches(resolved, "object") && isSchemaRecord(resolved.properties)) {
+      field.annotation = createModelFromSchema(resolved, {
+        modelName: typeof resolved.title === "string" ? resolved.title : `${name[0]?.toUpperCase() ?? "Nested"}${name.slice(1)}`,
+        enrichDescriptions,
+      });
+    }
+    fields[name] = field;
+  }
+  return fields;
+}
+
+export function createModelFromSchema(
+  schemaOrName: JsonSchema | string,
+  schemaOrOptions: JsonSchema | CreateModelOptions = {},
+  maybeOptions: CreateModelOptions = {},
+): CreatedSchemaModel {
+  let schema: JsonSchema;
+  let options: CreateModelOptions;
+  let explicitModelName: string | null;
+  if (typeof schemaOrName === "string") {
+    explicitModelName = schemaOrName;
+    schema = isSchemaRecord(schemaOrOptions) ? schemaOrOptions : {};
+    options = maybeOptions;
+  } else {
+    explicitModelName = null;
+    schema = schemaOrName;
+    options = coerceCreateModelOptions(schemaOrOptions);
+  }
+  const modelName: string = explicitModelName
+    ?? options.modelName
+    ?? options.model_name
+    ?? (typeof schema.title === "string" ? schema.title : "DynamicModel");
+  const enrichDescriptions = options.enrichDescriptions ?? options.enrich_descriptions ?? false;
+  const resolvedSchema = resolveRefs(cloneSchema(schema));
+  const normalizedSchema = Array.isArray(resolvedSchema.allOf) ? _merge_all_of_schemas(resolvedSchema.allOf.filter(isSchemaRecord), resolvedSchema) : resolvedSchema;
+  const modelFields = buildModelFields(normalizedSchema, normalizedSchema, enrichDescriptions);
   return {
-    name,
-    schema,
-    modelValidate: (value: unknown) => value,
+    name: modelName,
+    __name__: modelName,
+    schema: normalizedSchema,
+    model_fields: modelFields,
+    modelFields,
+    modelValidate(value: unknown): unknown {
+      return validateSchemaValue(normalizedSchema, value, modelName, normalizedSchema);
+    },
     model_validate(value: unknown): unknown {
       return this.modelValidate(value);
     },
