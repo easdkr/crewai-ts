@@ -1,5 +1,5 @@
 import { Agent } from "./agent.js";
-import type { Task } from "./task.js";
+import { Task } from "./task.js";
 import type { LLM, Tool } from "./types.js";
 
 export type PlanPerTaskOptions = {
@@ -54,6 +54,7 @@ export type PlannerTaskPydanticOutput = InstanceType<typeof PlannerTaskPydanticO
 export type CrewPlannerOptions = {
   tasks: readonly Task[];
   planningAgentLlm?: LLM | string | null;
+  planning_agent_llm?: LLM | string | null;
 };
 
 export class CrewPlanner {
@@ -63,46 +64,79 @@ export class CrewPlanner {
 
   constructor(options: CrewPlannerOptions) {
     this.tasks = options.tasks;
-    this.planningAgentLlm = options.planningAgentLlm ?? "gpt-4o-mini";
+    this.planningAgentLlm = options.planningAgentLlm ?? options.planning_agent_llm ?? "gpt-4o-mini";
   }
 
   async handleCrewPlanning(): Promise<PlannerTaskOutput> {
-    const planningAgent = this.createPlanningAgent();
-    const raw = await planningAgent.executeTask(this.createPlannerPrompt());
-    return parsePlannerTaskOutput(raw);
+    return this._handle_crew_planning();
+  }
+
+  async _handle_crew_planning(): Promise<PlannerTaskOutput> {
+    const planningAgent = this._create_planning_agent();
+    const tasksSummary = this._create_tasks_summary();
+    const plannerTask = CrewPlanner._create_planner_task(planningAgent, tasksSummary);
+    const result = await plannerTask.executeSync();
+    if (result.pydantic instanceof PlannerTaskPydanticOutput) {
+      return result.pydantic;
+    }
+    return parsePlannerTaskOutput(result.raw);
   }
 
   getUsageMetrics() {
     return this.planningAgent?.getUsageMetrics();
   }
 
-  private createPlanningAgent(): Agent {
+  createPlanningAgent(): Agent {
+    return this._create_planning_agent();
+  }
+
+  _create_planning_agent(): Agent {
     this.planningAgent = new Agent({
       role: "Task Execution Planner",
-      goal: "Create a detailed step-by-step plan from the tasks, tools, and agent goals.",
-      backstory: "Planner agent for crew planning.",
+      goal: "Your goal is to create an extremely detailed, step-by-step plan based on the tasks and tools available to each agent so that they can perform the tasks in an exemplary manner",
+      backstory: "Planner agent for crew planning",
       llm: this.planningAgentLlm,
     });
     return this.planningAgent;
   }
 
-  private createPlannerPrompt(): string {
-    return [
-      `Based on these tasks summary: ${this.createTasksSummary()}`,
-      "Create the most descriptive plan based on the tasks descriptions, tools available, and agents' goals.",
-      "Return JSON with listOfPlansPerTask, where each item has taskNumber, task, and plan.",
-    ].join("\n\n");
+  static _create_planner_task(planningAgent: Agent, tasksSummary: string): Task {
+    return new Task({
+      description: `Based on these tasks summary: ${tasksSummary} \n Create the most descriptive plan based on the tasks descriptions, tools available, and agents' goals for them to execute their goals with perfection.`,
+      expectedOutput: "Step by step plan on how the agents can execute their tasks using the available tools with mastery",
+      agent: planningAgent,
+      outputPydantic: (raw) => new PlannerTaskPydanticOutput(parsePlannerTaskOutput(raw)),
+    });
   }
 
-  private createTasksSummary(): string {
+  static _get_agent_knowledge(task: Task): string[] {
+    const sources = task.agent?.knowledge?.sources ?? [];
+    return sources.map((source) => {
+      const content = (source as { content?: unknown }).content;
+      if (typeof content === "string") {
+        return content;
+      }
+      if (typeof source === "string") {
+        return source;
+      }
+      return JSON.stringify(source);
+    });
+  }
+
+  createTasksSummary(): string {
+    return this._create_tasks_summary();
+  }
+
+  _create_tasks_summary(): string {
     return this.tasks.map((task, index) => [
       `Task Number ${String(index + 1)} - ${task.description}`,
       `"task_description": ${task.description}`,
       `"task_expected_output": ${task.expectedOutput}`,
       `"agent": ${task.agent?.role ?? "None"}`,
       `"agent_goal": ${task.agent?.goal ?? "None"}`,
-      `"task_tools": ${renderToolNames(task.tools)}`,
-      `"agent_tools": ${renderToolNames(task.agent?.tools ?? [])}`,
+      `"task_tools": ${renderTaskToolNames(task.tools)}`,
+      `"agent_tools": ${renderAgentToolNames(task.agent?.tools ?? [])}`,
+      ...renderAgentKnowledge(CrewPlanner._get_agent_knowledge(task)),
     ].join("\n")).join("\n\n");
   }
 }
@@ -137,10 +171,23 @@ function normalizePlanPerTask(value: unknown): PlanPerTask {
   return new PlanPerTask({ taskNumber, task, plan });
 }
 
-function renderToolNames(tools: readonly Tool[]): string {
+function renderTaskToolNames(tools: readonly Tool[]): string {
   return tools.length > 0
     ? `[${tools.map((tool) => tool.name).join(", ")}]`
     : "[]";
+}
+
+function renderAgentToolNames(tools: readonly Tool[]): string {
+  return tools.length > 0
+    ? `[${tools.map((tool) => tool.name).join(", ")}]`
+    : "\"agent has no tools\"";
+}
+
+function renderAgentKnowledge(knowledge: readonly string[]): string[] {
+  if (knowledge.length === 0 || String(knowledge) === "None") {
+    return [];
+  }
+  return [`"agent_knowledge": "[\\"${knowledge[0] ?? ""}\\"]"`];
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

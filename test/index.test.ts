@@ -116,12 +116,14 @@ import {
   ConditionalTask,
   ConsoleFormatter,
   Crew,
+  CrewPlanner,
   _resolve_agent,
   _resolve_agents,
   default_reset,
   knowledge_reset,
   CrewJSONEncoder,
   CrewOutput,
+  PlannerTaskPydanticOutput,
   CrewAIPlugin,
   CrewBaseEvent,
   CrewKickoffCompletedEvent,
@@ -19039,6 +19041,60 @@ describe("conditional tasks", () => {
 });
 
 describe("crew planning", () => {
+  it("exposes upstream crew planner helper methods", async () => {
+    const plannerCalls: string[] = [];
+    const plannerLlm = (messages: LLMMessage[]) => {
+      plannerCalls.push(messages.at(-1)?.content ?? "");
+      return JSON.stringify({
+        list_of_plans_per_task: [
+          {
+            task_number: 1,
+            task: "Research",
+            plan: "Read knowledge and answer.",
+          },
+        ],
+      });
+    };
+    const tool = new CrewStructuredTool({
+      name: "Search Tool",
+      description: "Search docs",
+      func: () => "result",
+    });
+    const researcher = new Agent({
+      role: "Researcher",
+      goal: "Find facts",
+      backstory: "Careful analyst",
+      llm: "gpt-4o-mini",
+      tools: [tool],
+      knowledgeSources: [new StringKnowledgeSource("CrewAI planning knowledge")],
+    });
+    const taskInstance = new Task({
+      description: "Research CrewAI",
+      expectedOutput: "A concise brief",
+      agent: researcher,
+      tools: [tool],
+    });
+    const planner = new CrewPlanner({
+      tasks: [taskInstance],
+      planning_agent_llm: plannerLlm,
+    });
+
+    expect(CrewPlanner._get_agent_knowledge(taskInstance)).toEqual(["CrewAI planning knowledge"]);
+    expect(planner._create_planning_agent().goal).toContain("extremely detailed");
+    expect(planner._create_tasks_summary()).toContain('"agent_knowledge": "[\\"CrewAI planning knowledge\\"]"');
+
+    const plannerTask = CrewPlanner._create_planner_task(researcher, "Task summary");
+    expect(plannerTask.expectedOutput).toBe("Step by step plan on how the agents can execute their tasks using the available tools with mastery");
+    expect(plannerTask.outputPydantic?.(JSON.stringify({
+      listOfPlansPerTask: [{ taskNumber: 1, task: "Research", plan: "Plan" }],
+    }))).toBeInstanceOf(PlannerTaskPydanticOutput);
+
+    const output = await planner._handle_crew_planning();
+
+    expect(plannerCalls[0]).toContain("Based on these tasks summary:");
+    expect(output.list_of_plans_per_task[0]?.plan).toBe("Read knowledge and answer.");
+  });
+
   it("uses a planning LLM to add per-task plans to execution prompts", async () => {
     const prompts: string[] = [];
     const plannerCalls: string[] = [];
