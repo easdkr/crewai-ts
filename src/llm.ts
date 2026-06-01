@@ -260,6 +260,9 @@ export type LLMFunction = (
 
 export type LLMClient = {
   call(messages: readonly LLMMessage[], options?: LLMCallOptions): MaybePromise<LLMResponse>;
+  acall?(messages: readonly LLMMessage[], options?: LLMCallOptions): Promise<LLMResponse>;
+  supportsFunctionCalling?(): boolean;
+  supports_function_calling?(): boolean;
   getUsageMetrics?(): UsageMetricsLike;
   getTokenUsageSummary?(): UsageMetricsLike;
   get_token_usage_summary?(): UsageMetricsLike;

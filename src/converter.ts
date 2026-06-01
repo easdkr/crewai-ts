@@ -101,7 +101,10 @@ export class Converter<T = unknown> {
 
   async toPydantic(currentAttempt = 1): Promise<T> {
     try {
-      const response = await this.llm.call(this.buildMessages(), { responseModel: this.model });
+      const messages = this.buildMessages();
+      const response = supportsFunctionCalling(this.llm)
+        ? await this.llm.call(messages, { responseModel: this.model })
+        : await this.llm.call(messages);
       return this._coerce_response_to_pydantic(response);
     } catch (error) {
       if (currentAttempt < this.maxAttempts) {
@@ -116,7 +119,18 @@ export class Converter<T = unknown> {
   }
 
   async atoPydantic(currentAttempt = 1): Promise<T> {
-    return await this.toPydantic(currentAttempt);
+    try {
+      const messages = this.buildMessages();
+      const response = supportsFunctionCalling(this.llm)
+        ? await callLlmAsync(this.llm, messages, { responseModel: this.model })
+        : await callLlmAsync(this.llm, messages);
+      return this._coerce_response_to_pydantic(response);
+    } catch (error) {
+      if (currentAttempt < this.maxAttempts) {
+        return await this.atoPydantic(currentAttempt + 1);
+      }
+      throw new ConverterError(`Failed to convert text into a Pydantic model due to error: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 
   ato_pydantic(currentAttempt = 1): Promise<T> {
@@ -125,8 +139,10 @@ export class Converter<T = unknown> {
 
   async toJson(currentAttempt = 1): Promise<string | ConverterError> {
     try {
-      const response = await this.llm.call(this.buildMessages(), { responseModel: this.model });
-      return typeof response === "string" ? response : JSON.stringify(response);
+      if (supportsFunctionCalling(this.llm)) {
+        return this._create_instructor().toJson();
+      }
+      return JSON.stringify(await this.llm.call(this.buildMessages()));
     } catch (error) {
       if (currentAttempt < this.maxAttempts) {
         return await this.toJson(currentAttempt + 1);
@@ -140,7 +156,17 @@ export class Converter<T = unknown> {
   }
 
   async atoJson(currentAttempt = 1): Promise<string | ConverterError> {
-    return await this.toJson(currentAttempt);
+    try {
+      if (supportsFunctionCalling(this.llm)) {
+        return await Promise.resolve().then(() => this._create_instructor().toJson());
+      }
+      return JSON.stringify(await callLlmAsync(this.llm, this.buildMessages()));
+    } catch (error) {
+      if (currentAttempt < this.maxAttempts) {
+        return await this.atoJson(currentAttempt + 1);
+      }
+      return new ConverterError(`Failed to convert text into JSON, error: ${error instanceof Error ? error.message : String(error)}.`);
+    }
   }
 
   ato_json(currentAttempt = 1): Promise<string | ConverterError> {
@@ -379,6 +405,23 @@ function coerceResponseToModel<T>(response: unknown, model: StructuredModel<T>):
     }
   }
   return validateStructuredModel(response, model);
+}
+
+function supportsFunctionCalling(llm: LLMClient): boolean {
+  if (typeof llm.supportsFunctionCalling === "function") {
+    return llm.supportsFunctionCalling();
+  }
+  if (typeof llm.supports_function_calling === "function") {
+    return llm.supports_function_calling();
+  }
+  return true;
+}
+
+async function callLlmAsync(llm: LLMClient, messages: readonly LLMMessage[], options?: Parameters<LLMClient["call"]>[1]): Promise<unknown> {
+  if (typeof llm.acall === "function") {
+    return await llm.acall(messages, options);
+  }
+  return await llm.call(messages, options);
 }
 
 function validateStructuredModel<T>(value: unknown, model: StructuredModel<T>): T {

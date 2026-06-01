@@ -7872,9 +7872,14 @@ describe("converter utilities", () => {
       model: summaryModel,
       instructions: "Return JSON",
       llm: {
+        supports_function_calling: () => true,
         call(messages, options) {
           calls += 1;
-          expect(messages[0]?.content).toBe("Return JSON");
+          if (calls === 3) {
+            expect(messages).toEqual([{ role: "user", content: "summarize" }]);
+          } else {
+            expect(messages[0]?.content).toBe("Return JSON");
+          }
           expect(options?.responseModel).toBe(summaryModel);
           if (calls === 1) {
             throw new Error("temporary");
@@ -7888,7 +7893,7 @@ describe("converter utilities", () => {
     await expect(converter.to_pydantic()).resolves.toEqual({ summary: "converted" });
     expect(converter._coerce_response_to_pydantic("{\"summary\":\"coerced\"}")).toEqual({ summary: "coerced" });
     expect(converter._create_instructor()).toBeInstanceOf(InternalInstructor);
-    await expect(converter.to_json()).resolves.toBe("{\"summary\":\"converted\"}");
+    await expect(converter.to_json()).resolves.toBe(JSON.stringify({ summary: "converted" }, null, 2));
     expect(calls).toBe(3);
 
     const failing = new Converter({
@@ -7901,12 +7906,45 @@ describe("converter utilities", () => {
     await expect(failing.toPydantic()).rejects.toThrow(ConverterError);
   });
 
+  it("mirrors upstream Converter non-function-calling LLM paths", async () => {
+    const calls: Array<{ async: boolean; options: unknown }> = [];
+    const converter = new Converter({
+      text: "summarize",
+      model: summaryModel,
+      instructions: "Return JSON",
+      llm: {
+        supports_function_calling: () => false,
+        call(_messages, options) {
+          calls.push({ async: false, options });
+          return { summary: "sync converted" };
+        },
+        async acall(_messages, options) {
+          await Promise.resolve();
+          calls.push({ async: true, options });
+          return { summary: "async converted" };
+        },
+      },
+    });
+
+    await expect(converter.to_pydantic()).resolves.toEqual({ summary: "sync converted" });
+    await expect(converter.ato_pydantic()).resolves.toEqual({ summary: "async converted" });
+    await expect(converter.to_json()).resolves.toBe(JSON.stringify({ summary: "sync converted" }));
+    await expect(converter.ato_json()).resolves.toBe(JSON.stringify({ summary: "async converted" }));
+    expect(calls).toEqual([
+      { async: false, options: undefined },
+      { async: true, options: undefined },
+      { async: false, options: undefined },
+      { async: true, options: undefined },
+    ]);
+  });
+
   it("exposes OutputConverter structured conversion methods directly", async () => {
     const converter = new OutputConverter({
       text: "summarize",
       model: summaryModel,
       instructions: "Return JSON",
       llm: {
+        supports_function_calling: () => true,
         call() {
           return "{\"summary\":\"converted\"}";
         },
@@ -7916,7 +7954,7 @@ describe("converter utilities", () => {
     expect(Object.hasOwn(OutputConverter.prototype, "to_pydantic")).toBe(true);
     expect(Object.hasOwn(OutputConverter.prototype, "to_json")).toBe(true);
     await expect(converter.to_pydantic()).resolves.toEqual({ summary: "converted" });
-    await expect(converter.to_json()).resolves.toBe("{\"summary\":\"converted\"}");
+    await expect(converter.to_json()).resolves.toBe(JSON.stringify({ summary: "converted" }, null, 2));
   });
 
   it("falls back to agent LLM instructions for async partial JSON conversion", async () => {
@@ -7927,8 +7965,9 @@ describe("converter utilities", () => {
       summaryModel,
       {
         llm: {
+          supports_function_calling: () => true,
           call(messages, options) {
-            seenTexts.push(messages[1]?.content ?? "");
+            seenTexts.push(messages.at(-1)?.content ?? "");
             expect(options?.responseModel).toBe(summaryModel);
             return "{\"summary\":\"fallback converted\"}";
           },
@@ -10010,7 +10049,7 @@ describe("core crew runtime", () => {
       llm: {
         call: () => "done",
         supports_function_calling: () => true,
-      } as unknown as LLM & { supports_function_calling: () => boolean },
+      },
     })._supports_native_tool_calling([searchTool])).toBe(true);
     agentInstance.cacheHandler = null;
     agentInstance.cache_handler = null;
