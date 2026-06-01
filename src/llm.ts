@@ -1353,7 +1353,7 @@ export abstract class BaseLLM implements LLMClient {
   readonly responseFormat: JsonResponseFormat | StructuredOutputValidator | null;
   readonly response_format: JsonResponseFormat | StructuredOutputValidator | null;
   private contextWindowSize: number;
-  stop: string[];
+  private stopValues: string[];
   private tokenUsage: UsageMetrics = emptyUsageMetrics();
 
   constructor(options: BaseLLMOptions) {
@@ -1371,7 +1371,7 @@ export abstract class BaseLLM implements LLMClient {
     this.prefer_upload = this.preferUpload;
     this.isLitellm = options.isLitellm ?? options.is_litellm ?? false;
     this.is_litellm = this.isLitellm;
-    this.stop = normalizeStopSequences(options.stopSequences ?? options.stop_sequences ?? options.stop ?? []);
+    this.stopValues = normalizeStopSequences(options.stopSequences ?? options.stop_sequences ?? options.stop ?? []);
     this.additionalParams = { ...(options.additionalParams ?? {}), ...(options.additional_params ?? {}) };
     this.additional_params = this.additionalParams;
     this.responseFormat = options.responseFormat ?? options.response_format ?? null;
@@ -1385,12 +1385,20 @@ export abstract class BaseLLM implements LLMClient {
     return await this.call(this.formatMessages(messages), options);
   }
 
+  get stop(): string[] {
+    return [...this.stopValues];
+  }
+
+  set stop(value: string | readonly string[] | null) {
+    this.stopValues = normalizeStopSequences(value);
+  }
+
   get stopSequences(): readonly string[] {
     const override = callStopOverrideStore.getStore()?.get(this);
     if (override) {
       return override;
     }
-    return this.stop;
+    return this.stopValues;
   }
 
   get stop_sequences(): readonly string[] {
@@ -1398,7 +1406,7 @@ export abstract class BaseLLM implements LLMClient {
   }
 
   setStopSequences(stop: string | readonly string[] | null): void {
-    this.stop = normalizeStopSequences(stop);
+    this.stopValues = normalizeStopSequences(stop);
   }
 
   set_stop_sequences(stop: string | readonly string[] | null): void {

@@ -18623,6 +18623,24 @@ describe("LLM providers", () => {
     }).toThrow("Context window for tiny");
   });
 
+  it("keeps direct stop assignments synchronized with stop_sequences", () => {
+    const bedrock = new BedrockCompletion({ model: "anthropic.claude-3-5-sonnet-20241022-v2:0" });
+
+    bedrock.stop = ["\nObservation:", "\nThought:"];
+    expect(bedrock.stop_sequences).toEqual(["\nObservation:", "\nThought:"]);
+    expect(bedrock._get_inference_config()).toMatchObject({
+      stopSequences: ["\nObservation:", "\nThought:"],
+    });
+
+    bedrock.stop = "\nFinal Answer:";
+    expect(bedrock.stop_sequences).toEqual(["\nFinal Answer:"]);
+    expect(bedrock.stop).toEqual(["\nFinal Answer:"]);
+
+    bedrock.stop = null;
+    expect(bedrock.stop_sequences).toEqual([]);
+    expect(bedrock.stop).toEqual([]);
+  });
+
   it("exposes function-calling and response-chain provider parity helpers", () => {
     class FallbackLLM extends BaseLLM {
       call(): string {
