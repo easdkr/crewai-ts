@@ -10601,7 +10601,25 @@ describe("core crew runtime", () => {
     expect(crewInstance.validate_tasks()).toBe(crewInstance);
     expect(() => new Crew()).toThrow("Either 'agents' and 'tasks' need to be set or 'config'.");
     expect(crewInstance.query_knowledge(["collaborative"])?.[0]?.content).toContain("collaborative agents");
+    expect(crewInstance.knowledge?.collection_name).toBe("crew");
     await expect(crewInstance.aquery_knowledge(["CrewAI"])).resolves.toHaveLength(1);
+
+    const savedCollections: string[] = [];
+    registerRagClientFactory("chromadb", () => ({
+      get_or_create_collection() {},
+      add_documents(params: { collection_name: string }) {
+        savedCollections.push(params.collection_name);
+      },
+      search: () => [],
+    }));
+    const knowledgeCrew = new Crew({
+      agents: [researcher],
+      tasks: [taskInstance],
+      knowledgeSources: [new StringKnowledgeSource("Crew knowledge uses crew collection.")],
+      embedder: { provider: "custom", config: { embedding_callable: (texts: readonly unknown[]) => texts.map(() => [1]) } },
+    });
+    expect(knowledgeCrew.knowledge?.collection_name).toBe("crew");
+    expect(savedCollections).toContain("knowledge_crew");
 
     const embeddingCallable = (texts: readonly unknown[]) => texts.map(() => [0.1, 0.2, 0.3]);
     const memoryCrew = new Crew({

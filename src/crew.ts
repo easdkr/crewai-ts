@@ -278,9 +278,7 @@ export class Crew {
     this.executionLogs = [];
     this.memory = options.memory ?? false;
     this.knowledgeSources = options.knowledgeSources ?? options.knowledge_sources ?? [];
-    this.knowledge = options.knowledge ?? (
-      this.knowledgeSources.length > 0 ? new Knowledge({ sources: this.knowledgeSources }) : null
-    );
+    this.knowledge = options.knowledge ?? null;
     this.managerAgent = options.managerAgent ?? options.manager_agent ?? null;
     this.managerLlm = options.managerLlm ?? options.manager_llm ?? null;
     this.functionCallingLlm = options.functionCallingLlm ?? options.function_calling_llm ?? null;
@@ -325,6 +323,7 @@ export class Crew {
       ?? options.task_output_storage_handler
       ?? new TaskOutputStorageHandler();
     this.task_output_storage_handler = this.taskOutputStorageHandler;
+    this.createCrewKnowledge();
     this.checkConfig();
     this.checkManagerLlm();
     this.validateTasks();
@@ -528,7 +527,15 @@ export class Crew {
 
   createCrewKnowledge(): this {
     if (!this.knowledge && this.knowledgeSources.length > 0) {
-      this.knowledge = new Knowledge({ sources: this.knowledgeSources });
+      try {
+        this.knowledge = new Knowledge({
+          sources: this.knowledgeSources,
+          collectionName: "crew",
+          ...(this.embedder === null ? {} : { embedder: this.embedder }),
+        });
+      } catch {
+        this.knowledge = null;
+      }
     }
     return this;
   }

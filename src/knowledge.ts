@@ -220,6 +220,7 @@ export type KnowledgeOptions = {
   collectionName?: string | null;
   collection_name?: string | null;
   storage?: BaseKnowledgeStorage | null;
+  embedder?: EmbedderConfig | null;
 };
 
 export type KnowledgeStorageOptions = {
@@ -835,7 +836,11 @@ export class Knowledge {
     this.sources = options.sources ?? [];
     this.collectionName = options.collectionName ?? options.collection_name ?? null;
     this.collection_name = this.collectionName;
-    this.storage = options.storage ?? null;
+    this.storage = options.storage ?? (
+      options.embedder
+        ? new KnowledgeStorage({ collectionName: this.collectionName, embedder: options.embedder })
+        : null
+    );
     this.addSources();
   }
 
