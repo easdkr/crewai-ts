@@ -90,6 +90,494 @@ export class UrlReference extends ResolvedFile {
 
 export type ResolvedFileType = InlineBase64 | InlineBytes | FileReference | UrlReference;
 
+export enum FileHandling {
+  STRICT = "strict",
+  AUTO = "auto",
+  WARN = "warn",
+  CHUNK = "chunk",
+}
+
+export class FileValidationError extends Error {
+  readonly fileName: string | null;
+  readonly file_name: string | null;
+
+  constructor(message: string, options: { fileName?: string | null; file_name?: string | null } = {}) {
+    super(message);
+    this.name = "FileValidationError";
+    this.fileName = options.fileName ?? options.file_name ?? null;
+    this.file_name = this.fileName;
+  }
+}
+
+export class FileTooLargeError extends FileValidationError {
+  readonly actualSize: number | null;
+  readonly actual_size: number | null;
+  readonly maxSize: number | null;
+  readonly max_size: number | null;
+
+  constructor(message: string, options: {
+    fileName?: string | null;
+    file_name?: string | null;
+    actualSize?: number | null;
+    actual_size?: number | null;
+    maxSize?: number | null;
+    max_size?: number | null;
+  } = {}) {
+    super(message, options);
+    this.name = "FileTooLargeError";
+    this.actualSize = options.actualSize ?? options.actual_size ?? null;
+    this.actual_size = this.actualSize;
+    this.maxSize = options.maxSize ?? options.max_size ?? null;
+    this.max_size = this.maxSize;
+  }
+}
+
+export class UnsupportedFileTypeError extends FileValidationError {
+  readonly contentType: string | null;
+  readonly content_type: string | null;
+
+  constructor(message: string, options: { fileName?: string | null; file_name?: string | null; contentType?: string | null; content_type?: string | null } = {}) {
+    super(message, options);
+    this.name = "UnsupportedFileTypeError";
+    this.contentType = options.contentType ?? options.content_type ?? null;
+    this.content_type = this.contentType;
+  }
+}
+
+export class FileProcessingError extends FileValidationError {
+  constructor(message: string, options: { fileName?: string | null; file_name?: string | null } = {}) {
+    super(message, options);
+    this.name = "FileProcessingError";
+  }
+}
+
+const DEFAULT_IMAGE_FORMATS = ["image/png", "image/jpeg", "image/gif", "image/webp"] as const;
+const GEMINI_IMAGE_FORMATS = [...DEFAULT_IMAGE_FORMATS, "image/heic", "image/heif"] as const;
+const DEFAULT_AUDIO_FORMATS = ["audio/mp3", "audio/mpeg", "audio/wav", "audio/ogg", "audio/flac", "audio/aac", "audio/m4a"] as const;
+const GEMINI_AUDIO_FORMATS = [...DEFAULT_AUDIO_FORMATS, "audio/opus"] as const;
+const DEFAULT_VIDEO_FORMATS = ["video/mp4", "video/mpeg", "video/webm", "video/quicktime"] as const;
+const GEMINI_VIDEO_FORMATS = [...DEFAULT_VIDEO_FORMATS, "video/x-msvideo", "video/x-flv"] as const;
+const DEFAULT_TEXT_FORMATS = ["text/plain", "text/markdown", "text/csv", "application/json", "text/xml", "text/html"] as const;
+const GEMINI_TEXT_FORMATS = [...DEFAULT_TEXT_FORMATS, "application/xml", "application/x-yaml", "text/yaml"] as const;
+
+export class ImageConstraints {
+  readonly maxSizeBytes: number;
+  readonly max_size_bytes: number;
+  readonly maxWidth: number | null;
+  readonly max_width: number | null;
+  readonly maxHeight: number | null;
+  readonly max_height: number | null;
+  readonly maxImagesPerRequest: number | null;
+  readonly max_images_per_request: number | null;
+  readonly supportedFormats: readonly string[];
+  readonly supported_formats: readonly string[];
+
+  constructor(options: { maxSizeBytes?: number; max_size_bytes?: number; maxWidth?: number | null; max_width?: number | null; maxHeight?: number | null; max_height?: number | null; maxImagesPerRequest?: number | null; max_images_per_request?: number | null; supportedFormats?: readonly string[]; supported_formats?: readonly string[] }) {
+    this.maxSizeBytes = options.maxSizeBytes ?? options.max_size_bytes ?? 0;
+    this.max_size_bytes = this.maxSizeBytes;
+    this.maxWidth = options.maxWidth ?? options.max_width ?? null;
+    this.max_width = this.maxWidth;
+    this.maxHeight = options.maxHeight ?? options.max_height ?? null;
+    this.max_height = this.maxHeight;
+    this.maxImagesPerRequest = options.maxImagesPerRequest ?? options.max_images_per_request ?? null;
+    this.max_images_per_request = this.maxImagesPerRequest;
+    this.supportedFormats = options.supportedFormats ?? options.supported_formats ?? DEFAULT_IMAGE_FORMATS;
+    this.supported_formats = this.supportedFormats;
+    Object.freeze(this);
+  }
+}
+
+export class PDFConstraints {
+  readonly maxSizeBytes: number;
+  readonly max_size_bytes: number;
+  readonly maxPages: number | null;
+  readonly max_pages: number | null;
+
+  constructor(options: { maxSizeBytes?: number; max_size_bytes?: number; maxPages?: number | null; max_pages?: number | null }) {
+    this.maxSizeBytes = options.maxSizeBytes ?? options.max_size_bytes ?? 0;
+    this.max_size_bytes = this.maxSizeBytes;
+    this.maxPages = options.maxPages ?? options.max_pages ?? null;
+    this.max_pages = this.maxPages;
+    Object.freeze(this);
+  }
+}
+
+export class AudioConstraints {
+  readonly maxSizeBytes: number;
+  readonly max_size_bytes: number;
+  readonly maxDurationSeconds: number | null;
+  readonly max_duration_seconds: number | null;
+  readonly supportedFormats: readonly string[];
+  readonly supported_formats: readonly string[];
+
+  constructor(options: { maxSizeBytes?: number; max_size_bytes?: number; maxDurationSeconds?: number | null; max_duration_seconds?: number | null; supportedFormats?: readonly string[]; supported_formats?: readonly string[] }) {
+    this.maxSizeBytes = options.maxSizeBytes ?? options.max_size_bytes ?? 0;
+    this.max_size_bytes = this.maxSizeBytes;
+    this.maxDurationSeconds = options.maxDurationSeconds ?? options.max_duration_seconds ?? null;
+    this.max_duration_seconds = this.maxDurationSeconds;
+    this.supportedFormats = options.supportedFormats ?? options.supported_formats ?? DEFAULT_AUDIO_FORMATS;
+    this.supported_formats = this.supportedFormats;
+    Object.freeze(this);
+  }
+}
+
+export class VideoConstraints {
+  readonly maxSizeBytes: number;
+  readonly max_size_bytes: number;
+  readonly maxDurationSeconds: number | null;
+  readonly max_duration_seconds: number | null;
+  readonly supportedFormats: readonly string[];
+  readonly supported_formats: readonly string[];
+
+  constructor(options: { maxSizeBytes?: number; max_size_bytes?: number; maxDurationSeconds?: number | null; max_duration_seconds?: number | null; supportedFormats?: readonly string[]; supported_formats?: readonly string[] }) {
+    this.maxSizeBytes = options.maxSizeBytes ?? options.max_size_bytes ?? 0;
+    this.max_size_bytes = this.maxSizeBytes;
+    this.maxDurationSeconds = options.maxDurationSeconds ?? options.max_duration_seconds ?? null;
+    this.max_duration_seconds = this.maxDurationSeconds;
+    this.supportedFormats = options.supportedFormats ?? options.supported_formats ?? DEFAULT_VIDEO_FORMATS;
+    this.supported_formats = this.supportedFormats;
+    Object.freeze(this);
+  }
+}
+
+export class TextConstraints {
+  readonly maxSizeBytes: number;
+  readonly max_size_bytes: number;
+  readonly supportedFormats: readonly string[];
+  readonly supported_formats: readonly string[];
+
+  constructor(options: { maxSizeBytes?: number; max_size_bytes?: number; supportedFormats?: readonly string[]; supported_formats?: readonly string[] }) {
+    this.maxSizeBytes = options.maxSizeBytes ?? options.max_size_bytes ?? 0;
+    this.max_size_bytes = this.maxSizeBytes;
+    this.supportedFormats = options.supportedFormats ?? options.supported_formats ?? DEFAULT_TEXT_FORMATS;
+    this.supported_formats = this.supportedFormats;
+    Object.freeze(this);
+  }
+}
+
+export class ProviderConstraints {
+  readonly name: string;
+  readonly image: ImageConstraints | null;
+  readonly pdf: PDFConstraints | null;
+  readonly audio: AudioConstraints | null;
+  readonly video: VideoConstraints | null;
+  readonly text: TextConstraints | null;
+  readonly generalMaxSizeBytes: number | null;
+  readonly general_max_size_bytes: number | null;
+  readonly supportsFileUpload: boolean;
+  readonly supports_file_upload: boolean;
+  readonly fileUploadThresholdBytes: number | null;
+  readonly file_upload_threshold_bytes: number | null;
+  readonly supportsUrlReferences: boolean;
+  readonly supports_url_references: boolean;
+
+  constructor(options: {
+    name: string;
+    image?: ImageConstraints | null;
+    pdf?: PDFConstraints | null;
+    audio?: AudioConstraints | null;
+    video?: VideoConstraints | null;
+    text?: TextConstraints | null;
+    generalMaxSizeBytes?: number | null;
+    general_max_size_bytes?: number | null;
+    supportsFileUpload?: boolean;
+    supports_file_upload?: boolean;
+    fileUploadThresholdBytes?: number | null;
+    file_upload_threshold_bytes?: number | null;
+    supportsUrlReferences?: boolean;
+    supports_url_references?: boolean;
+  }) {
+    this.name = options.name;
+    this.image = options.image ?? null;
+    this.pdf = options.pdf ?? null;
+    this.audio = options.audio ?? null;
+    this.video = options.video ?? null;
+    this.text = options.text ?? null;
+    this.generalMaxSizeBytes = options.generalMaxSizeBytes ?? options.general_max_size_bytes ?? null;
+    this.general_max_size_bytes = this.generalMaxSizeBytes;
+    this.supportsFileUpload = options.supportsFileUpload ?? options.supports_file_upload ?? false;
+    this.supports_file_upload = this.supportsFileUpload;
+    this.fileUploadThresholdBytes = options.fileUploadThresholdBytes ?? options.file_upload_threshold_bytes ?? null;
+    this.file_upload_threshold_bytes = this.fileUploadThresholdBytes;
+    this.supportsUrlReferences = options.supportsUrlReferences ?? options.supports_url_references ?? false;
+    this.supports_url_references = this.supportsUrlReferences;
+    Object.freeze(this);
+  }
+}
+
+export const ANTHROPIC_CONSTRAINTS = new ProviderConstraints({
+  name: "anthropic",
+  image: new ImageConstraints({ maxSizeBytes: 5_242_880, maxWidth: 8000, maxHeight: 8000, maxImagesPerRequest: 100 }),
+  pdf: new PDFConstraints({ maxSizeBytes: 33_554_432, maxPages: 100 }),
+  supportsFileUpload: true,
+  fileUploadThresholdBytes: 5_242_880,
+  supportsUrlReferences: true,
+});
+
+export const OPENAI_RESPONSES_CONSTRAINTS = new ProviderConstraints({
+  name: "openai_responses",
+  image: new ImageConstraints({ maxSizeBytes: 20_971_520, maxImagesPerRequest: 10 }),
+  pdf: new PDFConstraints({ maxSizeBytes: 33_554_432, maxPages: 100 }),
+  audio: new AudioConstraints({ maxSizeBytes: 26_214_400, maxDurationSeconds: 1500 }),
+  supportsFileUpload: true,
+  fileUploadThresholdBytes: 5_242_880,
+  supportsUrlReferences: true,
+});
+
+export const OPENAI_CONSTRAINTS = new ProviderConstraints({
+  name: "openai",
+  image: new ImageConstraints({ maxSizeBytes: 20_971_520, maxImagesPerRequest: 10 }),
+  supportsFileUpload: true,
+  fileUploadThresholdBytes: 5_242_880,
+  supportsUrlReferences: true,
+});
+
+export const GEMINI_CONSTRAINTS = new ProviderConstraints({
+  name: "gemini",
+  image: new ImageConstraints({ maxSizeBytes: 104_857_600, supportedFormats: GEMINI_IMAGE_FORMATS }),
+  pdf: new PDFConstraints({ maxSizeBytes: 52_428_800 }),
+  audio: new AudioConstraints({ maxSizeBytes: 104_857_600, maxDurationSeconds: 34200, supportedFormats: GEMINI_AUDIO_FORMATS }),
+  video: new VideoConstraints({ maxSizeBytes: 2_147_483_648, maxDurationSeconds: 3600, supportedFormats: GEMINI_VIDEO_FORMATS }),
+  text: new TextConstraints({ maxSizeBytes: 104_857_600, supportedFormats: GEMINI_TEXT_FORMATS }),
+  supportsFileUpload: true,
+  fileUploadThresholdBytes: 20_971_520,
+  supportsUrlReferences: true,
+});
+
+export const BEDROCK_CONSTRAINTS = new ProviderConstraints({
+  name: "bedrock",
+  image: new ImageConstraints({ maxSizeBytes: 4_608_000, maxWidth: 8000, maxHeight: 8000 }),
+  pdf: new PDFConstraints({ maxSizeBytes: 3_840_000, maxPages: 100 }),
+  supportsUrlReferences: true,
+});
+
+export const AZURE_CONSTRAINTS = new ProviderConstraints({
+  name: "azure",
+  image: new ImageConstraints({ maxSizeBytes: 20_971_520, maxImagesPerRequest: 10 }),
+  audio: new AudioConstraints({ maxSizeBytes: 26_214_400, maxDurationSeconds: 1500 }),
+  supportsUrlReferences: true,
+});
+
+const PROVIDER_CONSTRAINTS = new Map<string, ProviderConstraints>([
+  ["anthropic", ANTHROPIC_CONSTRAINTS],
+  ["openai", OPENAI_CONSTRAINTS],
+  ["openai_responses", OPENAI_RESPONSES_CONSTRAINTS],
+  ["gemini", GEMINI_CONSTRAINTS],
+  ["bedrock", BEDROCK_CONSTRAINTS],
+  ["azure", AZURE_CONSTRAINTS],
+  ["claude", ANTHROPIC_CONSTRAINTS],
+  ["gpt", OPENAI_CONSTRAINTS],
+  ["google", GEMINI_CONSTRAINTS],
+  ["aws", BEDROCK_CONSTRAINTS],
+]);
+
+export function getConstraintsForProvider(provider: string | ProviderConstraints): ProviderConstraints | null {
+  if (provider instanceof ProviderConstraints) {
+    return provider;
+  }
+  const providerLower = provider.toLowerCase();
+  const exact = PROVIDER_CONSTRAINTS.get(providerLower);
+  if (exact) {
+    return exact;
+  }
+  for (const [key, constraints] of PROVIDER_CONSTRAINTS) {
+    if (providerLower.includes(key)) {
+      return constraints;
+    }
+  }
+  return null;
+}
+
+export const get_constraints_for_provider = getConstraintsForProvider;
+
+export function getSupportedContentTypes(provider: string, api: string | null = null): string[] {
+  const lookup = api === "responses" && provider.toLowerCase().includes("openai") ? "openai_responses" : provider;
+  const constraints = getConstraintsForProvider(lookup);
+  if (!constraints) {
+    return [];
+  }
+  const types: string[] = [];
+  if (constraints.image) {
+    types.push("image/");
+  }
+  if (constraints.pdf) {
+    types.push("application/pdf");
+  }
+  if (constraints.audio) {
+    types.push("audio/");
+  }
+  if (constraints.video) {
+    types.push("video/");
+  }
+  if (constraints.text) {
+    types.push("text/");
+  }
+  return types;
+}
+
+export const get_supported_content_types = getSupportedContentTypes;
+
+export function validateImage(file: ImageFile, constraints: ImageConstraints, options: { raiseOnError?: boolean; raise_on_error?: boolean } = {}): string[] {
+  const errors: string[] = [];
+  const raiseOnError = options.raiseOnError ?? options.raise_on_error ?? true;
+  const content = file.read();
+  validateSize("Image", file.filename, content.length, constraints.maxSizeBytes, errors, raiseOnError);
+  validateFormat("Image", file.filename, file.contentType, constraints.supportedFormats, errors, raiseOnError);
+  return errors;
+}
+
+export const validate_image = validateImage;
+
+export function validatePDF(file: PDFFile, constraints: PDFConstraints, options: { raiseOnError?: boolean; raise_on_error?: boolean } = {}): string[] {
+  const errors: string[] = [];
+  const raiseOnError = options.raiseOnError ?? options.raise_on_error ?? true;
+  validateSize("PDF", file.filename, file.read().length, constraints.maxSizeBytes, errors, raiseOnError);
+  return errors;
+}
+
+export const validate_pdf = validatePDF;
+
+export function validateAudio(file: AudioFile, constraints: AudioConstraints, options: { raiseOnError?: boolean; raise_on_error?: boolean; durationSeconds?: number | null; duration_seconds?: number | null } = {}): string[] {
+  const errors: string[] = [];
+  const raiseOnError = options.raiseOnError ?? options.raise_on_error ?? true;
+  const duration = options.durationSeconds ?? options.duration_seconds ?? null;
+  validateSize("Audio", file.filename, file.read().length, constraints.maxSizeBytes, errors, raiseOnError);
+  validateFormat("Audio", file.filename, file.contentType, constraints.supportedFormats, errors, raiseOnError);
+  if (constraints.maxDurationSeconds !== null && duration !== null && duration > constraints.maxDurationSeconds) {
+    const message = `Audio '${file.filename ?? "null"}' duration (${duration.toFixed(1)}s) exceeds maximum (${String(constraints.maxDurationSeconds)}s)`;
+    errors.push(message);
+    if (raiseOnError) {
+      throw new FileValidationError(message, { fileName: file.filename });
+    }
+  }
+  return errors;
+}
+
+export const validate_audio = validateAudio;
+
+export function validateVideo(file: VideoFile, constraints: VideoConstraints, options: { raiseOnError?: boolean; raise_on_error?: boolean; durationSeconds?: number | null; duration_seconds?: number | null } = {}): string[] {
+  const errors: string[] = [];
+  const raiseOnError = options.raiseOnError ?? options.raise_on_error ?? true;
+  const duration = options.durationSeconds ?? options.duration_seconds ?? null;
+  validateSize("Video", file.filename, file.read().length, constraints.maxSizeBytes, errors, raiseOnError);
+  validateFormat("Video", file.filename, file.contentType, constraints.supportedFormats, errors, raiseOnError);
+  if (constraints.maxDurationSeconds !== null && duration !== null && duration > constraints.maxDurationSeconds) {
+    const message = `Video '${file.filename ?? "null"}' duration (${duration.toFixed(1)}s) exceeds maximum (${String(constraints.maxDurationSeconds)}s)`;
+    errors.push(message);
+    if (raiseOnError) {
+      throw new FileValidationError(message, { fileName: file.filename });
+    }
+  }
+  return errors;
+}
+
+export const validate_video = validateVideo;
+
+export function validateText(file: TextFile, constraints: ProviderConstraints, options: { raiseOnError?: boolean; raise_on_error?: boolean } = {}): string[] {
+  const errors: string[] = [];
+  if (constraints.generalMaxSizeBytes === null) {
+    return errors;
+  }
+  validateSize("Text file", file.filename, file.read().length, constraints.generalMaxSizeBytes, errors, options.raiseOnError ?? options.raise_on_error ?? true);
+  return errors;
+}
+
+export const validate_text = validateText;
+
+export function validateFile(file: FileInput, constraints: ProviderConstraints, options: { raiseOnError?: boolean; raise_on_error?: boolean } = {}): string[] {
+  const raiseOnError = options.raiseOnError ?? options.raise_on_error ?? true;
+  if (file instanceof ImageFile) {
+    return constraints.image
+      ? validateImage(file, constraints.image, { raiseOnError })
+      : unsupportedFileType(file, constraints.name, "images", raiseOnError);
+  }
+  if (file instanceof PDFFile) {
+    return constraints.pdf
+      ? validatePDF(file, constraints.pdf, { raiseOnError })
+      : unsupportedFileType(file, constraints.name, "PDFs", raiseOnError);
+  }
+  if (file instanceof AudioFile) {
+    return constraints.audio
+      ? validateAudio(file, constraints.audio, { raiseOnError })
+      : unsupportedFileType(file, constraints.name, "audio", raiseOnError);
+  }
+  if (file instanceof VideoFile) {
+    return constraints.video
+      ? validateVideo(file, constraints.video, { raiseOnError })
+      : unsupportedFileType(file, constraints.name, "video", raiseOnError);
+  }
+  if (file instanceof TextFile) {
+    return validateText(file, constraints, { raiseOnError });
+  }
+  return [];
+}
+
+export const validate_file = validateFile;
+
+export class FileProcessor {
+  readonly constraints: ProviderConstraints | null;
+
+  constructor(options: { constraints?: ProviderConstraints | string | null } | ProviderConstraints | string | null = {}) {
+    const value = options instanceof ProviderConstraints || typeof options === "string" || options === null
+      ? options
+      : options.constraints ?? null;
+    this.constraints = typeof value === "string" ? getConstraintsForProvider(value) : value;
+  }
+
+  validate(file: FileInput): string[] {
+    if (this.constraints === null) {
+      return [];
+    }
+    return validateFile(file, this.constraints, { raiseOnError: this.fileMode(file) === FileHandling.STRICT });
+  }
+
+  process(file: FileInput): FileInput | FileInput[] {
+    if (this.constraints === null) {
+      return file;
+    }
+    const mode = this.fileMode(file);
+    const errors = this.validate(file);
+    if (errors.length === 0) {
+      return file;
+    }
+    if (mode === FileHandling.STRICT) {
+      throw new FileValidationError(errors.join("; "), { fileName: file.filename });
+    }
+    return file;
+  }
+
+  processFiles(files: Record<string, FileInput>): Record<string, FileInput> {
+    const result: Record<string, FileInput> = {};
+    for (const [name, file] of Object.entries(files)) {
+      const processed = this.process(file);
+      if (Array.isArray(processed)) {
+        processed.forEach((chunk, index) => {
+          result[`${name}_chunk_${String(index)}`] = chunk;
+        });
+      } else {
+        result[name] = processed;
+      }
+    }
+    return result;
+  }
+
+  process_files(files: Record<string, FileInput>): Record<string, FileInput> {
+    return this.processFiles(files);
+  }
+
+  aprocessFiles(files: Record<string, FileInput>): Promise<Record<string, FileInput>> {
+    return Promise.resolve(this.processFiles(files));
+  }
+
+  aprocess_files(files: Record<string, FileInput>): Promise<Record<string, FileInput>> {
+    return this.aprocessFiles(files);
+  }
+
+  private fileMode(file: FileInput): FileHandling {
+    return Object.values(FileHandling).includes(file.mode as FileHandling) ? file.mode as FileHandling : FileHandling.AUTO;
+  }
+}
+
 export class CachedUpload {
   readonly fileId: string;
   readonly file_id: string;
@@ -833,7 +1321,64 @@ function coerceFileSource(value: FileSourceInput): FileSource {
 }
 
 function supportsUrlReferences(provider: FileProvider): boolean {
-  return new Set(["anthropic", "azure", "gemini", "openai"]).has(provider.toLowerCase());
+  return getConstraintsForProvider(provider)?.supportsUrlReferences ?? false;
+}
+
+function validateSize(
+  fileType: string,
+  filename: string | null,
+  fileSize: number,
+  maxSize: number,
+  errors: string[],
+  raiseOnError: boolean,
+): void {
+  if (fileSize <= maxSize) {
+    return;
+  }
+  const message = `${fileType} '${filename ?? "null"}' size (${formatSize(fileSize)}) exceeds maximum (${formatSize(maxSize)})`;
+  errors.push(message);
+  if (raiseOnError) {
+    throw new FileTooLargeError(message, { fileName: filename, actualSize: fileSize, maxSize });
+  }
+}
+
+function validateFormat(
+  fileType: string,
+  filename: string | null,
+  contentType: string,
+  supportedFormats: readonly string[],
+  errors: string[],
+  raiseOnError: boolean,
+): void {
+  if (supportedFormats.includes(contentType)) {
+    return;
+  }
+  const message = `${fileType} format '${contentType}' is not supported. Supported: ${supportedFormats.join(", ")}`;
+  errors.push(message);
+  if (raiseOnError) {
+    throw new UnsupportedFileTypeError(message, { fileName: filename, contentType });
+  }
+}
+
+function unsupportedFileType(file: FileInput, providerName: string, typeName: string, raiseOnError: boolean): string[] {
+  const message = `Provider '${providerName}' does not support ${typeName}`;
+  if (raiseOnError) {
+    throw new UnsupportedFileTypeError(message, { fileName: file.filename, contentType: file.contentType });
+  }
+  return [message];
+}
+
+function formatSize(sizeBytes: number): string {
+  if (sizeBytes >= 1024 * 1024 * 1024) {
+    return `${(sizeBytes / (1024 * 1024 * 1024)).toFixed(1)}GB`;
+  }
+  if (sizeBytes >= 1024 * 1024) {
+    return `${(sizeBytes / (1024 * 1024)).toFixed(1)}MB`;
+  }
+  if (sizeBytes >= 1024) {
+    return `${(sizeBytes / 1024).toFixed(1)}KB`;
+  }
+  return `${String(sizeBytes)}B`;
 }
 
 function computeFileHash(file: FileInput): string {

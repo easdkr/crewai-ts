@@ -695,7 +695,14 @@ import {
   createTemporaryTokenStorage,
   dbStoragePath,
   DEFAULT_CLI_SETTINGS,
+  ANTHROPIC_CONSTRAINTS,
+  AudioFile,
+  AudioConstraints,
   CachedUpload,
+  FileHandling,
+  FileProcessor,
+  FileTooLargeError,
+  FileValidationError,
   detectContentType,
   EmptyStackError,
   EventContextConfig,
@@ -752,9 +759,21 @@ import {
   normalizeRagConfig,
   normalizeInputFiles,
   PDFFile,
+  PDFConstraints,
+  ImageConstraints,
   InlineBase64,
   InlineBytes,
+  ProviderConstraints,
+  UnsupportedFileTypeError,
   UploadCache,
+  VideoConstraints,
+  validateAudio,
+  validateFile,
+  validateImage,
+  validatePDF,
+  validateText,
+  validateVideo,
+  getConstraintsForProvider,
   platformContext,
   QdrantClient,
   QdrantConfig,
@@ -2158,6 +2177,76 @@ describe("environment, logging, and file store utilities", () => {
     expect(customResolver.config.prefer_upload).toBe(true);
     expect(customResolver.config.upload_threshold_bytes).toBe(5 * 1024 * 1024);
     expect(customResolver.upload_cache).toBeNull();
+  });
+
+  it("validates upstream crewai-files provider constraints deterministically", () => {
+    const png = Buffer.concat([
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      Buffer.from("validator-body"),
+    ]);
+    const pdfBytes = Buffer.from("%PDF-1.4 minimal pdf");
+    const image = new ImageFile({ source: new FileBytes({ data: png, filename: "test.png" }) });
+    const pdf = new PDFFile({ source: new FileBytes({ data: pdfBytes, filename: "test.pdf" }) });
+    const text = new TextFile({ source: new FileBytes({ data: Buffer.from("Hello, World!"), filename: "test.txt" }) });
+    const audio = new AudioFile({ source: new FileBytes({ data: Buffer.alloc(100), filename: "test.mp3" }) });
+    const video = new VideoFile({ source: new FileBytes({ data: Buffer.alloc(100), filename: "test.mp4" }) });
+
+    expect(getConstraintsForProvider("claude")).toBe(ANTHROPIC_CONSTRAINTS);
+    expect(getConstraintsForProvider("gpt-4o")).toMatchObject({ name: "openai" });
+    expect(getConstraintsForProvider("unknown-provider")).toBeNull();
+
+    expect(validateImage(image, new ImageConstraints({ max_size_bytes: 10 * 1024, supported_formats: ["image/png"] }), { raise_on_error: false })).toEqual([]);
+    expect(() => validateImage(image, new ImageConstraints({ max_size_bytes: 10, supported_formats: ["image/png"] }))).toThrow(FileTooLargeError);
+    expect(() => validateImage(image, new ImageConstraints({ max_size_bytes: 10 * 1024, supported_formats: ["image/jpeg"] }))).toThrow(UnsupportedFileTypeError);
+    expect(validateImage(image, new ImageConstraints({ max_size_bytes: 10, supported_formats: ["image/jpeg"] }), { raise_on_error: false })).toHaveLength(2);
+
+    expect(ANTHROPIC_CONSTRAINTS.pdf).toBeInstanceOf(PDFConstraints);
+    expect(validatePDF(pdf, ANTHROPIC_CONSTRAINTS.pdf as PDFConstraints, { raise_on_error: false })).toEqual([]);
+    expect(() => validatePDF(pdf, new PDFConstraints({ max_size_bytes: 10 }))).toThrow(FileTooLargeError);
+    expect(validateText(text, new ProviderConstraints({ name: "test", general_max_size_bytes: null }), { raise_on_error: false })).toEqual([]);
+    expect(() => validateText(text, new ProviderConstraints({ name: "test", general_max_size_bytes: 5 }))).toThrow(FileTooLargeError);
+
+    expect(validateAudio(audio, new AudioConstraints({ max_size_bytes: 10 * 1024, max_duration_seconds: 60, supported_formats: ["audio/mpeg"] }), { raise_on_error: false, duration_seconds: 30 })).toEqual([]);
+    expect(() => validateAudio(audio, new AudioConstraints({ max_size_bytes: 10 * 1024, max_duration_seconds: 60, supported_formats: ["audio/mpeg"] }), { duration_seconds: 120.5 })).toThrow(FileValidationError);
+    expect(validateVideo(video, new VideoConstraints({ max_size_bytes: 10 * 1024, max_duration_seconds: 60, supported_formats: ["video/mp4"] }), { raise_on_error: false, duration_seconds: 180 })).toEqual([
+      "Video 'test.mp4' duration (180.0s) exceeds maximum (60s)",
+    ]);
+
+    expect(validateFile(image, ANTHROPIC_CONSTRAINTS, { raise_on_error: false })).toEqual([]);
+    expect(validateFile(pdf, ANTHROPIC_CONSTRAINTS, { raise_on_error: false })).toEqual([]);
+    expect(() => validateFile(image, new ProviderConstraints({ name: "test", image: null }))).toThrow("does not support images");
+    expect(() => validateFile(pdf, new ProviderConstraints({ name: "test", pdf: null }))).toThrow("does not support PDFs");
+  });
+
+  it("processes upstream crewai-files modes with local constraints", async () => {
+    const png = Buffer.concat([
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      Buffer.from("processor-body"),
+    ]);
+    const constraints = new ProviderConstraints({
+      name: "test",
+      image: new ImageConstraints({ max_size_bytes: 10, supported_formats: ["image/png"] }),
+    });
+    const processor = new FileProcessor({ constraints });
+    const validProcessor = new FileProcessor({ constraints: "anthropic" });
+    const unknownProcessor = new FileProcessor({ constraints: "unknown" });
+    const strictFile = new ImageFile({ source: new FileBytes({ data: png, filename: "strict.png" }), mode: FileHandling.STRICT });
+    const warnFile = new ImageFile({ source: new FileBytes({ data: png, filename: "warn.png" }), mode: FileHandling.WARN });
+    const autoFile = new ImageFile({ source: new FileBytes({ data: png.subarray(0, 8), filename: "auto.png" }) });
+
+    expect(validProcessor.constraints).toBe(ANTHROPIC_CONSTRAINTS);
+    expect(unknownProcessor.constraints).toBeNull();
+    expect(autoFile.mode).toBe("auto");
+    expect(processor.validate(warnFile)).toHaveLength(1);
+    expect(() => processor.validate(strictFile)).toThrow(FileTooLargeError);
+    expect(() => processor.process(strictFile)).toThrow(FileTooLargeError);
+    expect(processor.process(warnFile)).toBe(warnFile);
+    expect(unknownProcessor.process(warnFile)).toBe(warnFile);
+
+    const processed = validProcessor.processFiles({ one: autoFile, two: autoFile });
+    expect(processed).toEqual({ one: autoFile, two: autoFile });
+    await expect(validProcessor.aprocess_files({ one: autoFile })).resolves.toEqual({ one: autoFile });
+    expect(FileHandling.CHUNK).toBe("chunk");
   });
 
   it("lets upstream ReadFileTool consume typed text and binary files", () => {
