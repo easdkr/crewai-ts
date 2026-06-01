@@ -10740,6 +10740,9 @@ describe("core crew runtime", () => {
     expect(resolvedMemory).toBeInstanceOf(Memory);
     expect(resolvedMemory.root_scope).toBe("/crew/memory-crew");
     expect(resolvedMemory._embedder).toBe(embeddingCallable);
+    const memoryCopy = memoryCrew.copy() as unknown as { memory: Memory; resolvedMemory: Memory };
+    expect(memoryCopy.memory).toBe(resolvedMemory);
+    expect(memoryCopy.resolvedMemory).toBe(resolvedMemory);
 
     await crewInstance.train(1, trainingFile, { topic: "CrewAI" });
     const testResult = await crewInstance.test(1, () => JSON.stringify({ quality: 8 }), { topic: "CrewAI" });

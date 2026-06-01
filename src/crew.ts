@@ -1037,7 +1037,7 @@ export class Crew {
       taskExecutionOutputJsonFiles: this.taskExecutionOutputJsonFiles,
       promptFile: this.promptFile,
       shareCrew: this.shareCrew,
-      memory: this.memory,
+      memory: this.resolvedMemory ?? this.memory,
       knowledge: this.knowledge,
       knowledgeSources: this.knowledgeSources,
       managerAgent,
