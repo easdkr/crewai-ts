@@ -667,6 +667,7 @@ import {
   createStaticToolFilter,
   executeToolAndCheckFinality,
   aexecuteToolAndCheckFinality,
+  to_langchain,
   createContentId,
   createRagClient,
   createTemporaryTokenStorage,
@@ -15242,6 +15243,17 @@ describe("tools", () => {
     expect(original.has_reached_max_usage_count()).toBe(true);
     expect(structured.invoke({ value: "third" })).toBe("Tool 'echo_tool' has reached its usage limit of 2 times and cannot be used anymore.");
     expect(original.current_usage_count).toBe(2);
+
+    const alreadyStructured = new StructuredTool({
+      name: "already structured",
+      description: "Already structured",
+      func: () => "ok",
+    });
+    const converted = to_langchain([original, alreadyStructured]);
+    expect(converted).toHaveLength(2);
+    expect(converted[0]).toBeInstanceOf(StructuredTool);
+    expect(converted[1]).toBe(alreadyStructured);
+    expect(to_langchain(original)).toBeInstanceOf(StructuredTool);
   });
 
   it("exports upstream CrewStructuredTool and EnvVar runtime values", async () => {

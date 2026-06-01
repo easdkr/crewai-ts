@@ -715,8 +715,13 @@ export abstract class BaseTool implements Tool {
   }
 }
 
-export function to_langchain(tool: BaseTool): StructuredTool {
-  return tool.toStructuredTool();
+export function to_langchain(tool: BaseTool): StructuredTool;
+export function to_langchain(tools: (BaseTool | StructuredTool)[]): StructuredTool[];
+export function to_langchain(toolOrTools: BaseTool | (BaseTool | StructuredTool)[]): StructuredTool | StructuredTool[] {
+  if (Array.isArray(toolOrTools)) {
+    return toolOrTools.map((tool) => tool instanceof StructuredTool ? tool : tool.toStructuredTool());
+  }
+  return toolOrTools.toStructuredTool();
 }
 
 export class StructuredTool extends BaseTool {
