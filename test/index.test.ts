@@ -699,7 +699,9 @@ import {
   EventPairingError,
   FileBytes,
   FilePath,
+  FileResolver,
   FileStream,
+  FileUrl,
   flowStructure,
   getAuthToken,
   getCurrentParentId,
@@ -746,6 +748,8 @@ import {
   normalizeRagConfig,
   normalizeInputFiles,
   PDFFile,
+  InlineBase64,
+  InlineBytes,
   platformContext,
   QdrantClient,
   QdrantConfig,
@@ -858,6 +862,7 @@ import {
   storeFiles,
   storeTaskFiles,
   TextFile,
+  UrlReference,
   suppressLogging,
   stringToCallable,
   toSerializable,
@@ -2002,15 +2007,63 @@ describe("environment, logging, and file store utilities", () => {
       expect(video.content_type).toBe("video/mp4");
       expect(wrapFileSource(pdf.source)).toBeInstanceOf(PDFFile);
       const normalized = normalizeInputFiles([
+        textPath,
         new TextFile({ source: new FileBytes({ data: Buffer.from("named"), filename: "doc.txt" }) }),
+        new FileBytes({ data: Buffer.from("source"), filename: "source.txt" }),
         image,
       ]);
+      expect(normalized["notes.txt"]).toBeInstanceOf(TextFile);
       expect(normalized.doc).toBeInstanceOf(TextFile);
-      expect(normalized.file_1).toBeInstanceOf(ImageFile);
+      expect(normalized["source.txt"]).toBeInstanceOf(TextFile);
+      expect(normalized.file_3).toBeInstanceOf(ImageFile);
       expect(detectContentType(Buffer.from([0xff, 0xd8, 0xff, 0xe0]), "photo.jpg")).toBe("image/jpeg");
     } finally {
       rmSync(workspace, { recursive: true, force: true });
     }
+  });
+
+  it("resolves upstream FileUrl sources without live network in the default gate", async () => {
+    const url = new FileUrl({ url: "https://example.com/image.png?v=123&token=abc" });
+
+    expect(url.url).toBe("https://example.com/image.png?v=123&token=abc");
+    expect(url.filename).toBeNull();
+    expect(url.content_type).toBe("image/png");
+    expect(() => new FileUrl({ url: "ftp://example.com/file.txt" })).toThrow("Invalid URL scheme");
+    expect(() => new FileUrl({ url: "file:///tmp/file.txt" })).toThrow("Invalid URL scheme");
+    expect(new FileUrl({ url: "https://example.com/file.unknownext123" }).content_type).toBe("application/octet-stream");
+
+    const fetched = new FileUrl({
+      url: "https://example.com/file",
+      fetcher: (sourceUrl) => Promise.resolve({
+        content: `content:${sourceUrl}`,
+        contentType: "image/webp; charset=utf-8",
+      }),
+    });
+    await expect(fetched.aread()).resolves.toEqual(Buffer.from("content:https://example.com/file"));
+    await expect(fetched.aread()).resolves.toEqual(Buffer.from("content:https://example.com/file"));
+    expect(fetched.content_type).toBe("image/webp");
+
+    const image = new ImageFile({ source: url });
+    expect(image.source).toBe(url);
+    expect(image.content_type).toBe("image/png");
+
+    const resolver = new FileResolver();
+    const urlReference = resolver.resolve(image, "anthropic");
+    expect(urlReference).toBeInstanceOf(UrlReference);
+    expect(urlReference).toMatchObject({
+      content_type: "image/png",
+      url: "https://example.com/image.png?v=123&token=abc",
+    });
+    await expect(resolver.aresolve(image, "openai")).resolves.toBeInstanceOf(UrlReference);
+
+    const bytesImage = new ImageFile({ source: new FileBytes({ data: Buffer.from([0x89, 0x50, 0x4e, 0x47]), filename: "tiny.png" }) });
+    const inline = resolver.resolve(bytesImage, "anthropic");
+    expect(inline).toBeInstanceOf(InlineBase64);
+    expect(Buffer.from((inline as InlineBase64).data, "base64")).toEqual(bytesImage.read());
+    const bedrock = resolver.resolve(bytesImage, "bedrock");
+    expect(bedrock).toBeInstanceOf(InlineBytes);
+    expect(Buffer.from((bedrock as InlineBytes).data)).toEqual(bytesImage.read());
+    expect(resolver.resolve_files({ image }, "gemini").image).toBeInstanceOf(UrlReference);
   });
 
   it("lets upstream ReadFileTool consume typed text and binary files", () => {

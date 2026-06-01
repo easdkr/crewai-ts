@@ -13,6 +13,81 @@ export type FileReadable = {
 
 export type FileSourceInput = string | Uint8Array | Buffer | FileSource | FileReadable;
 export type FileInput = AudioFile | File | ImageFile | PDFFile | TextFile | VideoFile;
+export type FileProvider = string;
+
+export abstract class ResolvedFile {
+  readonly contentType: string;
+  readonly content_type: string;
+
+  protected constructor(contentType: string) {
+    this.contentType = contentType;
+    this.content_type = contentType;
+  }
+}
+
+export class InlineBase64 extends ResolvedFile {
+  readonly data: string;
+
+  constructor(options: { contentType?: string; content_type?: string; data: string }) {
+    super(options.contentType ?? options.content_type ?? "application/octet-stream");
+    this.data = options.data;
+    Object.freeze(this);
+  }
+}
+
+export class InlineBytes extends ResolvedFile {
+  readonly data: Uint8Array;
+
+  constructor(options: { contentType?: string; content_type?: string; data: Uint8Array | Buffer | string }) {
+    super(options.contentType ?? options.content_type ?? "application/octet-stream");
+    this.data = typeof options.data === "string" ? Buffer.from(options.data) : Buffer.from(options.data);
+    Object.freeze(this);
+  }
+}
+
+export class FileReference extends ResolvedFile {
+  readonly fileId: string;
+  readonly file_id: string;
+  readonly provider: string;
+  readonly expiresAt: Date | null;
+  readonly expires_at: Date | null;
+  readonly fileUri: string | null;
+  readonly file_uri: string | null;
+
+  constructor(options: {
+    contentType?: string;
+    content_type?: string;
+    fileId?: string;
+    file_id?: string;
+    provider: string;
+    expiresAt?: Date | null;
+    expires_at?: Date | null;
+    fileUri?: string | null;
+    file_uri?: string | null;
+  }) {
+    super(options.contentType ?? options.content_type ?? "application/octet-stream");
+    this.fileId = options.fileId ?? options.file_id ?? "";
+    this.file_id = this.fileId;
+    this.provider = options.provider;
+    this.expiresAt = options.expiresAt ?? options.expires_at ?? null;
+    this.expires_at = this.expiresAt;
+    this.fileUri = options.fileUri ?? options.file_uri ?? null;
+    this.file_uri = this.fileUri;
+    Object.freeze(this);
+  }
+}
+
+export class UrlReference extends ResolvedFile {
+  readonly url: string;
+
+  constructor(options: { contentType?: string; content_type?: string; url: string }) {
+    super(options.contentType ?? options.content_type ?? "application/octet-stream");
+    this.url = options.url;
+    Object.freeze(this);
+  }
+}
+
+export type ResolvedFileType = InlineBase64 | InlineBytes | FileReference | UrlReference;
 
 export abstract class FileSource {
   abstract readonly filename: string | null;
@@ -132,6 +207,52 @@ export class FileStream extends FileSource {
   }
 }
 
+export class FileUrl extends FileSource {
+  readonly url: string;
+  readonly filename: string | null;
+  private detectedContentType: string | null = null;
+  private content: Uint8Array | null = null;
+  private readonly fetcher: ((url: string) => Promise<{ content: Uint8Array | Buffer | string; contentType?: string | null }>) | null;
+
+  constructor(options: {
+    url: string;
+    filename?: string | null;
+    fetcher?: ((url: string) => Promise<{ content: Uint8Array | Buffer | string; contentType?: string | null }>) | null;
+  }) {
+    super();
+    if (!options.url.startsWith("http://") && !options.url.startsWith("https://")) {
+      throw new Error(`Invalid URL scheme: ${options.url}`);
+    }
+    this.url = options.url;
+    this.filename = options.filename ?? null;
+    this.fetcher = options.fetcher ?? null;
+  }
+
+  get contentType(): string {
+    this.detectedContentType ??= contentTypeFromFilename(this.filename ?? urlPathname(this.url)) ?? "application/octet-stream";
+    return this.detectedContentType;
+  }
+
+  override read(): Uint8Array {
+    throw new Error("FileUrl.read requires an injected fetcher in this deterministic TypeScript shim. Use aread() with a fetcher or resolve URL-capable providers as UrlReference.");
+  }
+
+  override async aread(): Promise<Uint8Array> {
+    if (this.content !== null) {
+      return this.content;
+    }
+    if (!this.fetcher) {
+      throw new Error("FileUrl.aread requires an injected fetcher in this deterministic TypeScript shim.");
+    }
+    const fetched = await this.fetcher(this.url);
+    this.content = typeof fetched.content === "string" ? Buffer.from(fetched.content) : Buffer.from(fetched.content);
+    if (fetched.contentType) {
+      this.detectedContentType = fetched.contentType.split(";")[0] ?? fetched.contentType;
+    }
+    return this.content;
+  }
+}
+
 export abstract class BaseFile {
   readonly source: FileSource;
   readonly mode: FileMode;
@@ -248,14 +369,101 @@ export const wrap_file_source = wrapFileSource;
 export function normalizeInputFiles(inputFiles: readonly (FileSourceInput | FileInput)[]): Record<string, FileInput> {
   const result: Record<string, FileInput> = {};
   inputFiles.forEach((item, index) => {
-    const file = item instanceof BaseFile ? item : wrapFileSource(coerceFileSource(item));
-    const filename = file.filename ?? `file_${String(index)}`;
-    result[filename.replace(/\.[^.]*$/, "")] = file;
+    if (item instanceof BaseFile) {
+      const filename = item.filename ?? `file_${String(index)}`;
+      result[filename.replace(/\.[^.]*$/, "")] = item;
+      return;
+    }
+    const source = coerceFileSource(item);
+    const filename = source.filename ?? `file_${String(index)}`;
+    result[filename] = wrapFileSource(source);
   });
   return result;
 }
 
 export const normalize_input_files = normalizeInputFiles;
+
+export class FileResolverConfig {
+  readonly preferUpload: boolean;
+  readonly prefer_upload: boolean;
+  readonly uploadThresholdBytes: number | null;
+  readonly upload_threshold_bytes: number | null;
+  readonly useBytesForBedrock: boolean;
+  readonly use_bytes_for_bedrock: boolean;
+
+  constructor(options: {
+    preferUpload?: boolean;
+    prefer_upload?: boolean;
+    uploadThresholdBytes?: number | null;
+    upload_threshold_bytes?: number | null;
+    useBytesForBedrock?: boolean;
+    use_bytes_for_bedrock?: boolean;
+  } = {}) {
+    this.preferUpload = options.preferUpload ?? options.prefer_upload ?? false;
+    this.prefer_upload = this.preferUpload;
+    this.uploadThresholdBytes = options.uploadThresholdBytes ?? options.upload_threshold_bytes ?? null;
+    this.upload_threshold_bytes = this.uploadThresholdBytes;
+    this.useBytesForBedrock = options.useBytesForBedrock ?? options.use_bytes_for_bedrock ?? true;
+    this.use_bytes_for_bedrock = this.useBytesForBedrock;
+  }
+}
+
+export class FileResolver {
+  readonly config: FileResolverConfig;
+
+  constructor(options: { config?: FileResolverConfig | ConstructorParameters<typeof FileResolverConfig>[0] } = {}) {
+    this.config = options.config instanceof FileResolverConfig
+      ? options.config
+      : new FileResolverConfig(options.config);
+  }
+
+  resolve(file: FileInput, provider: FileProvider): ResolvedFileType {
+    const source = file.source;
+    if (source instanceof FileUrl && supportsUrlReferences(provider)) {
+      return new UrlReference({ contentType: file.contentType, url: source.url });
+    }
+    const content = file.read();
+    if (provider.toLowerCase() === "bedrock" && this.config.useBytesForBedrock) {
+      return new InlineBytes({ contentType: file.contentType, data: content });
+    }
+    return new InlineBase64({ contentType: file.contentType, data: Buffer.from(content).toString("base64") });
+  }
+
+  async aresolve(file: FileInput, provider: FileProvider): Promise<ResolvedFileType> {
+    const source = file.source;
+    if (source instanceof FileUrl && supportsUrlReferences(provider)) {
+      return new UrlReference({ contentType: file.contentType, url: source.url });
+    }
+    const content = await file.aread();
+    if (provider.toLowerCase() === "bedrock" && this.config.useBytesForBedrock) {
+      return new InlineBytes({ contentType: file.contentType, data: content });
+    }
+    return new InlineBase64({ contentType: file.contentType, data: Buffer.from(content).toString("base64") });
+  }
+
+  resolveFiles(files: Record<string, FileInput>, provider: FileProvider): Record<string, ResolvedFileType> {
+    return Object.fromEntries(Object.entries(files).map(([name, file]) => [name, this.resolve(file, provider)]));
+  }
+
+  resolve_files(files: Record<string, FileInput>, provider: FileProvider): Record<string, ResolvedFileType> {
+    return this.resolveFiles(files, provider);
+  }
+
+  async aresolveFiles(files: Record<string, FileInput>, provider: FileProvider): Promise<Record<string, ResolvedFileType>> {
+    const entries = await Promise.all(Object.entries(files).map(async ([name, file]) => [name, await this.aresolve(file, provider)] as const));
+    return Object.fromEntries(entries);
+  }
+
+  async aresolve_files(files: Record<string, FileInput>, provider: FileProvider): Promise<Record<string, ResolvedFileType>> {
+    return await this.aresolveFiles(files, provider);
+  }
+}
+
+export function createResolver(config?: FileResolverConfig | ConstructorParameters<typeof FileResolverConfig>[0]): FileResolver {
+  return new FileResolver({ config });
+}
+
+export const create_resolver = createResolver;
 
 function isFileOptions(value: unknown): value is { source: FileSourceInput; mode?: FileMode } {
   return Boolean(value && typeof value === "object" && "source" in value);
@@ -266,6 +474,9 @@ function coerceFileSource(value: FileSourceInput): FileSource {
     return value;
   }
   if (typeof value === "string") {
+    if (value.startsWith("http://") || value.startsWith("https://")) {
+      return new FileUrl({ url: value });
+    }
     return new FilePath({ path: resolve(value) });
   }
   if (Buffer.isBuffer(value) || value instanceof Uint8Array) {
@@ -274,8 +485,12 @@ function coerceFileSource(value: FileSourceInput): FileSource {
   return new FileStream({ stream: value });
 }
 
+function supportsUrlReferences(provider: FileProvider): boolean {
+  return new Set(["anthropic", "azure", "gemini", "openai"]).has(provider.toLowerCase());
+}
+
 function contentTypeFromFilename(filename?: string | null): string | null {
-  switch (extname(filename ?? "").toLowerCase()) {
+  switch (extname((filename ?? "").split("?")[0] ?? "").toLowerCase()) {
     case ".txt":
     case ".log":
       return "text/plain";
@@ -313,6 +528,14 @@ function contentTypeFromFilename(filename?: string | null): string | null {
       return "video/mp4";
     default:
       return null;
+  }
+}
+
+function urlPathname(url: string): string {
+  try {
+    return new URL(url).pathname;
+  } catch {
+    return url;
   }
 }
 
