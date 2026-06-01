@@ -3747,6 +3747,12 @@ export type EventHandler<TEvent extends CrewAIEvent = CrewAIEvent> = (
 ) => void | Promise<void>;
 export const EventHandler = Object.freeze({ kind: "EventHandler" });
 
+export type ConsoleStreamingLive = {
+  start: () => void;
+  stop: () => void;
+  readonly active?: boolean;
+};
+
 export type SyncHandler = (source: unknown, event: BaseEvent, context?: unknown) => void;
 export type AsyncHandler = (source: unknown, event: BaseEvent, context?: unknown) => Promise<void>;
 export type SyncHandlerSet = ReadonlySet<SyncHandler>;
@@ -4941,6 +4947,7 @@ export class ConsoleFormatter {
   private isStreaming = false;
   private justStreamedFinalAnswer = false;
   private lastStreamCallType: unknown = null;
+  _streaming_live: ConsoleStreamingLive | null = null;
 
   constructor(options: { verbose?: boolean } = {}) {
     this.verbose = options.verbose ?? false;
@@ -5035,6 +5042,8 @@ export class ConsoleFormatter {
   }
 
   pause_live_updates(): void {
+    this._streaming_live?.stop();
+    this._streaming_live = null;
     this.isStreaming = false;
   }
 
@@ -5178,15 +5187,36 @@ export class ConsoleFormatter {
     if (!this.verbose) {
       return;
     }
+    if (!this._streaming_live) {
+      this._streaming_live = this.create_streaming_live();
+      this._streaming_live.start();
+    }
     this.isStreaming = true;
     this.lastStreamCallType = call_type;
     this.print_panel(accumulated_text.split("\n").slice(-20).join("\n"), "LLM Stream", "green");
   }
 
   handle_llm_stream_completed(): void {
+    this._streaming_live?.stop();
+    this._streaming_live = null;
     this.isStreaming = false;
     this.justStreamedFinalAnswer = this.lastStreamCallType === "llm_call";
     this.lastStreamCallType = null;
+  }
+
+  create_streaming_live(): ConsoleStreamingLive {
+    let active = false;
+    return {
+      start: () => {
+        active = true;
+      },
+      stop: () => {
+        active = false;
+      },
+      get active() {
+        return active;
+      },
+    };
   }
 
   handle_crew_test_started(crew_name: string, source_id: string, n_iterations: number): void {

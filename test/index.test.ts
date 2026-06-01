@@ -23995,6 +23995,36 @@ describe("events", () => {
     expect(typeof formatter.handle_a2a_polling_status).toBe("function");
   });
 
+  it("pauses active ConsoleFormatter stream sessions and creates a new session after resume", () => {
+    type FormatterWithStream = ConsoleFormatter & {
+      _streaming_live: { start: ReturnType<typeof vi.fn>; stop: ReturnType<typeof vi.fn> } | null;
+    };
+    const formatter = new ConsoleFormatter({ verbose: true }) as FormatterWithStream;
+    const activeSession = { start: vi.fn(), stop: vi.fn() };
+    const nextSession = { start: vi.fn(), stop: vi.fn() };
+    const createLive = vi.spyOn(formatter, "create_streaming_live").mockReturnValue(nextSession);
+    const printPanel = vi.spyOn(formatter, "print_panel").mockImplementation(() => {});
+
+    formatter._streaming_live = activeSession;
+    try {
+      formatter.pause_live_updates();
+
+      expect(activeSession.stop).toHaveBeenCalledTimes(1);
+      expect(formatter._streaming_live).toBeNull();
+
+      formatter.pause_live_updates();
+      formatter.resume_live_updates();
+      formatter.handle_llm_stream_chunk("chunk after resume", LLMCallType.LLM_CALL);
+
+      expect(formatter._streaming_live).toBe(nextSession);
+      expect(nextSession.start).toHaveBeenCalledTimes(1);
+      expect(createLive).toHaveBeenCalledTimes(1);
+    } finally {
+      printPanel.mockRestore();
+      createLive.mockRestore();
+    }
+  });
+
   it("emits crew, task, and tool lifecycle events in execution order", async () => {
     const seen: string[] = [];
     const offHandlers = [
