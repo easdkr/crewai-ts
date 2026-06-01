@@ -25346,7 +25346,7 @@ describe("streaming output", () => {
     expect(runCount).toBe(0);
   });
 
-  it("exposes upstream-style streaming async iterator helper", async () => {
+  it("exposes upstream-style streaming async iterator helpers", async () => {
     const streaming = new FlowStreamingOutput(async () => {
       await Promise.resolve();
       return "async helper";
@@ -25360,6 +25360,12 @@ describe("streaming output", () => {
     expect(chunks.map((chunk) => chunk.content)).toEqual(["async helper"]);
     expect(streaming.result).toBe("async helper");
     expect(streaming.is_completed).toBe(true);
+
+    const replayed: string[] = [];
+    for await (const chunk of streaming.__aiter__()) {
+      replayed.push(chunk.content);
+    }
+    expect(replayed).toEqual(["async helper"]);
   });
 
   it("exposes upstream-style streaming result setters", () => {
