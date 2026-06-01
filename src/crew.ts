@@ -325,6 +325,13 @@ export class Crew {
       ?? new TaskOutputStorageHandler();
     this.task_output_storage_handler = this.taskOutputStorageHandler;
     this.checkConfig();
+    this.validateTasks();
+    this.validateEndWithAtMostOneAsyncTask();
+    this.validateMustHaveNonConditionalTask();
+    this.validateFirstTask();
+    this.validateAsyncTasksNotAsync();
+    this.validateAsyncTaskCannotIncludeSequentialAsyncTasksInContext();
+    this.validateContextNoFutureTasks();
   }
 
   static async fromCheckpoint(config: CheckpointConfig): Promise<Crew> {
@@ -554,7 +561,7 @@ export class Crew {
   validateTasks(): this {
     if (this.process === Process.sequential) {
       for (const task of this.tasks) {
-        if (task.agent === null && this.agents.length === 0) {
+        if (task.agent === null) {
           throw new Error(`Sequential process error: Agent is missing in the task with the following description: ${task.description}`);
         }
       }

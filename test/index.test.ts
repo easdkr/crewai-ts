@@ -19993,7 +19993,7 @@ describe("async task execution", () => {
     expect(events.indexOf("sync:start")).toBeGreaterThan(events.indexOf("second:end"));
   });
 
-  it("rejects crews ending with more than one async task", async () => {
+  it("rejects crews ending with more than one async task", () => {
     const agent = new Agent({
       role: "Worker",
       goal: "Run tasks",
@@ -20012,11 +20012,11 @@ describe("async task execution", () => {
       asyncExecution: true,
     });
 
-    await expect(new Crew({ agents: [agent], tasks: [first, second] }).kickoff())
-      .rejects.toThrow("at most one asynchronous task");
+    expect(() => new Crew({ agents: [agent], tasks: [first, second] }))
+      .toThrow("at most one asynchronous task");
   });
 
-  it("rejects context dependencies on future tasks", async () => {
+  it("rejects context dependencies on future tasks", () => {
     const agent = new Agent({
       role: "Worker",
       goal: "Run tasks",
@@ -20034,8 +20034,8 @@ describe("async task execution", () => {
       context: [future],
     });
 
-    await expect(new Crew({ agents: [agent], tasks: [current, future] }).kickoff())
-      .rejects.toThrow("future task");
+    expect(() => new Crew({ agents: [agent], tasks: [current, future] }))
+      .toThrow("future task");
   });
 });
 
@@ -20142,7 +20142,7 @@ describe("conditional tasks", () => {
     ]);
   });
 
-  it("validates conditional task placement and async execution constraints", async () => {
+  it("validates conditional task placement and async execution constraints", () => {
     const researcher = new Agent({
       role: "Researcher",
       goal: "Find facts",
@@ -20161,11 +20161,11 @@ describe("conditional tasks", () => {
       agent: researcher,
     });
 
-    await expect(new Crew({ agents: [researcher], tasks: [conditional] }).kickoff())
-      .rejects.toThrow("Crew must include at least one non-conditional task");
-    await expect(new Crew({ agents: [researcher], tasks: [conditional, normal] }).kickoff())
-      .rejects.toThrow("The first task cannot be a ConditionalTask");
-    await expect(new Crew({
+    expect(() => new Crew({ agents: [researcher], tasks: [conditional] }))
+      .toThrow("Crew must include at least one non-conditional task");
+    expect(() => new Crew({ agents: [researcher], tasks: [conditional, normal] }))
+      .toThrow("The first task cannot be a ConditionalTask");
+    expect(() => new Crew({
       agents: [researcher],
       tasks: [normal, new ConditionalTask({
         description: "async conditional",
@@ -20174,7 +20174,7 @@ describe("conditional tasks", () => {
         asyncExecution: true,
         condition: () => true,
       })],
-    }).kickoff()).rejects.toThrow("ConditionalTask cannot be executed asynchronously");
+    })).toThrow("Conditional Task: async conditional, cannot be executed asynchronously");
   });
 });
 
@@ -22741,15 +22741,23 @@ describe("crew memory reset", () => {
   });
 
   it("sets trigger context injection on the first task through the upstream helper", () => {
+    const agent = new Agent({
+      role: "Trigger Agent",
+      goal: "Handle trigger inputs",
+      backstory: "Runs trigger helper tests",
+    });
     const firstTask = new Task({
       description: "Handle trigger",
       expectedOutput: "Handled",
+      agent,
     });
     const secondTask = new Task({
       description: "Follow up",
       expectedOutput: "Done",
+      agent,
     });
     const crewInstance = new Crew({
+      agents: [agent],
       tasks: [firstTask, secondTask],
       checkpoint_inputs: {
         crewai_trigger_payload: { source: "webhook" },
