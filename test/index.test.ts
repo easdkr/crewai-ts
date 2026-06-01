@@ -9159,6 +9159,41 @@ class FakeChromaClient {
   }
 }
 
+class FakeAsyncChromaClient {
+  readonly collections = new Map<string, FakeChromaCollection>();
+
+  async create_collection(options: { name: string }): Promise<FakeChromaCollection> {
+    await Promise.resolve();
+    if (this.collections.has(options.name)) {
+      throw new Error(`Collection ${options.name} already exists`);
+    }
+    const collection = new FakeChromaCollection();
+    this.collections.set(options.name, collection);
+    return collection;
+  }
+
+  async get_or_create_collection(options: { name: string }): Promise<FakeChromaCollection> {
+    await Promise.resolve();
+    const existing = this.collections.get(options.name);
+    if (existing) {
+      return existing;
+    }
+    const collection = new FakeChromaCollection();
+    this.collections.set(options.name, collection);
+    return collection;
+  }
+
+  async delete_collection(options: { name: string }): Promise<void> {
+    await Promise.resolve();
+    this.collections.delete(options.name);
+  }
+
+  async reset(): Promise<void> {
+    await Promise.resolve();
+    this.collections.clear();
+  }
+}
+
 class FakeQdrantClient {
   readonly collections = new Map<string, Map<string, FakeDocument>>();
 
@@ -9475,21 +9510,40 @@ describe("RAG configuration and factories", () => {
       { id: "a", content: "CrewAI storage parity updated", metadata: { topic: "storage" }, score: 1 },
     ]);
 
-    await client.adelete_collection({ collection_name: "docs" });
-    await client.aget_or_create_collection({ collection_name: "docs" });
-    await client.aadd_documents({
+    client.delete_collection({ collection_name: "docs" });
+    expect(fake.collections.has("docs")).toBe(false);
+
+    const asyncFake = new FakeAsyncChromaClient();
+    const asyncClient = new ChromaDBClient(asyncFake, (texts: readonly string[]) => texts.map((text) => [text.length]), 2, 0.5, 1);
+    await asyncClient.aget_or_create_collection({ collection_name: "docs" });
+    await asyncClient.aadd_documents({
       collection_name: "docs",
       documents: [{ content: "Async Chroma document", metadata: { mode: "async" } }],
     });
 
-    expect(await client.asearch({
+    expect(await asyncClient.asearch({
       collection_name: "docs",
       query: "Chroma",
       metadata_filter: { mode: "async" },
     })).toHaveLength(1);
 
-    await client.areset();
-    expect(fake.collections.size).toBe(0);
+    await asyncClient.areset();
+    expect(asyncFake.collections.size).toBe(0);
+  });
+
+  it("raises upstream ChromaDB client method mismatch errors for wrong sync or async clients", async () => {
+    const syncClient = new ChromaDBClient(new FakeChromaClient(), (texts: readonly string[]) => texts.map((text) => [text.length]));
+    const asyncClient = new ChromaDBClient(new FakeAsyncChromaClient(), (texts: readonly string[]) => texts.map((text) => [text.length]));
+
+    expect(() => {
+      asyncClient.create_collection({ collection_name: "docs" });
+    }).toThrow("Synchronous method create_collection() requires a ClientAPI. Use acreate_collection() for AsyncClientAPI.");
+    await expect(syncClient.acreate_collection({ collection_name: "docs" })).rejects.toThrow(
+      "Asynchronous method acreate_collection() requires an AsyncClientAPI. Use create_collection() for ClientAPI.",
+    );
+    await expect(syncClient.asearch({ collection_name: "docs", query: "CrewAI" })).rejects.toThrow(
+      "Asynchronous method asearch() requires an AsyncClientAPI. Use search() for ClientAPI.",
+    );
   });
 
   it("uses upstream ChromaDB collection create and get payload shapes", () => {
@@ -9523,12 +9577,15 @@ describe("RAG configuration and factories", () => {
 
   it("uses upstream ChromaDB delete collection payload shape", async () => {
     const deleteCollection = vi.fn();
-    const asyncDeleteCollection = vi.fn(() => Promise.resolve());
+    const asyncDeleteCollection = vi.fn();
     const client = new ChromaDBClient({
       delete_collection: deleteCollection,
     }, (texts: readonly string[]) => texts.map((text) => [text.length]));
     const asyncClient = new ChromaDBClient({
-      delete_collection: asyncDeleteCollection,
+      async delete_collection(options: { name: string }) {
+        await Promise.resolve();
+        asyncDeleteCollection(options);
+      },
     }, (texts: readonly string[]) => texts.map((text) => [text.length]));
 
     client.delete_collection({ collection_name: "docs", ignored: true });
@@ -9678,11 +9735,16 @@ describe("RAG configuration and factories", () => {
       },
     ]);
 
-    await storage.asave(["Async knowledge document"]);
-    expect(await storage.asearch(["Async"], 5, {}, 0.1)).toHaveLength(1);
+    const asyncFake = new FakeAsyncChromaClient();
+    const asyncClient = new ChromaDBClient(asyncFake, (texts: readonly string[]) => texts.map((text) => [text.length]));
+    const asyncStorage = new KnowledgeStorage({ client: asyncClient, collectionName: "docs" });
+    await asyncStorage.asave(["Async knowledge document"]);
+    expect(await asyncStorage.asearch(["Async"], 5, {}, 0.1)).toHaveLength(1);
 
-    await storage.areset();
+    storage.reset();
     expect(fake.collections.has("knowledge_docs")).toBe(false);
+    await asyncStorage.areset();
+    expect(asyncFake.collections.has("knowledge_docs")).toBe(false);
   });
 
   it("formats upstream SearchResult-like objects as knowledge context", () => {
@@ -9789,16 +9851,24 @@ describe("RAG configuration and factories", () => {
     });
 
     expect(knowledge.query(["storage-backed"], { scoreThreshold: 0.1 })).toHaveLength(1);
-    expect(await knowledge.aquery(["CrewAI"], { scoreThreshold: 0.1 })).toHaveLength(1);
 
     knowledge.reset();
     expect(knowledge.query(["CrewAI"], { scoreThreshold: 0.1 })).toEqual([]);
 
-    await knowledge.aadd_sources();
-    expect(await knowledge.aquery(["knowledge"], { scoreThreshold: 0.1 })).toHaveLength(1);
+    const asyncStorage = new KnowledgeStorage({
+      client: new ChromaDBClient(new FakeAsyncChromaClient(), (texts: readonly string[]) => texts.map((text) => [text.length])),
+      collectionName: "docs",
+    });
+    const asyncKnowledge = new Knowledge({ storage: asyncStorage });
+    await asyncKnowledge.aadd_sources([new StringKnowledgeSource("CrewAI async storage-backed knowledge")]);
 
-    await knowledge.areset();
-    expect(await knowledge.aquery(["knowledge"], { scoreThreshold: 0.1 })).toEqual([]);
+    expect(await asyncKnowledge.aquery(["CrewAI"], { scoreThreshold: 0.1 })).toHaveLength(1);
+
+    await asyncKnowledge.areset();
+    expect(await asyncKnowledge.aquery(["knowledge"], { scoreThreshold: 0.1 })).toEqual([]);
+
+    await asyncKnowledge.aadd_sources([new StringKnowledgeSource("CrewAI async storage-backed knowledge")]);
+    expect(await asyncKnowledge.aquery(["knowledge"], { scoreThreshold: 0.1 })).toHaveLength(1);
   });
 
   it("passes upstream snake_case Knowledge query options to storage search", async () => {
@@ -9887,8 +9957,16 @@ describe("RAG configuration and factories", () => {
     expect(storage.search(["alias"], 5, {}, 0.1)).toHaveLength(1);
 
     storage.reset();
-    await source.aadd();
-    expect(await storage.asearch(["CrewAI"], 5, {}, 0.1)).toHaveLength(1);
+    const asyncStorage = new KnowledgeStorage({
+      client: new ChromaDBClient(new FakeAsyncChromaClient(), (texts: readonly string[]) => texts.map((text) => [text.length])),
+      collectionName: "source_docs",
+    });
+    const asyncSource = new StringKnowledgeSource({
+      content: "CrewAI source add alias",
+      storage: asyncStorage,
+    });
+    await asyncSource.aadd();
+    expect(await asyncStorage.asearch(["CrewAI"], 5, {}, 0.1)).toHaveLength(1);
     expect(source.get_embeddings()).toEqual([]);
   });
 

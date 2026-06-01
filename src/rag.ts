@@ -2267,6 +2267,7 @@ export class ChromaDBClient {
   }
 
   create_collection(params: BaseCollectionParams): void {
+    this.ensureSyncClient("create_collection", "acreate_collection");
     this.callClient("create_collection", "createCollection", this.chromaCollectionPayload(params, true));
   }
 
@@ -2275,10 +2276,12 @@ export class ChromaDBClient {
   }
 
   async acreate_collection(params: BaseCollectionParams): Promise<void> {
+    this.ensureAsyncClient("acreate_collection", "create_collection");
     await this.callClientAsync("create_collection", "createCollection", this.chromaCollectionPayload(params, true));
   }
 
   get_or_create_collection(params: BaseCollectionParams): unknown {
+    this.ensureSyncClient("get_or_create_collection", "aget_or_create_collection");
     return this.callClient("get_or_create_collection", "getOrCreateCollection", this.chromaCollectionPayload(params, false));
   }
 
@@ -2287,10 +2290,12 @@ export class ChromaDBClient {
   }
 
   async aget_or_create_collection(params: BaseCollectionParams): Promise<unknown> {
+    this.ensureAsyncClient("aget_or_create_collection", "get_or_create_collection");
     return this.callClientAsync("get_or_create_collection", "getOrCreateCollection", this.chromaCollectionPayload(params, false));
   }
 
   add_documents(params: BaseCollectionAddParams): void {
+    this.ensureSyncClient("add_documents", "aadd_documents");
     if (params.documents.length === 0) {
       throw new Error("Documents list cannot be empty");
     }
@@ -2316,6 +2321,7 @@ export class ChromaDBClient {
   }
 
   async aadd_documents(params: BaseCollectionAddParams): Promise<void> {
+    this.ensureAsyncClient("aadd_documents", "add_documents");
     if (params.documents.length === 0) {
       throw new Error("Documents list cannot be empty");
     }
@@ -2337,6 +2343,7 @@ export class ChromaDBClient {
   }
 
   search(params: BaseCollectionSearchParams): SearchResult[] {
+    this.ensureSyncClient("search", "asearch");
     const normalized = normalizeSearchParams(params, this.defaultLimit, this.defaultScoreThreshold);
     const collection = this.callClient("get_or_create_collection", "getOrCreateCollection", {
       name: sanitizeCollectionName(normalized.collection_name),
@@ -2353,6 +2360,7 @@ export class ChromaDBClient {
   }
 
   async asearch(params: BaseCollectionSearchParams): Promise<SearchResult[]> {
+    this.ensureAsyncClient("asearch", "search");
     const normalized = normalizeSearchParams(params, this.defaultLimit, this.defaultScoreThreshold);
     const collection = await this.callClientAsync("get_or_create_collection", "getOrCreateCollection", {
       name: sanitizeCollectionName(normalized.collection_name),
@@ -2369,6 +2377,7 @@ export class ChromaDBClient {
   }
 
   delete_collection(params: BaseCollectionParams): void {
+    this.ensureSyncClient("delete_collection", "adelete_collection");
     this.callClient("delete_collection", "deleteCollection", { name: sanitizeCollectionName(collectionNameFrom(params)) });
   }
 
@@ -2377,10 +2386,12 @@ export class ChromaDBClient {
   }
 
   async adelete_collection(params: BaseCollectionParams): Promise<void> {
+    this.ensureAsyncClient("adelete_collection", "delete_collection");
     await this.callClientAsync("delete_collection", "deleteCollection", { name: sanitizeCollectionName(collectionNameFrom(params)) });
   }
 
   reset(): void {
+    this.ensureSyncClient("reset", "areset");
     if (typeof this.client.reset === "function") {
       (this.client.reset as () => void)();
       return;
@@ -2391,6 +2402,7 @@ export class ChromaDBClient {
   }
 
   async areset(): Promise<void> {
+    this.ensureAsyncClient("areset", "reset");
     if (typeof this.client.reset === "function") {
       await (this.client.reset as () => void | Promise<void>)();
       return;
@@ -2404,6 +2416,18 @@ export class ChromaDBClient {
 
   private async callClientAsync(snakeName: string, camelName: string, params: Record<string, unknown>): Promise<unknown> {
     return callMethodAsync(this.client, snakeName, camelName, params);
+  }
+
+  private ensureSyncClient(methodName: string, altMethod: string): void {
+    if (isChromaAsyncClient(this.client)) {
+      throw new TypeError(`Synchronous method ${methodName}() requires a ClientAPI. Use ${altMethod}() for AsyncClientAPI.`);
+    }
+  }
+
+  private ensureAsyncClient(methodName: string, altMethod: string): void {
+    if (!isChromaAsyncClient(this.client)) {
+      throw new TypeError(`Asynchronous method ${methodName}() requires an AsyncClientAPI. Use ${altMethod}() for ClientAPI.`);
+    }
   }
 
   private chromaCollectionPayload(params: BaseCollectionParams, includeGetOrCreate: boolean): Record<string, unknown> {
@@ -2791,6 +2815,28 @@ function callMethod(target: Record<string, unknown>, snakeName: string, camelNam
 
 function callMethodAsync(target: Record<string, unknown>, snakeName: string, camelName: string, params?: unknown): Promise<unknown> {
   return Promise.resolve(callMethod(target, snakeName, camelName, params));
+}
+
+function isAsyncFunction(value: unknown): boolean {
+  return typeof value === "function" && value.constructor.name === "AsyncFunction";
+}
+
+function isChromaAsyncClient(client: unknown): boolean {
+  if (!isRecord(client)) {
+    return false;
+  }
+  if (client.constructor.name.includes("Async")) {
+    return true;
+  }
+  return [
+    "create_collection",
+    "createCollection",
+    "get_or_create_collection",
+    "getOrCreateCollection",
+    "delete_collection",
+    "deleteCollection",
+    "reset",
+  ].some((methodName) => isAsyncFunction(client[methodName]));
 }
 
 function callEmbeddingFunction(embeddingFunction: SimpleEmbeddingFunction, text: string): unknown {

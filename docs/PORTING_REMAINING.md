@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 743 passing tests.
+- Test suite: 744 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -120,6 +120,7 @@ When more goal budget is available, continue from the behavioral parity audits b
 - `KnowledgeStorage.reset` / `areset` now mirror upstream best-effort reset semantics by ignoring client deletion failures after attempting the reset.
 - RAG optional-provider placeholders now mirror upstream missing optional import behavior by raising clear provider-specific errors instead of silently creating shim configs.
 - `QdrantClient` now mirrors upstream sync/async client mismatch behavior by raising `ClientMethodMismatchError` when sync methods receive async clients or async methods receive sync clients.
+- `ChromaDBClient` now mirrors upstream sync/async client mismatch behavior by raising clear TypeErrors when sync methods receive async clients or async methods receive sync clients.
 - `ChromaDBClient.add_documents` / `aadd_documents` now mirror upstream upsert payload semantics by passing `metadatas: null` when an entire batch has no metadata.
 - `ChromaDBClient.add_documents` / `aadd_documents` now use upstream collection lookup payloads and avoid forwarding add-only fields such as `documents` or `batch_size` to the Chroma client.
 - `ChromaDBClient.search` / `asearch` now use the upstream default Chroma include ordering: `metadatas`, `documents`, then `distances`.
