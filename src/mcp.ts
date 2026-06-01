@@ -934,7 +934,54 @@ export class MCPToolResolver {
     }
   }
 
-  private async resolveNative(config: MCPServerConfig): Promise<BaseTool[]> {
+  async disconnectAll(): Promise<void> {
+    await this.cleanup();
+  }
+
+  async _disconnect_all(): Promise<void> {
+    await this.disconnectAll();
+  }
+
+  static parseAmpRef(mcpConfig: string): [string, string | null] {
+    const bare = mcpConfig.startsWith("crewai-amp:") ? mcpConfig.slice("crewai-amp:".length) : mcpConfig;
+    const [slug = "", specificTool = ""] = bare.split("#", 2);
+    return [slug, specificTool || null];
+  }
+
+  static _parse_amp_ref(mcpConfig: string): [string, string | null] {
+    return MCPToolResolver.parseAmpRef(mcpConfig);
+  }
+
+  parseAmpRef(mcpConfig: string): [string, string | null] {
+    return MCPToolResolver.parseAmpRef(mcpConfig);
+  }
+
+  _parse_amp_ref(mcpConfig: string): [string, string | null] {
+    return this.parseAmpRef(mcpConfig);
+  }
+
+  fetchAmpMcpConfigs(slugs: readonly string[]): Record<string, Record<string, unknown>> {
+    void slugs;
+    this.log("debug", "AMP MCP config fetching is not available in the local TypeScript runtime.");
+    return {};
+  }
+
+  _fetch_amp_mcp_configs(slugs: readonly string[]): Record<string, Record<string, unknown>> {
+    return this.fetchAmpMcpConfigs(slugs);
+  }
+
+  async resolveAmp(ampRefs: readonly [string, string | null][]): Promise<[BaseTool[], MCPClient[]]> {
+    await Promise.resolve();
+    void ampRefs;
+    this.log("debug", "AMP MCP resolution is not available in the local TypeScript runtime.");
+    return [[], []];
+  }
+
+  async _resolve_amp(ampRefs: readonly [string, string | null][]): Promise<[BaseTool[], MCPClient[]]> {
+    return await this.resolveAmp(ampRefs);
+  }
+
+  async resolveNative(config: MCPServerConfig): Promise<BaseTool[]> {
     const serverName = serverNameForConfig(config);
     const clientOptions = {
       cacheToolsList: config.cacheToolsList,
@@ -967,7 +1014,11 @@ export class MCPToolResolver {
     }
   }
 
-  private async resolveExternal(mcpRef: string): Promise<BaseTool[]> {
+  async _resolve_native(config: MCPServerConfig): Promise<[BaseTool[], MCPClient[]]> {
+    return [await this.resolveNative(config), []];
+  }
+
+  async resolveExternal(mcpRef: string): Promise<BaseTool[]> {
     const [serverUrl, specificTool] = splitMCPRef(mcpRef);
     const serverName = extractServerName(serverUrl);
     const client = new MCPClient(new HTTPTransport({ url: serverUrl }));
@@ -994,6 +1045,178 @@ export class MCPToolResolver {
     } finally {
       await client.disconnect();
     }
+  }
+
+  async _resolve_external(mcpRef: string): Promise<BaseTool[]> {
+    return await this.resolveExternal(mcpRef);
+  }
+
+  static createTransport(config: MCPServerConfig): [BaseTransport, string] {
+    return [transportForConfig(config), serverNameForConfig(config)];
+  }
+
+  static _create_transport(config: MCPServerConfig): [BaseTransport, string] {
+    return MCPToolResolver.createTransport(config);
+  }
+
+  createTransport(config: MCPServerConfig): [BaseTransport, string] {
+    return MCPToolResolver.createTransport(config);
+  }
+
+  _create_transport(config: MCPServerConfig): [BaseTransport, string] {
+    return this.createTransport(config);
+  }
+
+  static buildMcpConfigFromDict(config: Record<string, unknown>): MCPServerConfig {
+    const type = typeof config.type === "string" ? config.type : "http";
+    const url = typeof config.url === "string" ? config.url : "";
+    const headers = isPlainRecord(config.headers) ? stringRecord(config.headers) : null;
+    const cacheToolsList = config.cache_tools_list === true || config.cacheToolsList === true;
+    if (type === "sse") {
+      return new MCPServerSSE({ url, headers, cacheToolsList });
+    }
+    return new MCPServerHTTP({
+      url,
+      headers,
+      streamable: config.streamable !== false,
+      cacheToolsList,
+    });
+  }
+
+  static _build_mcp_config_from_dict(config: Record<string, unknown>): MCPServerConfig {
+    return MCPToolResolver.buildMcpConfigFromDict(config);
+  }
+
+  buildMcpConfigFromDict(config: Record<string, unknown>): MCPServerConfig {
+    return MCPToolResolver.buildMcpConfigFromDict(config);
+  }
+
+  _build_mcp_config_from_dict(config: Record<string, unknown>): MCPServerConfig {
+    return this.buildMcpConfigFromDict(config);
+  }
+
+  static extractServerName(serverUrl: string): string {
+    return extractServerName(serverUrl);
+  }
+
+  static _extract_server_name(serverUrl: string): string {
+    return extractServerName(serverUrl);
+  }
+
+  extractServerName(serverUrl: string): string {
+    return extractServerName(serverUrl);
+  }
+
+  _extract_server_name(serverUrl: string): string {
+    return this.extractServerName(serverUrl);
+  }
+
+  async setupClientAndListTools(client: MCPClient): Promise<MCPToolDefinition[]> {
+    if (!client.connected) {
+      await client.connect();
+    }
+    try {
+      return await client.listTools();
+    } finally {
+      await client.disconnect();
+    }
+  }
+
+  async _setup_client_and_list_tools(client: MCPClient): Promise<MCPToolDefinition[]> {
+    return await this.setupClientAndListTools(client);
+  }
+
+  getMcpToolSchemas(serverParams: Record<string, unknown>): Record<string, Record<string, unknown>> {
+    const url = typeof serverParams.url === "string" ? serverParams.url : "";
+    if (!url) {
+      return {};
+    }
+    const cached = mcpSchemaCache.get(url);
+    if (cached && Date.now() - cached.createdAt < MCP_SCHEMA_CACHE_TTL_MS) {
+      return Object.fromEntries(cached.tools.map((tool) => [tool.name ?? "", tool]));
+    }
+    return {};
+  }
+
+  _get_mcp_tool_schemas(serverParams: Record<string, unknown>): Record<string, Record<string, unknown>> {
+    return this.getMcpToolSchemas(serverParams);
+  }
+
+  async getMcpToolSchemasAsync(serverParams: Record<string, unknown>): Promise<Record<string, Record<string, unknown>>> {
+    return await Promise.resolve(this.getMcpToolSchemas(serverParams));
+  }
+
+  async _get_mcp_tool_schemas_async(serverParams: Record<string, unknown>): Promise<Record<string, Record<string, unknown>>> {
+    return await this.getMcpToolSchemasAsync(serverParams);
+  }
+
+  async retryMcpDiscovery(
+    operation: (serverUrl: string) => Promise<Record<string, Record<string, unknown>>>,
+    serverUrl: string,
+  ): Promise<Record<string, Record<string, unknown>>> {
+    return await operation(serverUrl);
+  }
+
+  async _retry_mcp_discovery(
+    operation: (serverUrl: string) => Promise<Record<string, Record<string, unknown>>>,
+    serverUrl: string,
+  ): Promise<Record<string, Record<string, unknown>>> {
+    return await this.retryMcpDiscovery(operation, serverUrl);
+  }
+
+  async attemptMcpDiscovery(
+    operation: (serverUrl: string) => Promise<Record<string, Record<string, unknown>>>,
+    serverUrl: string,
+  ): Promise<[Record<string, Record<string, unknown>> | null, string, boolean]> {
+    try {
+      return [await operation(serverUrl), "", false];
+    } catch (error) {
+      const message = formatMCPError(error);
+      const lower = message.toLowerCase();
+      if (lower.includes("authentication") || lower.includes("unauthorized")) {
+        return [null, `Authentication failed for MCP server: ${message}`, false];
+      }
+      if (lower.includes("connection") || lower.includes("network") || lower.includes("timeout")) {
+        return [null, `Network connection failed: ${message}`, true];
+      }
+      return [null, `MCP discovery error: ${message}`, false];
+    }
+  }
+
+  async _attempt_mcp_discovery(
+    operation: (serverUrl: string) => Promise<Record<string, Record<string, unknown>>>,
+    serverUrl: string,
+  ): Promise<[Record<string, Record<string, unknown>> | null, string, boolean]> {
+    return await this.attemptMcpDiscovery(operation, serverUrl);
+  }
+
+  async discoverMcpToolsWithTimeout(serverUrl: string): Promise<Record<string, Record<string, unknown>>> {
+    return await withTimeout(this.discoverMcpTools(serverUrl), MCP_DISCOVERY_TIMEOUT, "MCP discovery timed out");
+  }
+
+  async _discover_mcp_tools_with_timeout(serverUrl: string): Promise<Record<string, Record<string, unknown>>> {
+    return await this.discoverMcpToolsWithTimeout(serverUrl);
+  }
+
+  async discoverMcpTools(serverUrl: string): Promise<Record<string, Record<string, unknown>>> {
+    await Promise.resolve();
+    void serverUrl;
+    return {};
+  }
+
+  async _discover_mcp_tools(serverUrl: string): Promise<Record<string, Record<string, unknown>>> {
+    return await this.discoverMcpTools(serverUrl);
+  }
+
+  jsonSchemaToPydantic(toolName: string, jsonSchema: Record<string, unknown>): Record<string, unknown> {
+    return {
+      name: `${toolName.replaceAll("-", "_").replaceAll(" ", "_")}Schema`,
+      schema: jsonSchema,
+    };
+  }
+
+  _json_schema_to_pydantic(toolName: string, jsonSchema: Record<string, unknown>): Record<string, unknown> {
+    return this.jsonSchemaToPydantic(toolName, jsonSchema);
   }
 
   private log(level: string, message: string): void {
@@ -1068,6 +1291,12 @@ function cleanToolArguments(argumentsObject: Record<string, unknown>): Record<st
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+function stringRecord(value: Record<string, unknown>): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(value).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
+  );
 }
 
 function stringifyMCPToolResult(result: unknown): string {
@@ -1160,7 +1389,9 @@ function serverNameForConfig(config: MCPServerConfig): string {
 function extractServerName(url: string): string {
   try {
     const parsed = new URL(url);
-    return sanitizeToolName(parsed.hostname.replace(/^www\./, "").split(".")[0] ?? "mcp_server");
+    const domain = parsed.hostname.replace(/^www\./, "").replaceAll(".", "_");
+    const path = parsed.pathname.replaceAll("/", "_").replace(/^_+|_+$/g, "");
+    return sanitizeToolName(path ? `${domain}_${path}` : domain);
   } catch {
     return sanitizeToolName(url.split("/").filter(Boolean).at(-1) ?? "mcp_server");
   }

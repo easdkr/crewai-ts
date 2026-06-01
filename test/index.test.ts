@@ -2452,6 +2452,49 @@ describe("mcp configuration", () => {
     }
   });
 
+  it("exposes upstream-style MCP resolver helpers", async () => {
+    const resolver = new MCPToolResolver({ logger: { log: vi.fn() } });
+    const stdioConfig = new MCPServerStdio({ command: "node", args: ["server.js"] });
+    const [stdioTransport, stdioName] = resolver._create_transport(stdioConfig);
+    const httpConfig = resolver._build_mcp_config_from_dict({
+      type: "http",
+      url: "https://api.example.com/mcp",
+      headers: { Authorization: "Bearer token", ignored: 1 },
+      streamable: false,
+      cache_tools_list: true,
+    });
+    const sseConfig = MCPToolResolver._build_mcp_config_from_dict({
+      type: "sse",
+      url: "https://sse.example.com/events",
+    });
+
+    expect(MCPToolResolver._parse_amp_ref("crewai-amp:notion#search")).toEqual(["notion", "search"]);
+    expect(resolver._parse_amp_ref("github")).toEqual(["github", null]);
+    expect(stdioTransport).toBeInstanceOf(StdioTransport);
+    expect(stdioName).toBe("node_server_js");
+    expect(httpConfig).toBeInstanceOf(MCPServerHTTP);
+    expect((httpConfig as MCPServerHTTP).streamable).toBe(false);
+    expect((httpConfig as MCPServerHTTP).headers).toEqual({ Authorization: "Bearer token" });
+    expect(sseConfig).toBeInstanceOf(MCPServerSSE);
+    expect(resolver._extract_server_name("https://api.example.com/mcp/v1")).toBe("api_example_com_mcp_v1");
+    expect(resolver._json_schema_to_pydantic("search-tool", { type: "object" })).toEqual({
+      name: "search_toolSchema",
+      schema: { type: "object" },
+    });
+    await expect(resolver._retry_mcp_discovery(async () => await Promise.resolve({ search: { description: "Search" } }), "https://api.example.com/mcp"))
+      .resolves.toEqual({ search: { description: "Search" } });
+    await expect(resolver._attempt_mcp_discovery(async () => {
+      await Promise.resolve();
+      throw new Error("network down");
+    }, "https://api.example.com/mcp")).resolves.toEqual([
+      null,
+      "Network connection failed: network down",
+      true,
+    ]);
+    await expect(resolver._resolve_amp([["github", null]])).resolves.toEqual([[], []]);
+    await expect(resolver._get_mcp_tool_schemas_async({ url: "https://api.example.com/mcp" })).resolves.toEqual({});
+  });
+
   it("models MCP server configs and transport types with SDK-backed transports", async () => {
     const toolFilter = createStaticToolFilter(["read_file"]);
     const stdio = new MCPServerStdio({
