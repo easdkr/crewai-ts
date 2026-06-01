@@ -712,9 +712,11 @@ export type FlowInputHistoryEntry = {
   message: string;
   response: string | null;
   methodName: string | null;
+  method_name?: string | null;
   timestamp: Date;
   metadata: Record<string, unknown> | null;
   responseMetadata: Record<string, unknown> | null;
+  response_metadata?: Record<string, unknown> | null;
 };
 
 export type HumanFeedbackContext = {
@@ -1992,6 +1994,14 @@ export class Flow<TState extends object = Record<string, unknown>> {
     return this.runtimeInputHistory.map((entry) => ({ ...entry }));
   }
 
+  get input_history(): readonly FlowInputHistoryEntry[] {
+    return this.inputHistory;
+  }
+
+  get _input_history(): readonly FlowInputHistoryEntry[] {
+    return this.inputHistory;
+  }
+
   toExecutionData(): FlowExecutionData {
     const executionMethods = this.runtimeExecutionTrace.map((entry, index): FlowExecutionMethodData => ({
       flowMethod: {
@@ -2500,9 +2510,11 @@ export class Flow<TState extends object = Record<string, unknown>> {
       message,
       response,
       methodName,
+      method_name: methodName,
       timestamp: new Date(),
       metadata,
       responseMetadata,
+      response_metadata: responseMetadata,
     });
   }
 

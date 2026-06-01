@@ -16416,6 +16416,37 @@ describe("flow runtime", () => {
     });
   });
 
+  it("exposes upstream snake_case ask input history", async () => {
+    class AskHistoryFlow extends Flow {
+      async gather() {
+        await this.ask("Topic?");
+        return "done";
+      }
+    }
+
+    const flow = new AskHistoryFlow({
+      inputProvider: {
+        requestInput: () => ({ text: "CrewAI", metadata: { responder: "tester" } }),
+      },
+    });
+    decorateMethod(AskHistoryFlow, "gather", start() as unknown as Decorator).call(flow);
+    const before = new Date();
+
+    await expect(flow.kickoff()).resolves.toBe("done");
+
+    const history = (flow as unknown as { _input_history: Array<Record<string, unknown>> })._input_history;
+    expect(history).toHaveLength(1);
+    expect(history[0]).toMatchObject({
+      message: "Topic?",
+      response: "CrewAI",
+      method_name: "gather",
+      metadata: null,
+      response_metadata: { responder: "tester" },
+    });
+    expect(history[0]?.timestamp).toBeInstanceOf(Date);
+    expect((history[0]?.timestamp as Date).getTime()).toBeGreaterThanOrEqual(before.getTime());
+  });
+
   it("uses global flowConfig input provider as fallback", async () => {
     class AskFlow extends Flow {
       gather() {
