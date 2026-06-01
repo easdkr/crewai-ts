@@ -10752,10 +10752,16 @@ describe("core crew runtime", () => {
     expect(memoryCopy.memory).toBe(resolvedMemory);
     expect(memoryCopy.resolvedMemory).toBe(resolvedMemory);
 
-    await crewInstance.train(1, trainingFile, { topic: "CrewAI" });
+    try {
+      await crewInstance.train(1, trainingFile, { topic: "CrewAI" });
+      expect(readFileSync(`${trainingFile}.pkl`, "utf8")).toBe("{}\n");
+      expect(readFileSync(TRAINING_DATA_FILE, "utf8")).toBe("{}\n");
+    } finally {
+      rmSync(`${trainingFile}.pkl`, { force: true });
+      rmSync(TRAINING_DATA_FILE, { force: true });
+    }
     const testResult = await crewInstance.test(1, () => JSON.stringify({ quality: 8 }), { topic: "CrewAI" });
 
-    expect(readFileSync(trainingFile, "utf8")).toContain("\"iterations\": 1");
     expect(testResult).toContain("Task 1");
     expect(events).toEqual(expect.arrayContaining([
       "train-started",

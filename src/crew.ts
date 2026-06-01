@@ -24,7 +24,7 @@ import { addUsageMetrics, createLLM, emptyUsageMetrics, subtractUsageMetrics, ty
 import { Memory, MemoryScope, createMemoryTools } from "./memory.js";
 import { CrewOutput, TaskOutput } from "./outputs.js";
 import { CrewPlanner } from "./planning.js";
-import { CrewEvaluator } from "./evaluators.js";
+import { CrewEvaluator, TaskEvaluator, type TrainingTaskEvaluation } from "./evaluators.js";
 import { RpmController } from "./rpm.js";
 import { coerceSecurityConfig, type Fingerprint, type SecurityConfig } from "./security.js";
 import { Skill, activateSkill, discoverSkills, resolveRegistryRef } from "./skills.js";
@@ -934,15 +934,23 @@ export class Crew {
     }));
     try {
       const trainingCrew = this.copy();
+      await trainingCrew.setupForTraining(filename);
       for (let iteration = 0; iteration < nIterations; iteration += 1) {
+        (trainingCrew as unknown as { _train_iteration: number; trainIteration: number })._train_iteration = iteration;
+        (trainingCrew as unknown as { trainIteration: number }).trainIteration = iteration;
         await trainingCrew.kickoff({ inputs });
       }
-      await mkdir(dirname(filename), { recursive: true });
-      await writeFile(filename, `${JSON.stringify({
-        crew: this.name,
-        iterations: nIterations,
-        generated_at: new Date().toISOString(),
-      }, null, 2)}\n`, "utf8");
+      const trainingData = new CrewTrainingHandler(TRAINING_DATA_FILE).load();
+      const trainingRecords = isPlainRecord(trainingData) ? trainingData : {};
+      const trainedDataHandler = new CrewTrainingHandler(filename);
+      for (const agent of trainingCrew.agents) {
+        const agentId = agentTrainingId(agent);
+        if (!(agentId in trainingRecords)) {
+          continue;
+        }
+        const result = await new TaskEvaluator(agent).evaluateTrainingData(trainingRecords, agentId);
+        trainedDataHandler.saveTrainedData(agent.role, trainingEvaluationToRecord(result));
+      }
       crewaiEventBus.emit(this, new CrewTrainCompletedEvent({
         crewName: this.name,
         crew: this,
@@ -951,6 +959,8 @@ export class Crew {
       }));
     } catch (error) {
       crewaiEventBus.emit(this, new CrewTrainFailedEvent({ crewName: this.name, crew: this, error }));
+      new CrewTrainingHandler(TRAINING_DATA_FILE).clear();
+      new CrewTrainingHandler(filename).clear();
       throw error;
     }
   }
@@ -2855,6 +2865,19 @@ function copyLlm<T extends LLM | string | null>(llm: T): T {
   }
   const prototype = Object.getPrototypeOf(llm) as object | null;
   return Object.assign(Object.create(prototype), llm) as T;
+}
+
+function trainingEvaluationToRecord(result: TrainingTaskEvaluation): Record<string, unknown> {
+  return {
+    suggestions: [...result.suggestions],
+    quality: result.quality,
+    final_summary: result.final_summary ?? result.finalSummary ?? "",
+  };
+}
+
+function agentTrainingId(agent: Agent): string {
+  const id = (agent as unknown as { id?: unknown }).id;
+  return typeof id === "string" || typeof id === "number" ? String(id) : agent.key;
 }
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
