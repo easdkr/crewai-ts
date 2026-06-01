@@ -20030,7 +20030,37 @@ describe("events", () => {
     expect(handler.path).toBe("structured.json");
     expect(() => {
       handler._initialize_path(null as unknown as string);
-    }).toThrow("filePath must be a string or boolean.");
+    }).toThrow("file_path must be a string or boolean.");
+  });
+
+  it("writes file logs with upstream JSON and text semantics", () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "crewai-ts-file-handler-"));
+    try {
+      const textHandler = new FileHandler(join(tempDir, "logs.txt"));
+      textHandler.log({ task_name: "Task", flow: "Flow", message: "done" });
+
+      const textLog = readFileSync(join(tempDir, "logs.txt"), "utf8");
+      expect(textLog).toContain('task_name="Task"');
+      expect(textLog).toContain('flow="Flow"');
+      expect(textLog).toContain('message="done"');
+
+      const jsonHandler = new FileHandler(join(tempDir, "logs.json"));
+      jsonHandler.log({ message: "first" });
+      jsonHandler.log({ level: "INFO" });
+
+      const jsonLog = JSON.parse(readFileSync(join(tempDir, "logs.json"), "utf8")) as Array<Record<string, unknown>>;
+      expect(jsonLog).toHaveLength(2);
+      expect(jsonLog[0]).toMatchObject({ message: "first" });
+      expect(jsonLog[1]).toMatchObject({ level: "INFO" });
+
+      const invalidShapePath = join(tempDir, "invalid-shape.json");
+      writeFileSync(invalidShapePath, "{}\n", "utf8");
+      expect(() => {
+        new FileHandler(invalidShapePath).log({ message: "bad" });
+      }).toThrow("Failed to log message: Existing JSON log data must be an array.");
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
   });
 
   it("exposes the upstream ConsoleFormatter lifecycle surface", () => {

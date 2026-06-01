@@ -1,9 +1,9 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { mkdir, readFile, writeFile, appendFile } from "node:fs/promises";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 
 export type LogEntry = {
   taskName?: string | null;
+  task_name?: string | null;
   task?: string;
   agent?: string;
   status?: string;
@@ -12,6 +12,7 @@ export type LogEntry = {
   message?: string;
   level?: string;
   crew?: string | null;
+  flow?: string | null;
   tool?: string;
   error?: string;
   duration?: number;
@@ -37,36 +38,51 @@ export class FileHandler {
         ? filePath
         : `${filePath}.txt`;
     } else {
-      throw new Error("filePath must be a string or boolean.");
+      throw new Error("file_path must be a string or boolean.");
     }
     this._path = this.path;
   }
 
-  async log(entry: LogEntry): Promise<void> {
-    await mkdir(dirname(this.path), { recursive: true });
-    const logEntry = {
-      timestamp: formatTimestamp(new Date()),
-      ...entry,
-    };
+  log(entry: LogEntry = {}): void {
+    try {
+      mkdirSync(dirname(this.path), { recursive: true });
+      const logEntry = {
+        timestamp: formatTimestamp(new Date()),
+        ...entry,
+      };
 
-    if (this.path.endsWith(".json")) {
-      let existing: unknown;
-      try {
-        existing = JSON.parse(await readFile(this.path, "utf8"));
-      } catch {
-        existing = [];
+      if (this.path.endsWith(".json")) {
+        let entries: unknown[];
+        try {
+          const existing = JSON.parse(readFileSync(this.path, "utf8")) as unknown;
+          if (!Array.isArray(existing)) {
+            throw new Error("Existing JSON log data must be an array.");
+          }
+          entries = existing;
+        } catch (error) {
+          if (error instanceof SyntaxError || isFileNotFoundError(error)) {
+            entries = [];
+          } else {
+            throw error;
+          }
+        }
+        entries.push(logEntry);
+        writeFileSync(this.path, `${JSON.stringify(entries, null, 4)}\n`, "utf8");
+        return;
       }
-      const entries = Array.isArray(existing) ? existing : [];
-      entries.push(logEntry);
-      await writeFile(this.path, `${JSON.stringify(entries, null, 2)}\n`, "utf8");
-      return;
-    }
 
-    const fields = Object.entries(entry)
-      .map(([key, value]) => `${key}="${formatLogValue(value)}"`)
-      .join(", ");
-    await appendFile(this.path, `${logEntry.timestamp}: ${fields}\n`, "utf8");
+      const fields = Object.entries(entry)
+        .map(([key, value]) => `${key}="${formatLogValue(value)}"`)
+        .join(", ");
+      appendFileSync(this.path, `${logEntry.timestamp}: ${fields}\n`, "utf8");
+    } catch (error) {
+      throw new Error(`Failed to log message: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
+    }
   }
+}
+
+function isFileNotFoundError(error: unknown): boolean {
+  return Boolean(error && typeof error === "object" && (error as NodeJS.ErrnoException).code === "ENOENT");
 }
 
 export class PickleHandler {

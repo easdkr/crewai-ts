@@ -1030,7 +1030,7 @@ export class Crew {
     const outputs: TaskOutput[] = [];
     for (const pendingTask of normalized) {
       const output = await pendingTask.promise;
-      await this.logTaskResult(pendingTask.task, output);
+      this.logTaskResult(pendingTask.task, output);
       await this.storeExecutionLog(pendingTask.task, output, pendingTask.taskIndex, pendingTask.inputs, wasReplayed);
       outputs.push(output);
     }
@@ -1044,9 +1044,9 @@ export class Crew {
     return await this.processAsyncTaskResults(pending_tasks, was_replayed);
   }
 
-  async logTaskStartCompat(task: Task, role: string | Agent | null = "None"): Promise<void> {
+  logTaskStartCompat(task: Task, role: string | Agent | null = "None"): void {
     const agentRole = typeof role === "string" ? role : role?.role ?? "None";
-    await this.fileHandler?.log({
+    this.fileHandler?.log({
       taskName: task.name,
       task: task.description,
       agent: agentRole,
@@ -1054,8 +1054,9 @@ export class Crew {
     });
   }
 
-  async _log_task_start(task: Task, role: string | Agent | null = "None"): Promise<void> {
-    await this.logTaskStartCompat(task, role);
+  _log_task_start(task: Task, role: string | Agent | null = "None"): Promise<void> {
+    this.logTaskStartCompat(task, role);
+    return Promise.resolve();
   }
 
   async storeExecutionLogCompat(
@@ -1412,7 +1413,7 @@ export class Crew {
         }
       }
       if (task.asyncExecution) {
-        await this.logTaskStart(task, fallbackAgent);
+        this.logTaskStart(task, fallbackAgent);
         const context = this.contextForTask(task, tasksOutput);
         pendingTasks.push({
           task,
@@ -1438,7 +1439,7 @@ export class Crew {
         tasksOutput.push(...await this.processAsyncTasks(pendingTasks));
         pendingTasks.length = 0;
       }
-      await this.logTaskStart(task, fallbackAgent);
+      this.logTaskStart(task, fallbackAgent);
       const context = this.contextForTask(task, tasksOutput);
       const output = await task.execute(inputs, fallbackAgent, tools, false, {
         stepCallbacks: this.stepCallbacksFor(fallbackAgent),
@@ -1453,7 +1454,7 @@ export class Crew {
           : { triggerPayload: this.triggerPayloadForTask(task, index, inputs) }),
         ...(context === undefined ? {} : { context }),
       });
-      await this.logTaskResult(task, output);
+      this.logTaskResult(task, output);
       await this.storeExecutionLog(task, output, index, inputs);
       tasksOutput.push(output);
     }
@@ -1484,7 +1485,7 @@ export class Crew {
         }
       }
       const tools = this.toolsForHierarchicalTask(task);
-      await this.logTaskStart(task, manager);
+      this.logTaskStart(task, manager);
       const context = this.contextForTask(task, tasksOutput);
       const output = await task.execute(inputs, manager, tools, true, {
         stepCallbacks: this.stepCallbacksFor(manager),
@@ -1499,7 +1500,7 @@ export class Crew {
           : { triggerPayload: this.triggerPayloadForTask(task, index, inputs) }),
         ...(context === undefined ? {} : { context }),
       });
-      await this.logTaskResult(task, output);
+      this.logTaskResult(task, output);
       await this.storeExecutionLog(task, output, index, inputs);
       tasksOutput.push(output);
     }
@@ -1519,15 +1520,15 @@ export class Crew {
     const outputs: TaskOutput[] = [];
     for (const pendingTask of pendingTasks) {
       const output = await pendingTask.promise;
-      await this.logTaskResult(pendingTask.task, output);
+      this.logTaskResult(pendingTask.task, output);
       await this.storeExecutionLog(pendingTask.task, output, pendingTask.taskIndex, pendingTask.inputs);
       outputs.push(output);
     }
     return outputs;
   }
 
-  private async logTaskStart(task: Task, agent: Agent | null): Promise<void> {
-    await this.fileHandler?.log({
+  private logTaskStart(task: Task, agent: Agent | null): void {
+    this.fileHandler?.log({
       taskName: task.name,
       task: task.description,
       agent: agent?.role ?? "None",
@@ -1535,8 +1536,8 @@ export class Crew {
     });
   }
 
-  private async logTaskResult(task: Task, output: TaskOutput): Promise<void> {
-    await this.fileHandler?.log({
+  private logTaskResult(task: Task, output: TaskOutput): void {
+    this.fileHandler?.log({
       taskName: task.name,
       task: task.description,
       agent: task.agent?.role ?? output.agent,
@@ -1702,7 +1703,7 @@ export class Crew {
           continue;
         }
       }
-      await this.logTaskStart(task, fallbackAgent);
+      this.logTaskStart(task, fallbackAgent);
       const context = this.contextForTask(task, tasksOutput);
       const output = await task.execute(inputs, fallbackAgent, tools, false, {
         stepCallbacks: this.stepCallbacksFor(fallbackAgent),
@@ -1716,7 +1717,7 @@ export class Crew {
           : { triggerPayload: this.triggerPayloadForTask(task, index, inputs) }),
         ...(context === undefined ? {} : { context }),
       });
-      await this.logTaskResult(task, output);
+      this.logTaskResult(task, output);
       await this.storeExecutionLog(task, output, index, inputs, true);
       tasksOutput.push(output);
     }
@@ -1744,7 +1745,7 @@ export class Crew {
         }
       }
       const tools = this.toolsForHierarchicalTask(task);
-      await this.logTaskStart(task, manager);
+      this.logTaskStart(task, manager);
       const context = this.contextForTask(task, tasksOutput);
       const output = await task.execute(inputs, manager, tools, true, {
         stepCallbacks: this.stepCallbacksFor(manager),
@@ -1758,7 +1759,7 @@ export class Crew {
           : { triggerPayload: this.triggerPayloadForTask(task, index, inputs) }),
         ...(context === undefined ? {} : { context }),
       });
-      await this.logTaskResult(task, output);
+      this.logTaskResult(task, output);
       await this.storeExecutionLog(task, output, index, inputs, true);
       tasksOutput.push(output);
     }
@@ -2156,8 +2157,9 @@ export class Crew {
     return await this.handleConditionalTaskCompat(task, task_outputs, pending_tasks, task_index, was_replayed);
   }
 
-  async processTaskResult(task: Task, output: TaskOutput): Promise<void> {
-    await this.logTaskResult(task, output);
+  processTaskResult(task: Task, output: TaskOutput): Promise<void> {
+    this.logTaskResult(task, output);
+    return Promise.resolve();
   }
 
   async _process_task_result(task: Task, output: TaskOutput): Promise<void> {
