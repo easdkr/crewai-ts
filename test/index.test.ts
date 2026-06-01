@@ -10134,6 +10134,74 @@ describe("core crew runtime", () => {
     expect(executor.state.replan_count).toBe(1);
   });
 
+  it("replans AgentExecutor pending todos with previous execution context", () => {
+    const prompts: string[] = [];
+    const agent = {
+      role: "Planner",
+      goal: "Recover the plan",
+      backstory: "Uses previous attempts",
+      planning_config: { max_replans: 3, max_steps: 2 },
+      llm: {
+        supportsFunctionCalling: () => true,
+        call(messages: readonly LLMMessage[]) {
+          prompts.push(messages.map((message) => message.content).join("\n"));
+          return JSON.stringify({
+            plan: "Retry with validated source",
+            ready: true,
+            steps: [
+              {
+                step_number: 3,
+                description: "Use validated source",
+                tool_to_use: "search_tool",
+                depends_on: [1],
+              },
+            ],
+          });
+        },
+      },
+    } as unknown as Agent;
+    const task = { description: "Research CrewAI", expected_output: "Concise answer" };
+    const executor = new AgentExecutor({ agent, task });
+    executor.state.last_replan_reason = "Multiple todos encountered errors (2 errors)";
+    executor.state.todos.items = [
+      new TodoItem({
+        stepNumber: 1,
+        description: "Read primary docs",
+        status: TodoStatus.COMPLETED,
+        result: "Docs loaded",
+      }),
+      new TodoItem({
+        stepNumber: 2,
+        description: "Search stale cache",
+        status: TodoStatus.FAILED,
+        result: "Error: stale cache",
+      }),
+      new TodoItem({
+        stepNumber: 99,
+        description: "Old pending step",
+        status: TodoStatus.PENDING,
+      }),
+    ];
+
+    expect(executor.handle_replan()).toBe("has_todos");
+    expect(executor.state.replan_count).toBe(1);
+    expect(executor.state.plan).toBe("Retry with validated source");
+    expect(executor.state.plan_ready).toBe(true);
+    expect(executor.state.todos.items.map((todo) => [todo.stepNumber, todo.description, todo.status])).toEqual([
+      [1, "Read primary docs", TodoStatus.COMPLETED],
+      [2, "Search stale cache", TodoStatus.FAILED],
+      [3, "Use validated source", TodoStatus.PENDING],
+    ]);
+    expect(prompts[0]).toContain("Successfully completed steps:");
+    expect(prompts[0]).toContain("Step 1: Read primary docs");
+    expect(prompts[0]).toContain("Result: Docs loaded");
+    expect(prompts[0]).toContain("Failed or errored steps:");
+    expect(prompts[0]).toContain("Error: Error: stale cache");
+    expect(prompts[0]).toContain("This is replan attempt 1.");
+    expect(prompts[0]).toContain("Previous replan reason: Multiple todos encountered errors (2 errors)");
+    expect(task.description).toBe("Research CrewAI");
+  });
+
   it("keeps AgentExecutor iterations and messages backed by state", () => {
     const executor = new AgentExecutor({
       messages: [{ role: "system", content: "You are careful." }],

@@ -1,7 +1,7 @@
 import { Agent, type AgentExecutionOptions, type AgentOptions } from "./agent.js";
 import type { CheckpointConfig } from "./state.js";
 import type { Crew } from "./crew.js";
-import { StepObservation, TodoItem, TodoList, TodoStatus } from "./agent-planning.js";
+import { AgentReasoning, StepObservation, TodoItem, TodoList, TodoStatus } from "./agent-planning.js";
 import { AgentAction, AgentFinish, parseAgentOutput } from "./agent-parser.js";
 import {
   executeSingleNativeToolCall,
@@ -540,6 +540,7 @@ export class AgentExecutor extends BaseAgentExecutor {
     }
     this.state.replan_count += 1;
     this.state.last_replan_reason ??= "Dynamic replan triggered";
+    this.triggerReplan(this.state.last_replan_reason);
     return this.state.todos.getPendingTodos().length > 0 ? "has_todos" : "all_todos_complete";
   }
 
@@ -807,7 +808,12 @@ export class AgentExecutor extends BaseAgentExecutor {
   }
 
   handleReplan(): "has_todos" | "no_todos" {
+    if (this.state.replan_count >= this.getMaxReplans()) {
+      return "no_todos";
+    }
     this.state.replan_count += 1;
+    this.state.last_replan_reason ??= "Dynamic replan triggered";
+    this.triggerReplan(this.state.last_replan_reason);
     return this.state.todos.getPendingTodos().length > 0 ? "has_todos" : "no_todos";
   }
 
@@ -946,6 +952,117 @@ export class AgentExecutor extends BaseAgentExecutor {
       ? config.maxReplans ?? config.max_replans
       : null;
     return typeof value === "number" && Number.isFinite(value) ? Math.max(0, Math.trunc(value)) : 3;
+  }
+
+  private triggerReplan(reason: string): void {
+    this.state.last_replan_reason = reason;
+    if (!this.agent) {
+      return;
+    }
+    const previousContext = this.buildReplanContext();
+    const enhancedDescription = this.enhanceTaskForReplan(previousContext);
+    try {
+      const taskRecord = this.task && typeof this.task === "object"
+        ? this.task as Record<string, unknown>
+        : null;
+      const originalDescription = taskRecord && typeof taskRecord.description === "string"
+        ? taskRecord.description
+        : null;
+      let output: unknown;
+      if (taskRecord) {
+        taskRecord.description = enhancedDescription;
+        try {
+          output = new AgentReasoning({ agent: this.agent, task: taskRecord }).handle_agent_reasoning();
+        } finally {
+          if (originalDescription !== null) {
+            taskRecord.description = originalDescription;
+          }
+        }
+      } else {
+        output = new AgentReasoning({
+          agent: this.agent,
+          description: enhancedDescription || this.kickoffInput || "Complete the requested task",
+          expected_output: "Complete the task successfully",
+        }).handle_agent_reasoning();
+      }
+      if (isPromiseLike(output)) {
+        throw new Error("Async replanning is not supported in the synchronous AgentExecutor route.");
+      }
+      this.applyReplanOutput(output);
+    } catch (error) {
+      this.state.last_replan_reason = `Replan failed: ${error instanceof Error ? error.message : String(error)}`;
+    }
+  }
+
+  private buildReplanContext(): string {
+    const contextParts: string[] = [];
+    const completed = this.state.todos.items.filter((todo) => todo.status === TodoStatus.COMPLETED);
+    if (completed.length > 0) {
+      contextParts.push("Successfully completed steps:");
+      for (const todo of completed) {
+        contextParts.push(`  - Step ${String(todo.stepNumber)}: ${todo.description}`);
+        if (todo.result) {
+          contextParts.push(`    Result: ${todo.result}`);
+        }
+      }
+    }
+    const failed = this.state.todos.items.filter((todo) => todo.status === TodoStatus.FAILED || todo.result?.startsWith("Error:"));
+    if (failed.length > 0) {
+      contextParts.push("\nFailed or errored steps:");
+      for (const todo of failed) {
+        contextParts.push(`  - Step ${String(todo.stepNumber)}: ${todo.description}`);
+        if (todo.result) {
+          contextParts.push(`    Error: ${todo.result}`);
+        }
+      }
+    }
+    if (this.state.replan_count > 0) {
+      contextParts.push(`\nThis is replan attempt ${String(this.state.replan_count)}.`);
+      if (this.state.last_replan_reason) {
+        contextParts.push(`Previous replan reason: ${this.state.last_replan_reason}`);
+      }
+    }
+    return contextParts.join("\n");
+  }
+
+  private enhanceTaskForReplan(previousContext: string): string {
+    const taskRecord = this.task && typeof this.task === "object"
+      ? this.task as Record<string, unknown>
+      : null;
+    const original = typeof taskRecord?.description === "string"
+      ? taskRecord.description
+      : this.kickoffInput;
+    const enhancement = previousContext
+      ? `\n\nPrevious execution context for replanning:\n${previousContext}\n\nCreate a revised plan that preserves successful work and addresses the failures above.`
+      : "";
+    return `${original}${enhancement}`;
+  }
+
+  private applyReplanOutput(output: unknown): void {
+    const record = output && typeof output === "object" ? output as Record<string, unknown> : {};
+    const planRecord = record.plan && typeof record.plan === "object" ? record.plan as Record<string, unknown> : null;
+    if (!planRecord) {
+      return;
+    }
+    const plan = typeof planRecord.plan === "string" ? planRecord.plan : null;
+    const ready = Boolean(planRecord.ready);
+    const rawSteps = Array.isArray(planRecord.steps) ? planRecord.steps : [];
+    this.state.plan = plan;
+    this.state.plan_ready = ready;
+    if (!ready || rawSteps.length === 0) {
+      return;
+    }
+    const newTodos = rawSteps.map((step) => {
+      const stepRecord = step && typeof step === "object" ? step as Record<string, unknown> : {};
+      return new TodoItem({
+        stepNumber: typeof stepRecord.stepNumber === "number" ? stepRecord.stepNumber : typeof stepRecord.step_number === "number" ? stepRecord.step_number : 0,
+        description: typeof stepRecord.description === "string" ? stepRecord.description : "",
+        toolToUse: typeof stepRecord.toolToUse === "string" ? stepRecord.toolToUse : typeof stepRecord.tool_to_use === "string" ? stepRecord.tool_to_use : null,
+        dependsOn: Array.isArray(stepRecord.dependsOn) ? stepRecord.dependsOn as number[] : Array.isArray(stepRecord.depends_on) ? stepRecord.depends_on as number[] : [],
+        status: TodoStatus.PENDING,
+      });
+    });
+    this.state.todos.replacePendingTodos(newTodos);
   }
 
   private reasoningEffort(): "low" | "medium" | "high" {
@@ -2090,6 +2207,10 @@ function syncUsageMetricAliases(metrics: UsageMetrics): void {
   aliases.cached_prompt_tokens = metrics.cachedPromptTokens;
   aliases.completion_tokens = metrics.completionTokens;
   aliases.successful_requests = metrics.successfulRequests;
+}
+
+function isPromiseLike<T = unknown>(value: unknown): value is PromiseLike<T> {
+  return !!value && typeof value === "object" && "then" in value && typeof (value as { then?: unknown }).then === "function";
 }
 
 function stringifyInput(value: unknown): string {
