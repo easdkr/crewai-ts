@@ -12817,6 +12817,41 @@ describe("core crew runtime", () => {
     expect(finish?.output).toBe("final:CrewAI");
     expect(executor.messages.some((message) => (message as { tool_call_id?: string }).tool_call_id === "call-1")).toBe(true);
 
+    const parallelExecutor = new CrewAgentExecutor({});
+    const windows: Array<{ name: string; start: number; end: number }> = [];
+    const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+    const makeParallelTool = (name: string) => async (args?: unknown) => {
+      const start = performance.now();
+      await delay(20);
+      const end = performance.now();
+      windows.push({ name, start, end });
+      return `${name}:${(args as { query?: string } | undefined)?.query ?? ""}`;
+    };
+
+    await expect(parallelExecutor._handle_native_tool_calls([
+      { id: "call-a", function: { name: "parallel_one", arguments: "{\"query\":\"one\"}" } },
+      { id: "call-b", function: { name: "parallel_two", arguments: "{\"query\":\"two\"}" } },
+      { id: "call-c", function: { name: "parallel_three", arguments: "{\"query\":\"three\"}" } },
+    ], {
+      parallel_one: makeParallelTool("parallel_one"),
+      parallel_two: makeParallelTool("parallel_two"),
+      parallel_three: makeParallelTool("parallel_three"),
+    })).resolves.toBeNull();
+
+    const maxConcurrency = windows
+      .flatMap((window) => [{ at: window.start, delta: 1 }, { at: window.end, delta: -1 }])
+      .sort((a, b) => a.at === b.at ? a.delta - b.delta : a.at - b.at)
+      .reduce((state, point) => {
+        const current = state.current + point.delta;
+        return { current, max: Math.max(state.max, current) };
+      }, { current: 0, max: 0 }).max;
+    expect(maxConcurrency).toBeGreaterThanOrEqual(2);
+    expect(parallelExecutor.messages.filter((message) => message.role === "tool").map((message) => message.content)).toEqual([
+      "parallel_one:one",
+      "parallel_two:two",
+      "parallel_three:three",
+    ]);
+
     const answer = new AgentFinish({ thought: "done", output: "ok", text: "ok" });
     executor._invoke_step_callback(answer);
     await executor._ainvoke_step_callback(answer);

@@ -2021,10 +2021,37 @@ export class CrewAgentExecutor extends BaseAgentExecutor {
       return null;
     }
     this._append_assistant_tool_calls_message(parsed);
+    if (this.shouldParallelizeNativeToolCalls(parsed)) {
+      const results = await Promise.all(parsed.map(([callId, funcName, funcArgs]) =>
+        executeSingleNativeToolCall(
+          { id: callId, name: funcName, arguments: typeof funcArgs === "string" ? parseNativeCrewArgs(funcArgs) : funcArgs },
+          availableFunctions,
+          { originalTools: this.tools },
+        )));
+      for (let index = 0; index < parsed.length; index += 1) {
+        const parsedCall = parsed[index];
+        if (!parsedCall) {
+          continue;
+        }
+        const callId: string = parsedCall[0];
+        const funcName: string = parsedCall[1];
+        const finish = this._append_tool_result_and_check_finality({
+          callId,
+          funcName,
+          result: results[index]?.text,
+        });
+        if (finish) {
+          return finish;
+        }
+      }
+      this.messages.push({ role: "user", content: "Reflect on the tool results and continue." });
+      return null;
+    }
     for (const [callId, funcName, funcArgs] of parsed) {
       const result = await executeSingleNativeToolCall(
         { id: callId, name: funcName, arguments: typeof funcArgs === "string" ? parseNativeCrewArgs(funcArgs) : funcArgs },
         availableFunctions,
+        { originalTools: this.tools },
       );
       const finish = this._append_tool_result_and_check_finality({
         callId,
@@ -2037,6 +2064,29 @@ export class CrewAgentExecutor extends BaseAgentExecutor {
     }
     this.messages.push({ role: "user", content: "Reflect on the tool results and continue." });
     return null;
+  }
+
+  private shouldParallelizeNativeToolCalls(parsedCalls: readonly [string, string, string | Record<string, unknown>][]): boolean {
+    if (parsedCalls.length <= 1) {
+      return false;
+    }
+    for (const [, funcName] of parsedCalls) {
+      const originalTool = this.tools.find((tool) => sanitizeToolName(tool.name) === sanitizeToolName(funcName));
+      if (!originalTool) {
+        continue;
+      }
+      const record = originalTool as Tool & { result_as_answer?: unknown; maxUsageCount?: unknown; max_usage_count?: unknown };
+      if (originalTool.resultAsAnswer || record.result_as_answer) {
+        return false;
+      }
+      if (record.maxUsageCount !== null && record.maxUsageCount !== undefined) {
+        return false;
+      }
+      if (record.max_usage_count !== null && record.max_usage_count !== undefined) {
+        return false;
+      }
+    }
+    return true;
   }
 
   _append_tool_result_and_check_finality(executionResult: {
