@@ -187,7 +187,7 @@ export function validateModel<T>(
   model: StructuredModel<T>,
   isJsonOutput: boolean,
 ): T | Record<string, unknown> {
-  const parsed: unknown = JSON.parse(result);
+  const parsed = parseJsonLenient(result);
   const validated = validateStructuredModel(parsed, model);
   return isJsonOutput ? dumpStructuredModel(validated, model) : validated;
 }
@@ -395,7 +395,7 @@ export const get_conversion_instructions = getConversionInstructions;
 function coerceResponseToModel<T>(response: unknown, model: StructuredModel<T>): T {
   if (typeof response === "string") {
     try {
-      return validateStructuredModel(JSON.parse(response), model);
+      return validateStructuredModel(parseJsonLenient(response), model);
     } catch {
       const partial = handlePartialJson(response, model, false);
       if (typeof partial === "string") {
@@ -405,6 +405,64 @@ function coerceResponseToModel<T>(response: unknown, model: StructuredModel<T>):
     }
   }
   return validateStructuredModel(response, model);
+}
+
+function parseJsonLenient(result: string): unknown {
+  try {
+    return JSON.parse(result) as unknown;
+  } catch (error) {
+    try {
+      return JSON.parse(escapeControlCharactersInsideStrings(result)) as unknown;
+    } catch {
+      throw error;
+    }
+  }
+}
+
+function escapeControlCharactersInsideStrings(result: string): string {
+  let output = "";
+  let inString = false;
+  let escaped = false;
+  for (const char of result) {
+    if (escaped) {
+      output += char;
+      escaped = false;
+      continue;
+    }
+    if (char === "\\") {
+      output += char;
+      escaped = inString;
+      continue;
+    }
+    if (char === "\"") {
+      inString = !inString;
+      output += char;
+      continue;
+    }
+    if (inString && char.charCodeAt(0) < 0x20) {
+      output += escapeJsonControlCharacter(char);
+      continue;
+    }
+    output += char;
+  }
+  return output;
+}
+
+function escapeJsonControlCharacter(char: string): string {
+  switch (char) {
+    case "\b":
+      return "\\b";
+    case "\f":
+      return "\\f";
+    case "\n":
+      return "\\n";
+    case "\r":
+      return "\\r";
+    case "\t":
+      return "\\t";
+    default:
+      return `\\u${char.charCodeAt(0).toString(16).padStart(4, "0")}`;
+  }
 }
 
 function supportsFunctionCalling(llm: LLMClient): boolean {

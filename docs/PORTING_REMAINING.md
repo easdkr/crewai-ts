@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 728 passing tests.
+- Test suite: 729 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -379,6 +379,8 @@ When more goal budget is available, continue from the behavioral parity audits b
   - `LiteAgent` now exposes before/after LLM hook getters, an upstream-style `key` property getter, and resolves `memory: true` to a default `Memory` instance.
 - Added token usage compatibility behavior:
   - `TokenProcess` now exposes upstream-style mutable token counters and `sum_*` helpers while preserving message-array prompt token estimation.
+- Added converter compatibility behavior:
+  - `validateModel`, `convertToModel`, and `handlePartialJson` now tolerate literal JSON control characters inside string values before structured model validation, while non-JSON curly blocks still fall through to the configured conversion fallback or raw output.
 - Added version compatibility behavior:
   - Root `version`, `__version__`, `get_crewai_version`, and runtime checkpoint metadata now report the upstream CrewAI version from the current upstream clone.
 

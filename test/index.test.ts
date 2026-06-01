@@ -8415,6 +8415,15 @@ describe("converter utilities", () => {
     expect(convertToModel("no json here", null, summaryModel)).toBe("no json here");
   });
 
+  it("accepts literal control characters inside partial JSON strings", () => {
+    expect(handlePartialJson("prefix {\"summary\":\"Line 1\nLine 2\tTabbed\"} suffix", summaryModel, false, null))
+      .toEqual({ summary: "Line 1\nLine 2\tTabbed" });
+    expect(convertToModel("{\"summary\":\"Line 1\r\nLine 2\"}", summaryModel, null))
+      .toEqual({ summary: "Line 1\r\nLine 2" });
+    expect(handlePartialJson("type Query { countries: [Country] }", summaryModel, false, null))
+      .toBe("type Query { countries: [Country] }");
+  });
+
   it("converts via LLM-backed Converter with retries", async () => {
     let calls = 0;
     const converter = new Converter({
