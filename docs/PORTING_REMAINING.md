@@ -121,6 +121,7 @@ When more goal budget is available, continue from the behavioral parity audits b
 - RAG optional-provider placeholders now mirror upstream missing optional import behavior by raising clear provider-specific errors instead of silently creating shim configs.
 - `QdrantClient` now mirrors upstream sync/async client mismatch behavior by raising `ClientMethodMismatchError` when sync methods receive async clients or async methods receive sync clients.
 - `ChromaDBClient.add_documents` / `aadd_documents` now mirror upstream upsert payload semantics by passing `metadatas: null` when an entire batch has no metadata.
+- `ChromaDBClient.add_documents` / `aadd_documents` now use upstream collection lookup payloads and avoid forwarding add-only fields such as `documents` or `batch_size` to the Chroma client.
 - `ChromaDBClient.search` / `asearch` now use the upstream default Chroma include ordering: `metadatas`, `documents`, then `distances`.
 - Added upstream-style `KnowledgeStorage` save/asave error conversion for embedding dimension mismatches.
 - Added upstream-style `KnowledgeStorage._get_client` plus collection-name helper aliases for storage extension compatibility.

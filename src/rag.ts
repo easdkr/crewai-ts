@@ -2308,7 +2308,11 @@ export class ChromaDBClient {
     if (params.documents.length === 0) {
       throw new Error("Documents list cannot be empty");
     }
-    const collection = this.get_or_create_collection(params) as Record<string, unknown>;
+    const collectionName = collectionNameFrom(params);
+    const collection = this.callClient("get_or_create_collection", "getOrCreateCollection", {
+      name: sanitizeCollectionName(collectionName),
+      embedding_function: this.embeddingFunction,
+    }) as Record<string, unknown>;
     const batchSize = params.batchSize ?? params.batch_size ?? this.defaultBatchSize;
     const prepared = prepareDocuments(params.documents);
     for (let index = 0; index < prepared.ids.length; index += batchSize) {
@@ -2329,7 +2333,11 @@ export class ChromaDBClient {
     if (params.documents.length === 0) {
       throw new Error("Documents list cannot be empty");
     }
-    const collection = await this.aget_or_create_collection(params) as Record<string, unknown>;
+    const collectionName = collectionNameFrom(params);
+    const collection = await this.callClientAsync("get_or_create_collection", "getOrCreateCollection", {
+      name: sanitizeCollectionName(collectionName),
+      embedding_function: this.embeddingFunction,
+    }) as Record<string, unknown>;
     const batchSize = params.batchSize ?? params.batch_size ?? this.defaultBatchSize;
     const prepared = prepareDocuments(params.documents);
     for (let index = 0; index < prepared.ids.length; index += batchSize) {

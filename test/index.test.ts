@@ -9494,8 +9494,9 @@ describe("RAG configuration and factories", () => {
 
   it("passes null ChromaDB metadatas when every added document omits metadata", () => {
     const collection = { upsert: vi.fn() };
+    const getOrCreateCollection = vi.fn(() => collection);
     const client = new ChromaDBClient({
-      get_or_create_collection: vi.fn(() => collection),
+      get_or_create_collection: getOrCreateCollection,
     }, (texts: readonly string[]) => texts.map((text) => [text.length]));
 
     client.add_documents({
@@ -9504,11 +9505,21 @@ describe("RAG configuration and factories", () => {
         { content: "Document 1" },
         { content: "Document 2", metadata: null },
       ],
+      batch_size: 1,
     });
 
-    expect(collection.upsert).toHaveBeenCalledWith({
-      ids: [createContentId("Document 1"), createContentId("Document 2")],
-      documents: ["Document 1", "Document 2"],
+    expect(getOrCreateCollection).toHaveBeenCalledWith({
+      name: "docs",
+      embedding_function: client.embedding_function,
+    });
+    expect(collection.upsert).toHaveBeenNthCalledWith(1, {
+      ids: [createContentId("Document 1")],
+      documents: ["Document 1"],
+      metadatas: null,
+    });
+    expect(collection.upsert).toHaveBeenNthCalledWith(2, {
+      ids: [createContentId("Document 2")],
+      documents: ["Document 2"],
       metadatas: null,
     });
   });
