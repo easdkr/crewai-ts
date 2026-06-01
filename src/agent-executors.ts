@@ -896,17 +896,22 @@ export class AgentExecutor extends BaseAgentExecutor {
         if (isPromiseLike(kickoffResult)) {
           throw new Error("AgentExecutor.invoke does not support async kickoff results; use ainvoke instead.");
         }
-        if (!(this.state.current_answer instanceof AgentFinish)) {
+        const currentAnswer = this.state.current_answer;
+        if (!(currentAnswer instanceof AgentFinish)) {
           throw new Error("AgentExecutor finished without reaching a final answer.");
         }
+        const finalAnswer = this.applyHumanFeedback(currentAnswer);
+        this.state.current_answer = finalAnswer;
         this.state.is_finished = true;
-        return { output: this.state.current_answer.output };
+        return { output: finalAnswer.output };
       }
       const result = super.invoke(this.kickoffInput);
       const output = result instanceof AgentFinish ? result.output : result;
-      this.state.current_answer = result instanceof AgentFinish ? result : new AgentFinish({ thought: "", output, text: String(output) });
+      const fallbackAnswer = result instanceof AgentFinish ? result : new AgentFinish({ thought: "", output, text: String(output) });
+      const finalAnswer = this.applyHumanFeedback(fallbackAnswer);
+      this.state.current_answer = finalAnswer;
       this.state.is_finished = true;
-      return { output };
+      return { output: finalAnswer.output };
     } finally {
       this.isExecuting = false;
     }
@@ -923,26 +928,34 @@ export class AgentExecutor extends BaseAgentExecutor {
         ?? (this as unknown as { kickoffAsync?: () => Promise<unknown> }).kickoffAsync;
       if (typeof kickoffAsync === "function") {
         await kickoffAsync.call(this);
-        if (!(this.state.current_answer instanceof AgentFinish)) {
+        const currentAnswer = this.state.current_answer;
+        if (!(currentAnswer instanceof AgentFinish)) {
           throw new Error("AgentExecutor finished without reaching a final answer.");
         }
+        const finalAnswer = await this.applyHumanFeedbackAsync(currentAnswer);
+        this.state.current_answer = finalAnswer;
         this.state.is_finished = true;
-        return { output: this.state.current_answer.output };
+        return { output: finalAnswer.output };
       }
       const kickoff = (this as unknown as { kickoff?: () => unknown }).kickoff;
       if (typeof kickoff === "function") {
         await Promise.resolve(kickoff.call(this));
-        if (!(this.state.current_answer instanceof AgentFinish)) {
+        const currentAnswer = this.state.current_answer;
+        if (!(currentAnswer instanceof AgentFinish)) {
           throw new Error("AgentExecutor finished without reaching a final answer.");
         }
+        const finalAnswer = await this.applyHumanFeedbackAsync(currentAnswer);
+        this.state.current_answer = finalAnswer;
         this.state.is_finished = true;
-        return { output: this.state.current_answer.output };
+        return { output: finalAnswer.output };
       }
       const result = super.invoke(this.kickoffInput);
       const output = result instanceof AgentFinish ? result.output : result;
-      this.state.current_answer = result instanceof AgentFinish ? result : new AgentFinish({ thought: "", output, text: String(output) });
+      const fallbackAnswer = result instanceof AgentFinish ? result : new AgentFinish({ thought: "", output, text: String(output) });
+      const finalAnswer = await this.applyHumanFeedbackAsync(fallbackAnswer);
+      this.state.current_answer = finalAnswer;
       this.state.is_finished = true;
-      return { output };
+      return { output: finalAnswer.output };
     } finally {
       this.isExecuting = false;
     }
@@ -955,6 +968,7 @@ export class AgentExecutor extends BaseAgentExecutor {
     this.state.iterations = 0;
     this.state.current_answer = null;
     this.state.is_finished = false;
+    this.state.ask_for_human_input = Boolean(inputs.ask_for_human_input);
     this.state.pending_tool_calls = [];
     this.state.plan = null;
     this.state.plan_ready = false;
@@ -972,6 +986,25 @@ export class AgentExecutor extends BaseAgentExecutor {
     } else if (this.kickoffInput) {
       this.state.messages.push({ role: "user", content: this.kickoffInput });
     }
+  }
+
+  private applyHumanFeedback(answer: AgentFinish): AgentFinish {
+    if (!this.state.ask_for_human_input) {
+      return answer;
+    }
+    const handler = (this as unknown as { _handle_human_feedback?: (answer: AgentFinish) => AgentFinish })._handle_human_feedback;
+    return typeof handler === "function" ? handler.call(this, answer) : answer;
+  }
+
+  private async applyHumanFeedbackAsync(answer: AgentFinish): Promise<AgentFinish> {
+    if (!this.state.ask_for_human_input) {
+      return answer;
+    }
+    const asyncHandler = (this as unknown as { _ahandle_human_feedback?: (answer: AgentFinish) => Promise<AgentFinish> })._ahandle_human_feedback;
+    if (typeof asyncHandler === "function") {
+      return await asyncHandler.call(this, answer);
+    }
+    return this.applyHumanFeedback(answer);
   }
 
   private routeFinishWithTodos<T extends string>(defaultRoute: T): T | "todo_satisfied" {

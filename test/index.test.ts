@@ -10280,6 +10280,31 @@ describe("core crew runtime", () => {
     ]);
   });
 
+  it("applies AgentExecutor human feedback during object-style invoke", () => {
+    const executor = new AgentExecutor();
+    Object.assign(executor, {
+      kickoff() {
+        executor.state.current_answer = new AgentFinish({
+          thought: "done",
+          output: "Draft answer",
+          text: "Draft answer",
+        });
+      },
+      _handle_human_feedback(answer: AgentFinish) {
+        return new AgentFinish({
+          thought: answer.thought,
+          output: `${String(answer.output)} + reviewed`,
+          text: `${answer.text} + reviewed`,
+        });
+      },
+    });
+
+    expect(executor.invoke({ input: "test", ask_for_human_input: true })).toEqual({
+      output: "Draft answer + reviewed",
+    });
+    expect(executor.state.ask_for_human_input).toBe(true);
+  });
+
   it("requires AgentExecutor async object-style invoke to reach an AgentFinish when kickoff_async is provided", async () => {
     const success = new AgentExecutor();
     Object.assign(success, {
@@ -10311,6 +10336,32 @@ describe("core crew runtime", () => {
 
     await expect(failure.ainvoke({ input: "async test", tool_names: "", tools: "" }))
       .rejects.toThrow("without reaching a final answer");
+  });
+
+  it("applies AgentExecutor human feedback during async object-style invoke", async () => {
+    const executor = new AgentExecutor();
+    Object.assign(executor, {
+      async kickoff_async() {
+        await Promise.resolve();
+        executor.state.current_answer = new AgentFinish({
+          thought: "done",
+          output: "Async draft",
+          text: "Async draft",
+        });
+      },
+      async _ahandle_human_feedback(answer: AgentFinish) {
+        await Promise.resolve();
+        return new AgentFinish({
+          thought: answer.thought,
+          output: `${String(answer.output)} + reviewed`,
+          text: `${answer.text} + reviewed`,
+        });
+      },
+    });
+
+    await expect(executor.ainvoke({ input: "async test", ask_for_human_input: true }))
+      .resolves.toEqual({ output: "Async draft + reviewed" });
+    expect(executor.state.ask_for_human_input).toBe(true);
   });
 
   it("reads AgentExecutor reasoning effort from upstream planning_config", () => {
