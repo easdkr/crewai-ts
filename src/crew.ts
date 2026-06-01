@@ -133,7 +133,7 @@ export function knowledge_reset(crew: { resetKnowledge?: (knowledges: readonly K
 export type CrewOptions = {
   id?: string;
   name?: string | null;
-  config?: Record<string, unknown> | null;
+  config?: string | Record<string, unknown> | null;
   agents?: readonly Agent[];
   tasks?: readonly Task[];
   process?: Process;
@@ -261,7 +261,7 @@ export class Crew {
   constructor(options: CrewOptions = {}) {
     this.id = options.id ?? randomUUID();
     this.name = options.name ?? "crew";
-    this.config = options.config ?? null;
+    this.config = Crew.checkConfigType(options.config ?? null);
     this.agents = [...(options.agents ?? [])];
     this.tasks = [...(options.tasks ?? [])];
     this.process = options.process ?? Process.sequential;

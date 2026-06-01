@@ -7863,6 +7863,16 @@ describe("crew execution utilities", () => {
 
   it("exposes upstream Crew config, training, callback, and execution helpers", async () => {
     const taskCallback = vi.fn();
+    const stringConfigCrew = new Crew({
+      config: JSON.stringify({
+        agents: [
+          { role: "String Researcher", goal: "Find facts", backstory: "Careful analyst" },
+        ],
+        tasks: [
+          { description: "Research", expected_output: "A brief", agent: "String Researcher" },
+        ],
+      }),
+    });
     const crewFromConfig = new Crew({
       config: {
         process: "sequential",
@@ -7876,6 +7886,8 @@ describe("crew execution utilities", () => {
       taskCallback,
     });
 
+    expect(stringConfigCrew.agents[0]?.role).toBe("String Researcher");
+    expect(stringConfigCrew.tasks[0]?.agent).toBe(stringConfigCrew.agents[0]);
     crewFromConfig._setup_from_config();
     expect(crewFromConfig.agents[0]).toBeInstanceOf(Agent);
     expect(crewFromConfig.tasks[0]).toBeInstanceOf(Task);
