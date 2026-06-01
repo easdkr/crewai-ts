@@ -17,6 +17,8 @@ import {
 import { sanitizeToolName } from "./string-utils.js";
 import { AgentAction, OutputParserError, parseAgentOutput } from "./agent-parser.js";
 import { I18N_DEFAULT } from "./i18n.js";
+import { Converter } from "./converter.js";
+import type { LLMClient } from "./llm.js";
 
 export const OPENAI_BIGGER_MODELS = Object.freeze([
   "gpt-4",
@@ -1590,6 +1592,27 @@ export class ToolUsage {
     return this.tools.map((tool) => tool.description ?? "").join("\n--\n");
   }
 
+  async _function_calling(toolString: string): Promise<ToolCalling> {
+    if (!isLLMClient(this.functionCallingLlm)) {
+      throw new ToolUsageError("Function calling LLM is not available.");
+    }
+    const converter = new Converter<ToolCalling>({
+      text: `Only tools available:\n###\n${this._render()}\n\nReturn a valid schema for the tool, the tool name must be exactly equal one of the options, use this text to inform the valid output schema:\n\n### TEXT \n${toolString}`,
+      llm: this.functionCallingLlm,
+      model: coerceToolCallingModel,
+      instructions: [
+        "The schema should have the following structure, only two keys:",
+        "- tool_name: str",
+        "- arguments: dict (always a dictionary, with all arguments being passed)",
+        "",
+        "Example:",
+        "{\"tool_name\":\"tool name\",\"arguments\":{\"arg_name1\":\"value\",\"arg_name2\":2}}",
+      ].join("\n"),
+      maxAttempts: 1,
+    });
+    return await converter.toPydantic();
+  }
+
   _original_tool_calling(_toolString: string, raiseError = false): ToolCalling | ToolUsageError {
     const action = this.action;
     if (!action) {
@@ -1607,6 +1630,28 @@ export class ToolUsage {
         throw error;
       }
       return new ToolUsageError(I18N_DEFAULT.errors("tool_arguments_error"));
+    }
+  }
+
+  async _tool_calling(toolString: string): Promise<ToolCalling | ToolUsageError> {
+    try {
+      try {
+        return this._original_tool_calling(toolString, true);
+      } catch {
+        if (this.functionCallingLlm) {
+          return await this._function_calling(toolString);
+        }
+        return this._original_tool_calling(toolString);
+      }
+    } catch (error) {
+      this.runAttempts += 1;
+      if (this.runAttempts > this.maxParsingAttempts) {
+        incrementTaskToolErrors(this.task);
+        return new ToolUsageError(
+          `${I18N_DEFAULT.errors("tool_usage_error").replace("{error}", error instanceof Error ? error.message : String(error))}\nMoving on then. ${I18N_DEFAULT.slice("format").replaceAll("{tool_names}", this.tools.map((tool) => sanitizeToolName(tool.name)).join(", "))}`,
+        );
+      }
+      return await this._tool_calling(toolString);
     }
   }
 
@@ -1853,6 +1898,18 @@ export function normalizeToolCalling(value: unknown): ToolCalling | null {
       ? args as Record<string, unknown>
       : null,
   };
+}
+
+function coerceToolCallingModel(value: unknown): ToolCalling {
+  const normalized = normalizeToolCalling(value);
+  if (!normalized) {
+    throw new ToolUsageError("Failed to parse tool calling");
+  }
+  return new ToolCalling(normalized);
+}
+
+function isLLMClient(value: unknown): value is LLMClient {
+  return Boolean(value && typeof value === "object" && typeof (value as { call?: unknown }).call === "function");
 }
 
 export async function aexecuteToolAndCheckFinality(

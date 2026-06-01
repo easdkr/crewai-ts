@@ -14559,7 +14559,7 @@ describe("tools", () => {
     });
   });
 
-  it("exposes upstream ToolUsage helper methods for selection, parsing, format reminders, and fingerprints", () => {
+  it("exposes upstream ToolUsage helper methods for selection, parsing, format reminders, and fingerprints", async () => {
     const seen: Array<ToolValidateInputErrorEvent | ToolSelectionErrorEvent> = [];
     crewaiEventBus.on("tool_validate_input_error", (_source, event) => {
       seen.push(event);
@@ -14599,6 +14599,23 @@ describe("tools", () => {
       },
       fingerprint_context: { trace_id: "trace-1" },
     });
+    const fallbackUsage = new ToolUsage({
+      tools: [search],
+      functionCallingLlm: {
+        call(messages: readonly LLMMessage[], options?: { responseModel?: unknown }) {
+          expect(messages[0]?.content).toContain("tool_name");
+          expect(messages[1]?.content).toContain("Only tools available");
+          expect(options?.responseModel).toBeTypeOf("function");
+          return { tool_name: "Search Tool", arguments: { query: "fallback" } };
+        },
+      },
+      action: new AgentAction({
+        thought: "Search",
+        tool: "Missing Tool",
+        toolInput: "not-json",
+        text: "Action: Missing Tool\nAction Input: not-json",
+      }),
+    });
 
     expect(usage._select_tool("search_tool")).toBe(search);
     expect(usage._validate_tool_input("{'query': 'CrewAI', 'fresh': True}")).toEqual({ query: "CrewAI", fresh: true });
@@ -14618,7 +14635,16 @@ describe("tools", () => {
     expect(usage._build_fingerprint_config()).toEqual({
       security_context: { agent_fingerprint: { hash: "agent-fingerprint" } },
     });
+    await expect(fallbackUsage._function_calling("Use search")).resolves.toMatchObject({
+      toolName: "Search Tool",
+      arguments: { query: "fallback" },
+    });
+    await expect(fallbackUsage._tool_calling("Use search")).resolves.toMatchObject({
+      toolName: "Search Tool",
+      arguments: { query: "fallback" },
+    });
 
+    seen.length = 0;
     expect(() => usage._validate_tool_input("not-json")).toThrow("Tool input must be a valid dictionary");
     expect(() => usage._select_tool("Missing Tool")).toThrow("Action 'Missing Tool' don't exist");
     expect(task.tools_errors).toBe(1);
