@@ -4181,6 +4181,7 @@ export abstract class BaseEventListener {
 }
 
 export class EventBus {
+  _shutting_down = false;
   private readonly handlers = new Map<EventType, Set<EventHandler>>();
   private readonly handlerDependencies = new Map<EventType, Map<EventHandler, readonly Depends[]>>();
   private readonly pendingHandlers = new Set<Promise<unknown>>();
@@ -4249,6 +4250,9 @@ export class EventBus {
   }
 
   emit(source: unknown, event: CrewAIEvent): void {
+    if (this._shutting_down) {
+      return;
+    }
     this.prepareEvent(source, event);
     this.dispatchPrepared(source, event);
   }
@@ -4260,6 +4264,9 @@ export class EventBus {
   }
 
   async aemit(source: unknown, event: CrewAIEvent): Promise<void> {
+    if (this._shutting_down) {
+      return;
+    }
     this.prepareEvent(source, event);
     await this.dispatchPreparedAndWait(source, event);
   }
@@ -4508,6 +4515,7 @@ export class EventBus {
   }
 
   shutdown(wait = true): MaybePromise<void> {
+    this._shutting_down = true;
     const finish = () => {
       this.handlers.clear();
       this.handlerDependencies.clear();

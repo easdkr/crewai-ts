@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 758 passing tests.
+- Test suite: 759 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -176,6 +176,7 @@ When more goal budget is available, continue from the behavioral parity audits b
 - `CrewBase` now registers hook-decorated class methods per instance, preserving bound `this`, tool/agent filters, global registration order, and `_registered_hook_functions` tracking without adding name-only helper surface.
 - `ConsoleFormatter.pause_live_updates` now mirrors upstream HITL behavior by stopping and clearing an active streaming session, keeping repeated pauses safe, and letting later stream chunks create a new deterministic live-session shim.
 - `EventBus.aemit` now mirrors upstream async emission behavior by running only async handlers and ignoring dependency ordering on that path; sync handlers and dependency plans remain covered by `emit`.
+- `EventBus` now mirrors upstream shutdown flag behavior: setting `_shutting_down` suppresses both `emit` and `aemit` delivery, while `shutdown()` marks the bus as shutting down before flushing and clearing handlers.
 - `CrewContext` / `get_crew_context` now mirror upstream crew-context metadata behavior with a local deterministic scope shim: no active scope returns `null`, active scopes expose `id` and `key`, and nested/exception paths restore the previous context.
 
 ## Completed In Current Tool Behavior Pass

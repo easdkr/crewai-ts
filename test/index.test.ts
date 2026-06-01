@@ -28024,6 +28024,30 @@ describe("runtime state", () => {
 
     expect(seen).toEqual(["handled"]);
   });
+
+  it("skips sync and async event delivery while shutting down", async () => {
+    const bus = new EventBus();
+    const seen: string[] = [];
+    bus.on("flow_started", () => {
+      seen.push("sync");
+    });
+    bus.on("flow_started", async () => {
+      await Promise.resolve();
+      seen.push("async");
+    });
+
+    bus._shutting_down = true;
+    bus.emit("source", new FlowStartedEvent({ flowName: "DuringShutdown", inputs: {} }));
+    await bus.aemit("source", new FlowStartedEvent({ flowName: "AsyncDuringShutdown", inputs: {} }));
+    await bus.flush();
+
+    expect(seen).toEqual([]);
+    bus._shutting_down = false;
+    bus.emit("source", new FlowStartedEvent({ flowName: "AfterShutdownFlag", inputs: {} }));
+    await bus.flush();
+
+    expect(seen).toEqual(["sync", "async"]);
+  });
 });
 
 describe("global hooks", () => {
