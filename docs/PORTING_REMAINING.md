@@ -5,25 +5,74 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
 ## Current Verified State
 
 - Full gate passed on 2026-06-01:
-  - `npm run check`
   - `npm test`
-  - `npm run build`
   - `npm run lint`
+  - `npm audit --omit=dev`
+  - `npm run build`
   - `npm run smoke:pack`
   - `python3 scripts/check-export-parity.py`
-- Test suite: 479 passing tests.
-- Root export parity against upstream clone `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `5cdc420`: `total_missing=0`.
-- Public method parity has been tightened for core runtime classes:
-  - `ConsoleFormatter`: `missing=0`
-  - `Task`: `missing=0`
-  - `AgentExecutor`: public lifecycle mostly covered; upstream property-style `state/messages/iterations` are fields in TS.
-  - `Crew`: `missing=0`
-  - `Agent`: `missing=0`
-  - `BaseAgent`: `missing=0`
+  - `python3 scripts/check-class-method-parity.py`
+  - `python3 scripts/check-subpath-export-parity.py`
+  - `node scripts/check-a2ui-schema-parity.mjs`
+- Test suite: 664 passing tests.
+- Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
+- Root export parity: `total_missing=0`.
+- Core public class method parity script: `total_missing=0`.
+- Subpath export parity: `total_missing=0`, `total_mismatched=0`.
+
+## Release Readiness Policy
+
+Method/export parity is now a gate, not the next source of work. Do not add more aliases or helper wrappers only because an AST scan finds a name mismatch. Add new alias/helper surface only when at least one of these is true:
+
+- An upstream example, documented workflow, or user-facing compatibility path fails without it.
+- A behavior test that models upstream usage requires that exact method/property name.
+- The method is part of a broader behavior implementation, not a standalone name-only change.
+
+Remaining work should be classified by behavior parity:
+
+- **Covered in the default deterministic gate:** behavior implemented without live cloud accounts, API keys, network services, or provider SDK side effects.
+- **Documented deterministic shim:** behavior intentionally modeled with in-memory/local/fake-client semantics because the upstream implementation depends on Python-specific or SDK-backed runtime services.
+- **Intentionally unsupported in this port:** cloud subscription/platform features, network exporters, live provider SDK clients, or Python-only runtime integrations that should not enter the default release gate.
+- **Missing behavior:** upstream user workflow or example is not supported and can be verified by a focused failing test.
+
+## Intentionally Unsupported Or Shimmed Areas
+
+- CrewAI cloud/platform subscription features are outside this port's scope unless they can be represented as local deterministic metadata with no network side effects.
+- Telemetry and trace upload paths are deterministic local span/event recordings. OpenTelemetry/remote trace exporters remain out of the default gate.
+- RAG/vector storage integrations use deterministic in-memory or fake-client-backed shims in the default gate. Real Qdrant, LanceDB, ChromaDB, and provider SDK integration can be added later as optional peer-dependency coverage, but should not be required for release validation.
+- LLM provider classes model request construction, capability flags, response parsing, usage extraction, streaming accumulation, file conversion, and error classification with SDK-like test doubles. Live OpenAI/Azure/Anthropic/Bedrock/Gemini SDK calls and real API credentials are intentionally outside the default gate.
+- Google Vertex legacy `textembedding-gecko*` embeddings remain intentionally unsupported in the TypeScript runtime without Vertex AI SDK credentials; the current behavior raises a clear error.
+- PDF/Excel/Docling-style optional parsing uses built-in or injected local extractors where possible. Python-only optional dependencies such as `pdfplumber` or Docling converters are not bundled.
+- MCP transports may use the installed JS SDK shape, but release tests should continue to rely on local/fake clients and error classification rather than live MCP servers.
 
 ## Known Remaining Porting Areas
 
-The export surface is broad, but several areas still need deeper behavioral parity rather than name-only compatibility:
+The export surface is broad, but remaining work must be driven by behavior gaps rather than name-only compatibility.
+
+High-value behavior audits still worth running:
+
+1. **Upstream examples and docs smoke tests**
+   - Translate current upstream examples into TS where practical.
+   - Mark examples requiring cloud subscription/platform features as intentionally unsupported.
+   - Any failing local example becomes the next behavior test.
+
+2. **Experimental `AgentExecutor` plan-and-execute behavior**
+   - Current TS implementation covers routing/state basics and many planning data structures.
+   - Audit with behavior tests for end-to-end plan generation, isolated step execution, observation/replan decisions, native tool execution, and human feedback loops.
+   - Do not add private helper aliases unless the behavior test requires them.
+
+3. **SDK-backed provider response translation**
+   - Current provider shims cover deterministic request building and SDK-like response parsing.
+   - Audit upstream edge cases with SDK-shaped fixtures only.
+   - Keep live API calls out of the default gate.
+
+4. **Storage/RAG optional real-client behavior**
+   - Current default gate uses deterministic shims and fake clients.
+   - Any real-client integration should be optional and separately gated.
+
+5. **Tracing/exporter integration**
+   - Current behavior records deterministic local spans/events.
+   - Remote exporter behavior remains intentionally unsupported unless the project decides to add an optional integration gate.
 
 ## Resume Queue
 
@@ -310,18 +359,22 @@ When more goal budget is available, continue from the behavioral parity audits b
 
 ## Suggested Next Order
 
-1. Start with storage and RAG parity because they share save/search/delete/filter semantics and are easiest to validate with deterministic fake backends.
-2. Move to `Flow` persistence after storage because checkpoint/resume tests are broader and may need storage decisions.
-3. Audit unified memory once storage primitives are stable.
-4. Finish provider-specific LLM compatibility after the core runtime behavior is stable.
-5. Sweep evaluator/tracing compatibility last, separating documented no-ops from missing behavior.
+1. Run translated upstream examples against the local TS runtime; promote failures into behavior tests.
+2. Audit `AgentExecutor` plan-and-execute behavior end to end, not by private helper name count.
+3. Add SDK-shaped fixture tests for provider edge cases only when they expose missing response/request behavior.
+4. Keep deterministic storage/RAG shims in the default gate; document real-client differences unless optional integration gates are added.
+5. Sweep telemetry/tracing by behavior category: local deterministic spans are covered, remote upload/export remains intentionally unsupported.
 
 ## Useful Audit Commands
 
 Run full validation:
 
 ```bash
-npm run check && npm test && npm run build && npm run lint && npm run smoke:pack
+npm test && npm run lint && npm audit --omit=dev && npm run build && npm run smoke:pack && \
+UPSTREAM_CREWAI_SRC=/tmp/crewai-upstream-current/lib/crewai/src/crewai python3 scripts/check-export-parity.py && \
+UPSTREAM_CREWAI_SRC=/tmp/crewai-upstream-current/lib/crewai/src/crewai python3 scripts/check-class-method-parity.py && \
+UPSTREAM_CREWAI_SRC=/tmp/crewai-upstream-current/lib/crewai/src/crewai python3 scripts/check-subpath-export-parity.py && \
+UPSTREAM_CREWAI_SRC=/tmp/crewai-upstream-current/lib/crewai/src/crewai node scripts/check-a2ui-schema-parity.mjs
 ```
 
 Check root export parity:
@@ -332,4 +385,4 @@ python3 scripts/check-export-parity.py
 
 Set `UPSTREAM_CREWAI_SRC=/path/to/crewAI/lib/crewai/src/crewai` when comparing against a fresh upstream clone.
 
-Check class public method parity by comparing upstream Python AST class methods to TS class methods in `src/*.ts`. Prior work used this to prioritize gaps by missing method count.
+Class-method parity is useful as a regression check, but it is no longer a prioritization mechanism. Prefer behavior audits and upstream example compatibility tests.
