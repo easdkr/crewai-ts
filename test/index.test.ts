@@ -10330,6 +10330,49 @@ describe("core crew runtime", () => {
     expect(executor.state.ask_for_human_input).toBe(true);
   });
 
+  it("saves AgentExecutor object-style invoke output to unified memory", () => {
+    const saved: Array<{ contents: readonly string[]; options: Record<string, unknown> }> = [];
+    const memory = {
+      read_only: false,
+      root_scope: "/crew/project",
+      extract_memories: vi.fn((raw: string) => {
+        expect(raw).toContain("Task: Write a release summary");
+        expect(raw).toContain("Agent: Release Analyst");
+        expect(raw).toContain("Expected result: Concise summary");
+        expect(raw).toContain("Result: Reviewed release summary.");
+        return ["Reviewed release summary."];
+      }),
+      remember_many: vi.fn((contents: readonly string[], options: Record<string, unknown>) => {
+        saved.push({ contents, options });
+        return [];
+      }),
+    };
+    const executor = new AgentExecutor({
+      agent: { role: "Release Analyst", memory } as unknown as Agent,
+      task: {
+        description: "Write a release summary",
+        expected_output: "Concise summary",
+      },
+    });
+    Object.assign(executor, {
+      kickoff() {
+        executor.state.current_answer = new AgentFinish({
+          thought: "done",
+          output: "Reviewed release summary.",
+          text: "Reviewed release summary.",
+        });
+      },
+    });
+
+    expect(executor.invoke({ input: "summarize" })).toEqual({ output: "Reviewed release summary." });
+    expect(memory.extract_memories).toHaveBeenCalledTimes(1);
+    expect(memory.remember_many).toHaveBeenCalledWith(["Reviewed release summary."], expect.objectContaining({
+      agent_role: "Release Analyst",
+      root_scope: "/crew/project/agent/release-analyst",
+    }));
+    expect(saved).toHaveLength(1);
+  });
+
   it("requires AgentExecutor async object-style invoke to reach an AgentFinish when kickoff_async is provided", async () => {
     const success = new AgentExecutor();
     Object.assign(success, {

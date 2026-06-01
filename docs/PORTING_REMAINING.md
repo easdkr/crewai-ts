@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 680 passing tests.
+- Test suite: 681 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -116,6 +116,7 @@ When more goal budget is available, continue from the behavioral parity audits b
 - `AgentExecutor.invoke` setup now formats upstream-style `prompt.system` / `prompt.user` or `prompt.prompt` templates into state messages before kickoff.
 - `AgentExecutor.invoke` setup now injects upstream-style `files` inputs into the last user prompt message for deterministic multimodal handoff.
 - `AgentExecutor.invoke` / `invoke_async` now preserve `ask_for_human_input` and apply sync/async human-feedback handlers to the final answer before returning output.
+- `AgentExecutor.invoke` / `invoke_async` now save final answers to unified memory through upstream-style extraction and agent root-scope routing when memory is configured.
 - `AgentExecutor` replanning now builds previous-execution context, temporarily enhances the task description for the planner, preserves completed/failed history, and replaces only pending todos when a ready structured plan is returned.
 - `StepExecutor.execute` now runs `TodoItem` inputs through isolated step execution and returns a failed `StepResult` when an expected upstream `tool_to_use` is available but was not called.
 

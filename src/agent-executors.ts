@@ -14,6 +14,7 @@ import { Converter } from "./converter.js";
 import { get_provider } from "./human-input.js";
 import { I18N_DEFAULT } from "./i18n.js";
 import { UsageMetrics, type LLMResponse } from "./llm.js";
+import { sanitize_scope_name } from "./memory.js";
 import { StepExecutionContext, StepResult } from "./step-execution-context.js";
 import { sanitizeToolName } from "./tools.js";
 import type { LLMMessage, MaybePromise, Tool } from "./types.js";
@@ -322,7 +323,6 @@ export class BaseAgentExecutor {
   readonly max_iter: number;
   iterations = 0;
   messages: LLMMessage[];
-  _save_to_memory = false;
 
   constructor(options: BaseAgentExecutorOptions = {}) {
     this.executorType = "base";
@@ -354,6 +354,64 @@ export class BaseAgentExecutor {
 
   ainvoke(input: string | readonly LLMMessage[] = ""): Promise<unknown> {
     return Promise.resolve(this.invoke(input));
+  }
+
+  _save_to_memory(output: AgentFinish): void {
+    if (!this.agent) {
+      return;
+    }
+    const agentRecord = this.agent as unknown as Record<string, unknown>;
+    const crewRecord = this.crew as unknown as Record<string, unknown> | null;
+    const memory = agentRecord.memory ?? crewRecord?._memory;
+    if (!memory || typeof memory !== "object" || !this.task) {
+      return;
+    }
+    const memoryRecord = memory as Record<string, unknown>;
+    if (memoryRecord.readOnly === true || memoryRecord.read_only === true) {
+      return;
+    }
+    if (output.text.includes(`Action: ${sanitizeToolName("Delegate work to coworker")}`)) {
+      return;
+    }
+    const taskRecord = this.task as Record<string, unknown>;
+    const agentRole = typeof agentRecord.role === "string" ? agentRecord.role : "";
+    const taskDescription = typeof taskRecord.description === "string" ? taskRecord.description : "";
+    const expectedOutput = typeof taskRecord.expectedOutput === "string"
+      ? taskRecord.expectedOutput
+      : typeof taskRecord.expected_output === "string" ? taskRecord.expected_output : "";
+    const raw = [
+      `Task: ${taskDescription}`,
+      `Agent: ${agentRole}`,
+      `Expected result: ${expectedOutput}`,
+      `Result: ${output.text}`,
+    ].join("\n");
+    try {
+      const extract = (memoryRecord.extractMemories ?? memoryRecord.extract_memories) as ((raw: string) => unknown) | undefined;
+      const extracted = typeof extract === "function"
+        ? extract.call(memory, raw)
+        : [];
+      if (!Array.isArray(extracted) || extracted.length === 0) {
+        return;
+      }
+      const options: Record<string, unknown> = {
+        agentRole,
+        agent_role: agentRole,
+      };
+      const rootScope = memoryRecord.rootScope ?? memoryRecord.root_scope;
+      if (typeof rootScope === "string" && rootScope) {
+        const agentRoot = `${rootScope.replace(/\/+$/g, "")}/agent/${sanitize_scope_name(agentRole || "unknown")}`;
+        options.rootScope = agentRoot.startsWith("/") ? agentRoot : `/${agentRoot}`;
+        options.root_scope = options.rootScope;
+        options.scope = options.rootScope;
+      }
+      const rememberMany = (memoryRecord.rememberMany ?? memoryRecord.remember_many) as ((contents: readonly unknown[], options: Record<string, unknown>) => unknown) | undefined;
+      if (typeof rememberMany === "function") {
+        rememberMany.call(memory, extracted, options);
+      }
+    } catch (error) {
+      const logger = agentRecord._logger as { log?: (level: string, message: string) => void } | undefined;
+      logger?.log?.("error", `Failed to save to memory: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 }
 
@@ -903,6 +961,7 @@ export class AgentExecutor extends BaseAgentExecutor {
         const finalAnswer = this.applyHumanFeedback(currentAnswer);
         this.state.current_answer = finalAnswer;
         this.state.is_finished = true;
+        this._save_to_memory(finalAnswer);
         return { output: finalAnswer.output };
       }
       const result = super.invoke(this.kickoffInput);
@@ -911,6 +970,7 @@ export class AgentExecutor extends BaseAgentExecutor {
       const finalAnswer = this.applyHumanFeedback(fallbackAnswer);
       this.state.current_answer = finalAnswer;
       this.state.is_finished = true;
+      this._save_to_memory(finalAnswer);
       return { output: finalAnswer.output };
     } finally {
       this.isExecuting = false;
@@ -935,6 +995,7 @@ export class AgentExecutor extends BaseAgentExecutor {
         const finalAnswer = await this.applyHumanFeedbackAsync(currentAnswer);
         this.state.current_answer = finalAnswer;
         this.state.is_finished = true;
+        this._save_to_memory(finalAnswer);
         return { output: finalAnswer.output };
       }
       const kickoff = (this as unknown as { kickoff?: () => unknown }).kickoff;
@@ -947,6 +1008,7 @@ export class AgentExecutor extends BaseAgentExecutor {
         const finalAnswer = await this.applyHumanFeedbackAsync(currentAnswer);
         this.state.current_answer = finalAnswer;
         this.state.is_finished = true;
+        this._save_to_memory(finalAnswer);
         return { output: finalAnswer.output };
       }
       const result = super.invoke(this.kickoffInput);
@@ -955,6 +1017,7 @@ export class AgentExecutor extends BaseAgentExecutor {
       const finalAnswer = await this.applyHumanFeedbackAsync(fallbackAnswer);
       this.state.current_answer = finalAnswer;
       this.state.is_finished = true;
+      this._save_to_memory(finalAnswer);
       return { output: finalAnswer.output };
     } finally {
       this.isExecuting = false;
