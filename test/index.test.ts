@@ -26063,6 +26063,60 @@ describe("conditional tasks", () => {
       })],
     })).toThrow("Conditional Task: async conditional, cannot be executed asynchronously");
   });
+
+  it("uses the executed conditional task output when a final conditional task passes", async () => {
+    let calls = 0;
+    const researcher = new Agent({
+      role: "Researcher",
+      goal: "Find facts",
+      backstory: "Careful analyst",
+      llm: () => {
+        calls += 1;
+        return calls === 1 ? "Hi" : "conditional final";
+      },
+    });
+    const initial = new Task({
+      description: "Say Hi",
+      expectedOutput: "Hi",
+      agent: researcher,
+    });
+    const conditional = new ConditionalTask({
+      description: "conditional",
+      expectedOutput: "conditional",
+      agent: researcher,
+      condition: () => true,
+    });
+
+    const output = await new Crew({ agents: [researcher], tasks: [initial, conditional] }).kickoff();
+
+    expect(output.raw).toBe("conditional final");
+    expect(output.tasksOutput.map((taskOutput) => taskOutput.raw)).toEqual(["Hi", "conditional final"]);
+  });
+
+  it("uses the previous non-empty output when a final conditional task is skipped", async () => {
+    const researcher = new Agent({
+      role: "Researcher",
+      goal: "Find facts",
+      backstory: "Careful analyst",
+      llm: () => "Hi",
+    });
+    const initial = new Task({
+      description: "Say Hi",
+      expectedOutput: "Hi",
+      agent: researcher,
+    });
+    const conditional = new ConditionalTask({
+      description: "conditional",
+      expectedOutput: "conditional",
+      agent: researcher,
+      condition: () => false,
+    });
+
+    const output = await new Crew({ agents: [researcher], tasks: [initial, conditional] }).kickoff();
+
+    expect(output.raw).toBe("Hi");
+    expect(output.tasksOutput.map((taskOutput) => taskOutput.raw)).toEqual(["Hi", ""]);
+  });
 });
 
 describe("crew planning", () => {
