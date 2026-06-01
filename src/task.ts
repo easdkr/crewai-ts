@@ -252,8 +252,8 @@ export class Task {
   allow_crewai_trigger_context: boolean | null;
   readonly guardrail: Guardrail | null;
   readonly guardrails: readonly Guardrail[];
-  readonly guardrailMaxRetries: number;
-  readonly guardrail_max_retries: number;
+  guardrailMaxRetries: number;
+  guardrail_max_retries: number;
   readonly maxRetries: number | null;
   readonly max_retries: number | null;
   readonly securityConfig: SecurityConfig;
@@ -349,6 +349,7 @@ export class Task {
     this.securityConfig = coerceSecurityConfig(options.securityConfig ?? options.security_config ?? null);
     this.security_config = this.securityConfig;
     this.checkOutput();
+    this.handleMaxRetriesDeprecation();
   }
 
   get fingerprint(): Fingerprint {
@@ -492,6 +493,14 @@ export class Task {
   }
 
   handleMaxRetriesDeprecation(): this {
+    if (this.max_retries !== null) {
+      process.emitWarning(
+        "The 'max_retries' parameter is deprecated and will be removed in CrewAI v1.0.0. Please use 'guardrail_max_retries' instead.",
+        "DeprecationWarning",
+      );
+      this.guardrailMaxRetries = this.max_retries;
+      this.guardrail_max_retries = this.max_retries;
+    }
     return this;
   }
 

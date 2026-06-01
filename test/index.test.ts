@@ -18680,66 +18680,75 @@ describe("task output files", () => {
   it("accepts upstream snake_case Task options for structured output files", async () => {
     const baseDirectory = mkdtempSync(join(tmpdir(), "crewai-ts-snake-task-"));
     const outputFile = join(baseDirectory, "{topic}", "result.json");
+    const warningSpy = vi.spyOn(process, "emitWarning").mockImplementation(() => undefined);
     const agentInstance = new Agent({
       role: "Writer",
       goal: "Write reports",
       backstory: "Careful writer",
       llm: () => "summary=done",
     });
-    const taskInstance = new Task({
-      description: "Write about {topic}",
-      expected_output: "A JSON report",
-      config: { source: "upstream" },
-      prompt_context: "Existing context",
-      agent: agentInstance,
-      output_json: true,
-      output_file: outputFile,
-      create_directory: true,
-      async_execution: false,
-      human_input: false,
-      allow_crewai_trigger_context: true,
-      max_retries: 2,
-      retry_count: 1,
-      used_tools: 3,
-      tools_errors: 1,
-      delegations: 2,
-      processed_by_agents: ["Writer"],
-      start_time: "2026-05-28T00:00:00.000Z",
-      end_time: "2026-05-28T00:00:01.000Z",
-      checkpoint_original_description: "Original {topic}",
-      checkpoint_original_expected_output: "Original output",
-      checkpoint_original_output_file: "original.txt",
-      guardrail_max_retries: 1,
-      converter_cls: (raw) => ({ summary: raw.split("=")[1] }),
-    });
+    try {
+      const taskInstance = new Task({
+        description: "Write about {topic}",
+        expected_output: "A JSON report",
+        config: { source: "upstream" },
+        prompt_context: "Existing context",
+        agent: agentInstance,
+        output_json: true,
+        output_file: outputFile,
+        create_directory: true,
+        async_execution: false,
+        human_input: false,
+        allow_crewai_trigger_context: true,
+        max_retries: 2,
+        retry_count: 1,
+        used_tools: 3,
+        tools_errors: 1,
+        delegations: 2,
+        processed_by_agents: ["Writer"],
+        start_time: "2026-05-28T00:00:00.000Z",
+        end_time: "2026-05-28T00:00:01.000Z",
+        checkpoint_original_description: "Original {topic}",
+        checkpoint_original_expected_output: "Original output",
+        checkpoint_original_output_file: "original.txt",
+        guardrail_max_retries: 1,
+        converter_cls: (raw) => ({ summary: raw.split("=")[1] }),
+      });
 
-    const output = await taskInstance.execute({ topic: "CrewAI" });
+      const output = await taskInstance.execute({ topic: "CrewAI" });
 
-    expect(taskInstance.expected_output).toBe("A JSON report");
-    expect(taskInstance.config).toEqual({ source: "upstream" });
-    expect(taskInstance.prompt_context).toBeNull();
-    expect(taskInstance.output_json).toBe(true);
-    expect(taskInstance.output_file).toBe(outputFile);
-    expect(taskInstance.create_directory).toBe(true);
-    expect(taskInstance.async_execution).toBe(false);
-    expect(taskInstance.human_input).toBe(false);
-    expect(taskInstance.allow_crewai_trigger_context).toBe(true);
-    expect(taskInstance.max_retries).toBe(2);
-    expect(taskInstance.retry_count).toBe(1);
-    expect(taskInstance.used_tools).toBe(3);
-    expect(taskInstance.tools_errors).toBe(1);
-    expect(taskInstance.delegations).toBe(2);
-    expect([...taskInstance.processed_by_agents]).toEqual(["Writer"]);
-    expect(taskInstance.start_time).toBeInstanceOf(Date);
-    expect(taskInstance.end_time).toBeInstanceOf(Date);
-    expect(taskInstance.checkpoint_original_description).toBe("Original {topic}");
-    expect(taskInstance.checkpoint_original_expected_output).toBe("Original output");
-    expect(taskInstance.checkpoint_original_output_file).toBe("original.txt");
-    expect(taskInstance.guardrail_max_retries).toBe(1);
-    expect(taskInstance.converter_cls).toBe(taskInstance.outputConverter);
-    expect(output.json_dict).toEqual({ summary: "done" });
-    expect(readFileSync(join(baseDirectory, "CrewAI", "result.json"), "utf8"))
-      .toBe("{\n  \"summary\": \"done\"\n}");
+      expect(taskInstance.expected_output).toBe("A JSON report");
+      expect(taskInstance.config).toEqual({ source: "upstream" });
+      expect(taskInstance.prompt_context).toBeNull();
+      expect(taskInstance.output_json).toBe(true);
+      expect(taskInstance.output_file).toBe(outputFile);
+      expect(taskInstance.create_directory).toBe(true);
+      expect(taskInstance.async_execution).toBe(false);
+      expect(taskInstance.human_input).toBe(false);
+      expect(taskInstance.allow_crewai_trigger_context).toBe(true);
+      expect(taskInstance.max_retries).toBe(2);
+      expect(taskInstance.retry_count).toBe(1);
+      expect(taskInstance.used_tools).toBe(3);
+      expect(taskInstance.tools_errors).toBe(1);
+      expect(taskInstance.delegations).toBe(2);
+      expect([...taskInstance.processed_by_agents]).toEqual(["Writer"]);
+      expect(taskInstance.start_time).toBeInstanceOf(Date);
+      expect(taskInstance.end_time).toBeInstanceOf(Date);
+      expect(taskInstance.checkpoint_original_description).toBe("Original {topic}");
+      expect(taskInstance.checkpoint_original_expected_output).toBe("Original output");
+      expect(taskInstance.checkpoint_original_output_file).toBe("original.txt");
+      expect(taskInstance.guardrail_max_retries).toBe(2);
+      expect(taskInstance.converter_cls).toBe(taskInstance.outputConverter);
+      expect(warningSpy).toHaveBeenCalledWith(
+        "The 'max_retries' parameter is deprecated and will be removed in CrewAI v1.0.0. Please use 'guardrail_max_retries' instead.",
+        "DeprecationWarning",
+      );
+      expect(output.json_dict).toEqual({ summary: "done" });
+      expect(readFileSync(join(baseDirectory, "CrewAI", "result.json"), "utf8"))
+        .toBe("{\n  \"summary\": \"done\"\n}");
+    } finally {
+      warningSpy.mockRestore();
+    }
   });
 
   it("writes interpolated raw task output files and creates directories", async () => {
