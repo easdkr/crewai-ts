@@ -57,7 +57,28 @@ export type UsageMetrics = {
   reasoningTokens: number;
   cacheCreationTokens: number;
   successfulRequests: number;
+  modelDump?: () => UsageMetricsModelDump;
+  model_dump?: () => UsageMetricsModelDump;
 };
+
+export type UsageMetricsModelDump = {
+  total_tokens: number;
+  prompt_tokens: number;
+  cached_prompt_tokens: number;
+  completion_tokens: number;
+  reasoning_tokens: number;
+  cache_creation_tokens: number;
+  successful_requests: number;
+};
+
+type UsageMetricNumericKey =
+  | "totalTokens"
+  | "promptTokens"
+  | "cachedPromptTokens"
+  | "completionTokens"
+  | "reasoningTokens"
+  | "cacheCreationTokens"
+  | "successfulRequests";
 
 export const UsageMetrics = class UsageMetricsValue {
   totalTokens: number;
@@ -117,6 +138,22 @@ export const UsageMetrics = class UsageMetricsValue {
     this.cache_creation_tokens = metrics.cacheCreationTokens;
     this.successfulRequests = metrics.successfulRequests;
     this.successful_requests = metrics.successfulRequests;
+  }
+
+  modelDump(): UsageMetricsModelDump {
+    return {
+      total_tokens: this.totalTokens,
+      prompt_tokens: this.promptTokens,
+      cached_prompt_tokens: this.cachedPromptTokens,
+      completion_tokens: this.completionTokens,
+      reasoning_tokens: this.reasoningTokens,
+      cache_creation_tokens: this.cacheCreationTokens,
+      successful_requests: this.successfulRequests,
+    };
+  }
+
+  model_dump(): UsageMetricsModelDump {
+    return this.modelDump();
   }
 };
 
@@ -2892,7 +2929,7 @@ function defineUsageMetricAliases(metrics: UsageMetrics): void {
   });
 }
 
-function usageMetricAlias(key: keyof UsageMetrics): PropertyDescriptor {
+function usageMetricAlias(key: UsageMetricNumericKey): PropertyDescriptor {
   return {
     enumerable: false,
     configurable: true,

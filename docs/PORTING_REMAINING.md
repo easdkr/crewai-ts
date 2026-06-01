@@ -213,6 +213,7 @@ When more goal budget is available, continue from the behavioral parity audits b
   - `flow_structure` now has default-gate coverage for listener methods that become routers through `human_feedback(emit=[...])`.
 - Added adapter-level LLM provider parity helpers:
   - `BaseLLM.acall` now provides the upstream async call surface by formatting string/list messages and delegating through the concrete `call` implementation.
+  - `UsageMetrics` now exposes upstream-style `model_dump` / `modelDump` serialization including reasoning and cache-creation token fields.
   - `supportsFunctionCalling` / `supports_function_calling`
   - native OpenAI/Azure/Anthropic/Bedrock support overrides for function calling, stop words, and multimodal capability where deterministic
   - OpenAI/Azure response-chain compatibility getters and reset methods (`last_response_id`, `last_reasoning_items`, `reset_chain`, `reset_reasoning_chain`)

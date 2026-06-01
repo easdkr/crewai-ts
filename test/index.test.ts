@@ -17803,6 +17803,16 @@ describe("LLM providers", () => {
     expect(metrics.total_tokens).toBe(8);
     expect(metrics.promptTokens).toBe(10);
     expect(metrics.prompt_tokens).toBe(10);
+    expect(metrics.model_dump()).toMatchObject({
+      total_tokens: 8,
+      prompt_tokens: 10,
+      cached_prompt_tokens: 0,
+      completion_tokens: 0,
+      reasoning_tokens: 0,
+      cache_creation_tokens: 0,
+      successful_requests: 0,
+    });
+    expect(metrics.modelDump()).toEqual(metrics.model_dump());
   });
 
   it("exposes upstream provider model constants for non-native LLM providers", () => {
