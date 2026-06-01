@@ -376,6 +376,9 @@ import {
   is_auto_injected,
   BoundTaskMethod,
   DecoratedMethod,
+  _make_hashable,
+  _memoize_async,
+  _memoize_sync,
   TaskMethod,
   TaskEvaluator,
   TaskEvaluationEvent,
@@ -14124,6 +14127,44 @@ describe("project config mapping", () => {
     expect(decorated.__call__("CrewAI")).toBe("decorated:CrewAI");
     expect((boundTask.__call__() as Task).name).toBe("buildTask");
     expect(flowMethod.__call__("CrewAI")).toBe("flow:CrewAI");
+  });
+
+  it("memoizes sync and async project methods with upstream hashable arguments", async () => {
+    let syncCalls = 0;
+    let asyncCalls = 0;
+    const pydanticLike = {
+      model_dump_json: () => "{\"topic\":\"CrewAI\"}",
+    };
+    class ConfigHolder {
+      readonly value = "instance";
+    }
+    const instanceArg = new ConfigHolder();
+    const syncMethod = _memoize_sync(function buildConfig(value: unknown) {
+      syncCalls += 1;
+      return { value, call: syncCalls };
+    });
+    const asyncMethod = _memoize_async(async function buildAsyncConfig(value: unknown) {
+      await Promise.resolve();
+      asyncCalls += 1;
+      return { value, call: asyncCalls };
+    });
+
+    expect(_make_hashable({ b: [2, 1], a: pydanticLike })).toEqual([
+      ["a", "{\"topic\":\"CrewAI\"}"],
+      ["b", [2, 1]],
+    ]);
+    expect(_make_hashable(instanceArg)).toEqual(["__instance__", expect.any(Number)]);
+    expect(syncMethod({ b: 1, a: ["x"] })).toBe(syncMethod({ a: ["x"], b: 1 }));
+    const asyncFirst = await asyncMethod({ topic: "CrewAI" });
+    const asyncSecond = await asyncMethod({ topic: "CrewAI" });
+    expect(asyncFirst).toBe(asyncSecond);
+    expect(syncCalls).toBe(1);
+    expect(asyncCalls).toBe(1);
+
+    const receiverA = new ConfigHolder();
+    const receiverB = new ConfigHolder();
+    expect(syncMethod.call(receiverA, "same")).toBe(syncMethod.call(receiverA, "same"));
+    expect(syncMethod.call(receiverB, "same")).not.toBe(syncMethod.call(receiverA, "same"));
   });
 
   it("loads YAML config and resolves decorated method references", async () => {

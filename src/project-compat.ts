@@ -179,6 +179,8 @@ export function closeMcpServer<TOutput>(_instance: object, output: TOutput): TOu
 export const close_mcp_server = closeMcpServer;
 
 export const cache = new Map<string, unknown>();
+const objectIds = new WeakMap<object, number>();
+let nextObjectId = 1;
 
 export function getMcpTools(instance: object): unknown[] {
   const record = instance as Record<string, unknown>;
@@ -189,16 +191,65 @@ export function getMcpTools(instance: object): unknown[] {
 export const get_mcp_tools = getMcpTools;
 
 export function memoize<TFunction extends AnyFunction>(method: TFunction): TFunction {
-  const cache = new Map<string, unknown>();
+  const isAsync = method.constructor.name === "AsyncFunction";
+  return isAsync ? _memoize_async(method) : _memoize_sync(method);
+}
+
+export function _memoize_sync<TFunction extends AnyFunction>(method: TFunction): TFunction {
   return function memoized(this: unknown, ...args: readonly unknown[]) {
-    const key = stableKey(args);
-    if (cache.has(key)) {
-      return cache.get(key);
+    const key = memoizeCacheKey(method, this, args);
+    const cached = cache.get(key);
+    if (cached !== null && cached !== undefined) {
+      return cached;
     }
     const result = method.apply(this, [...args]);
     cache.set(key, result);
     return result;
   } as TFunction;
+}
+
+export function _memoize_async<TFunction extends AnyFunction>(method: TFunction): TFunction {
+  return async function memoizedAsync(this: unknown, ...args: readonly unknown[]) {
+    const key = memoizeCacheKey(method, this, args);
+    const cached = cache.get(key);
+    if (cached !== null && cached !== undefined) {
+      return cached;
+    }
+    const result = await method.apply(this, [...args]);
+    cache.set(key, result);
+    return result;
+  } as TFunction;
+}
+
+export function _make_hashable(arg: unknown): unknown {
+  if (arg === null || typeof arg !== "object") {
+    return arg;
+  }
+  const modelDumpJson = readFunction(arg, "model_dump_json") ?? readFunction(arg, "modelDumpJson");
+  if (modelDumpJson) {
+    return modelDumpJson.call(arg);
+  }
+  const modelDump = readFunction(arg, "model_dump") ?? readFunction(arg, "modelDump");
+  if (modelDump) {
+    return stableKey(modelDump.call(arg));
+  }
+  if (Array.isArray(arg)) {
+    return arg.map((item) => _make_hashable(item));
+  }
+  if (arg instanceof Map) {
+    return [...arg.entries()]
+      .map(([key, value]) => [_make_hashable(key), _make_hashable(value)])
+      .sort(([left], [right]) => stableKey(left).localeCompare(stableKey(right)));
+  }
+  if (arg instanceof Set) {
+    return [...arg.values()].map((item) => _make_hashable(item)).sort((left, right) => stableKey(left).localeCompare(stableKey(right)));
+  }
+  if (Object.getPrototypeOf(arg) === Object.prototype || Object.getPrototypeOf(arg) === null) {
+    return Object.entries(arg as Record<string, unknown>)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, value]) => [key, _make_hashable(value)]);
+  }
+  return ["__instance__", getObjectId(arg)];
 }
 
 export function getAllMethods(instance: object): Record<string, unknown> {
@@ -244,4 +295,25 @@ function stableKey(value: unknown): string {
     }
     return item;
   });
+}
+
+function memoizeCacheKey(method: AnyFunction, thisArg: unknown, args: readonly unknown[]): string {
+  const methodArgs = thisArg === undefined || thisArg === null ? args : [thisArg, ...args];
+  const hashableArgs = methodArgs.map((arg) => _make_hashable(arg));
+  return `${method.name}:${stableKey([hashableArgs, []])}`;
+}
+
+function readFunction(value: object, key: string): ((...args: readonly unknown[]) => unknown) | null {
+  const candidate = (value as Record<string, unknown>)[key];
+  return typeof candidate === "function" ? candidate as (...args: readonly unknown[]) => unknown : null;
+}
+
+function getObjectId(value: object): number {
+  const existing = objectIds.get(value);
+  if (existing !== undefined) {
+    return existing;
+  }
+  const id = nextObjectId++;
+  objectIds.set(value, id);
+  return id;
 }
