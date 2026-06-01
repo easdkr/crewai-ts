@@ -18,6 +18,7 @@ import {
   type EventType,
 } from "./events.js";
 import { __version__ } from "./version.js";
+import { captureExecutionContext } from "./context.js";
 
 const requireNodeBuiltin = createRequire(import.meta.url);
 let cachedDatabaseSync: typeof import("node:sqlite").DatabaseSync | null = null;
@@ -276,6 +277,134 @@ export type RuntimeStateOptions = {
   crewai_version?: string;
 };
 
+type MutableRecord = Record<string, unknown>;
+
+export function _sync_checkpoint_fields(entity: object): void {
+  const record = entity as MutableRecord;
+  const privateKickoffId = record._kickoff_event_id;
+  if (typeof privateKickoffId === "string") {
+    record.checkpointKickoffEventId = privateKickoffId;
+    record.checkpoint_kickoff_event_id = privateKickoffId;
+  }
+
+  const copyState = record._copy_and_serialize_state ?? record._copyAndSerializeState;
+  if (typeof copyState === "function") {
+    const completedMethods = normalizeRuntimeSet(record.completedMethods ?? record.runtimeCompletedMethods);
+    const methodOutputs = normalizeRuntimeArray(record.methodOutputs ?? record.method_outputs ?? record.runtimeMethodOutputs);
+    const methodCounts = normalizeRuntimeMap(record.methodExecutionCounts ?? record.runtimeMethodExecutionCounts);
+    record.checkpoint_completed_methods = completedMethods.length > 0 ? completedMethods : null;
+    record.checkpoint_method_outputs = methodOutputs.length > 0 ? methodOutputs : null;
+    record.checkpoint_method_counts = Object.keys(methodCounts).length > 0 ? methodCounts : null;
+    record.checkpoint_state = copyState.call(entity);
+  }
+
+  if (Array.isArray(record.tasks)) {
+    if (isRecord(record._inputs)) {
+      record.checkpointInputs = { ...record._inputs };
+      record.checkpoint_inputs = { ...record._inputs };
+    }
+    if (typeof record._train === "boolean") {
+      record.checkpointTrain = record._train;
+      record.checkpoint_train = record._train;
+    }
+    for (const task of record.tasks) {
+      if (!isRecord(task)) {
+        continue;
+      }
+      const originalDescription = task._original_description ?? task.originalDescription ?? task.description;
+      if (typeof originalDescription === "string") {
+        task.checkpointOriginalDescription = originalDescription;
+        task.checkpoint_original_description = originalDescription;
+      }
+      const originalExpectedOutput = task._original_expected_output ?? task.originalExpectedOutput ?? task.expectedOutput ?? task.expected_output;
+      if (typeof originalExpectedOutput === "string") {
+        task.checkpointOriginalExpectedOutput = originalExpectedOutput;
+        task.checkpoint_original_expected_output = originalExpectedOutput;
+      }
+    }
+  }
+}
+
+export function _backfill_memory_kind(value: unknown): void {
+  if (!isRecord(value) || "memory_kind" in value) {
+    return;
+  }
+  if ("scopes" in value) {
+    value.memory_kind = "slice";
+  } else if ("root_path" in value) {
+    value.memory_kind = "scope";
+  } else {
+    value.memory_kind = "memory";
+  }
+}
+
+export function _backfill_source_type(source: unknown): void {
+  if (!isRecord(source) || "source_type" in source) {
+    return;
+  }
+  if (typeof source.content === "string") {
+    source.source_type = "string";
+    return;
+  }
+  throw new Error(
+    "Legacy knowledge source is missing 'source_type' and could not be inferred during migration. Re-checkpoint after upgrading to 1.14.6+.",
+  );
+}
+
+export function _backfill_sources_on(container: unknown): void {
+  if (!isRecord(container)) {
+    return;
+  }
+  for (const key of ["sources", "knowledge_sources"]) {
+    const sources = container[key];
+    if (!Array.isArray(sources)) {
+      continue;
+    }
+    for (const source of sources) {
+      _backfill_source_type(source);
+    }
+  }
+}
+
+export function _backfill_discriminators(entity: unknown): void {
+  if (!isRecord(entity)) {
+    return;
+  }
+  _backfill_memory_kind(entity.memory);
+  _backfill_sources_on(entity);
+  _backfill_sources_on(entity.knowledge);
+  const agents = entity.agents;
+  if (!Array.isArray(agents)) {
+    return;
+  }
+  for (const agent of agents) {
+    if (!isRecord(agent)) {
+      continue;
+    }
+    _backfill_memory_kind(agent.memory);
+    _backfill_sources_on(agent);
+    _backfill_sources_on(agent.knowledge);
+  }
+}
+
+export function _prepare_entities(root: readonly object[]): void {
+  for (const entity of root) {
+    (entity as MutableRecord).executionContext = captureExecutionContext();
+    (entity as MutableRecord).execution_context = (entity as MutableRecord).executionContext;
+    _sync_checkpoint_fields(entity);
+  }
+}
+
+function migrateRuntimeStateData(data: Record<string, unknown>): Record<string, unknown> {
+  const entities = data.entities;
+  if (Array.isArray(entities)) {
+    for (const entity of entities) {
+      _backfill_discriminators(entity);
+    }
+  }
+  return data;
+}
+
 export class RuntimeState {
   root: unknown[];
   private provider: BaseProvider;
@@ -374,6 +503,7 @@ export class RuntimeState {
   }
 
   toJSON(): Record<string, unknown> {
+    _prepare_entities(this.root.filter((entity): entity is object => typeof entity === "object" && entity !== null));
     return {
       crewai_version: __version__,
       parent_id: this.parentId,
@@ -396,7 +526,7 @@ export class RuntimeState {
   }
 
   static fromJSONText(raw: string, provider: BaseProvider = new JsonProvider()): RuntimeState {
-    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const parsed = migrateRuntimeStateData(JSON.parse(raw) as Record<string, unknown>);
     const state = new RuntimeState({
       entities: Array.isArray(parsed.entities) ? parsed.entities : [],
       provider,
@@ -410,7 +540,7 @@ export class RuntimeState {
     if (typeof data === "string") {
       return RuntimeState.fromJSONText(data, provider);
     }
-    const record = isRecord(data) ? data : {};
+    const record = isRecord(data) ? migrateRuntimeStateData(data) : {};
     return new RuntimeState({
       entities: Array.isArray(record.entities) ? record.entities : Array.isArray(record.root) ? record.root : [],
       provider,
@@ -845,6 +975,36 @@ export const detect_provider = detectProvider;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+function normalizeRuntimeSet(value: unknown): string[] {
+  if (value instanceof Set) {
+    return [...value].map(String);
+  }
+  if (Array.isArray(value)) {
+    return value.map(String);
+  }
+  return [];
+}
+
+function normalizeRuntimeArray(value: unknown): unknown[] {
+  return Array.isArray(value) ? Array.from(value as unknown[]) : [];
+}
+
+function normalizeRuntimeMap(value: unknown): Record<string, number> {
+  if (value instanceof Map) {
+    return Object.fromEntries([...value.entries()].map(([key, count]) => [String(key), Number(count)]));
+  }
+  if (!isRecord(value)) {
+    return {};
+  }
+  const result: Record<string, number> = {};
+  for (const [key, count] of Object.entries(value)) {
+    if (typeof count === "number") {
+      result[key] = count;
+    }
+  }
+  return result;
 }
 
 function buildCheckpointPath(directory: string, branch: string, parentId: string | null): string {

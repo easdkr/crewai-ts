@@ -91,12 +91,18 @@ import {
   CrewDoclingSource,
   ClientTransportConfig,
   CheckpointConfig,
+  _backfill_discriminators,
+  _backfill_memory_kind,
+  _backfill_source_type,
+  _backfill_sources_on,
   _build_event_type_map,
   _build_path,
   _coerce_checkpoint,
   _make_id,
+  _prepare_entities,
   _resolve_event,
   _safe_branch,
+  _sync_checkpoint_fields,
   ConditionalTask,
   ConsoleFormatter,
   Crew,
@@ -21485,6 +21491,73 @@ describe("event record", () => {
 });
 
 describe("runtime state", () => {
+  it("backfills legacy runtime checkpoint discriminators", () => {
+    const memory: Record<string, unknown> = {};
+    const scopedMemory: Record<string, unknown> = { root_path: "/crew/main" };
+    const sliceMemory: Record<string, unknown> = { scopes: ["/crew/main"] };
+    const source: Record<string, unknown> = { content: "reference text" };
+    const container: Record<string, unknown> = {
+      sources: [{ content: "source text" }],
+      knowledge_sources: [{ content: "knowledge text" }],
+    };
+    const entity: Record<string, unknown> = {
+      memory,
+      knowledge: { sources: [{ content: "crew knowledge" }] },
+      agents: [{
+        memory: scopedMemory,
+        knowledge_sources: [{ content: "agent knowledge" }],
+      }],
+    };
+
+    _backfill_memory_kind(memory);
+    _backfill_memory_kind(scopedMemory);
+    _backfill_memory_kind(sliceMemory);
+    _backfill_source_type(source);
+    _backfill_sources_on(container);
+    _backfill_discriminators(entity);
+
+    expect(memory.memory_kind).toBe("memory");
+    expect(scopedMemory.memory_kind).toBe("scope");
+    expect(sliceMemory.memory_kind).toBe("slice");
+    expect(source.source_type).toBe("string");
+    expect((container.sources as Record<string, unknown>[])[0]?.source_type).toBe("string");
+    expect(((entity.knowledge as Record<string, unknown>).sources as Record<string, unknown>[])[0]?.source_type).toBe("string");
+    expect(() => {
+      _backfill_source_type({ content: ["file.csv"] });
+    }).toThrow("missing 'source_type'");
+  });
+
+  it("syncs checkpoint fields before runtime serialization", () => {
+    const agent = new Agent({
+      role: "Runtime Agent",
+      goal: "Serialize",
+      backstory: "Serializable",
+    });
+    const task = new Task({
+      description: "Current {topic}",
+      expectedOutput: "Current output",
+      agent,
+    });
+    const crew = new Crew({ agents: [agent], tasks: [task] });
+    (agent as unknown as Record<string, unknown>)._kickoff_event_id = "agent-kickoff";
+    (crew as unknown as Record<string, unknown>)._inputs = { topic: "CrewAI" };
+    (crew as unknown as Record<string, unknown>)._train = true;
+    (crew as unknown as Record<string, unknown>)._kickoff_event_id = "crew-kickoff";
+    (task as unknown as Record<string, unknown>)._original_description = "Original {topic}";
+    (task as unknown as Record<string, unknown>)._original_expected_output = "Original output";
+
+    _sync_checkpoint_fields(agent);
+    _prepare_entities([crew]);
+
+    expect(agent.checkpoint_kickoff_event_id).toBe("agent-kickoff");
+    expect(crew.execution_context).not.toBeNull();
+    expect(crew.checkpoint_inputs).toEqual({ topic: "CrewAI" });
+    expect(crew.checkpoint_train).toBe(true);
+    expect(crew.checkpoint_kickoff_event_id).toBe("crew-kickoff");
+    expect(task.checkpoint_original_description).toBe("Original {topic}");
+    expect(task.checkpoint_original_expected_output).toBe("Original output");
+  });
+
   it("serializes entities, event records, and lineage fields", () => {
     const record = new EventRecord();
     const event = new BaseEvent({ type: "crew_kickoff_started" });
