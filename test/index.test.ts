@@ -10656,6 +10656,17 @@ describe("core crew runtime", () => {
       model: "openai/gpt-4o-mini",
     });
     expect(functionCallingAgent.functionCallingLlm).toBe(functionCallingAgent.function_calling_llm);
+    const agentKnowledgeSource = new StringKnowledgeSource("Agent knowledge uses role collection.");
+    const knowledgeAgent = new Agent({
+      role: "Researcher",
+      goal: "Use knowledge",
+      backstory: "Careful analyst",
+      knowledgeSources: [agentKnowledgeSource],
+    });
+    expect(knowledgeAgent.knowledge_sources).toEqual([agentKnowledgeSource]);
+    expect(knowledgeAgent.knowledge?.collection_name).toBe("Researcher");
+    expect(knowledgeAgent.knowledge?.query("role collection", { scoreThreshold: null })[0]?.content)
+      .toContain("Agent knowledge uses role collection.");
     expect(crewInstance.query_knowledge(["collaborative"])?.[0]?.content).toContain("collaborative agents");
     expect(crewInstance.knowledge?.collection_name).toBe("crew");
     await expect(crewInstance.aquery_knowledge(["CrewAI"])).resolves.toHaveLength(1);
@@ -10668,6 +10679,15 @@ describe("core crew runtime", () => {
       },
       search: () => [],
     }));
+    const embeddedKnowledgeAgent = new Agent({
+      role: "researcher",
+      goal: "Use embedded knowledge",
+      backstory: "Careful analyst",
+      knowledgeSources: [new StringKnowledgeSource("Embedded agent knowledge uses role collection.")],
+      embedder: { provider: "custom", config: { embedding_callable: (texts: readonly unknown[]) => texts.map(() => [2]) } },
+    });
+    expect(embeddedKnowledgeAgent.knowledge?.collection_name).toBe("researcher");
+    expect(savedCollections).toContain("knowledge_researcher");
     const knowledgeCrew = new Crew({
       agents: [researcher],
       tasks: [taskInstance],

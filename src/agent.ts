@@ -222,11 +222,13 @@ export class Agent {
   readonly function_calling_llm: LLM | string | null;
   memory: Memory | MemoryScope | null;
   knowledge: Knowledge | null;
+  readonly knowledgeSources: readonly KnowledgeSource[];
+  readonly knowledge_sources: readonly KnowledgeSource[];
   readonly knowledgeStorage: unknown;
   readonly knowledge_storage: unknown;
   readonly knowledgeConfig: Record<string, unknown> | null;
   readonly knowledge_config: Record<string, unknown> | null;
-  readonly embedder: EmbedderConfig | null;
+  embedder: EmbedderConfig | null;
   agentKnowledgeContext: string | null;
   agent_knowledge_context: string | null;
   crewKnowledgeContext: string | null;
@@ -323,16 +325,14 @@ export class Agent {
     );
     this.function_calling_llm = this.functionCallingLlm;
     this.memory = options.memory ?? null;
-    this.knowledge = options.knowledge ?? (
-      options.knowledgeSources || options.knowledge_sources
-        ? new Knowledge({ sources: options.knowledgeSources ?? options.knowledge_sources ?? [] })
-        : null
-    );
+    this.knowledgeSources = [...(options.knowledgeSources ?? options.knowledge_sources ?? [])];
+    this.knowledge_sources = this.knowledgeSources;
+    this.embedder = options.embedder ?? null;
+    this.knowledge = options.knowledge ?? this.createKnowledgeFromSources();
     this.knowledgeStorage = options.knowledgeStorage ?? options.knowledge_storage ?? null;
     this.knowledge_storage = this.knowledgeStorage;
     this.knowledgeConfig = options.knowledgeConfig ?? options.knowledge_config ?? null;
     this.knowledge_config = this.knowledgeConfig;
-    this.embedder = options.embedder ?? null;
     this.agentKnowledgeContext = options.agentKnowledgeContext ?? options.agent_knowledge_context ?? null;
     this.agent_knowledge_context = this.agentKnowledgeContext;
     this.crewKnowledgeContext = options.crewKnowledgeContext ?? options.crew_knowledge_context ?? null;
@@ -578,6 +578,7 @@ export class Agent {
       functionCallingLlm: this.functionCallingLlm,
       memory: this.memory,
       knowledge: this.knowledge,
+      knowledgeSources: this.knowledgeSources,
       knowledgeStorage: this.knowledgeStorage,
       knowledgeConfig: this.knowledgeConfig,
       embedder: this.embedder,
@@ -708,12 +709,25 @@ export class Agent {
     return this.resolveMemory();
   }
 
-  setKnowledge(knowledge: Knowledge | null): void {
-    this.knowledge = knowledge;
+  createKnowledgeFromSources(): Knowledge | null {
+    return this.knowledgeSources.length > 0
+      ? new Knowledge({ sources: this.knowledgeSources, collectionName: this.role, embedder: this.embedder })
+      : null;
   }
 
-  set_knowledge(knowledge: Knowledge | null): void {
-    this.setKnowledge(knowledge);
+  setKnowledge(knowledgeOrCrewEmbedder: Knowledge | EmbedderConfig | null = null): void {
+    if (knowledgeOrCrewEmbedder instanceof Knowledge || knowledgeOrCrewEmbedder === null) {
+      this.knowledge = knowledgeOrCrewEmbedder;
+      return;
+    }
+    if (!this.embedder) {
+      this.embedder = knowledgeOrCrewEmbedder;
+    }
+    this.knowledge = this.createKnowledgeFromSources();
+  }
+
+  set_knowledge(knowledgeOrCrewEmbedder: Knowledge | EmbedderConfig | null = null): void {
+    this.setKnowledge(knowledgeOrCrewEmbedder);
   }
 
   setRpmController(controller: RpmController | null): void {
