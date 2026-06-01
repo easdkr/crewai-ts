@@ -541,6 +541,8 @@ export {
   extract_tool_call_info,
   formatMessageForLLM,
   format_message_for_llm,
+  _executor_stop_words,
+  _llm_stop_words_applied,
   formatAnswer,
   format_answer,
   getLlmResponse,

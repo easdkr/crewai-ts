@@ -763,6 +763,8 @@ import {
   _extract_summary_tags,
   _format_messages_for_summary,
   _split_messages_into_chunks,
+  _executor_stop_words,
+  _llm_stop_words_applied,
   isValidTool,
   is_valid_tool,
   getCrewaiVersion,
@@ -5775,6 +5777,31 @@ describe("agent utility helpers", () => {
     ], 3).map((chunk) => chunk.length)).toEqual([1, 2]);
     expect(_extract_summary_tags("before <summary>Important summary</summary> after")).toBe("Important summary");
     expect(_extract_summary_tags("No tags")).toBe("No tags");
+  });
+
+  it("applies executor stop words to BaseLLM calls without mutating the model", async () => {
+    class StopAwareLLM extends BaseLLM {
+      call(messages: readonly LLMMessage[]): string {
+        return this._apply_stop_words(messages.at(-1)?.content ?? "");
+      }
+    }
+    const llm = new StopAwareLLM({ model: "demo/model", stop: ["BASE"] });
+
+    expect(_executor_stop_words(null)).toEqual([]);
+    expect(_executor_stop_words({ stop: ["TEMP", 5] })).toEqual(["TEMP", "5"]);
+    expect(_executor_stop_words({ stop_words: "DONE" })).toEqual(["DONE"]);
+
+    const scoped = await _llm_stop_words_applied(llm, { stop_words: ["TEMP"] }, () => {
+      expect(llm.stop).toEqual(["BASE"]);
+      expect(llm.stop_sequences).toEqual(["BASE", "TEMP"]);
+      return llm.call([{ role: "user", content: "alpha TEMP beta BASE gamma" }]);
+    });
+
+    expect(scoped).toBe("alpha");
+    expect(llm.stop).toEqual(["BASE"]);
+    expect(llm.stop_sequences).toEqual(["BASE"]);
+    await expect(_llm_stop_words_applied((messages: LLMMessage[]) => messages[0]?.content ?? "", { stop: ["TEMP"] }, () => "plain"))
+      .resolves.toBe("plain");
   });
 
   it("parses ReAct agent output and normalizes string tool calls", async () => {

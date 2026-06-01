@@ -4,6 +4,7 @@ import { AgentAction, AgentFinish, OutputParserError } from "./agent-parser.js";
 import { BaseTool, ToolResult, type ToolArgsSchema, type ToolArgumentSpec } from "./tools.js";
 import type { LLMMessage, MaybePromise, Tool, ToolContext } from "./types.js";
 import { AgentRepositoryError } from "./errors.js";
+import { BaseLLM, callStopOverride } from "./llm.js";
 
 export type ToolRunner = (input?: ToolContext | Record<string, unknown> | string) => MaybePromise<unknown>;
 
@@ -137,6 +138,36 @@ export function extractTaskSection(text: string): string {
 
 export function hasReachedMaxIterations(iterations: number, maxIterations: number): boolean {
   return iterations >= maxIterations;
+}
+
+export function _executor_stop_words(executorContext: unknown): string[] {
+  if (executorContext === null || executorContext === undefined || typeof executorContext !== "object") {
+    return [];
+  }
+  const record = executorContext as Record<string, unknown>;
+  const stops = record.stop ?? record.stop_words;
+  if (Array.isArray(stops)) {
+    return stops.map((stop) => String(stop));
+  }
+  if (typeof stops === "string") {
+    return [stops];
+  }
+  return [];
+}
+
+export async function _llm_stop_words_applied<T>(
+  llm: unknown,
+  executorContext: unknown,
+  callback: () => MaybePromise<T>,
+): Promise<T> {
+  const extra = _executor_stop_words(executorContext);
+  if (extra.length === 0 || !(llm instanceof BaseLLM)) {
+    return await callback();
+  }
+  if (extra.every((stop) => llm.stop.includes(stop))) {
+    return await callback();
+  }
+  return await callStopOverride(llm, [...new Set([...llm.stop, ...extra])], callback);
 }
 
 export function formatMessageForLLM(
