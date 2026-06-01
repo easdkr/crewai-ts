@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 732 passing tests.
+- Test suite: 733 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -220,6 +220,7 @@ When more goal budget is available, continue from the behavioral parity audits b
   - `Flow` now uses upstream-style static `initialState` / `initial_state` defaults when no constructor `initialState` is provided.
   - `Flow.kickoff` / `kickoffAsync` / `kickoff_async` / `akickoff` now accept upstream-style direct `inputs` arguments in addition to the TS options object.
 - `humanFeedback` now validates upstream HITL routing configuration before decoration: `emit` requires a usable LLM, `defaultOutcome` requires `emit`, and defaults must be one of the emitted outcomes.
+- Flow HITL routing now supports deterministic LLM-backed outcome collapse for injected local LLM clients, including JSON `outcome` responses and first-outcome fallback on LLM failure.
 - `toSerializable` now mirrors upstream BaseModel serialization by honoring `modelDump` / `model_dump` output before object entry serialization, with recursive exclude handling.
   - `Flow.kickoff` / `kickoffAsync` now support upstream-style `restore_from_state_id` / `restoreFromStateId` fork hydration from persisted state without reusing the source flow ID and reject conflicting checkpoint restores.
   - `Flow.kickoff` / `kickoffAsync` now reload persisted state from `inputs.id` before applying non-id input overrides, matching upstream default-value override semantics.

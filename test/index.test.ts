@@ -15271,6 +15271,42 @@ describe("flow runtime", () => {
     })).not.toThrow();
   });
 
+  it("collapses human feedback routing outcomes through an injected LLM", async () => {
+    const llmCalls: Array<{ messages: readonly LLMMessage[]; options?: LLMCallOptions }> = [];
+    const llm = {
+      model: "local/hitl",
+      call(messages: readonly LLMMessage[], options?: LLMCallOptions) {
+        llmCalls.push({ messages, options });
+        return JSON.stringify({ outcome: "approved" });
+      },
+    };
+    class ReviewFlow extends Flow {}
+    const flow = new ReviewFlow();
+
+    const output = await flow.requestHumanFeedback("review", "draft", {
+      message: "Approve?",
+      emit: ["needs_changes", "approved"],
+      llm,
+      provider: {
+        requestFeedback: () => "This is ready to ship.",
+      },
+    });
+
+    expect(output).toBe("approved");
+    expect(flow.lastHumanFeedback).toMatchObject({
+      output: "draft",
+      feedback: "This is ready to ship.",
+      outcome: "approved",
+    });
+    expect(llmCalls).toHaveLength(1);
+    expect(llmCalls[0]?.messages[0]?.content).toContain("This is ready to ship.");
+    expect(llmCalls[0]?.messages[0]?.content).toContain("needs_changes, approved");
+    expect(llmCalls[0]?.options?.responseModel).toMatchObject({
+      name: "FeedbackOutcome",
+      outcomes: ["needs_changes", "approved"],
+    });
+  });
+
   it("includes human feedback metadata in flow structure", () => {
     class ReviewFlow extends Flow {
       generate() {

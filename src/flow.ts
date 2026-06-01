@@ -30,6 +30,7 @@ import {
   flowConfig,
   isInputResponse,
 } from "./input-provider.js";
+import { callLLM, createLLMClient, type LLM, type LLMClient } from "./llm.js";
 import type { CrewOutput } from "./outputs.js";
 import { FlowStreamingOutput } from "./streaming.js";
 import { CheckpointConfig, coerceCheckpointConfig, RuntimeState, type CheckpointOption } from "./state.js";
@@ -751,7 +752,7 @@ export type HumanFeedbackResult = {
 export type HumanFeedbackConfig = {
   message: string;
   emit?: readonly string[] | null;
-  llm?: string | Record<string, unknown> | null;
+  llm?: string | Record<string, unknown> | LLM | null;
   defaultOutcome?: string | null;
   metadata?: Record<string, unknown> | null;
   provider?: HumanFeedbackProvider | null;
@@ -1972,6 +1973,7 @@ export class Flow<TState extends object = Record<string, unknown>> {
       emit: config.emit ?? null,
       defaultOutcome: config.defaultOutcome ?? null,
       metadata: config.metadata ?? null,
+      outcome: await collapseFeedbackToOutcomeAsync(feedback, config.emit ?? null, config.defaultOutcome ?? null, config.llm ?? null),
     });
     crewaiEventBus.emit(this, new HumanFeedbackReceivedEvent({
       flowName: this.flowName(),
@@ -2103,6 +2105,7 @@ export class Flow<TState extends object = Record<string, unknown>> {
       emit: context.emit,
       defaultOutcome: context.defaultOutcome,
       metadata: context.metadata,
+      outcome: await collapseFeedbackToOutcomeAsync(feedback, context.emit, context.defaultOutcome, context.llm ?? null),
     });
     crewaiEventBus.emit(this, new HumanFeedbackReceivedEvent({
       flowName,
@@ -2229,11 +2232,12 @@ export class Flow<TState extends object = Record<string, unknown>> {
     emit: readonly string[] | null;
     defaultOutcome: string | null;
     metadata: Record<string, unknown> | null;
+    outcome?: string | null;
   }): HumanFeedbackResult {
     const result: HumanFeedbackResult = {
       output: options.output,
       feedback: options.feedback,
-      outcome: collapseFeedbackToOutcome(options.feedback, options.emit, options.defaultOutcome),
+      outcome: options.outcome ?? collapseFeedbackToOutcome(options.feedback, options.emit, options.defaultOutcome),
       timestamp: new Date(),
       methodName: options.methodName,
       metadata: { ...(options.metadata ?? {}) },
@@ -2350,7 +2354,7 @@ export class Flow<TState extends object = Record<string, unknown>> {
       emit,
       defaultOutcome: config.defaultOutcome ?? null,
       metadata: { ...(config.metadata ?? {}) },
-      llm: config.llm ?? null,
+      llm: serializeHumanFeedbackLlm(config.llm ?? null),
       flowId: this.flowPersistenceId(),
       flowClass: this.constructor.name,
       requestedAt: new Date(),
@@ -2472,6 +2476,14 @@ function serializeHumanFeedbackLlm(value: unknown): string | Record<string, unkn
     return null;
   }
   const provider = record.provider;
+  if (typeof record.call !== "function") {
+    return {
+      ...record,
+      model: typeof provider === "string" && provider && !model.includes("/")
+        ? `${provider}/${model}`
+        : model,
+    };
+  }
   return typeof provider === "string" && provider && !model.includes("/")
     ? `${provider}/${model}`
     : model;
@@ -2499,6 +2511,110 @@ function collapseFeedbackToOutcome(
   }
   const contained = emit.find((outcome) => normalizedFeedback.includes(outcome.toLowerCase()));
   return contained ?? defaultOutcome ?? emit[0] ?? null;
+}
+
+async function collapseFeedbackToOutcomeAsync(
+  feedback: string,
+  emit: readonly string[] | null,
+  defaultOutcome: string | null,
+  llm: string | Record<string, unknown> | LLM | null,
+): Promise<string | null> {
+  if (!emit || emit.length === 0) {
+    return null;
+  }
+  if (!feedback.trim()) {
+    return defaultOutcome ?? emit[0] ?? null;
+  }
+  const llmClient = resolveHumanFeedbackLlmClient(llm);
+  if (!llmClient) {
+    return collapseFeedbackToOutcome(feedback, emit, defaultOutcome);
+  }
+  const prompt = [
+    "Map the human feedback to exactly one of the allowed outcomes.",
+    `Feedback: ${feedback}`,
+    `Outcomes: ${emit.join(", ")}`,
+    "Return JSON with an outcome field, or return the exact outcome text.",
+  ].join("\n");
+  try {
+    const response = await callLLM(llmClient, [{ role: "user", content: prompt }], {
+      responseModel: { name: "FeedbackOutcome", outcomes: [...emit] },
+      metadata: { model: humanFeedbackLlmModelName(llm) ?? "human-feedback" },
+    });
+    return matchFeedbackOutcome(response, emit) ?? emit[0] ?? null;
+  } catch {
+    try {
+      const response = await callLLM(llmClient, [{ role: "user", content: prompt }], {
+        metadata: { model: humanFeedbackLlmModelName(llm) ?? "human-feedback" },
+      });
+      return matchFeedbackOutcome(response, emit) ?? emit[0] ?? null;
+    } catch {
+      return emit[0] ?? null;
+    }
+  }
+}
+
+function resolveHumanFeedbackLlmClient(llm: string | Record<string, unknown> | LLM | null): LLMClient | null {
+  if (!llm || typeof llm === "string") {
+    return null;
+  }
+  if (typeof llm === "function") {
+    return createLLMClient(llm);
+  }
+  if ("call" in llm && typeof (llm as { call?: unknown }).call === "function") {
+    return createLLMClient(llm as LLM);
+  }
+  return null;
+}
+
+function matchFeedbackOutcome(response: unknown, outcomes: readonly string[]): string | null {
+  const value = extractFeedbackOutcomeValue(response);
+  if (value === null) {
+    return null;
+  }
+  const cleaned = value.trim();
+  const exact = outcomes.find((outcome) => outcome.toLowerCase() === cleaned.toLowerCase());
+  if (exact) {
+    return exact;
+  }
+  const lower = cleaned.toLowerCase();
+  let bestOutcome: string | null = null;
+  let bestLength = -1;
+  for (const outcome of outcomes) {
+    if (lower.includes(outcome.toLowerCase()) && outcome.length > bestLength) {
+      bestOutcome = outcome;
+      bestLength = outcome.length;
+    }
+  }
+  return bestOutcome;
+}
+
+function extractFeedbackOutcomeValue(response: unknown): string | null {
+  if (typeof response === "string") {
+    const trimmed = response.trim();
+    try {
+      const parsed: unknown = JSON.parse(trimmed);
+      const outcome = parsed && typeof parsed === "object" ? (parsed as { outcome?: unknown }).outcome : null;
+      return typeof outcome === "string" ? outcome : trimmed;
+    } catch {
+      return trimmed;
+    }
+  }
+  if (response && typeof response === "object") {
+    const outcome = (response as { outcome?: unknown }).outcome;
+    return typeof outcome === "string" ? outcome : null;
+  }
+  return null;
+}
+
+function humanFeedbackLlmModelName(llm: string | Record<string, unknown> | LLM | null): string | null {
+  if (typeof llm === "string") {
+    return llm;
+  }
+  if (llm && typeof llm === "object") {
+    const model = (llm as { model?: unknown }).model;
+    return typeof model === "string" ? model : null;
+  }
+  return null;
 }
 
 function formatFeedbackPrompt(message: string, output: unknown): string {
