@@ -29,9 +29,9 @@ export async function _run_coroutine_sync<T>(coro: PromiseLike<T>): Promise<T> {
 export class GuardrailResult {
   readonly success: boolean;
   readonly result: unknown;
-  readonly error: string | null;
+  readonly error: unknown;
 
-  constructor(options: { success: boolean; result?: unknown; error?: string | null }) {
+  constructor(options: { success: boolean; result?: unknown; error?: unknown }) {
     if (options.success && options.error) {
       throw new Error("Cannot have both result and error when success is True");
     }
@@ -48,7 +48,7 @@ export class GuardrailResult {
     return new GuardrailResult({
       success,
       result: success ? data : null,
-      error: success ? null : String(data),
+      error: success ? null : data,
     });
   }
 

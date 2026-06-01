@@ -1915,8 +1915,12 @@ describe("formatter and guardrail utilities", () => {
 
     const passed = StandardGuardrailResult.from_tuple([true, "clean"]);
     const failed = StandardGuardrailResult.fromTuple([false, "too short"]);
+    const structuredFailure = { reason: "too short" };
+    const failedWithStructuredPayload = StandardGuardrailResult.fromTuple([false, structuredFailure]);
     expect(passed).toMatchObject({ success: true, result: "clean", error: null });
     expect(failed).toMatchObject({ success: false, result: null, error: "too short" });
+    expect(failedWithStructuredPayload).toMatchObject({ success: false, result: null });
+    expect(failedWithStructuredPayload.error).toBe(structuredFailure);
     expect(StandardGuardrailResult.validate_result_error_exclusivity("ok", { data: { success: true } })).toBe("ok");
     expect(() => StandardGuardrailResult.validate_result_error_exclusivity("bad", {
       data: { success: true, error: "bad" },
