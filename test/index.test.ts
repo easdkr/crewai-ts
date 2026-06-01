@@ -19313,6 +19313,7 @@ describe("task guardrails", () => {
 
   it("retries the failing guardrail before continuing to the next one", async () => {
     let attempts = 0;
+    const prompts: string[] = [];
     const events: CrewAIEvent[] = [];
     crewaiEventBus.on("llm_guardrail_started", (_source, event) => {
       events.push(event);
@@ -19324,7 +19325,11 @@ describe("task guardrails", () => {
       role: "Writer",
       goal: "Write reports",
       backstory: "Careful writer",
-      llm: () => "draft",
+      llm: (messages) => {
+        const prompt = messages.at(-1)?.content ?? "";
+        prompts.push(prompt);
+        return prompt.includes("Validation error: draft fixed") ? "draft fixed" : "draft";
+      },
     });
     const taskInstance = new Task({
       description: "Write",
@@ -19345,6 +19350,8 @@ describe("task guardrails", () => {
     const output = await taskInstance.execute();
 
     expect(output.raw).toBe("draft fixed accepted");
+    expect(prompts[1]).toContain("Validation error: draft fixed");
+    expect(prompts[1]).toContain("Task output: draft");
     expect(attempts).toBe(2);
     expect(events.map((event) => event.type)).toEqual([
       "llm_guardrail_started",

@@ -958,7 +958,7 @@ export class Task {
       let output = await this.createOutput(raw, agent, renderedTask);
 
       for (const [index, guardrail] of this.effectiveGuardrails().entries()) {
-        output = await this.runGuardrail(guardrail, output, agent, index);
+        output = await this.runGuardrail(guardrail, output, agent, index, inputs, tools, renderedTask);
       }
       output = await this.handleHumanInput(output, agent, inputs, tools, renderedTask, executionOptions);
 
@@ -1079,6 +1079,9 @@ export class Task {
     initialOutput: TaskOutput,
     agent: Agent,
     index: number,
+    inputs: InputValues = {},
+    tools: readonly Tool[] = [],
+    renderedTask?: RenderedTask,
   ): Promise<TaskOutput> {
     let output = initialOutput;
     for (let attempt = 0; attempt <= this.guardrailMaxRetries; attempt += 1) {
@@ -1106,9 +1109,22 @@ export class Task {
         return await this.normalizeGuardrailOutput(nextValue, output, agent);
       }
       if (attempt === this.guardrailMaxRetries) {
-        throw new Error(`Task '${this.name ?? this.description}' failed guardrail ${String(index)} validation.`);
+        throw new Error(`Task failed guardrail ${String(index)} validation after ${String(this.guardrailMaxRetries)} retries. Last error: ${String(nextValue)}`);
       }
-      output = await this.normalizeGuardrailOutput(nextValue, output, agent);
+      const context = [
+        `Validation error: ${String(nextValue)}`,
+        `Task output: ${output.raw}`,
+      ].join("\n");
+      const raw = await agent.executeTask(context, inputs, tools, {
+        task: this,
+        ...(renderedTask === undefined ? {} : { inputFiles: renderedTask.inputFiles }),
+      });
+      output = await this.createOutput(raw, agent, {
+        description: output.description,
+        expectedOutput: output.expectedOutput ?? this.expectedOutput,
+        prompt: "",
+        inputFiles: renderedTask?.inputFiles ?? {},
+      });
     }
     return output;
   }
@@ -1183,7 +1199,7 @@ export class Task {
       });
       output = await this.createOutput(raw, agent, renderedTask);
       for (const [index, guardrail] of this.effectiveGuardrails().entries()) {
-        output = await this.runGuardrail(guardrail, output, agent, index);
+        output = await this.runGuardrail(guardrail, output, agent, index, inputs, tools, renderedTask);
       }
     }
     return output;
