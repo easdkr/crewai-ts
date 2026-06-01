@@ -10600,6 +10600,11 @@ describe("core crew runtime", () => {
     expect(crewInstance.check_config()).toBe(crewInstance);
     expect(crewInstance.validate_tasks()).toBe(crewInstance);
     expect(() => new Crew()).toThrow("Either 'agents' and 'tasks' need to be set or 'config'.");
+    expect(() => new Crew({
+      id: "manual-crew-id",
+      agents: [researcher],
+      tasks: [taskInstance],
+    })).toThrow("The 'id' field cannot be set by the user.");
     const functionCallingCrew = new Crew({
       agents: [researcher],
       tasks: [taskInstance],
@@ -23651,6 +23656,7 @@ describe("checkpoint state providers", () => {
 
     expect(restored).toBeInstanceOf(Crew);
     expect(restored.name).toBe("Checkpoint Crew");
+    expect(restored.id).toBe(crew.id);
     expect(restored.tasks[0]?.agent).toBe(restored.agents[0]);
     expect(restored.tasks[0]?.output?.raw).toBe("already done");
     expect((restored as unknown as { _inputs: InputValues })._inputs).toEqual({ topic: "CrewAI" });

@@ -132,6 +132,8 @@ export function knowledge_reset(crew: { resetKnowledge?: (knowledges: readonly K
 
 export type CrewOptions = {
   id?: string;
+  fromCheckpoint?: boolean;
+  from_checkpoint?: boolean;
   name?: string | null;
   config?: string | Record<string, unknown> | null;
   agents?: readonly Agent[];
@@ -260,7 +262,9 @@ export class Crew {
   readonly task_output_storage_handler: TaskOutputStorageHandler | null;
 
   constructor(options: CrewOptions = {}) {
-    this.id = options.id ?? randomUUID();
+    this.id = Crew.denyUserSetId(options.id, {
+      fromCheckpoint: options.fromCheckpoint ?? options.from_checkpoint ?? false,
+    }) ?? randomUUID();
     this.name = options.name ?? "crew";
     this.config = Crew.checkConfigType(options.config ?? null);
     this.agents = [...(options.agents ?? [])];
@@ -2736,6 +2740,7 @@ function normalizeCheckpointCrewEntity(entity: unknown): Crew | null {
     : [];
   return new Crew({
     ...(typeof record.id === "string" ? { id: record.id } : {}),
+    fromCheckpoint: true,
     name: typeof record.name === "string" ? record.name : null,
     agents,
     tasks,
