@@ -18567,6 +18567,40 @@ describe("flow runtime", () => {
     expect(flow.state.events.at(-1)).toBe("route:4");
   });
 
+  it("fires OR self-listening flow methods only once", async () => {
+    class OrSelfListenFlow extends Flow<{ callCount: number }> {
+      constructor() {
+        super({ initialState: { callCount: 0 }, maxMethodCalls: 5 });
+      }
+
+      begin() {
+        return "process";
+      }
+
+      route() {
+        return "process";
+      }
+
+      process() {
+        this.state.callCount += 1;
+      }
+    }
+
+    const initializers = [
+      decorateMethod(OrSelfListenFlow, "begin", start() as unknown as Decorator),
+      decorateMethod(OrSelfListenFlow, "route", router("begin") as unknown as Decorator),
+      decorateMethod(OrSelfListenFlow, "process", listen(or_("other_trigger", "process")) as unknown as Decorator),
+    ];
+    const flow = new OrSelfListenFlow();
+    initializers.forEach((initializer) => {
+      initializer.call(flow);
+    });
+
+    await flow.kickoff();
+
+    expect(flow.state.callCount).toBe(1);
+  });
+
   it("preserves non-structured-cloneable flow state values when copying state", () => {
     const handler = () => "locked";
     const flow = new Flow<{

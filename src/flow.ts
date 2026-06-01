@@ -1671,6 +1671,9 @@ export class Flow<TState extends object = Record<string, unknown>> {
           if (!entry.condition || skipCompletedMethods.has(name) || queue.some((candidate) => candidate.name === name)) {
             continue;
           }
+          if (shouldSuppressOrSelfRetrigger(entry.condition, name, triggerName, triggerName)) {
+            continue;
+          }
           if (!conditionIncludesTrigger(entry.condition, triggerName)) {
             continue;
           }
@@ -1725,6 +1728,9 @@ export class Flow<TState extends object = Record<string, unknown>> {
           for (const entry of entries) {
             const name = String(entry.name);
             if (!entry.condition || skipCompletedMethods.has(name) || queue.some((candidate) => candidate.name === name)) {
+              continue;
+            }
+            if (shouldSuppressOrSelfRetrigger(entry.condition, name, triggerName, current.name)) {
               continue;
             }
             if (!conditionIncludesTrigger(entry.condition, triggerName)) {
@@ -4200,6 +4206,19 @@ function conditionSatisfied(
 
 function conditionIncludesTrigger(condition: FlowCondition, triggerName: string): boolean {
   return condition.conditions.some((nested) => nestedIncludesTrigger(nested, triggerName));
+}
+
+function shouldSuppressOrSelfRetrigger(
+  condition: FlowCondition,
+  listenerName: string,
+  triggerName: string,
+  sourceName: string,
+): boolean {
+  return condition.type === "OR"
+    && condition.conditions.length > 1
+    && listenerName === triggerName
+    && triggerName === sourceName
+    && conditionIncludesTrigger(condition, triggerName);
 }
 
 function nestedIncludesTrigger(condition: FlowConditionInput, triggerName: string): boolean {
