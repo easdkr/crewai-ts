@@ -1277,6 +1277,15 @@ describe("serialization and project utilities", () => {
     expect(output.set_summary()).toBe(output);
     expect(output.summary).toBe("Summarize field alias compatibility for CrewAI task output...");
     expect(output.json).toBe('{"summary": "done"}');
+    expect(() => new TaskOutput({
+      description: "Raw only",
+      raw: "done",
+      agent: "Researcher",
+    }).json).toThrow([
+      "Invalid output format requested.",
+      "If you would like to access the JSON output,",
+      "please make sure to set the output_json property for the task",
+    ].join("\n"));
     expect(output.toDict()).toEqual({ summary: "done" });
     expect(output.to_dict()).toEqual({ summary: "done" });
     expect(output.__str__()).toBe("{'summary': 'done'}");

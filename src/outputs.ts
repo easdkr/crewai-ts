@@ -54,7 +54,11 @@ export class TaskOutput {
   get json(): string | null {
     if (this.outputFormat !== OutputFormat.JSON) {
       throw new Error(
-        "Invalid output format requested. Set outputJson on the task before reading json.",
+        [
+          "Invalid output format requested.",
+          "If you would like to access the JSON output,",
+          "please make sure to set the output_json property for the task",
+        ].join("\n"),
       );
     }
     return jsonDumps(this.jsonDict);
