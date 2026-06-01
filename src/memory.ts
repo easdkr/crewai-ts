@@ -1974,6 +1974,23 @@ export class Memory {
     this.modelPostInit(_context);
   }
 
+  __deepcopy__(_memo: Record<PropertyKey, unknown> | null = null): Memory {
+    void _memo;
+    const copy = new Memory({
+      ...clonePlainValue(this.configOptions),
+      readOnly: this.readOnly,
+      rootScope: this.rootScope,
+      llm: this.llm,
+      embedder: clonePlainValue(this.embedder),
+    });
+    copy.embedderInstance = this.embedderInstance === UNINITIALIZED_EMBEDDER
+      ? UNINITIALIZED_EMBEDDER
+      : clonePlainValue(this.embedderInstance);
+    copy.config = new MemoryConfig(clonePlainValue(this.configOptions));
+    copy.records.push(...this.records.map((record) => cloneMemoryRecord(record)));
+    return copy;
+  }
+
   get _llm(): LLM | null {
     return this.llm;
   }
@@ -3887,6 +3904,47 @@ function coerceConsolidationPlan(value: unknown): ConsolidationPlan {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function cloneMemoryRecord(record: MemoryRecord): MemoryRecord {
+  const options: MemoryRecordOptions = {
+    id: record.id,
+    content: record.content,
+    scope: record.scope,
+    categories: [...record.categories],
+    metadata: clonePlainValue(record.metadata),
+    importance: record.importance,
+    source: record.source,
+    private: record.private,
+    createdAt: new Date(record.createdAt),
+    embedding: record.embedding ? [...record.embedding] : null,
+  };
+  if (record.lastAccessed) {
+    options.lastAccessed = new Date(record.lastAccessed);
+  }
+  return new MemoryRecord({
+    ...options,
+  });
+}
+
+function clonePlainValue<T>(value: T): T {
+  if (typeof value === "function") {
+    return value;
+  }
+  try {
+    return structuredClone(value);
+  } catch {
+    if (Array.isArray(value)) {
+      const cloned = (value as readonly unknown[]).map((item) => clonePlainValue(item));
+      return cloned as T;
+    }
+    if (isRecord(value)) {
+      return Object.fromEntries(
+        Object.entries(value).map(([key, entry]) => [key, clonePlainValue(entry)]),
+      ) as T;
+    }
+    return value;
+  }
 }
 
 function parseJsonArray(value: unknown): readonly string[] {

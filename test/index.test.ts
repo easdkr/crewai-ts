@@ -22625,6 +22625,37 @@ describe("memory", () => {
     });
   });
 
+  it("deep-copies Memory records while recreating runtime queues like upstream", () => {
+    const embedder = (texts: readonly string[]) => texts.map((text) => [text.length]);
+    const memory = new Memory({
+      root_scope: "/crew",
+      embedder,
+      default_importance: 0.8,
+    });
+    const record = memory.remember("Deep copy memory record", {
+      scope: "/research",
+      categories: ["copy"],
+      metadata: { nested: { status: "original" } },
+    });
+    expect(record).not.toBeNull();
+
+    const copied = memory.__deepcopy__();
+
+    expect(copied).not.toBe(memory);
+    expect(copied.root_scope).toBe("/crew");
+    expect(copied._embedder).toBe(embedder);
+    expect(copied.allRecords()).toHaveLength(1);
+    expect(copied.allRecords()[0]).not.toBe(memory.allRecords()[0]);
+    copied.update(record?.id ?? "", {
+      content: "Changed only copied memory",
+      metadata: { nested: { status: "copy" } },
+    });
+
+    expect(copied.recall("Changed", { scoreThreshold: null })[0]?.record.content).toBe("Changed only copied memory");
+    expect(memory.recall("Deep", { scoreThreshold: null })[0]?.record.content).toBe("Deep copy memory record");
+    expect((memory.allRecords()[0]?.metadata.nested as { status?: string }).status).toBe("original");
+  });
+
   it("exposes upstream unified-memory passthrough and lazy default embedder helpers", () => {
     const value = { provider: "custom" };
     const callable = (texts: readonly unknown[]) => texts.map(() => [0.1, 0.2]);
