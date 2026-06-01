@@ -18112,6 +18112,12 @@ describe("LLM providers", () => {
       max_tokens: 100,
       api_base: "https://api.example.test",
     });
+    const stringifiedObject = create_llm({
+      toString: () => "test/stringified-model",
+    });
+    expect((stringifiedObject as ConfiguredLLM).to_config_dict()).toMatchObject({
+      model: "test/stringified-model",
+    });
 
     const fromEnv = create_llm(null, {
       MODEL_NAME: "test/env-model",

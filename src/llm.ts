@@ -1163,7 +1163,7 @@ export function createLLM(
   const model = stringProperty(llmValue, "model")
     ?? stringProperty(llmValue, "model_name")
     ?? stringProperty(llmValue, "deployment_name")
-    ?? "unknown";
+    ?? stringifyLLMValue(llmValue);
   const options: ConstructorParameters<typeof ConfiguredLLM>[0] = {
     model,
     provider: resolveLLMModelSpec(model, stringProperty(llmValue, "provider")).provider,
@@ -3214,6 +3214,14 @@ function parseCallbackNames(value: string | undefined): string[] {
 function stringProperty(value: Record<string, unknown>, key: string): string | undefined {
   const property = value[key];
   return typeof property === "string" ? property : undefined;
+}
+
+function stringifyLLMValue(value: Record<string, unknown>): string {
+  const toString = value["toString"];
+  const rendered: unknown = typeof toString === "function" && toString !== Object.prototype.toString
+    ? (toString as (this: Record<string, unknown>) => unknown).call(value)
+    : Object.prototype.toString.call(value);
+  return typeof rendered === "string" ? rendered : Object.prototype.toString.call(value);
 }
 
 function numberProperty(value: Record<string, unknown>, key: string): number | null {
