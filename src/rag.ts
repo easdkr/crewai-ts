@@ -2312,10 +2312,11 @@ export class ChromaDBClient {
     const batchSize = params.batchSize ?? params.batch_size ?? this.defaultBatchSize;
     const prepared = prepareDocuments(params.documents);
     for (let index = 0; index < prepared.ids.length; index += batchSize) {
+      const [ids, documents, metadatas] = _create_batch_slice(prepared, index, batchSize);
       callMethod(collection, "upsert", "upsert", {
-        ids: prepared.ids.slice(index, index + batchSize),
-        documents: prepared.texts.slice(index, index + batchSize),
-        metadatas: prepared.metadatas.slice(index, index + batchSize),
+        ids,
+        documents,
+        metadatas,
       });
     }
   }
@@ -2332,10 +2333,11 @@ export class ChromaDBClient {
     const batchSize = params.batchSize ?? params.batch_size ?? this.defaultBatchSize;
     const prepared = prepareDocuments(params.documents);
     for (let index = 0; index < prepared.ids.length; index += batchSize) {
+      const [ids, documents, metadatas] = _create_batch_slice(prepared, index, batchSize);
       await callMethodAsync(collection, "upsert", "upsert", {
-        ids: prepared.ids.slice(index, index + batchSize),
-        documents: prepared.texts.slice(index, index + batchSize),
-        metadatas: prepared.metadatas.slice(index, index + batchSize),
+        ids,
+        documents,
+        metadatas,
       });
     }
   }

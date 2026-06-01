@@ -9492,6 +9492,27 @@ describe("RAG configuration and factories", () => {
     expect(fake.collections.size).toBe(0);
   });
 
+  it("passes null ChromaDB metadatas when every added document omits metadata", () => {
+    const collection = { upsert: vi.fn() };
+    const client = new ChromaDBClient({
+      get_or_create_collection: vi.fn(() => collection),
+    }, (texts: readonly string[]) => texts.map((text) => [text.length]));
+
+    client.add_documents({
+      collection_name: "docs",
+      documents: [
+        { content: "Document 1" },
+        { content: "Document 2", metadata: null },
+      ],
+    });
+
+    expect(collection.upsert).toHaveBeenCalledWith({
+      ids: [createContentId("Document 1"), createContentId("Document 2")],
+      documents: ["Document 1", "Document 2"],
+      metadatas: null,
+    });
+  });
+
   it("wraps Qdrant clients with collection lifecycle, upsert/search filters, and async aliases", async () => {
     const fake = new FakeQdrantClient();
     const client = new QdrantClient(fake, (text: string) => [text.length], 2, 0.5, 1);
