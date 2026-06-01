@@ -10087,6 +10087,53 @@ describe("core crew runtime", () => {
     expect((executor.state.current_answer as AgentFinish).thought).toBe("");
   });
 
+  it("routes AgentExecutor dynamic replanning from upstream error signals", () => {
+    const executor = new AgentExecutor();
+    executor.state.todos.items = [
+      new TodoItem({
+        stepNumber: 1,
+        description: "First attempt",
+        status: TodoStatus.COMPLETED,
+        result: "Error: search failed",
+      }),
+      new TodoItem({
+        stepNumber: 2,
+        description: "Second attempt",
+        status: TodoStatus.COMPLETED,
+        result: "Error: parse failed",
+      }),
+    ];
+
+    expect(executor.after_parallel_execution()).toBe("needs_replan");
+    expect(executor.state.last_replan_reason).toBe("Multiple todos encountered errors (2 errors)");
+
+    const messageExecutor = new AgentExecutor();
+    messageExecutor.state.messages.push({
+      role: "assistant",
+      content: "This approach isn't working; we need to replan.",
+    });
+
+    expect(messageExecutor.after_parallel_execution()).toBe("needs_replan");
+    expect(messageExecutor.state.last_replan_reason).toBe(
+      "Agent indicated replanning needed: 'approach isn't working'",
+    );
+  });
+
+  it("stops AgentExecutor dynamic replanning at the configured max replans", () => {
+    const executor = new AgentExecutor({
+      agent: { planning_config: { max_replans: 1 } } as unknown as Agent,
+    });
+    executor.state.replan_count = 1;
+    executor.state.todos.items = [
+      new TodoItem({ stepNumber: 1, description: "Failed once", status: TodoStatus.FAILED }),
+      new TodoItem({ stepNumber: 2, description: "Failed twice", status: TodoStatus.FAILED }),
+    ];
+
+    expect(executor.after_parallel_execution()).toBe("all_todos_complete");
+    expect(executor.handle_replan_now()).toBe("all_todos_complete");
+    expect(executor.state.replan_count).toBe(1);
+  });
+
   it("keeps AgentExecutor iterations and messages backed by state", () => {
     const executor = new AgentExecutor({
       messages: [{ role: "system", content: "You are careful." }],

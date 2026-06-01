@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 667 passing tests.
+- Test suite: 669 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -105,6 +105,11 @@ When more goal budget is available, continue from the behavioral parity audits b
   - uses the last completed todo result directly when it is a sufficiently complete prose answer and not tied to a required tool
   - avoids the direct-answer shortcut when structured output is requested through `response_model` / `responseModel`
   - preserves the deterministic fallback step-summary behavior when the shortcut is not applicable
+- `AgentExecutor` dynamic replanning now mirrors upstream deterministic routing triggers:
+  - multiple failed todos include the upstream failure-count reason
+  - multiple `Error:` todo results trigger replanning even when todos are marked completed
+  - agent messages containing upstream replan indicators route to `needs_replan`
+  - configured `max_replans` / `maxReplans` stops further dynamic replanning
 
 ## Completed In Current Flow/Persistence Pass
 

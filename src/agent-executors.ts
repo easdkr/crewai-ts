@@ -535,6 +535,9 @@ export class AgentExecutor extends BaseAgentExecutor {
   }
 
   handleReplanNow(): "has_todos" | "all_todos_complete" {
+    if (this.state.replan_count >= this.getMaxReplans()) {
+      return "all_todos_complete";
+    }
     this.state.replan_count += 1;
     this.state.last_replan_reason ??= "Dynamic replan triggered";
     return this.state.todos.getPendingTodos().length > 0 ? "has_todos" : "all_todos_complete";
@@ -904,10 +907,45 @@ export class AgentExecutor extends BaseAgentExecutor {
   }
 
   private shouldReplan(): readonly [boolean, string] {
-    if (this.state.todos.getFailedTodos().length >= 2) {
-      return [true, "Multiple todos failed"];
+    if (this.state.replan_count >= this.getMaxReplans()) {
+      return [false, "Max replan attempts reached"];
     }
+
+    const failedTodos = this.state.todos.getFailedTodos();
+    if (failedTodos.length >= 2) {
+      return [true, `Multiple todos failed (${String(failedTodos.length)} failures)`];
+    }
+
+    const errorTodos = this.state.todos.items.filter((todo) => todo.result?.startsWith("Error:"));
+    if (errorTodos.length >= 2) {
+      return [true, `Multiple todos encountered errors (${String(errorTodos.length)} errors)`];
+    }
+
+    const lastMessage = this.state.messages.at(-1);
+    const content = typeof lastMessage?.content === "string" ? lastMessage.content.toLowerCase() : "";
+    const replanIndicators = [
+      "need to reconsider",
+      "approach isn't working",
+      "try a different approach",
+      "replan",
+      "revise the plan",
+      "plan needs adjustment",
+    ];
+    const indicator = replanIndicators.find((candidate) => content.includes(candidate));
+    if (indicator) {
+      return [true, `Agent indicated replanning needed: '${indicator}'`];
+    }
+
     return [false, ""];
+  }
+
+  private getMaxReplans(): number {
+    const agentRecord = this.agent && typeof this.agent === "object" ? this.agent as unknown as Record<string, unknown> : {};
+    const config = (agentRecord.planningConfig ?? agentRecord.planning_config) as Record<string, unknown> | null | undefined;
+    const value = config && typeof config === "object"
+      ? config.maxReplans ?? config.max_replans
+      : null;
+    return typeof value === "number" && Number.isFinite(value) ? Math.max(0, Math.trunc(value)) : 3;
   }
 
   private reasoningEffort(): "low" | "medium" | "high" {
