@@ -923,7 +923,14 @@ export class AgentExecutor extends BaseAgentExecutor {
       if (!name) {
         continue;
       }
-      const result = this.executeNativeToolCall(name, asNativeArgsRecord(args));
+      let failed = false;
+      let result: unknown;
+      try {
+        result = this.executeNativeToolCall(name, asNativeArgsRecord(args));
+      } catch (error) {
+        failed = true;
+        result = `Error executing tool: ${executorErrorMessage(error)}`;
+      }
       const text = stringifyStepResult(result);
       this.state.messages.push({
         role: "tool",
@@ -931,7 +938,7 @@ export class AgentExecutor extends BaseAgentExecutor {
         content: text,
         tool_call_id: id ?? name,
       } as unknown as LLMMessage);
-      if (this.nativeToolResultAsAnswer(name)) {
+      if (!failed && this.nativeToolResultAsAnswer(name)) {
         this.state.current_answer = new AgentFinish({ thought: "", output: text, text });
         this.state.is_finished = true;
         return "tool_result_is_final";
@@ -3011,6 +3018,10 @@ function syncUsageMetricAliases(metrics: UsageMetrics): void {
 
 function isPromiseLike<T = unknown>(value: unknown): value is PromiseLike<T> {
   return !!value && typeof value === "object" && "then" in value && typeof (value as { then?: unknown }).then === "function";
+}
+
+function executorErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function stringifyInput(value: unknown): string {

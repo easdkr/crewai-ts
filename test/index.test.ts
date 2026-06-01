@@ -691,6 +691,7 @@ import {
   create_model_from_schema,
   createFunctionTool,
   createStaticToolFilter,
+  executeSingleNativeToolCall,
   executeToolAndCheckFinality,
   aexecuteToolAndCheckFinality,
   to_langchain,
@@ -12626,6 +12627,82 @@ describe("core crew runtime", () => {
     expect(executor.state.messages.filter((message) => message.role === "tool")).toEqual([
       { role: "tool", name: "slow_one", content: "one", tool_call_id: "call_1" },
     ]);
+  });
+
+  it("does not short-circuit failed AgentExecutor native result_as_answer calls", () => {
+    const finalTool = new StructuredTool({
+      name: "slow_one",
+      description: "Return final",
+      resultAsAnswer: true,
+      func: () => "tool fallback",
+    });
+    const executor = new AgentExecutor({ tools: [finalTool] });
+    Object.assign(executor, {
+      _available_functions: {
+        slow_one: () => {
+          throw new Error("native failure");
+        },
+      },
+    });
+    executor.state.pending_tool_calls = [
+      { id: "call_1", function: { name: "slow_one", arguments: "{}" } },
+    ];
+
+    expect(executor.execute_native_tool()).toBe("native_tool_completed");
+    expect(executor.state.current_answer).not.toBeInstanceOf(AgentFinish);
+    const failedToolMessage = executor.state.messages.at(-1) as LLMMessage & { tool_call_id?: string };
+    expect(failedToolMessage).toMatchObject({
+      role: "tool",
+      tool_call_id: "call_1",
+    });
+    expect(failedToolMessage.content).toContain("Error executing tool");
+  });
+
+  it("keeps failed native result_as_answer tool calls from becoming final answers", async () => {
+    const failingTool = new StructuredTool({
+      name: "failing_tool",
+      description: "Fails during native execution",
+      resultAsAnswer: true,
+      func: () => {
+        throw new Error("intentional failure");
+      },
+    });
+
+    const failedResult = await executeSingleNativeToolCall({
+      id: "call_1",
+      function: { name: "failing_tool", arguments: "{}" },
+    }, {
+      failing_tool: (args) => failingTool.run(args),
+    }, {
+      originalTools: [failingTool],
+    });
+    expect(failedResult).toMatchObject({
+      tool_call_id: "call_1",
+      tool_name: "failing_tool",
+      result_as_answer: false,
+    });
+    expect(String(failedResult.result)).toContain("Error executing tool");
+
+    const blockedTool = new StructuredTool({
+      name: "blocked_tool",
+      description: "Blocked by hook",
+      resultAsAnswer: true,
+      func: () => "should not run",
+    });
+    beforeToolCall(() => false);
+
+    const blockedResult = await executeSingleNativeToolCall({
+      id: "call_2",
+      function: { name: "blocked_tool", arguments: "{}" },
+    }, {
+      blocked_tool: (args) => blockedTool.run(args),
+    }, {
+      originalTools: [blockedTool],
+    });
+    expect(blockedResult).toMatchObject({
+      result_as_answer: false,
+    });
+    expect(String(blockedResult.result)).toContain("blocked by");
   });
 
   it("exposes upstream CrewAgentExecutor multimodal, native tool, and callback helpers", async () => {

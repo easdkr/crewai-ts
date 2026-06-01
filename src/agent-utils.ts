@@ -41,6 +41,9 @@ export const DELEGATION_TOOL_NAMES: readonly string[] = [
 
 export type NativeToolCallResultOptions = {
   text?: string;
+  result?: unknown;
+  resultAsAnswer?: boolean;
+  result_as_answer?: boolean;
   toolCallId?: string | null;
   tool_call_id?: string | null;
   toolName?: string | null;
@@ -49,13 +52,19 @@ export type NativeToolCallResultOptions = {
 
 export class NativeToolCallResult {
   readonly text: string;
+  readonly result: unknown;
+  readonly resultAsAnswer: boolean;
+  readonly result_as_answer: boolean;
   readonly toolCallId: string | null;
   readonly tool_call_id: string | null;
   readonly toolName: string | null;
   readonly tool_name: string | null;
 
   constructor(options: NativeToolCallResultOptions = {}) {
-    this.text = options.text ?? "";
+    this.result = options.result ?? options.text ?? "";
+    this.text = options.text ?? formatAnswer(this.result);
+    this.resultAsAnswer = options.resultAsAnswer ?? options.result_as_answer ?? false;
+    this.result_as_answer = this.resultAsAnswer;
     this.toolCallId = options.toolCallId ?? options.tool_call_id ?? null;
     this.tool_call_id = this.toolCallId;
     this.toolName = options.toolName ?? options.tool_name ?? null;
@@ -971,7 +980,16 @@ export function buildToolCallsAssistantMessage(results: readonly NativeToolCallR
 
 export const build_tool_calls_assistant_message = buildToolCallsAssistantMessage;
 
-export async function executeSingleNativeToolCall(toolCall: unknown, availableFunctions: Record<string, ToolRunner>): Promise<NativeToolCallResult> {
+export type ExecuteSingleNativeToolCallOptions = {
+  originalTools?: readonly Tool[];
+  original_tools?: readonly Tool[];
+};
+
+export async function executeSingleNativeToolCall(
+  toolCall: unknown,
+  availableFunctions: Record<string, ToolRunner>,
+  options: ExecuteSingleNativeToolCallOptions = {},
+): Promise<NativeToolCallResult> {
   const info = extractToolCallInfo(toolCall);
   if (!info) {
     return new NativeToolCallResult({ text: "Invalid tool call." });
@@ -980,11 +998,32 @@ export async function executeSingleNativeToolCall(toolCall: unknown, availableFu
   if (!runner) {
     return new NativeToolCallResult({ text: `Tool '${info.toolName}' is not available.`, toolCallId: info.id, toolName: info.toolName });
   }
-  const output = await runner(info.arguments ?? {});
-  return new NativeToolCallResult({ text: formatAnswer(output), toolCallId: info.id, toolName: info.toolName });
+  const originalTools = options.originalTools ?? options.original_tools ?? [];
+  const originalTool = originalTools.find((tool) => sanitizeToolName(tool.name) === sanitizeToolName(info.toolName)) ?? null;
+  const resultAsAnswer = Boolean(originalTool?.resultAsAnswer);
+  try {
+    const output = await runner(info.arguments ?? {});
+    return new NativeToolCallResult({
+      result: output,
+      resultAsAnswer,
+      toolCallId: info.id,
+      toolName: info.toolName,
+    });
+  } catch (error) {
+    return new NativeToolCallResult({
+      result: `Error executing tool: ${errorMessage(error)}`,
+      resultAsAnswer: false,
+      toolCallId: info.id,
+      toolName: info.toolName,
+    });
+  }
 }
 
 export const execute_single_native_tool_call = executeSingleNativeToolCall;
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
 
 export function parseToolCallArgs(value: unknown): Record<string, unknown> | null {
   if (value && typeof value === "object" && !Array.isArray(value)) {
