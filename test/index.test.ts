@@ -1276,16 +1276,17 @@ describe("serialization and project utilities", () => {
     expect(Object.hasOwn(TaskOutput.prototype, "set_summary")).toBe(true);
     expect(output.set_summary()).toBe(output);
     expect(output.summary).toBe("Summarize field alias compatibility for CrewAI task output...");
-    expect(output.json).toBe(JSON.stringify({ summary: "done" }));
+    expect(output.json).toBe('{"summary": "done"}');
     expect(output.toDict()).toEqual({ summary: "done" });
     expect(output.to_dict()).toEqual({ summary: "done" });
-    expect(output.__str__()).toBe(JSON.stringify({ summary: "done" }));
+    expect(output.__str__()).toBe("{'summary': 'done'}");
     expect(crewOutput.jsonDict).toBe(crewOutput.json_dict);
     expect(crewOutput.tasksOutput).toBe(crewOutput.tasks_output);
     expect(crewOutput.tokenUsage).toBe(crewOutput.token_usage);
     expect(crewOutput.to_dict()).toEqual({ summary: "done" });
     expect(crewOutput.__getitem__("summary")).toBe("done");
-    expect(crewOutput.__str__()).toBe(JSON.stringify({ summary: "done" }));
+    expect(crewOutput.json).toBe('{"summary": "done"}');
+    expect(crewOutput.__str__()).toBe("{'summary': 'done'}");
     expect(() => crewOutput.__getitem__("missing")).toThrow("Key 'missing' not found in CrewOutput.");
 
     const pydanticLike = {

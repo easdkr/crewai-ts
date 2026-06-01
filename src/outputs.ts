@@ -57,7 +57,7 @@ export class TaskOutput {
         "Invalid output format requested. Set outputJson on the task before reading json.",
       );
     }
-    return JSON.stringify(this.jsonDict);
+    return jsonDumps(this.jsonDict);
   }
 
   toDict(): Record<string, unknown> {
@@ -80,7 +80,7 @@ export class TaskOutput {
       return stringifyOutput(this.pydantic);
     }
     if (this.jsonDict) {
-      return JSON.stringify(this.jsonDict);
+      return pythonRepr(this.jsonDict);
     }
     return this.raw;
   }
@@ -129,7 +129,7 @@ export class CrewOutput {
         "No JSON output found in the final task. Set outputJson on the final task before reading json.",
       );
     }
-    return JSON.stringify(this.jsonDict);
+    return jsonDumps(this.jsonDict);
   }
 
   toDict(): Record<string, unknown> {
@@ -166,7 +166,7 @@ export class CrewOutput {
       return stringifyOutput(this.pydantic);
     }
     if (this.jsonDict) {
-      return JSON.stringify(this.jsonDict);
+      return pythonRepr(this.jsonDict);
     }
     return this.raw;
   }
@@ -181,6 +181,54 @@ function stringifyOutput(value: unknown): string {
     return value;
   }
   if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") {
+    return value.toString();
+  }
+  return String(value);
+}
+
+function jsonDumps(value: unknown): string {
+  if (value === null || value === undefined) {
+    return "null";
+  }
+  if (typeof value === "string") {
+    return JSON.stringify(value);
+  }
+  if (typeof value === "number" || typeof value === "boolean") {
+    return JSON.stringify(value);
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => jsonDumps(item)).join(", ")}]`;
+  }
+  if (typeof value === "object") {
+    return `{${Object.entries(value as Record<string, unknown>)
+      .map(([key, item]) => `${JSON.stringify(key)}: ${jsonDumps(item)}`)
+      .join(", ")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function pythonRepr(value: unknown): string {
+  if (typeof value === "string") {
+    return `'${value.replaceAll("\\", "\\\\").replaceAll("'", "\\'")}'`;
+  }
+  if (typeof value === "number") {
+    return String(value);
+  }
+  if (typeof value === "boolean") {
+    return value ? "True" : "False";
+  }
+  if (value === null || value === undefined) {
+    return "None";
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => pythonRepr(item)).join(", ")}]`;
+  }
+  if (typeof value === "object") {
+    return `{${Object.entries(value as Record<string, unknown>)
+      .map(([key, item]) => `${pythonRepr(key)}: ${pythonRepr(item)}`)
+      .join(", ")}}`;
+  }
+  if (typeof value === "bigint" || typeof value === "symbol" || typeof value === "function") {
     return value.toString();
   }
   return JSON.stringify(value);
