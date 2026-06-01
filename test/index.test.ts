@@ -16033,15 +16033,14 @@ describe("flow runtime", () => {
     expect(structure.nodes.route).toMatchObject({
       type: "router",
       is_router: true,
-      router_paths: ["approved", "rejected"],
+      router_paths: ["approved"],
       trigger_methods: ["begin"],
     });
     expect(structure.edges).toEqual([
       { source: "begin", target: "route", condition_type: "OR", is_router_path: false },
       { source: "route", target: "publish", condition_type: null, is_router_path: true, router_path_label: "approved" },
-      { source: "route", target: "publish", condition_type: null, is_router_path: true, router_path_label: "rejected" },
     ]);
-    expect(calculateExecutionPaths(structure)).toBe(2);
+    expect(calculateExecutionPaths(structure)).toBe(1);
   });
 
   it("parses flow visualization CSS and JS extension tags like upstream", () => {
@@ -16066,6 +16065,96 @@ describe("flow runtime", () => {
       args: ["scripts/app.js"],
       html: '<script src="scripts/app.js"></script>',
     });
+  });
+
+  it("keeps chained and shared router output strings scoped to the producing router", () => {
+    class ChainedRouterFlow extends Flow {
+      entrance() {
+        return "started";
+      }
+
+      sessionInCache() {
+        return "exp";
+      }
+
+      checkExp() {
+        return "auth";
+      }
+
+      callAiAuth() {
+        return "action";
+      }
+
+      forwardToAction() {
+        return "done";
+      }
+
+      forwardToAuthenticate() {
+        return "need_auth";
+      }
+    }
+
+    const chainedInitializers = [
+      decorateMethod(ChainedRouterFlow, "entrance", start() as unknown as Decorator),
+      decorateMethod(ChainedRouterFlow, "sessionInCache", router("entrance") as unknown as Decorator),
+      decorateMethod(ChainedRouterFlow, "checkExp", router("exp") as unknown as Decorator),
+      decorateMethod(ChainedRouterFlow, "callAiAuth", router("auth") as unknown as Decorator),
+      decorateMethod(ChainedRouterFlow, "forwardToAction", listen("action") as unknown as Decorator),
+      decorateMethod(ChainedRouterFlow, "forwardToAuthenticate", listen("authenticate") as unknown as Decorator),
+    ];
+    const chainedFlow = new ChainedRouterFlow();
+    chainedInitializers.forEach((initializer) => {
+      initializer.call(chainedFlow);
+    });
+    const chainedStructure = buildFlowStructure(chainedFlow);
+    const chainedRouterEdges = chainedStructure.edges.filter((edge) => edge.is_router_path);
+
+    expect(chainedStructure.edges.every((edge) => edge.source !== edge.target)).toBe(true);
+    expect(chainedRouterEdges).toEqual([
+      { source: "sessionInCache", target: "checkExp", condition_type: null, is_router_path: true, router_path_label: "exp" },
+      { source: "checkExp", target: "callAiAuth", condition_type: null, is_router_path: true, router_path_label: "auth" },
+      { source: "callAiAuth", target: "forwardToAction", condition_type: null, is_router_path: true, router_path_label: "action" },
+    ]);
+
+    class SharedOutputRouterFlow extends Flow {
+      startHere() {
+        return "started";
+      }
+
+      routerA() {
+        return "auth";
+      }
+
+      routerB() {
+        return "done";
+      }
+
+      finalize() {
+        return "complete";
+      }
+
+      handleSkip() {
+        return "skipped";
+      }
+    }
+
+    const sharedInitializers = [
+      decorateMethod(SharedOutputRouterFlow, "startHere", start() as unknown as Decorator),
+      decorateMethod(SharedOutputRouterFlow, "routerA", router("startHere") as unknown as Decorator),
+      decorateMethod(SharedOutputRouterFlow, "routerB", router("auth") as unknown as Decorator),
+      decorateMethod(SharedOutputRouterFlow, "finalize", listen("done") as unknown as Decorator),
+      decorateMethod(SharedOutputRouterFlow, "handleSkip", listen("skip") as unknown as Decorator),
+    ];
+    const sharedFlow = new SharedOutputRouterFlow();
+    sharedInitializers.forEach((initializer) => {
+      initializer.call(sharedFlow);
+    });
+    const sharedRouterEdges = buildFlowStructure(sharedFlow).edges.filter((edge) => edge.is_router_path);
+
+    expect(sharedRouterEdges).toEqual([
+      { source: "routerA", target: "routerB", condition_type: null, is_router_path: true, router_path_label: "auth" },
+      { source: "routerB", target: "finalize", condition_type: null, is_router_path: true, router_path_label: "done" },
+    ]);
   });
 
   it("infers router paths from possible string return constants", () => {

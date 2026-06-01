@@ -3042,9 +3042,12 @@ export function buildFlowStructure(instanceOrConstructor: object | FlowMetadataT
       ...(typeof methodValue === "function" ? { source_code: Function.prototype.toString.call(methodValue) } : {}),
     };
     if (method.type === "router" || method.type === "start_router") {
-      const inferredPaths = getPossibleReturnConstants(methodValue) ?? [];
+      const inferredPaths = getPossibleReturnConstants(methodValue);
+      const routerPaths = inferredPaths && inferredPaths.length > 0
+        ? inferredPaths
+        : method.routerPaths;
       metadata.is_router = true;
-      metadata.router_paths = uniqueStrings([...method.routerPaths, ...inferredPaths]);
+      metadata.router_paths = uniqueStrings(routerPaths);
       metadata.condition_type = method.conditionType ?? "IF";
       routerMethods.push(method.name);
     }
