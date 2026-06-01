@@ -28,6 +28,7 @@ import type { InputFile, InputFiles } from "./input-files.js";
 import { storeTaskFiles } from "./file-store.js";
 import { serializeModelClass, type JsonSchema } from "./schema-utils.js";
 import { I18N_DEFAULT } from "./i18n.js";
+import { PRINTER } from "./logger.js";
 
 export type GuardrailResult = readonly [boolean, unknown] | { success: boolean; result: unknown };
 
@@ -853,6 +854,7 @@ export class Task {
         this.guardrailRetryCounts.set(guardrailIndex, currentRetryCount);
       }
       const context = formatGuardrailValidationError(nextValue, output.raw);
+      printGuardrailRetry(agent, guardrailIndex ?? null, attempt, this.guardrailMaxRetries + 1, nextValue);
       const raw = await agent.executeTask(context, {}, tools, { task: this });
       output = await this.createOutput(raw, agent, {
         description: output.description,
@@ -1169,6 +1171,7 @@ export class Task {
         this.guardrailRetryCounts.set(index, currentRetryCount);
       }
       const context = formatGuardrailValidationError(nextValue, output.raw);
+      printGuardrailRetry(agent, index, attempt, this.guardrailMaxRetries + 1, nextValue);
       const raw = await agent.executeTask(context, inputs, tools, {
         task: this,
         ...(renderedTask === undefined ? {} : { inputFiles: renderedTask.inputFiles }),
@@ -1404,6 +1407,23 @@ function formatGuardrailValidationError(error: unknown, taskOutput: string): str
   return I18N_DEFAULT.errors("validation_error")
     .replace("{guardrail_result_error}", stringifyGuardrailValue(error))
     .replace("{task_output}", taskOutput);
+}
+
+function printGuardrailRetry(
+  agent: Agent,
+  guardrailIndex: number | null,
+  attempt: number,
+  maxAttempts: number,
+  error: unknown,
+): void {
+  if (!agent.verbose) {
+    return;
+  }
+  const guardrailName = guardrailIndex === null ? "" : String(guardrailIndex);
+  PRINTER.print(
+    `Guardrail ${guardrailName} blocked (attempt ${String(attempt + 1)}/${String(maxAttempts)}), retrying due to: ${stringifyGuardrailValue(error)}\n`,
+    "yellow",
+  );
 }
 
 function normalizeTaskDate(value: Date | string | null): Date | null {

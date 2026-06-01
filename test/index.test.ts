@@ -19568,6 +19568,69 @@ describe("task guardrails", () => {
     expect((events[5] as LLMGuardrailCompletedEvent).result).toBe("draft fixed accepted");
   });
 
+  it("prints guardrail retry details only for verbose agents", async () => {
+    const printed: string[] = [];
+    const writeSpy = vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
+      printed.push(String(chunk));
+      return true;
+    });
+    try {
+      let verboseAttempts = 0;
+      const verboseAgent = new Agent({
+        role: "Writer",
+        goal: "Write reports",
+        backstory: "Careful writer",
+        verbose: true,
+        llm: (messages) => messages.at(-1)?.content.includes("Previous attempt failed validation")
+          ? "fixed"
+          : "draft",
+      });
+      const verboseTask = new Task({
+        description: "Write",
+        expectedOutput: "A report",
+        agent: verboseAgent,
+        guardrailMaxRetries: 1,
+        guardrail: (output) => {
+          verboseAttempts += 1;
+          return verboseAttempts === 1 ? [false, "needs revision"] : [true, output.raw];
+        },
+      });
+
+      await verboseTask.execute();
+
+      expect(printed.join("")).toContain(
+        "Guardrail  blocked (attempt 1/2), retrying due to: needs revision",
+      );
+
+      printed.length = 0;
+      let quietAttempts = 0;
+      const quietAgent = new Agent({
+        role: "Writer",
+        goal: "Write reports",
+        backstory: "Careful writer",
+        llm: (messages) => messages.at(-1)?.content.includes("Previous attempt failed validation")
+          ? "fixed"
+          : "draft",
+      });
+      const quietTask = new Task({
+        description: "Write",
+        expectedOutput: "A report",
+        agent: quietAgent,
+        guardrailMaxRetries: 1,
+        guardrail: (output) => {
+          quietAttempts += 1;
+          return quietAttempts === 1 ? [false, "needs revision"] : [true, output.raw];
+        },
+      });
+
+      await quietTask.execute();
+
+      expect(printed).toEqual([]);
+    } finally {
+      writeSpy.mockRestore();
+    }
+  });
+
   it("does not emit task guardrail completion when the guardrail raises", async () => {
     const events: CrewAIEvent[] = [];
     crewaiEventBus.on("llm_guardrail_started", (_source, event) => {
