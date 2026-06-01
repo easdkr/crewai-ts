@@ -195,8 +195,16 @@ export const OpenAIFunctionTool = Object;
 export class OpenAIAgentToolAdapter extends BaseToolAdapter {
   configureTools(tools: readonly CrewTool[]): void {
     const allTools = [...tools, ...this.originalTools];
-    const [schemas, availableFunctions, toolNameMapping] = convertToolsToOpenAISchema(allTools);
-    this.convertedTools = schemas.map((schema) => {
+    this.convertedTools = OpenAIAgentToolAdapter._convertToolsToOpenAIFormat(allTools);
+    this.converted_tools = this.convertedTools;
+  }
+
+  static _convertToolsToOpenAIFormat(tools: readonly CrewTool[] | null | undefined): unknown[] {
+    if (!tools?.length) {
+      return [];
+    }
+    const [schemas, availableFunctions, toolNameMapping] = convertToolsToOpenAISchema(tools);
+    return schemas.map((schema) => {
       const name = schema.function.name;
       return {
         name,
@@ -210,7 +218,10 @@ export class OpenAIAgentToolAdapter extends BaseToolAdapter {
           await availableFunctions[name]?.(normalizeToolArgs(args)),
       };
     });
-    this.converted_tools = this.convertedTools;
+  }
+
+  static _convert_tools_to_openai_format(tools: readonly CrewTool[] | null | undefined): unknown[] {
+    return OpenAIAgentToolAdapter._convertToolsToOpenAIFormat(tools);
   }
 }
 

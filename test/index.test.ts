@@ -74,6 +74,7 @@ import {
   StepExecutor,
   StepExecutionContext,
   OpenAIAgentAdapter,
+  OpenAIAgentToolAdapter,
   BaseConverterAdapter,
   LangGraphAgentAdapter,
   LangGraphConverterAdapter,
@@ -10619,6 +10620,16 @@ describe("core crew runtime", () => {
       "delegate_work_to_coworker",
       "ask_question_to_coworker",
     ]);
+    expect(OpenAIAgentToolAdapter._convert_tools_to_openai_format(null)).toEqual([]);
+    const [openaiTool] = OpenAIAgentToolAdapter._convert_tools_to_openai_format([
+      new StructuredTool({
+        name: "OpenAI Echo",
+        description: "Echoes input",
+        func: (args) => `openai:${(args as { text?: string }).text ?? ""}`,
+      }),
+    ]) as Array<{ name: string; on_invoke_tool: (_context: unknown, args: unknown) => Promise<unknown> }>;
+    expect(openaiTool?.name).toBe("open_ai_echo");
+    await expect(openaiTool?.on_invoke_tool(null, { text: "hello" })).resolves.toBe("openai:hello");
 
     const langGraph = new LangGraphAgentAdapter({
       role: "LangGraph Adapter",
