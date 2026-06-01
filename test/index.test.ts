@@ -15354,6 +15354,7 @@ describe("project config mapping", () => {
     expect((wrapped.invoke() as Task).name).toBe("researchTask");
     expect((wrapped.call(null) as Task).name).toBe("researchTask");
     expect((wrapped.__call__() as Task).name).toBe("researchTask");
+    expect(wrapped.unwrap()).toBe(researchTask);
     expect(wrapped.ensure_task_name({ name: "" })).toEqual({ name: "researchTask" });
   });
 

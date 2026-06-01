@@ -80,6 +80,10 @@ export class TaskMethod extends DecoratedMethod {
     return this.ensureTaskName(result);
   }
 
+  override unwrap(): AnyFunction {
+    return this._meth;
+  }
+
   override call(thisArg: unknown, ...args: readonly unknown[]): unknown {
     return this.ensureTaskName(super.call(thisArg, ...args));
   }
