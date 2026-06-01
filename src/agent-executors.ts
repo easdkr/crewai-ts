@@ -868,7 +868,7 @@ export class AgentExecutor extends BaseAgentExecutor {
   }
 
   invokeAsync(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    return Promise.resolve(this.invokeFromInputs(inputs));
+    return this.invokeFromInputsAsync(inputs);
   }
 
   invoke_async(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
@@ -887,18 +887,7 @@ export class AgentExecutor extends BaseAgentExecutor {
     }
     this.isExecuting = true;
     try {
-      this.finalizeCalled = false;
-      this.state.messages = [];
-      this.messages = this.state.messages;
-      this.state.iterations = 0;
-      this.state.current_answer = null;
-      this.state.is_finished = false;
-      this.state.pending_tool_calls = [];
-      this.state.todos = new TodoList();
-      this.kickoffInput = stringifyInput(inputs.input);
-      if (this.kickoffInput) {
-        this.state.messages.push({ role: "user", content: this.kickoffInput });
-      }
+      this.resetInvocationState(inputs);
       const kickoff = (this as unknown as { kickoff?: () => unknown }).kickoff;
       if (typeof kickoff === "function") {
         const kickoffResult = kickoff.call(this);
@@ -918,6 +907,63 @@ export class AgentExecutor extends BaseAgentExecutor {
       return { output };
     } finally {
       this.isExecuting = false;
+    }
+  }
+
+  private async invokeFromInputsAsync(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
+    if (this.isExecuting) {
+      throw new Error("Executor is already running. Cannot invoke the same executor instance concurrently.");
+    }
+    this.isExecuting = true;
+    try {
+      this.resetInvocationState(inputs);
+      const kickoffAsync = (this as unknown as { kickoff_async?: () => Promise<unknown>; kickoffAsync?: () => Promise<unknown> }).kickoff_async
+        ?? (this as unknown as { kickoffAsync?: () => Promise<unknown> }).kickoffAsync;
+      if (typeof kickoffAsync === "function") {
+        await kickoffAsync.call(this);
+        if (!(this.state.current_answer instanceof AgentFinish)) {
+          throw new Error("AgentExecutor finished without reaching a final answer.");
+        }
+        this.state.is_finished = true;
+        return { output: this.state.current_answer.output };
+      }
+      const kickoff = (this as unknown as { kickoff?: () => unknown }).kickoff;
+      if (typeof kickoff === "function") {
+        await Promise.resolve(kickoff.call(this));
+        if (!(this.state.current_answer instanceof AgentFinish)) {
+          throw new Error("AgentExecutor finished without reaching a final answer.");
+        }
+        this.state.is_finished = true;
+        return { output: this.state.current_answer.output };
+      }
+      const result = super.invoke(this.kickoffInput);
+      const output = result instanceof AgentFinish ? result.output : result;
+      this.state.current_answer = result instanceof AgentFinish ? result : new AgentFinish({ thought: "", output, text: String(output) });
+      this.state.is_finished = true;
+      return { output };
+    } finally {
+      this.isExecuting = false;
+    }
+  }
+
+  private resetInvocationState(inputs: Record<string, unknown>): void {
+    this.finalizeCalled = false;
+    this.state.messages = [];
+    this.messages = this.state.messages;
+    this.state.iterations = 0;
+    this.state.current_answer = null;
+    this.state.is_finished = false;
+    this.state.pending_tool_calls = [];
+    this.state.plan = null;
+    this.state.plan_ready = false;
+    this.state.todos = new TodoList();
+    this.state.replan_count = 0;
+    this.state.last_replan_reason = null;
+    this.state.observations = {};
+    this.state.execution_log = [];
+    this.kickoffInput = stringifyInput(inputs.input);
+    if (this.kickoffInput) {
+      this.state.messages.push({ role: "user", content: this.kickoffInput });
     }
   }
 

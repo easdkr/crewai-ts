@@ -10256,6 +10256,39 @@ describe("core crew runtime", () => {
     }).toThrow("without reaching a final answer");
   });
 
+  it("requires AgentExecutor async object-style invoke to reach an AgentFinish when kickoff_async is provided", async () => {
+    const success = new AgentExecutor();
+    Object.assign(success, {
+      async kickoff_async() {
+        await Promise.resolve();
+        success.state.current_answer = new AgentFinish({
+          thought: "done",
+          output: "Async final",
+          text: "complete",
+        });
+      },
+    });
+
+    await expect(success.ainvoke({ input: "async test", tool_names: "", tools: "" }))
+      .resolves.toEqual({ output: "Async final" });
+
+    const failure = new AgentExecutor();
+    Object.assign(failure, {
+      async kickoff_async() {
+        await Promise.resolve();
+        failure.state.current_answer = new AgentAction({
+          thought: "thinking",
+          tool: "search",
+          tool_input: "query",
+          text: "action text",
+        });
+      },
+    });
+
+    await expect(failure.ainvoke({ input: "async test", tool_names: "", tools: "" }))
+      .rejects.toThrow("without reaching a final answer");
+  });
+
   it("executes AgentExecutor pending native tool calls and records tool messages", () => {
     const executor = new AgentExecutor();
     Object.assign(executor, {

@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 674 passing tests.
+- Test suite: 675 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -111,7 +111,7 @@ When more goal budget is available, continue from the behavioral parity audits b
   - agent messages containing upstream replan indicators route to `needs_replan`
   - configured `max_replans` / `maxReplans` stops further dynamic replanning
 - `AgentExecutor.execute_native_tool` now executes pending native tool calls against deterministic available-function/tool fixtures, appends tool messages, clears pending calls, and short-circuits remaining calls for `result_as_answer` tools.
-- `AgentExecutor.invoke` object-style execution now honors a provided kickoff routine and requires it to produce an `AgentFinish`, raising when execution ends on an action instead of a final answer.
+- `AgentExecutor.invoke` / `invoke_async` object-style execution now honors provided kickoff routines and requires them to produce an `AgentFinish`, raising when execution ends on an action instead of a final answer.
 - `AgentExecutor` replanning now builds previous-execution context, temporarily enhances the task description for the planner, preserves completed/failed history, and replaces only pending todos when a ready structured plan is returned.
 - `StepExecutor.execute` now runs `TodoItem` inputs through isolated step execution and returns a failed `StepResult` when an expected upstream `tool_to_use` is available but was not called.
 
