@@ -124,6 +124,11 @@ export class ExecutionContext {
 const storage = new AsyncLocalStorage<ExecutionContext>();
 const defaultContext = new ExecutionContext();
 const defaultEventContextConfig = new EventContextConfig();
+let runtimeStateProvider: (() => unknown) | null = null;
+
+export function setEventRuntimeStateProvider(provider: (() => unknown) | null): void {
+  runtimeStateProvider = provider;
+}
 
 export const SCOPE_STARTING_EVENTS = new Set<string>([
   "flow_started",
@@ -488,9 +493,30 @@ export function restoreEventScope(stack: readonly EventScopeEntry[]): void {
 
 export const restore_event_scope = restoreEventScope;
 
-export function resume_task_scope(_task_id: string): boolean {
-  void _task_id;
-  return false;
+export function resume_task_scope(task_id: string): boolean {
+  const runtimeState = runtimeStateProvider?.();
+  if (!runtimeState || typeof runtimeState !== "object") {
+    return false;
+  }
+  const eventRecord = readObjectProperty(runtimeState, "eventRecord") ?? readObjectProperty(runtimeState, "event_record");
+  const allNodes = readFunction(eventRecord, "allNodes") ?? readFunction(eventRecord, "all_nodes");
+  if (!allNodes) {
+    return false;
+  }
+  const nodes = allNodes.call(eventRecord);
+  if (!Array.isArray(nodes)) {
+    return false;
+  }
+  const events = nodes
+    .map((node) => readObjectProperty(node, "event"))
+    .filter(isResumableTaskStartEvent(task_id));
+  const latest = events.sort((left, right) => eventSequence(right) - eventSequence(left))[0];
+  const eventId = latest ? String(latest.eventId ?? latest.event_id) : null;
+  if (!eventId) {
+    return false;
+  }
+  pushEventScope(eventId, "task_started");
+  return true;
 }
 
 export function pushEventScope(eventId: string, eventType = ""): void {
@@ -609,4 +635,36 @@ function normalizeEventContextConfig(
     return null;
   }
   return config instanceof EventContextConfig ? config : new EventContextConfig(config);
+}
+
+function readObjectProperty(value: unknown, key: string): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || !(key in value)) {
+    return null;
+  }
+  const property = (value as Record<string, unknown>)[key];
+  return property && typeof property === "object" ? property as Record<string, unknown> : null;
+}
+
+function readFunction(value: unknown, key: string): ((...args: unknown[]) => unknown) | null {
+  if (!value || typeof value !== "object" || !(key in value)) {
+    return null;
+  }
+  const property = (value as Record<string, unknown>)[key];
+  return typeof property === "function" ? property as (...args: unknown[]) => unknown : null;
+}
+
+function isResumableTaskStartEvent(taskId: string): (event: Record<string, unknown> | null) => event is Record<string, unknown> {
+  return (event): event is Record<string, unknown> => {
+    if (!event) {
+      return false;
+    }
+    return event.type === "task_started"
+      && (event.taskId === taskId || event.task_id === taskId)
+      && typeof (event.eventId ?? event.event_id) === "string";
+  };
+}
+
+function eventSequence(event: Record<string, unknown>): number {
+  const sequence = event.emissionSequence ?? event.emission_sequence;
+  return typeof sequence === "number" && Number.isFinite(sequence) ? sequence : 0;
 }

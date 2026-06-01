@@ -730,6 +730,7 @@ import {
   registerEmbeddingProviderBuilder,
   registerCallable,
   registerRagClientFactory,
+  resume_task_scope,
   restoreEventScope,
   resolveRefs,
   resetEmissionCounter,
@@ -25837,6 +25838,49 @@ describe("runtime state", () => {
     expect(crewaiEventBus.runtime_state).toBe(state);
     expect(seen).toEqual([state]);
     expect(state.event_record.get(event.eventId)?.event).toBe(event);
+  });
+
+  it("resumes upstream task event scope from runtime state before task completion", () => {
+    const state = new RuntimeState();
+    const oldStart = Object.assign(new BaseEvent({ type: "task_started" }), {
+      eventId: "task-start-old",
+      taskId: "task-1",
+      task_id: "task-1",
+      emissionSequence: 1,
+    });
+    const latestStart = Object.assign(new BaseEvent({ type: "task_started" }), {
+      eventId: "task-start-latest",
+      taskId: "task-1",
+      task_id: "task-1",
+      emissionSequence: 5,
+    });
+    const otherStart = Object.assign(new BaseEvent({ type: "task_started" }), {
+      eventId: "other-task-start",
+      taskId: "task-2",
+      task_id: "task-2",
+      emissionSequence: 9,
+    });
+    state.event_record.add(oldStart);
+    state.event_record.add(latestStart);
+    state.event_record.add(otherStart);
+    crewaiEventBus.set_runtime_state(state);
+    restoreEventScope([["kickoff-1", "crew_kickoff_started"]]);
+
+    expect(resume_task_scope("task-1")).toBe(true);
+    expect(getCurrentParentId()).toBe("task-start-latest");
+    expect(resume_task_scope("missing-task")).toBe(false);
+
+    const completed = new TaskCompletedEvent({
+      taskDescription: "Resumed task",
+      output: new TaskOutput({ description: "Resumed task", raw: "done", agent: "Agent" }),
+    });
+    completed.taskId = "task-1";
+    completed.task_id = "task-1";
+    crewaiEventBus.emit(null, completed);
+
+    expect(completed.startedEventId).toBe("task-start-latest");
+    expect(completed.parentEventId).toBe("kickoff-1");
+    expect(getCurrentParentId()).toBe("kickoff-1");
   });
 
   it("registers event sources and avoids duplicating agents owned by registered crews", () => {

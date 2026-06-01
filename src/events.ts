@@ -17,6 +17,7 @@ import {
   pushEventScope,
   resetEmissionCounter,
   setEmissionCounter,
+  setEventRuntimeStateProvider,
   setLastEventId,
 } from "./context.js";
 import type { LiteAgentOutput } from "./lite-agent-output.js";
@@ -4639,6 +4640,7 @@ function isLLMSource(source: unknown): boolean {
 export const crewaiEventBus = new EventBus();
 export const crewai_event_bus = crewaiEventBus;
 export const CrewAIEventsBus = EventBus;
+setEventRuntimeStateProvider(() => crewaiEventBus.runtimeState);
 
 export class EventListener extends BaseEventListener {
   private static instance: EventListener | null = null;
