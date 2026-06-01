@@ -17,6 +17,7 @@ import {
 } from "./agent-utils.js";
 import { Converter } from "./converter.js";
 import { get_provider } from "./human-input.js";
+import { ToolCallHookContext, runAfterToolCallHooks, runBeforeToolCallHooks } from "./hooks.js";
 import { I18N_DEFAULT } from "./i18n.js";
 import { BaseLLM, callStopOverrideSync, UsageMetrics, type LLMResponse } from "./llm.js";
 import { sanitize_scope_name } from "./memory.js";
@@ -2131,18 +2132,50 @@ export class CrewAgentExecutor extends BaseAgentExecutor {
     const availableFunctions = options.availableFunctions ?? options.available_functions ?? {};
     const originalTool = options.originalTool ?? options.original_tool ?? this.tools.find((tool) => sanitizeToolName(tool.name) === sanitizeToolName(funcName)) ?? null;
     const shouldExecute = options.shouldExecute ?? options.should_execute ?? true;
-    if (!shouldExecute) {
-      return { call_id: callId, func_name: funcName, result: `Tool '${funcName}' has reached its usage limit and cannot be used anymore.`, from_cache: false, original_tool: originalTool };
-    }
     const args = typeof funcArgs === "string" ? parseNativeCrewArgs(funcArgs) : funcArgs;
-    const fn = availableFunctions[funcName] ?? availableFunctions[sanitizeToolName(funcName)];
-    const rawResult = typeof fn === "function"
-      ? await fn(args)
-      : await originalTool?.run(args);
+    const hookTool = originalTool ?? {
+      name: funcName,
+      description: "",
+      run: () => "Tool not found",
+    };
+    let result: unknown;
+    try {
+      await runBeforeToolCallHooks(new ToolCallHookContext({
+        toolName: funcName,
+        toolInput: args,
+        tool: hookTool,
+        agent: this.agent,
+        task: this.task,
+        crew: this.crew,
+      }));
+    } catch (error) {
+      if (executorErrorMessage(error).includes("blocked by before_tool_call hook")) {
+        result = `Tool execution blocked by hook. Tool: ${funcName}`;
+      }
+    }
+    if (result === undefined && !shouldExecute) {
+      result = `Tool '${funcName}' has reached its maximum usage limit and cannot be used anymore.`;
+    }
+    if (result === undefined) {
+      const fn = availableFunctions[funcName] ?? availableFunctions[sanitizeToolName(funcName)];
+      const rawResult = typeof fn === "function"
+        ? await fn(args)
+        : await originalTool?.run(args);
+      result = stringifyCrewExecutorValue(rawResult ?? "Tool not found");
+    }
+    result = await runAfterToolCallHooks(new ToolCallHookContext({
+      toolName: funcName,
+      toolInput: args,
+      tool: hookTool,
+      agent: this.agent,
+      task: this.task,
+      crew: this.crew,
+      toolResult: result,
+    }));
     return {
       call_id: callId,
       func_name: funcName,
-      result: stringifyCrewExecutorValue(rawResult ?? "Tool not found"),
+      result: stringifyCrewExecutorValue(result),
       from_cache: false,
       original_tool: originalTool,
     };

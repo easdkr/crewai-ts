@@ -12807,6 +12807,42 @@ describe("core crew runtime", () => {
       result: "final:Direct",
       from_cache: false,
     });
+    const blockedCalls: string[] = [];
+    beforeToolCall((context) => {
+      if (context.tool_name === "dangerous_operation") {
+        context.tool_input.action = "blocked";
+        blockedCalls.push(`before:${String(context.tool_input.action)}`);
+        return false;
+      }
+      return null;
+    });
+    afterToolCall((context) => {
+      if (context.tool_name === "dangerous_operation") {
+        blockedCalls.push(`after:${String(context.tool_result)}:${String(context.tool_input.action)}`);
+        return `${String(context.tool_result)} [audited]`;
+      }
+      return null;
+    });
+    await expect(executor._execute_single_native_tool_call({
+      call_id: "call-blocked",
+      func_name: "dangerous_operation",
+      func_args: "{\"action\":\"delete_all\"}",
+      available_functions: {
+        dangerous_operation: () => {
+          blockedCalls.push("tool");
+          return "should not run";
+        },
+      },
+    })).resolves.toMatchObject({
+      call_id: "call-blocked",
+      func_name: "dangerous_operation",
+      result: "Tool execution blocked by hook. Tool: dangerous_operation [audited]",
+      from_cache: false,
+    });
+    expect(blockedCalls).toEqual([
+      "before:blocked",
+      "after:Tool execution blocked by hook. Tool: dangerous_operation:blocked",
+    ]);
     const finish = await executor._handle_native_tool_calls([{
       id: "call-1",
       function: { name: "Final Tool", arguments: "{\"topic\":\"CrewAI\"}" },
