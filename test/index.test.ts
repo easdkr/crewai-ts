@@ -578,6 +578,7 @@ import {
   BaseRAGStorage,
   ChromaDBClient,
   ChromaDBConfig,
+  MissingChromaDBConfig,
   _MissingProvider,
   _convert_chromadb_results_to_search_results,
   _convert_distance_to_score,
@@ -9257,6 +9258,9 @@ describe("RAG configuration and factories", () => {
 
   it("exposes upstream optional-provider, embedding wrapper, and Chroma async lock helpers", async () => {
     expect(() => new _MissingProvider({ provider: "chromadb" })).toThrow(
+      "provider 'chromadb' requested but not installed",
+    );
+    expect(() => new MissingChromaDBConfig()).toThrow(
       "provider 'chromadb' requested but not installed",
     );
     expect(wrapped_call(() => [1, 2, 3], "query")).toEqual([[1, 2, 3]]);

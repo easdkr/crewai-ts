@@ -2134,8 +2134,17 @@ export class QdrantConfig extends BaseRagConfig {
   }
 }
 
-export class MissingChromaDBConfig extends ChromaDBConfig {}
-export class MissingQdrantConfig extends QdrantConfig {}
+export class MissingChromaDBConfig extends _MissingProvider {
+  constructor() {
+    super({ provider: "chromadb" });
+  }
+}
+
+export class MissingQdrantConfig extends _MissingProvider {
+  constructor() {
+    super({ provider: "qdrant" });
+  }
+}
 
 export type RagConfigType = ChromaDBConfig | QdrantConfig;
 export const RagConfigType = "RagConfigType";
