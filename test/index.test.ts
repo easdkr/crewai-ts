@@ -15256,6 +15256,51 @@ describe("tools", () => {
     expect(to_langchain(original)).toBeInstanceOf(StructuredTool);
   });
 
+  it("uses upstream BaseTool async execution semantics", async () => {
+    class SyncOnlyTool extends BaseTool {
+      constructor() {
+        super({
+          name: "sync only",
+          description: "Sync only",
+          argsSchema: {
+            value: { type: "string", required: true },
+          },
+        });
+      }
+
+      protected _run(args: Record<string, unknown>): string {
+        return String(args.value);
+      }
+    }
+    class AsyncEchoTool extends BaseTool {
+      constructor() {
+        super({
+          name: "async echo",
+          description: "Async echo",
+          argsSchema: {
+            value: { type: "string", required: true },
+          },
+        });
+      }
+
+      protected _run(args: Record<string, unknown>): string {
+        return String(args.value);
+      }
+
+      protected override async _arun(args: Record<string, unknown>): Promise<string> {
+        return await Promise.resolve(`async:${String(args.value)}`);
+      }
+    }
+
+    const syncOnly = new SyncOnlyTool();
+    await expect(syncOnly.arun({ value: "CrewAI" })).rejects.toThrow("does not implement _arun");
+    expect(syncOnly.current_usage_count).toBe(1);
+
+    const asyncEcho = new AsyncEchoTool();
+    await expect(asyncEcho.arun({ value: "CrewAI" })).resolves.toBe("async:CrewAI");
+    expect(asyncEcho.current_usage_count).toBe(1);
+  });
+
   it("exports upstream CrewStructuredTool and EnvVar runtime values", async () => {
     function multiply(a: unknown, b: unknown): number {
       return Number(a) * Number(b);

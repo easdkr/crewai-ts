@@ -593,7 +593,44 @@ export abstract class BaseTool implements Tool {
   }
 
   async arun(input?: ToolInvocationInput): Promise<unknown> {
-    return await this.run(input);
+    let args: Record<string, unknown>;
+    try {
+      args = this.parseArgs(input);
+    } catch (error) {
+      crewaiEventBus.emit(this, new ToolValidateInputErrorEvent({
+        toolName: this.name,
+        toolArgs: rawToolArgs(input),
+        toolClass: this.constructor.name,
+        error,
+      }));
+      throw error;
+    }
+    const startedAt = new Date();
+    crewaiEventBus.emit(this, new ToolUsageStartedEvent({
+      toolName: this.name,
+      toolArgs: args,
+      toolClass: this.constructor.name,
+    }));
+    const cacheInput = stableStringify(args);
+    const cached = this.cache?.read(this.name, cacheInput);
+    if (cached?.hit) {
+      this.emitToolFinished(args, startedAt, cached.value);
+      return cached.value;
+    }
+    try {
+      const usageLimitError = this.claimUsage();
+      if (usageLimitError) {
+        this.emitToolFinished(args, startedAt, usageLimitError);
+        return usageLimitError;
+      }
+      const result = await this._arun(args);
+      this.writeCache(args, cacheInput, result);
+      this.emitToolFinished(args, startedAt, result);
+      return result;
+    } catch (error) {
+      this.emitToolError(args, error);
+      throw error;
+    }
   }
 
   invoke(input?: ToolInvocationInput, _config?: Record<string, unknown> | null): MaybePromise<unknown> {
@@ -670,6 +707,11 @@ export abstract class BaseTool implements Tool {
   }
 
   protected abstract _run(args: Record<string, unknown>): MaybePromise<unknown>;
+
+  protected _arun(args: Record<string, unknown>): Promise<unknown> {
+    void args;
+    return Promise.reject(new Error(`${this.constructor.name} does not implement _arun. Override _arun for async support or use run() for sync execution.`));
+  }
 
   protected parseArgs(input: ToolInvocationInput): Record<string, unknown> {
     const raw = normalizeToolInput(input);
@@ -798,6 +840,10 @@ export class StructuredTool extends BaseTool {
 
   protected _run(args: Record<string, unknown>): MaybePromise<unknown> {
     return this.func(args);
+  }
+
+  override async arun(input?: ToolInvocationInput): Promise<unknown> {
+    return await this.run(input);
   }
 
   _validate_func(): this {
@@ -1200,6 +1246,10 @@ export class MCPNativeTool extends BaseTool {
     return this.runAsync(args);
   }
 
+  protected override async _arun(args: Record<string, unknown>): Promise<string> {
+    return await this.runAsync(args);
+  }
+
   async runAsync(args: Record<string, unknown> = {}): Promise<string> {
     const client = this.clientFactory();
     if (!isMCPClientLike(client)) {
@@ -1302,6 +1352,10 @@ export class MCPToolWrapper extends BaseTool {
 
   protected _run(args: Record<string, unknown>): Promise<string> {
     return this._run_async(args);
+  }
+
+  protected override async _arun(args: Record<string, unknown>): Promise<string> {
+    return await this._run_async(args);
   }
 
   async runAsync(args: Record<string, unknown> = {}): Promise<string> {
