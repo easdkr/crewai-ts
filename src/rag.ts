@@ -2824,8 +2824,121 @@ export function _ensure_list_embedding(embedding: QueryEmbedding | { tolist?: ()
   return Array.isArray(listed) ? listed.map((value) => Number(value)) : [Number(listed)];
 }
 
+export function _is_sync_client(client: unknown): boolean {
+  return isRecord(client)
+    && typeof client.query_points === "function"
+    && typeof client.aquery_points !== "function";
+}
+
+export function _is_async_client(client: unknown): boolean {
+  return isRecord(client)
+    && (typeof client.aquery_points === "function" || typeof client.query_points === "function" && client.constructor.name === "AsyncQdrantClient");
+}
+
+export function _is_async_embedding_function(func: unknown): boolean {
+  return typeof func === "function" && func.constructor.name === "AsyncFunction";
+}
+
+export function _get_collection_params(kwargs: Record<string, unknown>): Record<string, unknown> {
+  const collectionName = kwargs.collection_name ?? kwargs.collectionName;
+  if (collectionName === undefined) {
+    throw new Error("collection_name is required");
+  }
+  const params: Record<string, unknown> = {
+    collection_name: collectionName,
+    vectors_config: kwargs.vectors_config ?? kwargs.vectorsConfig ?? DEFAULT_VECTOR_PARAMS,
+  };
+  for (const key of [
+    "sparse_vectors_config",
+    "shard_number",
+    "sharding_method",
+    "replication_factor",
+    "write_consistency_factor",
+    "on_disk_payload",
+    "hnsw_config",
+    "optimizers_config",
+    "wal_config",
+    "quantization_config",
+    "init_from",
+    "timeout",
+  ]) {
+    if (key in kwargs) {
+      params[key] = kwargs[key];
+    }
+  }
+  return params;
+}
+
+export function _prepare_search_params(
+  collection_name: string,
+  query_embedding: QueryEmbedding | { tolist?: () => unknown },
+  limit: number,
+  score_threshold: number | null = null,
+  metadata_filter: Record<string, unknown> | null = null,
+): Record<string, unknown> {
+  const searchParams: Record<string, unknown> = {
+    collection_name,
+    query: _ensure_list_embedding(query_embedding),
+    limit,
+    with_payload: true,
+    with_vectors: false,
+  };
+  if (score_threshold !== null) {
+    searchParams.score_threshold = score_threshold;
+  }
+  if (metadata_filter && Object.keys(metadata_filter).length > 0) {
+    searchParams.query_filter = {
+      must: Object.entries(metadata_filter).map(([key, value]) => ({
+        key,
+        match: { value },
+      })),
+    };
+  }
+  return searchParams;
+}
+
 export function _normalize_qdrant_score(score: number): number {
   return Math.max(0, Math.min(1, (score + 1) / 2));
+}
+
+export function _process_search_results(response: unknown): SearchResult[] {
+  const points = Array.isArray((response as { points?: unknown[] }).points)
+    ? (response as { points: Array<{ id?: unknown; payload?: Record<string, unknown> | null; score?: number }> }).points
+    : Array.isArray(response) ? response as Array<{ id?: unknown; payload?: Record<string, unknown> | null; score?: number }> : [];
+  return points.map((point) => {
+    const payload = point.payload ?? {};
+    const { content = "", ...metadata } = payload;
+    return {
+      id: stringFromUnknown(point.id),
+      content: stringFromUnknown(content),
+      metadata,
+      score: _normalize_qdrant_score(point.score ?? 0),
+    };
+  });
+}
+
+export function _create_point_from_document(
+  doc: BaseRecord,
+  embedding: QueryEmbedding | { tolist?: () => unknown },
+): { id: string; vector: number[]; payload: Record<string, unknown> } {
+  const docId = doc.docId ?? doc.doc_id ?? createContentId(doc.content);
+  const metadata = qdrantPointMetadata(doc.metadata);
+  return {
+    id: docId,
+    vector: _ensure_list_embedding(embedding),
+    payload: {
+      content: doc.content,
+      ...metadata,
+    },
+  };
+}
+
+function qdrantPointMetadata(metadata: unknown): Record<string, unknown> {
+  if (Array.isArray(metadata)) {
+    const first: unknown = metadata[0];
+    return isRecord(first) ? { ...first } : {};
+  }
+  return isRecord(metadata) ? { ...metadata } : {};
 }
 
 function stringFromUnknown(value: unknown): string {

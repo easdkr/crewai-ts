@@ -574,12 +574,19 @@ import {
   _convert_chromadb_results_to_search_results,
   _convert_distance_to_score,
   _create_batch_slice,
+  _create_point_from_document,
   _ensure_list_embedding,
   _extract_search_params,
+  _get_collection_params,
+  _is_async_client,
+  _is_async_embedding_function,
   _is_ipv4_pattern,
+  _is_sync_client,
   _normalize_qdrant_score,
+  _prepare_search_params,
   _prepare_documents_for_chromadb,
   _process_query_results,
+  _process_search_results,
   _sanitize_collection_name,
   AnthropicCompletion,
   AzureCompletion,
@@ -8493,8 +8500,56 @@ describe("RAG configuration and factories", () => {
       score_threshold: null,
     })[1]?.score).toBe(0);
     expect(_ensure_list_embedding({ tolist: () => 3 })).toEqual([3]);
+    expect(_is_sync_client({ query_points: () => ({ points: [] }) })).toBe(true);
+    expect(_is_async_client({ aquery_points: () => Promise.resolve({ points: [] }) })).toBe(true);
+    expect(_is_async_embedding_function(async () => await Promise.resolve([0.1, 0.2]))).toBe(true);
+    expect(_is_async_embedding_function(() => [0.1, 0.2])).toBe(false);
+    expect(_get_collection_params({
+      collection_name: "docs",
+      vectors_config: { size: 3, distance: "Cosine" },
+      shard_number: 2,
+      timeout: 30,
+      ignored: true,
+    })).toEqual({
+      collection_name: "docs",
+      vectors_config: { size: 3, distance: "Cosine" },
+      shard_number: 2,
+      timeout: 30,
+    });
+    expect(_prepare_search_params("docs", { tolist: () => [0.1, 0.2] }, 5, 0.7, { topic: "rag" })).toEqual({
+      collection_name: "docs",
+      query: [0.1, 0.2],
+      limit: 5,
+      with_payload: true,
+      with_vectors: false,
+      score_threshold: 0.7,
+      query_filter: {
+        must: [
+          { key: "topic", match: { value: "rag" } },
+        ],
+      },
+    });
     expect(_normalize_qdrant_score(-1)).toBe(0);
     expect(_normalize_qdrant_score(1)).toBe(1);
+    expect(_process_search_results({
+      points: [
+        { id: "point-1", score: 1, payload: { content: "CrewAI docs", topic: "rag" } },
+      ],
+    })).toEqual([
+      { id: "point-1", content: "CrewAI docs", metadata: { topic: "rag" }, score: 1 },
+    ]);
+    expect(_create_point_from_document({
+      doc_id: "doc-1",
+      content: "CrewAI docs",
+      metadata: [{ topic: "rag" }],
+    }, { tolist: () => [0.1, 0.2] })).toEqual({
+      id: "doc-1",
+      vector: [0.1, 0.2],
+      payload: {
+        content: "CrewAI docs",
+        topic: "rag",
+      },
+    });
   });
 
   it("creates RAG clients through registered provider factories", () => {
