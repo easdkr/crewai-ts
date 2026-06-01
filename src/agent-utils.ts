@@ -77,6 +77,13 @@ type ToolWithArgsSchema = Tool & {
   args_schema?: ToolArgsSchema | JsonSchema | null;
 };
 
+type SummaryLLM = {
+  call?: (messages: readonly LLMMessage[], options?: Record<string, unknown>) => MaybePromise<unknown>;
+  acall?: (messages: readonly LLMMessage[], options?: Record<string, unknown>) => MaybePromise<unknown>;
+  get_context_window_size?: () => number;
+  getContextWindowSize?: () => number;
+};
+
 export function getToolNames(tools: readonly Tool[]): string {
   return tools.map((tool) => sanitizeToolName(tool.name)).join(", ");
 }
@@ -362,13 +369,81 @@ export function handleContextLength(messages: readonly LLMMessage[], summary: st
 
 export const handle_context_length = handleContextLength;
 
-export function summarizeMessages(messages: readonly LLMMessage[]): SummaryContent {
-  return new SummaryContent({
-    content: messages.map((message) => `${message.role}: ${message.content}`).join("\n"),
-  });
+export function summarizeMessages(messages: readonly LLMMessage[]): SummaryContent;
+export function summarizeMessages(
+  messages: LLMMessage[],
+  llm: SummaryLLM,
+  callbacks?: readonly unknown[],
+  verbose?: boolean,
+): Promise<void>;
+export function summarizeMessages(
+  messages: readonly LLMMessage[] | LLMMessage[],
+  llm?: SummaryLLM,
+  callbacks: readonly unknown[] = [],
+  _verbose = true,
+): SummaryContent | Promise<void> {
+  void _verbose;
+  if (!llm) {
+    return new SummaryContent({
+      content: messages.map((message) => `${message.role}: ${message.content}`).join("\n"),
+    });
+  }
+  return summarizeMessagesInPlace(messages as LLMMessage[], llm, callbacks);
 }
 
 export const summarize_messages = summarizeMessages;
+
+async function summarizeMessagesInPlace(
+  messages: LLMMessage[],
+  llm: SummaryLLM,
+  callbacks: readonly unknown[],
+): Promise<void> {
+  const preservedFiles: NonNullable<LLMMessage["files"]> = {};
+  for (const message of messages) {
+    if (message.role === "user" && message.files) {
+      Object.assign(preservedFiles, message.files);
+    }
+  }
+
+  const systemMessages = messages.filter((message) => message.role === "system");
+  const nonSystemMessages = messages.filter((message) => message.role !== "system");
+  if (nonSystemMessages.length === 0) {
+    return;
+  }
+
+  const maxTokens = resolveSummaryContextWindow(llm);
+  const chunks = _split_messages_into_chunks(nonSystemMessages, maxTokens);
+  const summarizedContents = chunks.length <= 1
+    ? await summarizeChunksSequentially(chunks, llm, callbacks)
+    : await _asummarize_chunks(chunks, llm, callbacks);
+
+  const mergedSummary = summarizedContents.map((content) => content.content).join("\n\n");
+  const summaryMessage = formatMessageForLLM(
+    I18N_DEFAULT.slice("summary").replace("{merged_summary}", mergedSummary),
+  );
+  if (Object.keys(preservedFiles).length > 0) {
+    summaryMessage.files = preservedFiles;
+  }
+
+  messages.splice(0, messages.length, ...systemMessages, summaryMessage);
+}
+
+async function summarizeChunksSequentially(
+  chunks: readonly (readonly LLMMessage[])[],
+  llm: SummaryLLM,
+  callbacks: readonly unknown[],
+): Promise<SummaryContent[]> {
+  const summarizedContents: SummaryContent[] = [];
+  for (const chunk of chunks) {
+    summarizedContents.push(...await _asummarize_chunks([chunk], llm, callbacks));
+  }
+  return summarizedContents;
+}
+
+function resolveSummaryContextWindow(llm: SummaryLLM): number {
+  const size = llm.get_context_window_size?.() ?? llm.getContextWindowSize?.();
+  return typeof size === "number" && Number.isFinite(size) && size > 0 ? size : 8_000;
+}
 
 export async function _asummarize_chunks(
   chunks: readonly (readonly LLMMessage[])[],

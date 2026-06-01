@@ -776,6 +776,7 @@ import {
   formatMessageForLLM,
   getLlmResponse,
   hasReachedMaxIterations,
+  summarizeMessages,
   lock,
   parseToml,
   parseAgentOutput,
@@ -5814,6 +5815,34 @@ describe("agent utility helpers", () => {
       "User request preserved",
       "Tool result preserved",
     ]);
+  });
+
+  it("compacts messages in place while preserving system messages and user files", async () => {
+    const calls: LLMMessage[][] = [];
+    const messages: LLMMessage[] = [
+      { role: "system", content: "System rules" },
+      {
+        role: "user",
+        content: "Find CrewAI facts",
+        files: { notes: { filename: "notes.txt", content: "CrewAI notes" } },
+      },
+      { role: "assistant", content: "I will search." },
+      { role: "tool", content: "CrewAI supports crews." },
+    ];
+
+    await summarizeMessages(messages, {
+      get_context_window_size: () => 3,
+      acall(summarizationMessages: readonly LLMMessage[]) {
+        calls.push([...summarizationMessages]);
+        return `<summary>Chunk ${String(calls.length)} summary</summary>`;
+      },
+    }, []);
+
+    expect(calls).toHaveLength(3);
+    expect(messages).toHaveLength(2);
+    expect(messages[0]).toEqual({ role: "system", content: "System rules" });
+    expect(messages[1]?.content).toBe("Previous conversation summary:\nChunk 1 summary\n\nChunk 2 summary\n\nChunk 3 summary");
+    expect(messages[1]?.files).toEqual({ notes: { filename: "notes.txt", content: "CrewAI notes" } });
   });
 
   it("applies executor stop words to BaseLLM calls without mutating the model", async () => {
