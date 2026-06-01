@@ -1090,24 +1090,10 @@ export class Task {
         from_task: this,
         from_agent: agent,
       }));
-      let success: boolean;
-      let nextValue: unknown;
-      try {
-        const result = await guardrail(output);
-        [success, nextValue] = isGuardrailTuple(result)
-          ? result
-          : [result.success, result.result];
-      } catch (error) {
-        crewaiEventBus.emit(this, new LLMGuardrailCompletedEvent({
-          success: false,
-          result: null,
-          error,
-          retry_count: attempt,
-          from_task: this,
-          from_agent: agent,
-        }));
-        throw error;
-      }
+      const result = await guardrail(output);
+      const [success, nextValue] = isGuardrailTuple(result)
+        ? result
+        : [result.success, result.result];
       crewaiEventBus.emit(this, new LLMGuardrailCompletedEvent({
         success,
         result: nextValue,

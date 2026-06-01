@@ -19361,6 +19361,34 @@ describe("task guardrails", () => {
     expect((events[3] as LLMGuardrailCompletedEvent).success).toBe(true);
     expect((events[5] as LLMGuardrailCompletedEvent).result).toBe("draft fixed accepted");
   });
+
+  it("does not emit task guardrail completion when the guardrail raises", async () => {
+    const events: CrewAIEvent[] = [];
+    crewaiEventBus.on("llm_guardrail_started", (_source, event) => {
+      events.push(event);
+    });
+    crewaiEventBus.on("llm_guardrail_completed", (_source, event) => {
+      events.push(event);
+    });
+    const agentInstance = new Agent({
+      role: "Writer",
+      goal: "Write reports",
+      backstory: "Careful writer",
+      llm: () => "draft",
+    });
+    const taskInstance = new Task({
+      description: "Write",
+      expectedOutput: "A report",
+      agent: agentInstance,
+      guardrail: () => {
+        throw new Error("guardrail exploded");
+      },
+    });
+
+    await expect(taskInstance.execute()).rejects.toThrow("guardrail exploded");
+
+    expect(events.map((event) => event.type)).toEqual(["llm_guardrail_started"]);
+  });
 });
 
 describe("task execution tracking", () => {
