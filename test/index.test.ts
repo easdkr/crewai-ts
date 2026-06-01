@@ -9789,11 +9789,13 @@ describe("core crew runtime", () => {
 
   it("uses native akickoff for akickoff_for_each crew copies", async () => {
     const crewInstance = new Crew();
-    const nativeKickoff = vi.fn(({ inputs }: { inputs?: Record<string, unknown> }) =>
-      Promise.resolve(new CrewOutput({
-        raw: `native:${String(inputs?.topic)}`,
+    const nativeKickoff = vi.fn(({ inputs, inputFiles }: { inputs?: Record<string, unknown>; inputFiles?: Record<string, unknown> }) => {
+      const inlineFiles = inputs?.input_files as Record<string, unknown> | undefined;
+      return Promise.resolve(new CrewOutput({
+        raw: `native:${String(inputs?.topic)}:${inlineFiles && "notes" in inlineFiles ? "inline" : "no-inline"}:${inputFiles && "shared" in inputFiles ? "shared" : "no-shared"}`,
         tokenUsage: new UsageMetrics({ totalTokens: 3, successfulRequests: 1 }),
-      })));
+      }));
+    });
     const threadKickoff = vi.fn(() => {
       throw new Error("kickoffAsync should not be used");
     });
@@ -9803,10 +9805,14 @@ describe("core crew runtime", () => {
     } as unknown as Crew);
 
     const outputs = await crewInstance.akickoff_for_each({
-      inputs: [{ topic: "A" }, { topic: "B" }],
+      inputs: [
+        { topic: "A", input_files: { notes: { path: "a.txt" } } },
+        { topic: "B" },
+      ],
+      input_files: { shared: { path: "shared.txt" } },
     });
 
-    expect(outputs.map((output) => output.raw)).toEqual(["native:A", "native:B"]);
+    expect(outputs.map((output) => output.raw)).toEqual(["native:A:inline:shared", "native:B:no-inline:shared"]);
     expect(nativeKickoff).toHaveBeenCalledTimes(2);
     expect(threadKickoff).not.toHaveBeenCalled();
     expect(crewInstance.usage_metrics.successfulRequests).toBe(2);
