@@ -8,6 +8,7 @@ import {
   extractTaskSection,
   extractToolCallInfo,
   formatMessageForLLM,
+  handleAgentActionCore,
   _executor_stop_words,
   isToolCallList,
 } from "./agent-utils.js";
@@ -752,7 +753,23 @@ export class AgentExecutor extends BaseAgentExecutor {
       this.state.is_finished = true;
       return "tool_result_is_final";
     }
-    this.messages.push({ role: "assistant", content: answer instanceof AgentAction ? answer.text : "" });
+    if (!(answer instanceof AgentAction)) {
+      this.messages.push({ role: "assistant", content: "" });
+      return "tool_completed";
+    }
+    const toolResult = handleAgentActionCore(answer, this.tools);
+    const result = handleAgentActionCore(answer, toolResult) as AgentAction | AgentFinish;
+    if (result instanceof AgentFinish) {
+      this.state.current_answer = result;
+      this.invokeStepCallback(result);
+      this.messages.push({ role: "assistant", content: result.text });
+      this.state.is_finished = true;
+      return "tool_result_is_final";
+    }
+    this.state.current_answer = result;
+    this.invokeStepCallback(result);
+    this.messages.push({ role: "assistant", content: result.text });
+    this.messages.push({ role: "user", content: I18N_DEFAULT.slice("post_tool_reasoning") });
     return "tool_completed";
   }
 
@@ -1108,6 +1125,14 @@ export class AgentExecutor extends BaseAgentExecutor {
     }
     const handler = (this as unknown as { _handle_human_feedback?: (answer: AgentFinish) => AgentFinish })._handle_human_feedback;
     return typeof handler === "function" ? handler.call(this, answer) : answer;
+  }
+
+  private invokeStepCallback(answer: AgentAction | AgentFinish): void {
+    const callback = (this.agent?.stepCallback ?? this.agent?.step_callback ?? null) as ((value: AgentAction | AgentFinish) => unknown) | null;
+    const result = callback?.(answer);
+    if (isPromiseLike(result)) {
+      void result;
+    }
   }
 
   private injectTodoContext(todo: TodoItem): void {

@@ -10611,6 +10611,29 @@ describe("core crew runtime", () => {
     ]);
   });
 
+  it("appends post-tool reasoning prompt after non-final AgentExecutor tool actions", () => {
+    const searchTool = new StructuredTool({
+      name: "Search Tool",
+      description: "Search docs",
+      func: () => "found docs",
+    });
+    const executor = new AgentExecutor({ tools: [searchTool] });
+    executor.state.current_answer = new AgentAction({
+      thought: "need docs",
+      tool: "Search Tool",
+      toolInput: { query: "CrewAI" },
+      text: "Thought: need docs\nAction: Search Tool\nAction Input: {\"query\":\"CrewAI\"}",
+    });
+
+    expect(executor.execute_tool_action()).toBe("tool_completed");
+    expect(executor.state.current_answer).toBeInstanceOf(AgentAction);
+    expect(executor.state.messages.at(-2)?.content).toContain("Observation: found docs");
+    expect(executor.state.messages.at(-1)).toEqual({
+      role: "user",
+      content: I18N_DEFAULT.slice("post_tool_reasoning"),
+    });
+  });
+
   it("short-circuits AgentExecutor native tool execution for result_as_answer tools", () => {
     const finalTool = new StructuredTool({
       name: "slow_one",
