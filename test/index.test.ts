@@ -2433,6 +2433,35 @@ describe("schema utilities", () => {
     expect(() => Model.model_validate({ query: "crew", format: "yaml", filters: { date_from: "2026-06-01" } })).toThrow(/format/);
     expect(() => Model.model_validate({ query: "crew", format: "json", filters: {} })).toThrow(/date_from/);
   });
+
+  it("enforces upstream JSON schema field constraints in created models", () => {
+    const Model = create_model_from_schema({
+      type: "object",
+      properties: {
+        code: {
+          type: "string",
+          minLength: 2,
+          maxLength: 4,
+          pattern: "^[A-Z]+$",
+        },
+        score: {
+          type: "integer",
+          minimum: 1,
+          maximum: 10,
+          multipleOf: 2,
+        },
+      },
+      required: ["code", "score"],
+    });
+
+    expect(Model.model_validate({ code: "AB", score: 8 })).toEqual({ code: "AB", score: 8 });
+    expect(() => Model.model_validate({ code: "A", score: 8 })).toThrow(/minLength/);
+    expect(() => Model.model_validate({ code: "ABCDE", score: 8 })).toThrow(/maxLength/);
+    expect(() => Model.model_validate({ code: "ab", score: 8 })).toThrow(/pattern/);
+    expect(() => Model.model_validate({ code: "AB", score: 0 })).toThrow(/minimum/);
+    expect(() => Model.model_validate({ code: "AB", score: 11 })).toThrow(/maximum/);
+    expect(() => Model.model_validate({ code: "AB", score: 3 })).toThrow(/multipleOf/);
+  });
 });
 
 describe("i18n and prompt utilities", () => {

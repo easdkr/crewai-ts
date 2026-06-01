@@ -551,6 +551,48 @@ function schemaTypeMatches(schema: JsonSchema, expected: string): boolean {
   return schema.type === expected || (Array.isArray(schema.type) && schema.type.includes(expected));
 }
 
+function numericConstraint(schema: JsonSchema, key: string): number | null {
+  const value = schema[key];
+  return typeof value === "number" && !Number.isNaN(value) ? value : null;
+}
+
+function assertStringConstraints(schema: JsonSchema, value: string, path: string): void {
+  const minLength = numericConstraint(schema, "minLength");
+  if (minLength !== null && value.length < minLength) {
+    throw createValidationError(path, `minLength ${String(minLength)}`);
+  }
+  const maxLength = numericConstraint(schema, "maxLength");
+  if (maxLength !== null && value.length > maxLength) {
+    throw createValidationError(path, `maxLength ${String(maxLength)}`);
+  }
+  if (typeof schema.pattern === "string" && !(new RegExp(schema.pattern).test(value))) {
+    throw createValidationError(path, `pattern ${schema.pattern}`);
+  }
+}
+
+function assertNumberConstraints(schema: JsonSchema, value: number, path: string): void {
+  const minimum = numericConstraint(schema, "minimum");
+  if (minimum !== null && value < minimum) {
+    throw createValidationError(path, `minimum ${String(minimum)}`);
+  }
+  const exclusiveMinimum = numericConstraint(schema, "exclusiveMinimum");
+  if (exclusiveMinimum !== null && value <= exclusiveMinimum) {
+    throw createValidationError(path, `exclusiveMinimum ${String(exclusiveMinimum)}`);
+  }
+  const maximum = numericConstraint(schema, "maximum");
+  if (maximum !== null && value > maximum) {
+    throw createValidationError(path, `maximum ${String(maximum)}`);
+  }
+  const exclusiveMaximum = numericConstraint(schema, "exclusiveMaximum");
+  if (exclusiveMaximum !== null && value >= exclusiveMaximum) {
+    throw createValidationError(path, `exclusiveMaximum ${String(exclusiveMaximum)}`);
+  }
+  const multipleOf = numericConstraint(schema, "multipleOf");
+  if (multipleOf !== null && multipleOf !== 0 && Math.abs(value / multipleOf - Math.round(value / multipleOf)) > Number.EPSILON) {
+    throw createValidationError(path, `multipleOf ${String(multipleOf)}`);
+  }
+}
+
 function effectiveSchema(schema: JsonSchema, rootSchema: JsonSchema): JsonSchema {
   if (typeof schema.$ref === "string") {
     const resolved = _resolve_ref(schema.$ref, rootSchema);
@@ -626,16 +668,19 @@ function validateSchemaValue(schema: JsonSchema, value: unknown, path: string, r
       if (typeof value !== "string") {
         throw createValidationError(path, "expected string");
       }
+      assertStringConstraints(resolved, value, path);
       return value;
     case "integer":
       if (typeof value !== "number" || !Number.isInteger(value)) {
         throw createValidationError(path, "expected integer");
       }
+      assertNumberConstraints(resolved, value, path);
       return value;
     case "number":
       if (typeof value !== "number" || Number.isNaN(value)) {
         throw createValidationError(path, "expected number");
       }
+      assertNumberConstraints(resolved, value, path);
       return value;
     case "boolean":
       if (typeof value !== "boolean") {
