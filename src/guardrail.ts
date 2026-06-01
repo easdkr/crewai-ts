@@ -132,32 +132,18 @@ export function processGuardrail(
     ...(fromTask === undefined ? {} : { from_task: fromTask }),
   });
   crewaiEventBus.emit(eventSource, started);
-  try {
-    const result = GuardrailResult.fromTuple(guardrail(output));
-    crewaiEventBus.emit(eventSource, new LLMGuardrailCompletedEvent({
-      success: result.success,
-      result: result.result,
-      ...(result.error === null ? {} : { error: result.error }),
-      retry_count: retryCount,
-      guardrail_type: started.guardrail_type,
-      guardrail_name: started.guardrail_name,
-      ...(fromAgent === undefined ? {} : { from_agent: fromAgent }),
-      ...(fromTask === undefined ? {} : { from_task: fromTask }),
-    }));
-    return result;
-  } catch (error) {
-    crewaiEventBus.emit(eventSource, new LLMGuardrailCompletedEvent({
-      success: false,
-      result: null,
-      error,
-      retry_count: retryCount,
-      guardrail_type: started.guardrail_type,
-      guardrail_name: started.guardrail_name,
-      ...(fromAgent === undefined ? {} : { from_agent: fromAgent }),
-      ...(fromTask === undefined ? {} : { from_task: fromTask }),
-    }));
-    throw error;
-  }
+  const result = GuardrailResult.fromTuple(guardrail(output));
+  crewaiEventBus.emit(eventSource, new LLMGuardrailCompletedEvent({
+    success: result.success,
+    result: result.result,
+    ...(result.error === null ? {} : { error: result.error }),
+    retry_count: retryCount,
+    guardrail_type: started.guardrail_type,
+    guardrail_name: started.guardrail_name,
+    ...(fromAgent === undefined ? {} : { from_agent: fromAgent }),
+    ...(fromTask === undefined ? {} : { from_task: fromTask }),
+  }));
+  return result;
 }
 
 export const process_guardrail = processGuardrail;

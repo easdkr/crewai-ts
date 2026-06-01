@@ -1893,6 +1893,31 @@ describe("formatter and guardrail utilities", () => {
     warningSpy.mockRestore();
   });
 
+  it("does not emit guardrail completion when the guardrail raises", () => {
+    const events: CrewAIEvent[] = [];
+    crewaiEventBus.on("llm_guardrail_started", (_source, event) => {
+      events.push(event);
+    });
+    crewaiEventBus.on("llm_guardrail_completed", (_source, event) => {
+      events.push(event);
+    });
+    const output = new TaskOutput({
+      description: "Check",
+      expectedOutput: "Valid",
+      raw: "answer",
+      agent: "Reviewer",
+    });
+
+    expect(() => {
+      processGuardrail(output, () => {
+        throw new Error("guardrail failed");
+      });
+    }).toThrow("guardrail failed");
+
+    expect(events).toHaveLength(1);
+    expect(events[0]).toBeInstanceOf(LLMGuardrailStartedEvent);
+  });
+
   it("validates task output with an LLM guardrail and exposes a Task-compatible function", async () => {
     const prompts: string[] = [];
     const guardrail = new LLMGuardrail({
