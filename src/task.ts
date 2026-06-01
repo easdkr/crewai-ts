@@ -156,7 +156,7 @@ export function _deserialize_model_class(value: unknown): TaskOutputConverter | 
 export type TaskOptions = {
   id?: string;
   name?: string | null;
-  description: string;
+  description?: string;
   expectedOutput?: string;
   expected_output?: string;
   config?: Record<string, unknown> | null;
@@ -292,8 +292,8 @@ export class Task {
   constructor(options: TaskOptions) {
     this.id = options.id ?? randomUUID();
     this.name = options.name ?? null;
-    this.description = options.description;
-    this.expectedOutput = options.expectedOutput ?? options.expected_output ?? "";
+    this.description = options.description as string;
+    this.expectedOutput = (options.expectedOutput ?? options.expected_output) as string;
     this.expected_output = this.expectedOutput;
     this.config = options.config ?? null;
     this.agent = options.agent ?? null;
@@ -355,6 +355,7 @@ export class Task {
     this.securityConfig = coerceSecurityConfig(options.securityConfig ?? options.security_config ?? null);
     this.security_config = this.securityConfig;
     this.setAttributesBasedOnConfig();
+    this.validateRequiredFields();
     this.checkTools();
     this.checkOutput();
     this.ensureGuardrailIsCallable();
@@ -403,10 +404,10 @@ export class Task {
   }
 
   validateRequiredFields(): this {
-    if (!this.description) {
+    if (isMissingRequiredField(this.description)) {
       throw new Error("description must be provided either directly or through config");
     }
-    if (!this.expectedOutput) {
+    if (isMissingRequiredField(this.expectedOutput)) {
       throw new Error("expected_output must be provided either directly or through config");
     }
     return this;
@@ -1481,6 +1482,10 @@ function normalizeTaskDate(value: Date | string | null): Date | null {
 
 function capitalize(value: string): string {
   return value.length === 0 ? value : `${value[0]?.toUpperCase() ?? ""}${value.slice(1)}`;
+}
+
+function isMissingRequiredField(value: unknown): boolean {
+  return value === undefined || value === null;
 }
 
 function validateOutputFile(value: string | null): string | null {

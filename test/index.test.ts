@@ -18905,6 +18905,25 @@ describe("task output files", () => {
     expect(explicitToolTask.tools).toEqual([taskTool]);
   });
 
+  it("requires task description and expected_output after applying config", () => {
+    expect(() => new Task({
+      expectedOutput: "A report",
+    })).toThrow("description must be provided either directly or through config");
+    expect(() => new Task({
+      description: "Write",
+    })).toThrow("expected_output must be provided either directly or through config");
+    expect(() => new Task({
+      description: "",
+      expectedOutput: "",
+    })).not.toThrow();
+    expect(new Task({
+      config: {
+        description: "Configured description",
+        expected_output: "Configured output",
+      },
+    }).expected_output).toBe("Configured output");
+  });
+
   it("saves output through the upstream-compatible task file helper", () => {
     const relativeDirectory = `.tmp-crewai-ts-save-file-${String(Date.now())}`;
     const outputFile = join(relativeDirectory, "result.json");
