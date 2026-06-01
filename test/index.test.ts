@@ -10634,6 +10634,8 @@ describe("core crew runtime", () => {
     expect(crewInstance._get_execution_start_index([taskInstance])).toBe(0);
     const sequentialOutput = await crewInstance._run_sequential_process({ topic: "CrewAI" });
     expect(sequentialOutput.raw).toBe("sequential done");
+    expect(sequentialOutput.token_usage.successfulRequests).toBe(1);
+    expect(sequentialOutput.tokenUsage.totalTokens).toBeGreaterThan(0);
     expect(crewInstance._get_execution_start_index([taskInstance])).toBe(1);
     expect(crewInstance.executionLogs[0]?.inputs).toEqual({ topic: "CrewAI" });
 
@@ -10685,8 +10687,9 @@ describe("core crew runtime", () => {
       tasks: [hierarchicalTask],
     });
     expect(hierarchicalCrew._create_manager_agent()).toBe(manager);
-    await expect(hierarchicalCrew._run_hierarchical_process())
-      .resolves.toMatchObject({ raw: "manager done" });
+    const hierarchicalOutput = await hierarchicalCrew._run_hierarchical_process();
+    expect(hierarchicalOutput.raw).toBe("manager done");
+    expect(hierarchicalOutput.token_usage.successfulRequests).toBe(1);
   });
 
   it("accepts upstream snake_case Crew runtime fields", () => {
@@ -19967,7 +19970,7 @@ describe("conditional tasks", () => {
 
     const output = await new Crew({ agents: [researcher], tasks: [initial, conditional] }).kickoff();
 
-    expect(output.raw).toBe("");
+    expect(output.raw).toBe("skip follow-up");
     expect(output.tasksOutput).toHaveLength(2);
     expect(output.tasksOutput[1]?.raw).toBe("");
     expect(calls).toHaveLength(1);

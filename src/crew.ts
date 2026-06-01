@@ -1462,14 +1462,7 @@ export class Crew {
     if (pendingTasks.length > 0) {
       tasksOutput.push(...await this.processAsyncTasks(pendingTasks));
     }
-    const lastOutput = tasksOutput.at(-1);
-
-    return new CrewOutput({
-      raw: lastOutput?.raw ?? "",
-      pydantic: lastOutput?.pydantic ?? null,
-      jsonDict: lastOutput?.jsonDict ?? null,
-      tasksOutput,
-    });
+    return this.createCrewOutput(tasksOutput);
   }
 
   private async runHierarchicalProcess(inputs: InputValues, inputFiles?: TaskInputFiles): Promise<CrewOutput> {
@@ -1504,14 +1497,7 @@ export class Crew {
       await this.storeExecutionLog(task, output, index, inputs);
       tasksOutput.push(output);
     }
-    const lastOutput = tasksOutput.at(-1);
-
-    return new CrewOutput({
-      raw: lastOutput?.raw ?? "",
-      pydantic: lastOutput?.pydantic ?? null,
-      jsonDict: lastOutput?.jsonDict ?? null,
-      tasksOutput,
-    });
+    return this.createCrewOutput(tasksOutput);
   }
 
   private async processAsyncTasks(
