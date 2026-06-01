@@ -637,14 +637,19 @@ import {
   setCreatePlusClientHook,
   runWithExecutionContext,
   runCrewTool,
+  _extract_files_from_inputs,
+  _resolve_crew_skills,
   checkConditionalSkip,
   check_conditional_skip,
+  consume_stream,
   prepareTaskExecution,
   prepareKickoff,
   prepare_task_execution,
   prepare_kickoff,
   runForEachAsync,
+  run_all_crews,
   run_for_each_async,
+  set_results_wrapper,
   setupAgents,
   setup_agents,
   setCrewChatLoader,
@@ -6394,6 +6399,42 @@ describe("crew execution utilities", () => {
     });
   });
 
+  it("exposes upstream crews utils aliases for skills, files, and async runs", async () => {
+    const activated = { name: "alpha", active: true };
+    const skill = {
+      name: "alpha",
+      disclosure_level: 1,
+      activate: () => activated,
+    };
+    const inputFile = { path: "notes.txt" };
+    const inputs: Record<string, unknown> = {
+      topic: "CrewAI",
+      input_files: {
+        notes: inputFile,
+      },
+    };
+    const reset = vi.fn();
+    const crew = {
+      _task_output_handler: { reset },
+      skills: [skill, activated, { name: "beta" }],
+      copy: vi.fn(() => ({ usageMetrics: new UsageMetrics({ totalTokens: 1, promptTokens: 1, completionTokens: 0, successfulRequests: 1 }) })),
+    };
+
+    expect(_resolve_crew_skills(crew)).toEqual([activated, { name: "beta" }]);
+    expect(_extract_files_from_inputs(inputs)).toEqual({ notes: inputFile });
+    expect(inputs).toEqual({ topic: "CrewAI" });
+
+    const outputs = await run_all_crews(
+      crew,
+      [{ topic: "A" }, { topic: "B" }],
+      (_crewCopy, input) => Promise.resolve(new CrewOutput({ raw: input.topic })),
+    );
+
+    expect(outputs).toHaveLength(2);
+    expect((outputs as CrewOutput[]).map((output) => output.raw)).toEqual(["A", "B"]);
+    expect(reset).toHaveBeenCalledOnce();
+  });
+
   it("returns a streaming output for upstream-style async for-each streaming crews", async () => {
     const crew = {
       stream: true,
@@ -6419,6 +6460,16 @@ describe("crew execution utilities", () => {
         successfulRequests: 1,
       },
     });
+  });
+
+  it("consumes crew streams and exposes upstream result setter wrapper", async () => {
+    const first = new CrewOutput({ raw: "first" });
+    const second = new CrewOutput({ raw: "second" });
+    const streaming = new CrewStreamingOutput(() => Promise.resolve(first));
+
+    set_results_wrapper(streaming)([first, second]);
+    await expect(consume_stream(streaming)).resolves.toBe(first);
+    expect(streaming.results.map((output) => output.raw)).toEqual(["first", "second"]);
   });
 
   it("sets up agents with crew defaults, skills, knowledge, and executors", () => {

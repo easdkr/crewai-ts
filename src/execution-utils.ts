@@ -132,6 +132,45 @@ export function enableAgentStreaming(agents: Iterable<Record<string, unknown>>):
 
 export const enable_agent_streaming = enableAgentStreaming;
 
+export function _resolve_crew_skills(crew: { skills?: unknown }): unknown[] | null {
+  const skills = readArray(crew.skills);
+  if (skills.length === 0) {
+    return null;
+  }
+  const resolved: unknown[] = [];
+  const seen = new Set<string>();
+  for (const skill of skills) {
+    const candidates = Array.isArray(skill) ? skill : [skill];
+    for (const candidate of candidates) {
+      const activated = activateCrewSkill(candidate);
+      const key = skillNameForDedupe(activated);
+      if (seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      resolved.push(activated);
+    }
+  }
+  return resolved;
+}
+
+export function _extract_files_from_inputs(inputs: Record<string, unknown>): Record<string, unknown> {
+  const extracted = extractInputFilesFromInputs(inputs);
+  const nested = isPlainRecord(extracted.inputs.input_files)
+    ? extracted.inputs.input_files
+    : isPlainRecord(extracted.inputs.inputFiles)
+      ? extracted.inputs.inputFiles
+      : {};
+  const { input_files: _inputFilesSnake, inputFiles: _inputFilesCamel, ...remainingInputs } = extracted.inputs;
+  void _inputFilesSnake;
+  void _inputFilesCamel;
+  for (const key of Object.keys(inputs)) {
+    Reflect.deleteProperty(inputs, key);
+  }
+  Object.assign(inputs, remainingInputs);
+  return { ...nested, ...extracted.inputFiles };
+}
+
 export class TaskExecutionData {
   readonly agent: unknown;
   readonly tools: readonly unknown[];
@@ -147,7 +186,7 @@ export class TaskExecutionData {
 }
 
 export function setupAgents(crew: Record<string, unknown>, agents: Iterable<Record<string, unknown>>, embedder: unknown = null, functionCallingLlm: unknown = null, stepCallback: unknown = null): void {
-  const crewSkills = readArray(crew.skills);
+  const crewSkills = _resolve_crew_skills(crew) ?? [];
   for (const agent of agents) {
     agent.crew = crew;
     agent.embedder ??= embedder;
@@ -363,6 +402,33 @@ export async function runForEachAsync(
 
 export const run_for_each_async = runForEachAsync;
 
+export async function run_all_crews<TCrew extends Record<string, unknown>, TInput extends Record<string, unknown>, TResult>(
+  crew: TCrew,
+  inputs: readonly TInput[],
+  kickoff_fn: (crew: TCrew, input: TInput) => Promise<TResult>,
+): Promise<TResult[] | CrewStreamingOutput> {
+  return await runForEachAsync(crew, inputs, kickoff_fn as (crew: Record<string, unknown>, input: Record<string, unknown>) => Promise<unknown>) as TResult[] | CrewStreamingOutput;
+}
+
+export async function consume_stream(stream_output: CrewStreamingOutput): Promise<CrewOutput> {
+  for await (const _chunk of stream_output) {
+    void _chunk;
+  }
+  return stream_output.result;
+}
+
+export function set_results_wrapper(streaming_output: CrewStreamingOutput): (result: CrewOutput | readonly CrewOutput[]) => void {
+  return (result: CrewOutput | readonly CrewOutput[]) => {
+    if (Array.isArray(result)) {
+      streaming_output._set_results(result);
+      return;
+    }
+    if (result instanceof CrewOutput) {
+      streaming_output._set_result(result);
+    }
+  };
+}
+
 export class StreamingContext {
   readonly resultHolder: unknown[];
   readonly result_holder: unknown[];
@@ -448,6 +514,32 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
 
 function readArray(value: unknown): readonly unknown[] {
   return Array.isArray(value) ? value : [];
+}
+
+function activateCrewSkill(skill: unknown): unknown {
+  if (!isPlainRecord(skill)) {
+    return skill;
+  }
+  const disclosureLevel = typeof skill.disclosure_level === "number"
+    ? skill.disclosure_level
+    : typeof skill.disclosureLevel === "number"
+      ? skill.disclosureLevel
+      : null;
+  const activate = skill.activate ?? skill.activate_skill;
+  if (typeof activate === "function" && (disclosureLevel === null || disclosureLevel < 2)) {
+    return callUnknown(activate, skill);
+  }
+  return skill;
+}
+
+function skillNameForDedupe(skill: unknown): string {
+  if (isPlainRecord(skill)) {
+    const name = skill.name ?? skill.id;
+    if (typeof name === "string" && name.length > 0) {
+      return name;
+    }
+  }
+  return String(skill);
 }
 
 function callUnknown(callback: unknown, receiver: unknown, ...args: unknown[]): unknown {
