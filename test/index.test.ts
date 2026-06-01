@@ -978,6 +978,7 @@ import {
   loadResources,
   loadSkillMetadata,
   parseFrontmatter,
+  parseSkillMd,
   parseRegistryRef,
   resolveRegistryRef,
   negotiateTransport,
@@ -3406,6 +3407,7 @@ describe("skills", () => {
 
       const [frontmatter, body] = parseFrontmatter(readFileSync(join(skillDir, "SKILL.md"), "utf8"));
       expect(frontmatter.name).toBe("source-review");
+      expect(frontmatter.version).toBe("1.2.3");
       expect(body).toBe("Use primary sources before summaries.");
 
       const discovered = discoverSkills(skillsDir);
@@ -3413,6 +3415,8 @@ describe("skills", () => {
       expect(discovered[0]).toBeInstanceOf(Skill);
       expect(discovered[0]?.disclosureLevel).toBe(METADATA);
       expect(discovered[0]?.frontmatter.allowedTools).toEqual(["search", "read-file"]);
+      expect(discovered[0]?.frontmatter.metadata).toBeNull();
+      expect(discovered[0]?.frontmatter.version).toBeNull();
 
       const activated = activateSkill(discovered[0] as Skill);
       expect(activated.disclosureLevel).toBe(INSTRUCTIONS);
@@ -3469,6 +3473,60 @@ describe("skills", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  it("keeps skill version metadata under metadata like upstream", () => {
+    const plain = new SkillFrontmatter({
+      name: "plain-skill",
+      description: "A plain skill.",
+    });
+    expect(plain.metadata).toBeNull();
+    expect(plain.version).toBeNull();
+
+    const versioned = new SkillFrontmatter({
+      name: "versioned-skill",
+      description: "A versioned skill.",
+      metadata: { version: "1.2.3" },
+    });
+    expect(versioned.metadata).toEqual({ version: "1.2.3" });
+    expect(versioned.version).toBe("1.2.3");
+
+    const extra = new SkillFrontmatter({
+      name: "extra-skill",
+      description: "A skill with metadata.",
+      metadata: { version: "1.0.0", author: "acme" },
+    });
+    expect(extra.metadata).toEqual({ version: "1.0.0", author: "acme" });
+
+    const dir = mkdtempSync(join(tmpdir(), "crewai-ts-skill-version-"));
+    const skillFile = join(dir, "SKILL.md");
+    try {
+      writeFileSync(skillFile, [
+        "---",
+        "name: parsed-skill",
+        "description: Parsed skill.",
+        "metadata:",
+        "  version: 2.0.0",
+        "  author: acme",
+        "---",
+        "Body",
+      ].join("\n"));
+      const [frontmatter] = parseSkillMd(skillFile);
+      expect(frontmatter.metadata).toEqual({ version: "2.0.0", author: "acme" });
+      expect(frontmatter.version).toBe("2.0.0");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+
+    const [rawFrontmatter] = parseFrontmatter([
+      "---",
+      "name: top-level-version-skill",
+      "description: Top-level version is raw YAML only.",
+      "version: 9.9.9",
+      "---",
+      "Body",
+    ].join("\n"));
+    expect(rawFrontmatter.version).toBe("9.9.9");
   });
 
   it("resolves local and cached registry skills without network access", () => {

@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 787 passing tests.
+- Test suite: 788 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -458,6 +458,7 @@ When more goal budget is available, continue from the behavioral parity audits b
   - `Task`, `Agent`, and `LiteAgent` model-dump JSON paths now drop callable guardrails with upstream-style warnings while preserving serializable string guardrails.
 - Added skills compatibility behavior:
   - `SkillFrontmatter.parse_allowed_tools` now exposes the upstream frontmatter pre-parse helper for space-delimited allowed tool lists.
+  - `SkillFrontmatter` now keeps `version` under `metadata.version` like the upstream agentskills spec and ignores top-level `version` during `SKILL.md` normalization.
   - `SkillCacheManager.store` now unpacks registry tar.gz and zip archive bytes into the local cache with upstream-style metadata and path traversal protection.
 - Added i18n compatibility behavior:
   - `I18N.load_prompts` now exposes upstream-style prompt catalog reload semantics for custom prompt files and default prompts.

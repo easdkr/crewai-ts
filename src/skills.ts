@@ -88,7 +88,7 @@ export class SkillFrontmatter {
     this.metadata = options.metadata ? { ...options.metadata } : null;
     this.allowedTools = normalizeAllowedTools(options.allowedTools ?? options.allowed_tools ?? options["allowed-tools"] ?? null);
     this.allowed_tools = this.allowedTools;
-    this.version = options.version ?? null;
+    this.version = this.metadata?.version ?? null;
   }
 
   static parseAllowedTools<TValues extends Record<string, unknown>>(values: TValues): TValues & { "allowed-tools"?: readonly string[] | null } {
@@ -500,7 +500,6 @@ function normalizeFrontmatter(value: Record<string, unknown>): SkillFrontmatterO
     compatibility: optionalString(value.compatibility),
     metadata: normalizeMetadata(value.metadata),
     allowedTools: normalizeAllowedTools(value["allowed-tools"] ?? value.allowed_tools),
-    version: optionalString(value.version),
   };
 }
 
