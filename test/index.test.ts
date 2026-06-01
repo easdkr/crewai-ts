@@ -19487,6 +19487,27 @@ describe("task guardrails", () => {
     expect(seen).toEqual(["draft", "draft with facts"]);
   });
 
+  it("defers structured output parsing until after guardrails run", async () => {
+    const agentInstance = new Agent({
+      role: "Writer",
+      goal: "Write reports",
+      backstory: "Careful writer",
+      llm: () => "not json yet",
+    });
+    const taskInstance = new Task({
+      description: "Write JSON",
+      expectedOutput: "A JSON report",
+      agent: agentInstance,
+      output_json: true,
+      guardrail: (output) => [true, output.raw === "not json yet" ? "{\"summary\":\"checked\"}" : output.raw],
+    });
+
+    const output = await taskInstance.execute();
+
+    expect(output.raw).toBe("{\"summary\":\"checked\"}");
+    expect(output.json_dict).toEqual({ summary: "checked" });
+  });
+
   it("retries the failing guardrail before continuing to the next one", async () => {
     let attempts = 0;
     const prompts: string[] = [];

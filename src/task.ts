@@ -986,9 +986,10 @@ export class Task {
         ...(executionOptions.knowledge === undefined ? {} : { knowledge: executionOptions.knowledge }),
         task: this,
       });
-      let output = await this.createOutput(raw, agent, renderedTask);
+      const guardrails = this.effectiveGuardrailEntries();
+      let output = await this.createOutput(raw, agent, renderedTask, guardrails.length === 0);
 
-      for (const [guardrail, index] of this.effectiveGuardrailEntries()) {
+      for (const [guardrail, index] of guardrails) {
         output = await this.runGuardrail(guardrail, output, agent, index, inputs, tools, renderedTask);
       }
       output = await this.handleHumanInput(output, agent, inputs, tools, renderedTask, executionOptions);
@@ -1075,10 +1076,12 @@ export class Task {
       .join("\n\n");
   }
 
-  private async createOutput(raw: string, agent: Agent, renderedTask?: RenderedTask): Promise<TaskOutput> {
-    const converted = this.outputConverter ? await this.outputConverter(raw) : undefined;
-    const pydantic = this.outputPydantic ? converted ?? this.outputPydantic(raw) : null;
-    const jsonDict = this.outputJson ? parseConvertedJsonObject(converted, raw) : null;
+  private async createOutput(raw: string, agent: Agent, renderedTask?: RenderedTask, exportStructured = true): Promise<TaskOutput> {
+    const converted = exportStructured && (this.outputPydantic || this.outputJson) && this.outputConverter
+      ? await this.outputConverter(raw)
+      : undefined;
+    const pydantic = exportStructured && this.outputPydantic ? converted ?? this.outputPydantic(raw) : null;
+    const jsonDict = exportStructured && this.outputJson ? parseConvertedJsonObject(converted, raw) : null;
     const outputFormat = this.outputJson
       ? OutputFormat.JSON
       : this.outputPydantic
