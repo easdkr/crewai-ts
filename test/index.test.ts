@@ -9096,6 +9096,28 @@ describe("crew execution utilities", () => {
     }
   });
 
+  it("binds agents referenced only by tasks during prepare_kickoff", () => {
+    const taskOnlyAgent = new Agent({
+      role: "Solo",
+      goal: "Describe inputs",
+      backstory: "Assigned only via task.agent",
+      allowDelegation: false,
+    });
+    const task = new Task({
+      description: "Describe the input.",
+      expectedOutput: "A description.",
+      agent: taskOnlyAgent,
+    });
+    const crew = new Crew({ tasks: [task] });
+
+    expect(taskOnlyAgent.crew).toBeNull();
+    expect(crew.agents).toEqual([]);
+
+    prepare_kickoff(crew, null);
+
+    expect(taskOnlyAgent.crew).toBe(crew);
+  });
+
   it("preserves checkpoint kickoff event ids and validates kickoff input mappings", () => {
     const events: CrewKickoffStartedEvent[] = [];
     const off = crewaiEventBus.on("crew_kickoff_started", (_source, event) => {
