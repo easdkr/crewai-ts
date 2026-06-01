@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 727 passing tests.
+- Test suite: 728 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -163,6 +163,7 @@ When more goal budget is available, continue from the behavioral parity audits b
 - Added focused JSON and SQLite tests for these aliases, including pending-feedback round trip and clear semantics.
 - `SQLiteFlowPersistence` now accepts upstream-style model dump state objects through `_to_state_dict` and exposes `_save_state_sql` for internal method parity.
 - `Flow.fromPending` / `from_pending` now matches upstream pending-feedback restore defaults by creating `SQLiteFlowPersistence` when no backend is supplied.
+- File store utilities now accept upstream-style object IDs with stable `toString()` keys for crew/task file storage, preserve task-level file overrides when merging, and cover sync/async retrieval with deterministic in-memory storage.
 - Added Flow memory helper parity for auto-created flow memory plus explicit/disabled memory configuration:
   - `Flow.remember`
   - `Flow.recall`

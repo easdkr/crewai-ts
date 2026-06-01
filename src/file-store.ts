@@ -2,6 +2,7 @@ export const DEFAULT_FILE_STORE_TTL = 3600;
 
 export type FileInput = unknown;
 export type FileInputMap = Record<string, FileInput>;
+export type FileStoreId = string | number | bigint | { toString(): string };
 
 type StoreEntry = {
   files: FileInputMap;
@@ -13,7 +14,7 @@ const taskPrefix = "task:";
 const fileStore = new Map<string, StoreEntry>();
 
 export function astoreFiles(
-  executionId: string,
+  executionId: FileStoreId,
   files: FileInputMap,
   ttl = DEFAULT_FILE_STORE_TTL,
 ): Promise<void> {
@@ -23,13 +24,13 @@ export function astoreFiles(
 
 export const astore_files = astoreFiles;
 
-export function agetFiles(executionId: string): Promise<FileInputMap | null> {
+export function agetFiles(executionId: FileStoreId): Promise<FileInputMap | null> {
   return Promise.resolve(getFiles(executionId));
 }
 
 export const aget_files = agetFiles;
 
-export function aclearFiles(executionId: string): Promise<void> {
+export function aclearFiles(executionId: FileStoreId): Promise<void> {
   clearFiles(executionId);
   return Promise.resolve();
 }
@@ -37,7 +38,7 @@ export function aclearFiles(executionId: string): Promise<void> {
 export const aclear_files = aclearFiles;
 
 export function astoreTaskFiles(
-  taskId: string,
+  taskId: FileStoreId,
   files: FileInputMap,
   ttl = DEFAULT_FILE_STORE_TTL,
 ): Promise<void> {
@@ -47,27 +48,27 @@ export function astoreTaskFiles(
 
 export const astore_task_files = astoreTaskFiles;
 
-export function agetTaskFiles(taskId: string): Promise<FileInputMap | null> {
+export function agetTaskFiles(taskId: FileStoreId): Promise<FileInputMap | null> {
   return Promise.resolve(getTaskFiles(taskId));
 }
 
 export const aget_task_files = agetTaskFiles;
 
-export function aclearTaskFiles(taskId: string): Promise<void> {
+export function aclearTaskFiles(taskId: FileStoreId): Promise<void> {
   clearTaskFiles(taskId);
   return Promise.resolve();
 }
 
 export const aclear_task_files = aclearTaskFiles;
 
-export function agetAllFiles(crewId: string, taskId?: string | null): Promise<FileInputMap | null> {
+export function agetAllFiles(crewId: FileStoreId, taskId?: FileStoreId | null): Promise<FileInputMap | null> {
   return Promise.resolve(getAllFiles(crewId, taskId));
 }
 
 export const aget_all_files = agetAllFiles;
 
 export function storeFiles(
-  executionId: string,
+  executionId: FileStoreId,
   files: FileInputMap,
   ttl = DEFAULT_FILE_STORE_TTL,
 ): void {
@@ -76,20 +77,20 @@ export function storeFiles(
 
 export const store_files = storeFiles;
 
-export function getFiles(executionId: string): FileInputMap | null {
+export function getFiles(executionId: FileStoreId): FileInputMap | null {
   return readEntry(crewKey(executionId));
 }
 
 export const get_files = getFiles;
 
-export function clearFiles(executionId: string): void {
+export function clearFiles(executionId: FileStoreId): void {
   fileStore.delete(crewKey(executionId));
 }
 
 export const clear_files = clearFiles;
 
 export function storeTaskFiles(
-  taskId: string,
+  taskId: FileStoreId,
   files: FileInputMap,
   ttl = DEFAULT_FILE_STORE_TTL,
 ): void {
@@ -98,19 +99,19 @@ export function storeTaskFiles(
 
 export const store_task_files = storeTaskFiles;
 
-export function getTaskFiles(taskId: string): FileInputMap | null {
+export function getTaskFiles(taskId: FileStoreId): FileInputMap | null {
   return readEntry(taskKey(taskId));
 }
 
 export const get_task_files = getTaskFiles;
 
-export function clearTaskFiles(taskId: string): void {
+export function clearTaskFiles(taskId: FileStoreId): void {
   fileStore.delete(taskKey(taskId));
 }
 
 export const clear_task_files = clearTaskFiles;
 
-export function getAllFiles(crewId: string, taskId?: string | null): FileInputMap | null {
+export function getAllFiles(crewId: FileStoreId, taskId?: FileStoreId | null): FileInputMap | null {
   const crewFiles = getFiles(crewId);
   const taskFiles = taskId ? getTaskFiles(taskId) : null;
   if (!crewFiles && !taskFiles) {
@@ -150,10 +151,14 @@ function readEntry(key: string): FileInputMap | null {
   return { ...entry.files };
 }
 
-function crewKey(executionId: string): string {
-  return `${crewPrefix}${executionId}`;
+function crewKey(executionId: FileStoreId): string {
+  return `${crewPrefix}${normalizeStoreId(executionId)}`;
 }
 
-function taskKey(taskId: string): string {
-  return `${taskPrefix}${taskId}`;
+function taskKey(taskId: FileStoreId): string {
+  return `${taskPrefix}${normalizeStoreId(taskId)}`;
+}
+
+function normalizeStoreId(value: FileStoreId): string {
+  return value.toString();
 }

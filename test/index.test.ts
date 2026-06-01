@@ -666,6 +666,8 @@ import {
   clearEmbeddingProviderBuilders,
   clearCallableRegistry,
   clearFileStore,
+  clearFiles,
+  clearTaskFiles,
   clearRagClientFactories,
   clearI18NCache,
   createToolFunction,
@@ -1666,6 +1668,29 @@ describe("serialization and project utilities", () => {
 });
 
 describe("environment, logging, and file store utilities", () => {
+  it("stores and merges upstream-style crew and task files by object IDs", async () => {
+    const crewId = { toString: () => "crew-uuid" };
+    const taskId = { toString: () => "task-uuid" };
+    const crewFile = { read: () => "crew version" };
+    const taskFile = { read: () => "task version" };
+
+    storeFiles(crewId, { shared: crewFile, crewOnly: "crew" });
+    storeTaskFiles(taskId, { shared: taskFile, taskOnly: "task" });
+
+    expect(getFiles("crew-uuid")).toEqual({ shared: crewFile, crewOnly: "crew" });
+    expect(getTaskFiles("task-uuid")).toEqual({ shared: taskFile, taskOnly: "task" });
+    expect(getAllFiles(crewId, taskId)).toEqual({
+      shared: taskFile,
+      crewOnly: "crew",
+      taskOnly: "task",
+    });
+
+    clearFiles(crewId);
+    clearTaskFiles(taskId);
+    expect(getAllFiles(crewId, taskId)).toBeNull();
+    await expect(agetAllFiles(crewId, taskId)).resolves.toBeNull();
+  });
+
   it("emits environment context once with CrewAI upstream precedence", async () => {
     const events: CrewAIEvent[] = [];
     crewaiEventBus.on("cc_env", (_source, event) => {

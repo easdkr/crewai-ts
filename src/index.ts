@@ -1287,6 +1287,7 @@ export {
   store_task_files,
   type FileInput,
   type FileInputMap,
+  type FileStoreId,
 } from "./file-store.js";
 export { FileHandler, LogEntry, PickleHandler } from "./file-handler.js";
 export {
