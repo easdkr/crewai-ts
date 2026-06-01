@@ -1,6 +1,7 @@
 import {
   createHash,
 } from "node:crypto";
+import { existsSync, statSync } from "node:fs";
 
 import {
   PlanningConfig,
@@ -69,7 +70,7 @@ import type { ExecutionContext } from "./context.js";
 import type { AgentStep, AgentStepCallback, InputValues, LLM, LLMMessage, Tool } from "./types.js";
 import { createMemoryTools as createAgentMemoryTools, type Memory, type MemoryScope } from "./memory.js";
 import { renderInputFiles, withReadFileTool, type InputFiles } from "./input-files.js";
-import { Skill, formatSkillContext } from "./skills.js";
+import { Skill, activateSkill, discoverSkills, formatSkillContext, resolveRegistryRef } from "./skills.js";
 import type { EmbedderConfig } from "./rag.js";
 import { CREWAI_TRAINED_AGENTS_FILE_ENV, TRAINED_AGENTS_DATA_FILE, TRAINING_DATA_FILE } from "./settings.js";
 import { CrewTrainingHandler } from "./training-handler.js";
@@ -430,6 +431,7 @@ export class Agent {
     this.functionCallingLlmClient = this.functionCallingLlm && typeof this.functionCallingLlm !== "string"
       ? createLLMClient(this.functionCallingLlm)
       : null;
+    this.postInitSetup();
   }
 
   get planningEnabled(): boolean {
@@ -638,7 +640,12 @@ export class Agent {
   }
 
   postInitSetup(): this {
-    return this.setPrivateAttrs();
+    this.setPrivateAttrs();
+    if (!this.agentExecutor) {
+      this.setupAgentExecutor();
+    }
+    this.setSkills();
+    return this;
   }
 
   post_init_setup(): this {
@@ -1742,7 +1749,7 @@ export class Agent {
   }
 
   setSkills(resolvedCrewSkills: readonly unknown[] | null = null): void {
-    const items = [...this.skills, ...(resolvedCrewSkills ?? [])];
+    const items = [...resolveAgentSkills(this.skills), ...resolveAgentSkills(resolvedCrewSkills ?? [])];
     this.skills = dedupeSkills(items);
   }
 
@@ -2419,6 +2426,28 @@ function dedupeSkills(skills: readonly unknown[]): unknown[] {
       continue;
     }
     seen.add(key);
+    resolved.push(skill);
+  }
+  return resolved;
+}
+
+function resolveAgentSkills(skills: readonly unknown[]): unknown[] {
+  const resolved: unknown[] = [];
+  for (const skill of skills) {
+    if (skill instanceof Skill) {
+      resolved.push(activateSkill(skill, null));
+      continue;
+    }
+    if (typeof skill === "string") {
+      if (skill.startsWith("@")) {
+        resolved.push(resolveRegistryRef(skill, null, { cwd: process.cwd() }));
+        continue;
+      }
+      if (existsSync(skill) && statSync(skill).isDirectory()) {
+        resolved.push(...discoverSkills(skill, null).map((item) => activateSkill(item, null)));
+        continue;
+      }
+    }
     resolved.push(skill);
   }
   return resolved;

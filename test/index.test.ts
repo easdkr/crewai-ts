@@ -2717,6 +2717,38 @@ describe("skills", () => {
     }
   });
 
+  it("resolves agent skills during post-init setup", () => {
+    const dir = mkdtempSync(join(tmpdir(), "crewai-ts-agent-skills-"));
+    const skillsDir = join(dir, "skills");
+    const skillDir = join(skillsDir, "source-review");
+    try {
+      mkdirSync(skillDir, { recursive: true });
+      writeFileSync(join(skillDir, "SKILL.md"), [
+        "---",
+        "name: source-review",
+        "description: Inspect primary sources.",
+        "---",
+        "Inspect sources carefully before answering.",
+        "",
+      ].join("\n"));
+
+      const agentInstance = new Agent({
+        role: "Researcher",
+        goal: "Find reliable answers",
+        backstory: "Careful analyst",
+        skills: [skillsDir, { name: "inline-review", description: "Check inline evidence." }],
+      });
+
+      expect(agentInstance.skills.some((skill) => skill instanceof Skill && skill.name === "source-review")).toBe(true);
+      expect(agentInstance.skills.find((skill) => skill instanceof Skill && skill.name === "source-review"))
+        .toMatchObject({ disclosure_level: 2 });
+      expect(agentInstance.skills).toContainEqual({ name: "inline-review", description: "Check inline evidence." });
+      expect(agentInstance.cache_handler).toBeInstanceOf(CacheHandler);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("exposes skill lifecycle events with upstream-compatible payload names", () => {
     const discovered = new SkillDiscoveryCompletedEvent({
       search_path: "/skills",
