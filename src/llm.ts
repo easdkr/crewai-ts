@@ -2865,14 +2865,27 @@ function normalizeUsageMetrics(metrics: UsageMetricsLike): UsageMetrics {
 
 function defineUsageMetricAliases(metrics: UsageMetrics): void {
   Object.defineProperties(metrics, {
-    total_tokens: { value: metrics.totalTokens, writable: true, enumerable: false, configurable: true },
-    prompt_tokens: { value: metrics.promptTokens, writable: true, enumerable: false, configurable: true },
-    cached_prompt_tokens: { value: metrics.cachedPromptTokens, writable: true, enumerable: false, configurable: true },
-    completion_tokens: { value: metrics.completionTokens, writable: true, enumerable: false, configurable: true },
-    reasoning_tokens: { value: metrics.reasoningTokens, writable: true, enumerable: false, configurable: true },
-    cache_creation_tokens: { value: metrics.cacheCreationTokens, writable: true, enumerable: false, configurable: true },
-    successful_requests: { value: metrics.successfulRequests, writable: true, enumerable: false, configurable: true },
+    total_tokens: usageMetricAlias("totalTokens"),
+    prompt_tokens: usageMetricAlias("promptTokens"),
+    cached_prompt_tokens: usageMetricAlias("cachedPromptTokens"),
+    completion_tokens: usageMetricAlias("completionTokens"),
+    reasoning_tokens: usageMetricAlias("reasoningTokens"),
+    cache_creation_tokens: usageMetricAlias("cacheCreationTokens"),
+    successful_requests: usageMetricAlias("successfulRequests"),
   });
+}
+
+function usageMetricAlias(key: keyof UsageMetrics): PropertyDescriptor {
+  return {
+    enumerable: false,
+    configurable: true,
+    get(this: UsageMetrics): number {
+      return this[key];
+    },
+    set(this: UsageMetrics, value: number): void {
+      this[key] = value;
+    },
+  };
 }
 
 function parseStructuredOutputJson(response: string, responseFormatName: string): unknown {

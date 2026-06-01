@@ -16162,6 +16162,14 @@ describe("LLM providers", () => {
       completionTokens: 2,
       successfulRequests: 1,
     });
+    const metrics = new UsageMetrics({ total_tokens: 1, prompt_tokens: 2 });
+    metrics.total_tokens = 3;
+    metrics.promptTokens = 4;
+    metrics.add_usage_metrics(new UsageMetrics({ total_tokens: 5, prompt_tokens: 6 }));
+    expect(metrics.totalTokens).toBe(8);
+    expect(metrics.total_tokens).toBe(8);
+    expect(metrics.promptTokens).toBe(10);
+    expect(metrics.prompt_tokens).toBe(10);
   });
 
   it("exposes upstream provider model constants for non-native LLM providers", () => {
