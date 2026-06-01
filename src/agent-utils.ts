@@ -13,6 +13,7 @@ import { AgentRepositoryError } from "./errors.js";
 import { BaseLLM, callStopOverride, type LLMResponse } from "./llm.js";
 import { LLMCallHookContext, runAfterLlmCallHooks, runBeforeLlmCallHooks } from "./hooks.js";
 import { I18N_DEFAULT } from "./i18n.js";
+import { PRINTER, Printer, type ColoredText } from "./logger.js";
 
 export type ToolRunner = (input?: ToolContext | Record<string, unknown> | string) => MaybePromise<unknown>;
 
@@ -735,12 +736,98 @@ export function _extract_summary_tags(text: string): string {
   return (match?.[1] ?? text).trim();
 }
 
-export function showAgentLogs(_agent: unknown, _message: string): void {
-  void _agent;
-  void _message;
+const MULTIPLE_NEWLINES = /\n{2,}/g;
+
+export function showAgentLogs(
+  printer: Printer,
+  agentRole: string,
+  formattedAnswer?: AgentAction | AgentFinish | null,
+  taskDescription?: string | null,
+  verbose?: boolean,
+): void;
+export function showAgentLogs(agent: unknown, message: string): void;
+export function showAgentLogs(
+  printerOrAgent: unknown,
+  agentRoleOrMessage: string,
+  formattedAnswer: AgentAction | AgentFinish | null = null,
+  taskDescription: string | null = null,
+  verbose = false,
+): void {
+  const printer = printerOrAgent instanceof Printer ? printerOrAgent : PRINTER;
+  if (!(printerOrAgent instanceof Printer)) {
+    return;
+  }
+  if (!verbose) {
+    return;
+  }
+
+  const agentRole = agentRoleOrMessage.split("\n", 1)[0] ?? "";
+  if (formattedAnswer === null) {
+    printer.print(coloredParts([
+      ["# Agent: ", "bold_purple"],
+      [agentRole, "bold_green"],
+    ]), null, "");
+    if (taskDescription) {
+      printer.print(coloredParts([
+        ["## Task: ", "purple"],
+        [taskDescription, "green"],
+      ]), null, "");
+    }
+    return;
+  }
+
+  printer.print(coloredParts([
+    ["\n\n# Agent: ", "bold_purple"],
+    [agentRole, "bold_green"],
+  ]), null, "");
+
+  if (formattedAnswer instanceof AgentAction) {
+    const thought = formattedAnswer.thought.replace(MULTIPLE_NEWLINES, "\n");
+    if (thought) {
+      printer.print(coloredParts([
+        ["## Thought: ", "purple"],
+        [thought, "green"],
+      ]), null, "");
+    }
+    printer.print(coloredParts([
+      ["## Using tool: ", "purple"],
+      [formattedAnswer.tool, "green"],
+    ]), null, "");
+    printer.print(coloredParts([
+      ["## Tool Input: ", "purple"],
+      [`\n${formatToolInputForAgentLog(formattedAnswer.toolInput)}`, "green"],
+    ]), null, "");
+    printer.print(coloredParts([
+      ["## Tool Output: ", "purple"],
+      [`\n${formattedAnswer.result ?? ""}`, "green"],
+    ]), null, "");
+    return;
+  }
+
+  if (formattedAnswer instanceof AgentFinish) {
+    printer.print(coloredParts([
+      ["## Final Answer: ", "purple"],
+      [`\n${String(formattedAnswer.output)}\n\n`, "green"],
+    ]), null, "");
+  }
 }
 
 export const show_agent_logs = showAgentLogs;
+
+function coloredParts(parts: readonly (readonly [string, NonNullable<ColoredText["color"]>])[]): ColoredText[] {
+  return parts.map(([text, color]) => ({ text, color }));
+}
+
+function formatToolInputForAgentLog(toolInput: unknown): string {
+  if (typeof toolInput === "string") {
+    try {
+      return JSON.stringify(JSON.parse(toolInput), null, 2);
+    } catch {
+      return JSON.stringify(toolInput, null, 2);
+    }
+  }
+  return JSON.stringify(toolInput, null, 2);
+}
 
 type AgentRepositoryResponse = {
   status?: number;

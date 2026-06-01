@@ -796,6 +796,7 @@ import {
   handleMaxIterationsExceeded,
   hasReachedMaxIterations,
   processLlmResponse,
+  showAgentLogs,
   summarizeMessages,
   lock,
   parseToml,
@@ -1649,6 +1650,51 @@ describe("environment, logging, and file store utilities", () => {
     expect(messages[0]).toContain("visible");
     expect(renderColoredText([{ text: "plain", color: "red" }], false)).toBe("plain");
     await expect(suppressLogging(() => "result")).resolves.toBe("result");
+  });
+
+  it("prints upstream-style agent logs only when verbose", () => {
+    const messages: string[] = [];
+    const printer = new Printer((message) => messages.push(message));
+
+    showAgentLogs(printer, "Researcher\nignored", null, "Find docs", false);
+    expect(messages).toEqual([]);
+
+    showAgentLogs(printer, "Researcher\nignored", null, "Find docs", true);
+    showAgentLogs(printer, "Researcher", new AgentAction({
+      thought: "Need docs\n\nCheck source",
+      tool: "Search",
+      toolInput: "{\"query\":\"CrewAI\"}",
+      text: "",
+      result: "found docs",
+    }), null, true);
+    showAgentLogs(printer, "Researcher", new AgentFinish({
+      thought: "done",
+      output: "final answer",
+      text: "",
+    }), null, true);
+
+    let output = "";
+    let skippingAnsi = false;
+    for (const char of messages.join("")) {
+      if (char.charCodeAt(0) === 27) {
+        skippingAnsi = true;
+        continue;
+      }
+      if (skippingAnsi) {
+        if (char === "m") {
+          skippingAnsi = false;
+        }
+        continue;
+      }
+      output += char;
+    }
+    expect(output).toContain("# Agent: Researcher");
+    expect(output).toContain("## Task: Find docs");
+    expect(output).toContain("## Thought: Need docs\nCheck source");
+    expect(output).toContain("## Using tool: Search");
+    expect(output).toContain("\"query\": \"CrewAI\"");
+    expect(output).toContain("## Tool Output: \nfound docs");
+    expect(output).toContain("## Final Answer: \nfinal answer");
   });
 
   it("provides upstream-compatible printer suppression and database error helpers", () => {
