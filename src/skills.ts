@@ -207,6 +207,10 @@ export class SkillCacheManager {
     return this.getCachedPath(org, name);
   }
 
+  _skill_dir(org: string, name: string): string {
+    return this.skillDir(org, name);
+  }
+
   storeDirectory(org: string, name: string, version: string | null, sourceDirectory: string): string {
     const skillDir = this.skillDir(org, name);
     if (existsSync(skillDir)) {
@@ -436,6 +440,12 @@ export function is_enabled(): boolean {
   return process.env[ENV_VAR] === "1";
 }
 
+export function _is_noninteractive(): boolean {
+  return process.env.CI === "1"
+    || process.env.CREWAI_NONINTERACTIVE === "1"
+    || !process.stdin.isTTY;
+}
+
 export function require_experimental_skills(): void {
   if (!is_enabled()) {
     throw new ExperimentalFeatureDisabledError();
@@ -513,13 +523,13 @@ function normalizeAllowedTools(value: unknown): readonly string[] | null {
 function extractSkillArchive(archiveBytes: Uint8Array, destination: string): void {
   const buffer = Buffer.from(archiveBytes);
   if (buffer.length >= 4 && buffer.readUInt32LE(0) === 0x04034b50) {
-    extractZipArchive(buffer, destination);
+    _safe_extract_zip(buffer, destination);
     return;
   }
-  extractTarGzArchive(buffer, destination);
+  _safe_extractall(buffer, destination);
 }
 
-function extractTarGzArchive(archiveBytes: Uint8Array, destination: string): void {
+export function _safe_extractall(archiveBytes: Uint8Array, destination: string): void {
   const tar = gunzipSync(archiveBytes);
   const destinationRoot = resolve(destination);
   let offset = 0;
@@ -565,7 +575,8 @@ function readTarOctal(buffer: Buffer, offset: number, length: number): number {
   return raw ? Number.parseInt(raw, 8) : 0;
 }
 
-function extractZipArchive(zip: Buffer, destination: string): void {
+export function _safe_extract_zip(zipArchive: Uint8Array, destination: string): void {
+  const zip = Buffer.from(zipArchive);
   const destinationRoot = resolve(destination);
   let offset = 0;
   let extracted = false;

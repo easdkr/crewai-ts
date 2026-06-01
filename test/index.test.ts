@@ -783,6 +783,9 @@ import {
   SkillCacheManager,
   SkillNotCachedError,
   SkillParseError,
+  _is_noninteractive,
+  _safe_extract_zip,
+  _safe_extractall,
   ENV_VAR,
   ExperimentalFeatureDisabledError,
   is_enabled,
@@ -2291,6 +2294,7 @@ describe("skills", () => {
       const cache = new SkillCacheManager(cacheRoot);
       const storedPath = cache.store("org", "archive-skill", "2.0.0", archive);
 
+      expect(cache._skill_dir("org", "archive-skill")).toBe(storedPath);
       expect(readFileSync(join(storedPath, "SKILL.md"), "utf8")).toContain("Archived instructions.");
       expect(readFileSync(join(storedPath, "references", "guide.md"), "utf8")).toBe("Read this first.");
       expect(cache.getCachedPath("org", "archive-skill")).toBe(storedPath);
@@ -2311,8 +2315,43 @@ describe("skills", () => {
       });
       const zipPath = cache.store("org", "zip-skill", null, zipArchive);
       expect(readFileSync(join(zipPath, "assets", "example.txt"), "utf8")).toBe("zip asset");
+
+      const directTarPath = join(dir, "direct-tar");
+      mkdirSync(directTarPath);
+      _safe_extractall(archive, directTarPath);
+      expect(readFileSync(join(directTarPath, "SKILL.md"), "utf8")).toContain("Archived instructions.");
+
+      const directZipPath = join(dir, "direct-zip");
+      mkdirSync(directZipPath);
+      _safe_extract_zip(zipArchive, directZipPath);
+      expect(readFileSync(join(directZipPath, "assets", "example.txt"), "utf8")).toBe("zip asset");
     } finally {
       rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("detects non-interactive skill registry environments like upstream", () => {
+    const previousCi = process.env.CI;
+    const previousNoninteractive = process.env.CREWAI_NONINTERACTIVE;
+    try {
+      process.env.CI = "1";
+      delete process.env.CREWAI_NONINTERACTIVE;
+      expect(_is_noninteractive()).toBe(true);
+
+      process.env.CI = "0";
+      process.env.CREWAI_NONINTERACTIVE = "1";
+      expect(_is_noninteractive()).toBe(true);
+    } finally {
+      if (previousCi === undefined) {
+        delete process.env.CI;
+      } else {
+        process.env.CI = previousCi;
+      }
+      if (previousNoninteractive === undefined) {
+        delete process.env.CREWAI_NONINTERACTIVE;
+      } else {
+        process.env.CREWAI_NONINTERACTIVE = previousNoninteractive;
+      }
     }
   });
 
