@@ -471,7 +471,10 @@ export class Task {
 
   ensureGuardrailIsCallable(): this {
     if (this.guardrail) {
-      this.resolvedGuardrail = this.resolveGuardrail(this.guardrail, "Agent is required to use LLMGuardrail");
+      this.validateGuardrailFunction(this.guardrail);
+      this.resolvedGuardrail = typeof this.guardrail === "function"
+        ? this.guardrail
+        : null;
     } else {
       this.resolvedGuardrail = null;
     }
@@ -483,9 +486,12 @@ export class Task {
   }
 
   ensureGuardrailsIsListOfCallables(): this {
-    this.resolvedGuardrails = this.guardrails.map((guardrail) => (
-      this.resolveGuardrail(guardrail, "Agent is required to use non-programmatic guardrails")
-    ));
+    this.resolvedGuardrails = this.guardrails
+      .filter((guardrail): guardrail is Guardrail => typeof guardrail === "function")
+      .map((guardrail) => {
+        this.validateGuardrailFunction(guardrail);
+        return guardrail;
+      });
     if (this.resolvedGuardrails.length > 0) {
       this.resolvedGuardrail = null;
     }
@@ -1209,10 +1215,15 @@ export class Task {
   }
 
   private effectiveGuardrailEntries(): readonly (readonly [Guardrail, number | null])[] {
-    if (this.resolvedGuardrails.length > 0) {
-      return this.resolvedGuardrails.map((guardrail, index) => [guardrail, index] as const);
+    if (this.guardrails.length > 0) {
+      return this.guardrails.map((guardrail, index) => [
+        this.resolveGuardrail(guardrail, "Agent is required to use non-programmatic guardrails"),
+        index,
+      ] as const);
     }
-    return this.resolvedGuardrail ? [[this.resolvedGuardrail, null] as const] : [];
+    return this.guardrail
+      ? [[this.resolveGuardrail(this.guardrail, "Agent is required to use LLMGuardrail"), null] as const]
+      : [];
   }
 
   private resolveGuardrail(guardrail: TaskGuardrail, missingAgentMessage: string): Guardrail {

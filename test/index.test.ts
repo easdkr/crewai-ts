@@ -2594,6 +2594,10 @@ describe("formatter and guardrail utilities", () => {
     expect(task.model_dump({ mode: "json" }).guardrails).toEqual(["also check this"]);
     expect(agent.model_dump({ mode: "json" }).guardrail).toBeNull();
     expect(liteAgent.model_dump({ mode: "json" }).guardrail).toBeNull();
+    const dumpedTask = task.model_dump({ mode: "json", exclude: ["id"] });
+    expect(dumpedTask.guardrails).toEqual(["also check this"]);
+    expect(dumpedTask.guardrails).not.toContain(null);
+    expect(() => new Task(dumpedTask as ConstructorParameters<typeof Task>[0])).not.toThrow();
 
     const passed = StandardGuardrailResult.from_tuple([true, "clean"]);
     const failed = StandardGuardrailResult.fromTuple([false, "too short"]);
@@ -25194,18 +25198,37 @@ describe("task guardrails", () => {
     expect(prompts[1]).toContain("The report must cite sources.");
   });
 
-  it("requires an agent for non-programmatic task guardrails", () => {
-    expect(() => new Task({
+  it("requires an agent for non-programmatic task guardrails at execution time", async () => {
+    const singleGuardrailTask = new Task({
       description: "Write",
       expectedOutput: "A report",
       guardrail: "The report must cite sources.",
-    })).toThrow("Agent is required to use LLMGuardrail");
+    });
 
-    expect(() => new Task({
+    await expect(singleGuardrailTask.execute()).rejects.toThrow("Task 'Write' has no agent");
+
+    const guardrailsTask = new Task({
       description: "Write",
       expectedOutput: "A report",
       guardrails: ["The report must cite sources."],
-    })).toThrow("Agent is required to use non-programmatic guardrails");
+    });
+
+    await expect(guardrailsTask.execute()).rejects.toThrow("Task 'Write' has no agent");
+
+    const agentWithoutLLM = new Agent({
+      role: "Writer",
+      goal: "Write reports",
+      backstory: "Writes reports",
+      llm: null,
+    });
+    const llmRequiredTask = new Task({
+      description: "Write",
+      expectedOutput: "A report",
+      agent: agentWithoutLLM,
+      guardrails: ["The report must cite sources."],
+    });
+
+    await expect(llmRequiredTask.execute()).rejects.toThrow("Agent must have a BaseLLM instance to use LLMGuardrail");
   });
 
   it("invokes guardrails through the upstream-compatible helper", async () => {

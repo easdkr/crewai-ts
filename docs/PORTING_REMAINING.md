@@ -202,6 +202,7 @@ When more goal budget is available, continue from the behavioral parity audits b
 - Experimental skills registry resolution now mirrors upstream feature gating: `resolveRegistryRef` / `resolve_registry_ref` require `CREWAI_EXPERIMENTAL=1` before resolving project-local or cached registry references, while deterministic cache/local resolution remains covered when the flag is enabled.
 - Task output file saving now mirrors upstream `create_directory=false` behavior by raising a clear directory-missing error instead of surfacing raw filesystem `ENOENT`, while still writing when the target directory already exists.
 - `prepare_kickoff` now has default-gate coverage for upstream issue #5534 behavior: agents referenced only through `task.agent` are bound to the crew even when `Crew.agents` is empty.
+- Task guardrail JSON serialization now has default-gate round-trip coverage: callable guardrails are dropped with warnings, serializable string guardrails remain, and `guardrails` lists do not retain null entries that would fail restore validation.
 
 ## Completed In Current Tool Behavior Pass
 
