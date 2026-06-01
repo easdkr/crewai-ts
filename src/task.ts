@@ -1,5 +1,5 @@
-import { mkdir, writeFile } from "node:fs/promises";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { access, mkdir, writeFile } from "node:fs/promises";
+import { constants, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { createHash, randomUUID } from "node:crypto";
 import { dirname, resolve } from "node:path";
 
@@ -868,6 +868,8 @@ export class Task {
     const directory = dirname(outputPath);
     if (this.createDirectory) {
       mkdirSync(directory, { recursive: true });
+    } else if (!existsSync(directory)) {
+      throw new Error(`Directory ${directory} does not exist and create_directory is False`);
     }
     const content = result && typeof result === "object" && !Array.isArray(result)
       ? JSON.stringify(result, null, 2)
@@ -1400,6 +1402,12 @@ export class Task {
     const directory = dirname(resolve(outputPath));
     if (this.createDirectory) {
       await mkdir(directory, { recursive: true });
+    } else {
+      try {
+        await access(directory, constants.F_OK);
+      } catch {
+        throw new Error(`Directory ${directory} does not exist and create_directory is False`);
+      }
     }
     const content = output.jsonDict
       ? JSON.stringify(output.jsonDict, null, 2)

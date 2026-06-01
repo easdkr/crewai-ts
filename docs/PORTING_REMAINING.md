@@ -199,6 +199,7 @@ When more goal budget is available, continue from the behavioral parity audits b
 - Flow structure serialization now lets child flow methods override inherited parent method metadata by method/kind, matching upstream inheritance behavior while still preserving inherited methods that are not overridden.
 - LiteAgent kickoff now mirrors upstream memory behavior with deterministic memory fixtures: it recalls memories into the execution messages, exposes memory tools without delegating custom memory objects to the internal Agent memory path, and saves extracted memories through `extract_memories` / `remember_many`.
 - Experimental skills registry resolution now mirrors upstream feature gating: `resolveRegistryRef` / `resolve_registry_ref` require `CREWAI_EXPERIMENTAL=1` before resolving project-local or cached registry references, while deterministic cache/local resolution remains covered when the flag is enabled.
+- Task output file saving now mirrors upstream `create_directory=false` behavior by raising a clear directory-missing error instead of surfacing raw filesystem `ENOENT`, while still writing when the target directory already exists.
 
 ## Completed In Current Tool Behavior Pass
 

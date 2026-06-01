@@ -23706,6 +23706,31 @@ describe("task output files", () => {
     }
   });
 
+  it("honors create_directory=false in the upstream task file helper", () => {
+    const relativeDirectory = `.tmp-crewai-ts-no-create-${String(Date.now())}`;
+    const outputFile = join(relativeDirectory, "result.txt");
+    rmSync(join(process.cwd(), relativeDirectory), { recursive: true, force: true });
+    const taskInstance = new Task({
+      description: "Save",
+      expectedOutput: "A saved file",
+      output_file: outputFile,
+      create_directory: false,
+    });
+
+    try {
+      expect(() => {
+        taskInstance._save_file("content");
+      }).toThrow(/Directory .* does not exist and create_directory is False/);
+      mkdirSync(join(process.cwd(), relativeDirectory), { recursive: true });
+      expect(() => {
+        taskInstance._save_file("content");
+      }).not.toThrow();
+      expect(readFileSync(join(process.cwd(), outputFile), "utf8")).toBe("content");
+    } finally {
+      rmSync(join(process.cwd(), relativeDirectory), { recursive: true, force: true });
+    }
+  });
+
   it("exposes the upstream-style task representation", () => {
     const taskInstance = new Task({
       description: "Write report",
