@@ -59,21 +59,26 @@ export class RecordedSpan implements SpanLike {
 
 export class Telemetry {
   static instance: Telemetry | null = null;
+  static _instance: Telemetry | null = null;
   ready = false;
   traceSet = false;
   trace_set = false;
   readonly spans: RecordedSpan[] = [];
 
   constructor() {
-    Telemetry.instance ??= this;
+    const existing = Telemetry.instance ?? Telemetry._instance;
+    if (existing) {
+      return existing;
+    }
+    Telemetry.instance = this;
+    Telemetry._instance = this;
     if (!isTelemetryDisabled()) {
       this.ready = true;
     }
   }
 
   static getInstance(): Telemetry {
-    Telemetry.instance ??= new Telemetry();
-    return Telemetry.instance;
+    return Telemetry.instance ?? Telemetry._instance ?? new Telemetry();
   }
 
   static get_instance(): Telemetry {
@@ -491,11 +496,13 @@ export function closeSpan(span: SpanLike): void {
 export const close_span = closeSpan;
 
 function isTelemetryDisabled(): boolean {
-  return process.env.CREWAI_DISABLE_TELEMETRY === "true"
-    || process.env.CREWAI_DISABLE_TELEMETRY === "1"
-    || process.env.CREWAI_DISABLE_TRACKING === "true"
-    || process.env.CREWAI_DISABLE_TRACKING === "1"
-    || process.env.OTEL_SDK_DISABLED === "true";
+  return isDisabledEnvValue(process.env.CREWAI_DISABLE_TELEMETRY)
+    || isDisabledEnvValue(process.env.CREWAI_DISABLE_TRACKING)
+    || isDisabledEnvValue(process.env.OTEL_SDK_DISABLED);
+}
+
+function isDisabledEnvValue(value: string | undefined): boolean {
+  return value?.toLowerCase() === "true" || value === "1";
 }
 
 function defaultAddAttribute(span: SpanLike, name: string, value: unknown): void {

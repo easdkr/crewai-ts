@@ -7439,6 +7439,59 @@ describe("evaluator utilities", () => {
 });
 
 describe("telemetry compatibility", () => {
+  it("matches upstream telemetry singleton and dynamic disable behavior", () => {
+    const previousDisableTelemetry = process.env.CREWAI_DISABLE_TELEMETRY;
+    const previousDisableTracking = process.env.CREWAI_DISABLE_TRACKING;
+    const previousOtelDisabled = process.env.OTEL_SDK_DISABLED;
+    (Telemetry as unknown as { instance: Telemetry | null; _instance: Telemetry | null }).instance = null;
+    (Telemetry as unknown as { instance: Telemetry | null; _instance: Telemetry | null })._instance = null;
+
+    try {
+      delete process.env.CREWAI_DISABLE_TELEMETRY;
+      delete process.env.CREWAI_DISABLE_TRACKING;
+      delete process.env.OTEL_SDK_DISABLED;
+
+      const telemetry1 = new Telemetry();
+      const telemetry2 = new Telemetry();
+      expect(telemetry2).toBe(telemetry1);
+      expect(Telemetry.get_instance()).toBe(telemetry1);
+      expect(telemetry1.ready).toBe(true);
+
+      const operation = vi.fn(() => "ok");
+      expect(telemetry1._safe_telemetry_operation(operation)).toBe("ok");
+      expect(operation).toHaveBeenCalledTimes(1);
+
+      process.env.CREWAI_DISABLE_TELEMETRY = "TRUE";
+      expect(telemetry1._is_telemetry_disabled()).toBe(true);
+      expect(telemetry1._safe_telemetry_operation(operation)).toBeNull();
+      expect(operation).toHaveBeenCalledTimes(1);
+
+      delete process.env.CREWAI_DISABLE_TELEMETRY;
+      process.env.OTEL_SDK_DISABLED = "TRUE";
+      expect(telemetry1._is_telemetry_disabled()).toBe(true);
+      expect(telemetry1._safe_telemetry_operation(operation)).toBeNull();
+      expect(operation).toHaveBeenCalledTimes(1);
+    } finally {
+      if (previousDisableTelemetry === undefined) {
+        delete process.env.CREWAI_DISABLE_TELEMETRY;
+      } else {
+        process.env.CREWAI_DISABLE_TELEMETRY = previousDisableTelemetry;
+      }
+      if (previousDisableTracking === undefined) {
+        delete process.env.CREWAI_DISABLE_TRACKING;
+      } else {
+        process.env.CREWAI_DISABLE_TRACKING = previousDisableTracking;
+      }
+      if (previousOtelDisabled === undefined) {
+        delete process.env.OTEL_SDK_DISABLED;
+      } else {
+        process.env.OTEL_SDK_DISABLED = previousOtelDisabled;
+      }
+      (Telemetry as unknown as { instance: Telemetry | null; _instance: Telemetry | null }).instance = null;
+      (Telemetry as unknown as { instance: Telemetry | null; _instance: Telemetry | null })._instance = null;
+    }
+  });
+
   it("generates upstream-style deterministic machine ids with resilient fallbacks", () => {
     const machineId = _get_machine_id();
     expect(machineId).toMatch(/^[0-9a-f]{64}$/);
