@@ -18704,6 +18704,102 @@ describe("flow runtime", () => {
     }
   });
 
+  it("evaluates deeply nested Flow AND/OR listener conditions", async () => {
+    class DeeplyNestedFlow extends Flow<{ events: string[] }> {
+      constructor() {
+        super({ initialState: { events: [] } });
+      }
+
+      a() {
+        this.state.events.push("a");
+      }
+
+      b() {
+        this.state.events.push("b");
+      }
+
+      c() {
+        this.state.events.push("c");
+      }
+
+      d() {
+        this.state.events.push("d");
+      }
+
+      result() {
+        this.state.events.push("result");
+      }
+    }
+
+    const initializers = [
+      decorateMethod(DeeplyNestedFlow, "a", start() as unknown as Decorator),
+      decorateMethod(DeeplyNestedFlow, "b", start() as unknown as Decorator),
+      decorateMethod(DeeplyNestedFlow, "c", start() as unknown as Decorator),
+      decorateMethod(DeeplyNestedFlow, "d", start() as unknown as Decorator),
+      decorateMethod(DeeplyNestedFlow, "result", listen(or_(and_("a", "b"), and_("c", "d"))) as unknown as Decorator),
+    ];
+    const flow = new DeeplyNestedFlow();
+    initializers.forEach((initializer) => {
+      initializer.call(flow);
+    });
+
+    await flow.kickoff();
+
+    expect(flow.state.events).toEqual(["a", "b", "c", "d", "result"]);
+  });
+
+  it("preserves mixed sync and async Flow execution order", async () => {
+    class MixedSyncAsyncFlow extends Flow<{ events: string[] }> {
+      constructor() {
+        super({ initialState: { events: [] } });
+      }
+
+      syncStart() {
+        this.state.events.push("sync_start");
+      }
+
+      async asyncStep1() {
+        this.state.events.push("async_step_1");
+        await new Promise((resolve) => setTimeout(resolve, 1));
+      }
+
+      syncStep2() {
+        this.state.events.push("sync_step_2");
+      }
+
+      async asyncStep3() {
+        this.state.events.push("async_step_3");
+        await new Promise((resolve) => setTimeout(resolve, 1));
+      }
+
+      syncFinal() {
+        this.state.events.push("sync_final");
+      }
+    }
+
+    const initializers = [
+      decorateMethod(MixedSyncAsyncFlow, "syncStart", start() as unknown as Decorator),
+      decorateMethod(MixedSyncAsyncFlow, "asyncStep1", listen("syncStart") as unknown as Decorator),
+      decorateMethod(MixedSyncAsyncFlow, "syncStep2", listen("asyncStep1") as unknown as Decorator),
+      decorateMethod(MixedSyncAsyncFlow, "asyncStep3", listen("syncStep2") as unknown as Decorator),
+      decorateMethod(MixedSyncAsyncFlow, "syncFinal", listen("asyncStep3") as unknown as Decorator),
+    ];
+    const flow = new MixedSyncAsyncFlow();
+    initializers.forEach((initializer) => {
+      initializer.call(flow);
+    });
+
+    await flow.kickoff_async();
+
+    expect(flow.state.events).toEqual([
+      "sync_start",
+      "async_step_1",
+      "sync_step_2",
+      "async_step_3",
+      "sync_final",
+    ]);
+  });
+
   it("preserves non-structured-cloneable flow state values when copying state", () => {
     const handler = () => "locked";
     const flow = new Flow<{
