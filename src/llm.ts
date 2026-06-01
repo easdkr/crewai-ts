@@ -341,13 +341,21 @@ export const LLM_ENV_VARS: Readonly<Record<string, readonly LLMEnvVarSpec[]>> = 
     { key_name: "WATSONX_PROJECT_ID" },
   ],
   ollama: [{ default: true, API_BASE: "http://localhost:11434" }],
+  bedrock: [
+    { key_name: "AWS_ACCESS_KEY_ID" },
+    { key_name: "AWS_SECRET_ACCESS_KEY" },
+    { key_name: "AWS_DEFAULT_REGION" },
+  ],
   azure: [
     { key_name: "model" },
     { key_name: "AZURE_API_KEY" },
     { key_name: "AZURE_API_BASE" },
     { key_name: "AZURE_API_VERSION" },
   ],
-  cerebras: [{ key_name: "CEREBRAS_API_KEY" }],
+  cerebras: [
+    { key_name: "model" },
+    { key_name: "CEREBRAS_API_KEY" },
+  ],
 };
 export const ENV_VARS = LLM_ENV_VARS;
 export const SUPPORTED_NATIVE_PROVIDERS = ["openai", "anthropic", "azure", "bedrock", "gemini"] as const;

@@ -18160,6 +18160,23 @@ describe("LLM providers", () => {
       api_base: "https://azure.example.test",
       additional_params: { api_version: "2024-02-15-preview" },
     });
+    const bedrockEnv = create_llm(null, {
+      MODEL: "bedrock/amazon.nova-pro-v1:0",
+      AWS_ACCESS_KEY_ID: "access-key",
+      AWS_SECRET_ACCESS_KEY: "secret-key",
+      AWS_DEFAULT_REGION: "us-east-1",
+    });
+    expect((bedrockEnv as ConfiguredLLM).to_config_dict()).toMatchObject({
+      model: "bedrock/amazon.nova-pro-v1:0",
+      provider: "bedrock",
+      api_key: null,
+    });
+    expect(ENV_VARS.bedrock?.map((entry) => entry.key_name)).toEqual([
+      "AWS_ACCESS_KEY_ID",
+      "AWS_SECRET_ACCESS_KEY",
+      "AWS_DEFAULT_REGION",
+    ]);
+    expect(ENV_VARS.cerebras?.map((entry) => entry.key_name)).toEqual(["model", "CEREBRAS_API_KEY"]);
     expect(normalize_llm_env_key_name("azure_api_base")).toBe("api_base");
     expect(_normalize_key_name("custom_api_key")).toBe("api_key");
 
