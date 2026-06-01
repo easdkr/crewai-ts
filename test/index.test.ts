@@ -9787,6 +9787,31 @@ describe("core crew runtime", () => {
     expect(nativeOutput.token_usage.successfulRequests).toBe(1);
   });
 
+  it("uses native akickoff for akickoff_for_each crew copies", async () => {
+    const crewInstance = new Crew();
+    const nativeKickoff = vi.fn(({ inputs }: { inputs?: Record<string, unknown> }) =>
+      Promise.resolve(new CrewOutput({
+        raw: `native:${String(inputs?.topic)}`,
+        tokenUsage: new UsageMetrics({ totalTokens: 3, successfulRequests: 1 }),
+      })));
+    const threadKickoff = vi.fn(() => {
+      throw new Error("kickoffAsync should not be used");
+    });
+    vi.spyOn(crewInstance, "copy").mockReturnValue({
+      akickoff: nativeKickoff,
+      kickoffAsync: threadKickoff,
+    } as unknown as Crew);
+
+    const outputs = await crewInstance.akickoff_for_each({
+      inputs: [{ topic: "A" }, { topic: "B" }],
+    });
+
+    expect(outputs.map((output) => output.raw)).toEqual(["native:A", "native:B"]);
+    expect(nativeKickoff).toHaveBeenCalledTimes(2);
+    expect(threadKickoff).not.toHaveBeenCalled();
+    expect(crewInstance.usage_metrics.successfulRequests).toBe(2);
+  });
+
   it("exposes upstream Task lifecycle compatibility methods", async () => {
     const prompts: string[] = [];
     const agentInstance = new Agent({

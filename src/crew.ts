@@ -858,7 +858,29 @@ export class Crew {
   }
 
   async akickoffForEach(options: KickoffForEachOptions): Promise<CrewOutput[]> {
-    return await this.kickoffForEachAsync(options);
+    if (this.stream) {
+      const output = new CrewStreamingOutput(async () => {
+        const results = await this.withStreamDisabled(async () => await this.akickoffForEach(options));
+        return results.at(-1) ?? new CrewOutput({ raw: "", tasksOutput: [], tokenUsage: emptyUsageMetrics() });
+      });
+      return [output as unknown as CrewOutput];
+    }
+    const outputs = await Promise.all(
+      options.inputs.map(async (inputs) => {
+        const crew = this.copy();
+        return await crew.akickoff({
+          inputs,
+          ...(options.inputFiles ?? options.input_files
+            ? { inputFiles: options.inputFiles ?? options.input_files }
+            : {}),
+        });
+      }),
+    );
+    this.setUsageMetrics(outputs.reduce(
+      (total, output) => addUsageMetrics(total, output.tokenUsage),
+      emptyUsageMetrics(),
+    ));
+    return outputs;
   }
 
   async akickoff_for_each(options: KickoffForEachOptions): Promise<CrewOutput[]> {
