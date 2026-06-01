@@ -2576,6 +2576,7 @@ export function humanFeedback(configOrMessage: HumanFeedbackConfig | string): Me
   const config = typeof configOrMessage === "string"
     ? { message: configOrMessage }
     : configOrMessage;
+  validateHumanFeedbackConfig(config);
   return function decorate<This extends object>(
     value: AnyFlowMethod<This>,
     context: ClassMethodDecoratorContext<This, AnyFlowMethod<This>>,
@@ -2598,6 +2599,26 @@ export function humanFeedback(configOrMessage: HumanFeedbackConfig | string): Me
 }
 
 export const human_feedback = humanFeedback;
+
+function validateHumanFeedbackConfig(config: HumanFeedbackConfig): void {
+  const emit = config.emit ?? null;
+  const defaultOutcome = config.defaultOutcome ?? null;
+  if (emit !== null) {
+    const llm = "llm" in config ? config.llm : "gpt-4o-mini";
+    if (!llm) {
+      throw new Error(
+        "llm is required when emit is specified. Provide an LLM model string or a BaseLLM instance.",
+      );
+    }
+    if (defaultOutcome !== null && !emit.includes(defaultOutcome)) {
+      throw new Error(`default_outcome '${defaultOutcome}' must be one of the emit options: ${JSON.stringify([...emit])}`);
+    }
+    return;
+  }
+  if (defaultOutcome !== null) {
+    throw new Error("default_outcome requires emit to be specified.");
+  }
+}
 
 export function or_(...conditions: FlowConditionInput[]): FlowCondition {
   return { type: "OR", conditions: conditions.map(normalizeConditionInput) };

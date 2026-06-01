@@ -15249,6 +15249,28 @@ describe("flow runtime", () => {
     ]);
   });
 
+  it("validates human feedback routing configuration before decoration", () => {
+    expect(() => humanFeedback({
+      message: "Review",
+      emit: ["approved"],
+      llm: null,
+    })).toThrow("llm is required when emit is specified");
+    expect(() => humanFeedback({
+      message: "Review",
+      defaultOutcome: "approved",
+    })).toThrow("default_outcome requires emit to be specified");
+    expect(() => humanFeedback({
+      message: "Review",
+      emit: ["approved"],
+      defaultOutcome: "rejected",
+    })).toThrow("default_outcome 'rejected' must be one of the emit options");
+    expect(() => humanFeedback({
+      message: "Review",
+      emit: ["approved"],
+      defaultOutcome: "approved",
+    })).not.toThrow();
+  });
+
   it("includes human feedback metadata in flow structure", () => {
     class ReviewFlow extends Flow {
       generate() {
