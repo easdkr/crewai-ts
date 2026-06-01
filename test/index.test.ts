@@ -27927,6 +27927,29 @@ describe("runtime state", () => {
     expect(seen).toEqual(["AsyncFlow"]);
   });
 
+  it("aemit only runs async handlers and ignores dependency ordering", async () => {
+    const bus = new EventBus();
+    const seen: string[] = [];
+    const syncSetup = () => {
+      seen.push("sync_setup");
+    };
+    const asyncHandler = async () => {
+      await Promise.resolve();
+      seen.push("async_handler");
+    };
+    const dependentSync = () => {
+      seen.push("dependent_sync");
+    };
+
+    bus.on("flow_started", syncSetup);
+    bus.on("flow_started", asyncHandler);
+    bus.on("flow_started", dependentSync, new Depends(asyncHandler));
+
+    await bus.aemit("source", new FlowStartedEvent({ flowName: "AsyncOnlyFlow", inputs: {} }));
+
+    expect(seen).toEqual(["async_handler"]);
+  });
+
   it("scopes temporary event handlers and restores existing dependencies", async () => {
     const bus = new EventBus();
     const order: string[] = [];

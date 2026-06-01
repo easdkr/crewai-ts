@@ -4335,13 +4335,8 @@ export class EventBus {
     if (!handlers) {
       return;
     }
-    const dependencyMap = this.handlerDependencies.get(event.type);
-    if (dependencyMap && dependencyMap.size > 0) {
-      const plan = build_execution_plan([...handlers] as Handler[], dependencyMap as Map<Handler, readonly Depends[]>);
-      await this.runDependencyPlanAndWait(plan, source, event);
-      return;
-    }
-    await Promise.all([...handlers].map(async (handler) => {
+    const asyncHandlers = [...handlers].filter((handler) => is_async_handler(handler));
+    await Promise.all(asyncHandlers.map(async (handler) => {
       await this.callHandler(handler, source, event);
     }));
   }
