@@ -1001,6 +1001,7 @@ export class ReadFileTool extends BaseTool {
       name: options.name ?? "read_file",
       description: options.description ?? "Read content from an input file by name. Returns file content as text for text files, or base64 for binary files.",
       argsSchema: options.argsSchema ?? options.args_schema ?? ReadFileToolSchema,
+      cache: options.cache ?? false,
       ...baseToolPassthroughOptions(options),
     });
     this.files = options.files ?? null;

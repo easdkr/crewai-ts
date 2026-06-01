@@ -4,12 +4,21 @@ import { basename } from "node:path";
 import { StructuredTool, sanitizeToolName } from "./tools.js";
 import type { Tool } from "./types.js";
 
-export type InputFile = string | {
+export type InputFileLike = {
+  read(): Uint8Array | Buffer | string;
+  content_type?: string | null;
+  contentType?: string | null;
+  filename?: string | null;
+};
+
+export type StructuredInputFile = {
   path?: string;
   content?: string;
   filename?: string;
   contentType?: string;
 };
+
+export type InputFile = string | InputFileLike | StructuredInputFile;
 
 export type InputFiles = Record<string, InputFile>;
 
@@ -97,12 +106,15 @@ export function isStructuredInputFile(value: unknown): value is Exclude<InputFil
   }
   const record = value as Record<string, unknown>;
   return (
-    typeof record.content === "string"
+    typeof record.read === "function"
+    || typeof record.content === "string"
     || typeof record.path === "string"
   ) && (
     record.filename === undefined || typeof record.filename === "string"
   ) && (
-    record.contentType === undefined || typeof record.contentType === "string"
+    record.contentType === undefined || typeof record.contentType === "string" || record.contentType === null
+  ) && (
+    record.content_type === undefined || typeof record.content_type === "string" || record.content_type === null
   );
 }
 
@@ -115,7 +127,7 @@ function renderInputFile(name: string, file: InputFile): { filename: string; con
     };
   }
 
-  if (typeof file.content === "string") {
+  if (hasTextContent(file)) {
     return {
       filename: file.filename ?? (file.path ? basename(file.path) : name),
       contentType: file.contentType ?? guessTextContentType(file.filename ?? file.path ?? name),
@@ -123,7 +135,16 @@ function renderInputFile(name: string, file: InputFile): { filename: string; con
     };
   }
 
-  if (file.path) {
+  if (isReadableInputFile(file)) {
+    const content = file.read();
+    return {
+      filename: file.filename ?? name,
+      contentType: file.contentType ?? file.content_type ?? guessTextContentType(file.filename ?? name),
+      content: typeof content === "string" ? content : Buffer.from(content).toString("utf8"),
+    };
+  }
+
+  if (hasFilePath(file)) {
     return {
       filename: file.filename ?? (basename(file.path) || name),
       contentType: file.contentType ?? guessTextContentType(file.path),
@@ -132,6 +153,18 @@ function renderInputFile(name: string, file: InputFile): { filename: string; con
   }
 
   throw new Error(`Input file '${name}' requires either a path or text content.`);
+}
+
+function hasTextContent(file: Exclude<InputFile, string>): file is StructuredInputFile & { content: string } {
+  return "content" in file && typeof file.content === "string";
+}
+
+function hasFilePath(file: Exclude<InputFile, string>): file is StructuredInputFile & { path: string } {
+  return "path" in file && typeof file.path === "string";
+}
+
+function isReadableInputFile(file: Exclude<InputFile, string>): file is InputFileLike {
+  return "read" in file && typeof file.read === "function";
 }
 
 function indentInputFileContent(content: string): string {

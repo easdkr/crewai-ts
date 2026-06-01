@@ -553,6 +553,10 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
+    "./files": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
     "./flow": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"

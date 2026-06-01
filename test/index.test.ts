@@ -465,6 +465,7 @@ import {
   CrewBase,
   crewaiEventBus,
   createReadFileTool,
+  ReadFileTool,
   clearAllGlobalHooks,
   context_window_size_for_model,
   create_llm,
@@ -692,9 +693,13 @@ import {
   createTemporaryTokenStorage,
   dbStoragePath,
   DEFAULT_CLI_SETTINGS,
+  detectContentType,
   EmptyStackError,
   EventContextConfig,
   EventPairingError,
+  FileBytes,
+  FilePath,
+  FileStream,
   flowStructure,
   getAuthToken,
   getCurrentParentId,
@@ -710,6 +715,7 @@ import {
   getTriggeringEventId,
   handleEmptyPop,
   handleMismatch,
+  ImageFile,
   fetchRequiredInputs,
   fetch_agent_card,
   inject_a2a_server_methods,
@@ -738,6 +744,8 @@ import {
   normalizeBaseRecord,
   normalizeEmbeddings,
   normalizeRagConfig,
+  normalizeInputFiles,
+  PDFFile,
   platformContext,
   QdrantClient,
   QdrantConfig,
@@ -849,6 +857,7 @@ import {
   shouldSuppressConsoleOutput,
   storeFiles,
   storeTaskFiles,
+  TextFile,
   suppressLogging,
   stringToCallable,
   toSerializable,
@@ -861,6 +870,8 @@ import {
   validateImportPath,
   validateModel,
   validateEmbeddings,
+  VideoFile,
+  wrapFileSource,
   LanceDBStorage,
   validateJwtToken,
   validate_a2ui_message,
@@ -1726,6 +1737,42 @@ describe("serialization and project utilities", () => {
   });
 });
 
+class MemoryFileStream {
+  readonly name: string;
+  closed = false;
+  private position = 0;
+  private data: Buffer;
+
+  constructor(content: string, filename: string) {
+    this.data = Buffer.from(content);
+    this.name = filename;
+  }
+
+  read(size = -1): Buffer {
+    const end = size < 0 ? this.data.length : Math.min(this.position + size, this.data.length);
+    const chunk = this.data.subarray(this.position, end);
+    this.position = end;
+    return chunk;
+  }
+
+  seek(position: number): void {
+    this.position = position;
+  }
+
+  tell(): number {
+    return this.position;
+  }
+
+  replace(content: string): void {
+    this.data = Buffer.from(content);
+    this.position = 0;
+  }
+
+  close(): void {
+    this.closed = true;
+  }
+}
+
 describe("environment, logging, and file store utilities", () => {
   it("stores and merges upstream-style crew and task files by object IDs", async () => {
     const crewId = { toString: () => "crew-uuid" };
@@ -1901,6 +1948,93 @@ describe("environment, logging, and file store utilities", () => {
       shared: { source: "crew" },
       crewOnly: "crew-file",
     });
+  });
+
+  it("wraps upstream crewai-files sources with deterministic local file behavior", async () => {
+    const workspace = mkdtempSync(join(tmpdir(), "crewai-ts-files-"));
+    try {
+      const textPath = join(workspace, "notes.txt");
+      writeFileSync(textPath, "original");
+      const fromPath = new FilePath({ path: textPath });
+
+      expect(fromPath.filename).toBe("notes.txt");
+      expect(fromPath.content_type).toBe("text/plain");
+      expect(Buffer.from(fromPath.read()).toString("utf8")).toBe("original");
+      writeFileSync(textPath, "modified");
+      expect(Buffer.from(fromPath.read()).toString("utf8")).toBe("original");
+      await expect(fromPath.aread()).resolves.toEqual(fromPath.read());
+
+      const bytes = new FileBytes({ data: Buffer.from("{\"key\":\"value\"}"), filename: "data.json" });
+      expect(bytes.contentType).toBe("application/json");
+      expect([...bytes.read_chunks(4)].map((chunk) => Buffer.from(chunk).toString("utf8"))).toEqual([
+        "{\"ke",
+        "y\":\"",
+        "valu",
+        "e\"}",
+      ]);
+
+      const stream = new MemoryFileStream("stream content", "stream.txt");
+      const fromStream = new FileStream({ stream });
+      expect(fromStream.filename).toBe("stream.txt");
+      expect(Buffer.from(fromStream.read()).toString("utf8")).toBe("stream content");
+      stream.replace("changed");
+      expect(Buffer.from(fromStream.read()).toString("utf8")).toBe("stream content");
+      fromStream.close();
+      expect(stream.closed).toBe(true);
+
+      const textFile = new TextFile({ source: Buffer.from("Hello, World!") });
+      expect(textFile.read_text()).toBe("Hello, World!");
+      expect(textFile.filename).toBeNull();
+      expect(textFile.keys()).toEqual(["file"]);
+      expect(textFile.__getitem__("file")).toBe(textFile);
+      expect(() => textFile.__getitem__("missing")).toThrow("missing");
+
+      const pngBytes = Buffer.concat([
+        Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+        Buffer.from("png-body"),
+      ]);
+      const image = new ImageFile({ source: pngBytes });
+      const pdf = new PDFFile({ source: Buffer.from("%PDF-1.4 content") });
+      const video = new VideoFile({ source: new FileBytes({ data: Buffer.from("video"), filename: "clip.mp4" }) });
+
+      expect(image.content_type).toBe("image/png");
+      expect(pdf.content_type).toBe("application/pdf");
+      expect(video.content_type).toBe("video/mp4");
+      expect(wrapFileSource(pdf.source)).toBeInstanceOf(PDFFile);
+      const normalized = normalizeInputFiles([
+        new TextFile({ source: new FileBytes({ data: Buffer.from("named"), filename: "doc.txt" }) }),
+        image,
+      ]);
+      expect(normalized.doc).toBeInstanceOf(TextFile);
+      expect(normalized.file_1).toBeInstanceOf(ImageFile);
+      expect(detectContentType(Buffer.from([0xff, 0xd8, 0xff, 0xe0]), "photo.jpg")).toBe("image/jpeg");
+    } finally {
+      rmSync(workspace, { recursive: true, force: true });
+    }
+  });
+
+  it("lets upstream ReadFileTool consume typed text and binary files", () => {
+    const tool = new ReadFileTool();
+    const pngBytes = Buffer.concat([
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      Buffer.from("png-body"),
+    ]);
+
+    expect(tool.run({ file_name: "any.txt" })).toBe("No input files available.");
+    tool.set_files({
+      "readme.txt": new TextFile({ source: Buffer.from("Hello, this is text content!") }),
+      "image.png": new ImageFile({ source: pngBytes }),
+    });
+
+    expect(tool.run({ file_name: "readme.txt" })).toBe("Hello, this is text content!");
+    const binary = String(tool.run({ file_name: "image.png" }));
+    expect(binary).toContain("[Binary file:");
+    expect(binary).toContain("image/png");
+    expect(Buffer.from(binary.split("Base64: ")[1] ?? "", "base64")).toEqual(pngBytes);
+    expect(tool.run({ file_name: "missing.txt" })).toContain("Available files: readme.txt, image.png");
+
+    tool.set_files(null);
+    expect(tool.run({ file_name: "readme.txt" })).toBe("No input files available.");
   });
 });
 

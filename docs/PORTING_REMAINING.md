@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 766 passing tests.
+- Test suite: 768 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -91,6 +91,7 @@ This register is the source of truth for continuing porting work while parity sc
 - Provider-agnostic prompt-cache breakpoints are release-gated with deterministic OpenAI and Anthropic formatting tests: markers are stripped from wire payloads without mutating caller messages, Anthropic system/stable user blocks receive ephemeral cache control, assistant markers are ignored, and volatile tool-result carrier messages are not stamped.
 - Google Vertex legacy `textembedding-gecko*` embeddings remain intentionally unsupported in the TypeScript runtime without Vertex AI SDK credentials; the current behavior raises a clear error.
 - PDF/Excel/Docling-style optional parsing uses built-in or injected local extractors where possible. Python-only optional dependencies such as `pdfplumber` or Docling converters are not bundled.
+- `crewai-files` typed file inputs are represented by deterministic local wrappers for path, bytes, stream, image, PDF, text, audio, and video sources; provider uploaders and remote URL fetching remain outside the default gate.
 - `PickleHandler` remains a deterministic JSON-backed `.pkl` shim in the TypeScript runtime, but mirrors upstream corrupted-load behavior by surfacing a `pickle data was truncated` error instead of silently resetting damaged persistence files.
 - MCP transports may use the installed JS SDK shape, but release tests should continue to rely on local/fake clients and error classification rather than live MCP servers.
 - MCP native tool discovery is release-gated with deterministic fake-client behavior: empty or fully filtered tool lists warn and return no clients, and unexpected discovery failures are wrapped with a clear native MCP discovery error. Live MCP servers remain outside the default gate.

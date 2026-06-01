@@ -3234,14 +3234,22 @@ function renderLLMInputFile(name: string, file: InputFile): { filename: string; 
       content: readFileSync(file, "utf8"),
     };
   }
-  if (typeof file.content === "string") {
+  if (hasLLMTextContent(file)) {
     return {
       filename: file.filename ?? (file.path ? basename(file.path) : name),
       contentType: file.contentType ?? guessLLMFileContentType(file.filename ?? file.path ?? name),
       content: file.content,
     };
   }
-  if (file.path) {
+  if (isLLMReadableInputFile(file)) {
+    const content = file.read();
+    return {
+      filename: file.filename ?? name,
+      contentType: file.contentType ?? file.content_type ?? guessLLMFileContentType(file.filename ?? name),
+      content: typeof content === "string" ? content : Buffer.from(content).toString("base64"),
+    };
+  }
+  if (hasLLMFilePath(file)) {
     return {
       filename: file.filename ?? (basename(file.path) || name),
       contentType: file.contentType ?? guessLLMFileContentType(file.path),
@@ -3249,6 +3257,18 @@ function renderLLMInputFile(name: string, file: InputFile): { filename: string; 
     };
   }
   throw new Error(`Input file '${name}' requires either a path or text content.`);
+}
+
+function hasLLMTextContent(file: Exclude<InputFile, string>): file is { content: string; path?: string; filename?: string; contentType?: string } {
+  return "content" in file && typeof file.content === "string";
+}
+
+function hasLLMFilePath(file: Exclude<InputFile, string>): file is { path: string; filename?: string; contentType?: string } {
+  return "path" in file && typeof file.path === "string";
+}
+
+function isLLMReadableInputFile(file: Exclude<InputFile, string>): file is { read(): Uint8Array | Buffer | string; filename?: string | null; contentType?: string | null; content_type?: string | null } {
+  return "read" in file && typeof file.read === "function";
 }
 
 function guessLLMFileContentType(path: string): string | null {
