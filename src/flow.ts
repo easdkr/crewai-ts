@@ -677,6 +677,14 @@ export class StateProxy<TState extends object = Record<string, unknown>> {
   _unwrap(): TState {
     return this.state;
   }
+
+  __repr__(): string {
+    return JSON.stringify(this.state);
+  }
+
+  toString(): string {
+    return this.__repr__();
+  }
 }
 
 function compareSortValues(left: unknown, right: unknown): number {

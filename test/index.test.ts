@@ -15134,6 +15134,8 @@ describe("flow runtime", () => {
     proxy.__delitem__("meta");
     expect(proxy._unwrap()).toBe(state);
     expect(state).toEqual({ items: [1], done: true });
+    expect(proxy.__repr__()).toBe("{\"items\":[1],\"done\":true}");
+    expect(proxy.toString()).toBe(proxy.__repr__());
   });
 
   it("mirrors upstream dunder collection operations on locked flow proxies", () => {
