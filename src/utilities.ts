@@ -484,7 +484,7 @@ export function toSerializable(
   obj: unknown,
   options: ToSerializableOptions = {},
   currentDepth = 0,
-  ancestors = new WeakSet<object>(),
+  ancestors: ReadonlySet<object> = new Set<object>(),
 ): Serializable {
   const maxDepth = options.maxDepth ?? options.max_depth ?? 5;
   if (currentDepth >= maxDepth) {
@@ -512,37 +512,40 @@ export function toSerializable(
     if (ancestors.has(objectValue)) {
       return `<circular_ref:${constructorName(obj)}>`;
     }
-    ancestors.add(objectValue);
-    return [...obj].map((item) => toSerializable(item, options, currentDepth + 1, ancestors));
+    const nextAncestors = new Set(ancestors);
+    nextAncestors.add(objectValue);
+    return [...obj].map((item) => toSerializable(item, options, currentDepth + 1, nextAncestors));
   }
   if (obj instanceof Map) {
     const objectValue = obj as object;
     if (ancestors.has(objectValue)) {
       return `<circular_ref:${constructorName(obj)}>`;
     }
-    ancestors.add(objectValue);
+    const nextAncestors = new Set(ancestors);
+    nextAncestors.add(objectValue);
     return Object.fromEntries([...obj.entries()].map(([key, value]) => [
       toSerializableKey(key),
-      toSerializable(value, options, currentDepth + 1, ancestors),
+      toSerializable(value, options, currentDepth + 1, nextAncestors),
     ]));
   }
   if (typeof obj === "object") {
     if (ancestors.has(obj)) {
       return `<circular_ref:${constructorName(obj)}>`;
     }
-    ancestors.add(obj);
+    const nextAncestors = new Set(ancestors);
+    nextAncestors.add(obj);
     const exclude = normalizeExclude(options.exclude);
     const withToJSON = obj as { toJSON?: () => unknown };
     if (typeof withToJSON.toJSON === "function" && !isPlainObject(obj)) {
       try {
-        return toSerializable(withToJSON.toJSON(), options, currentDepth + 1, ancestors);
+        return toSerializable(withToJSON.toJSON(), options, currentDepth + 1, nextAncestors);
       } catch {
         return repr(obj);
       }
     }
     const entries = Object.entries(obj as Record<string, unknown>)
       .filter(([key]) => !exclude.has(key))
-      .map(([key, value]) => [key, toSerializable(value, options, currentDepth + 1, ancestors)] as const);
+      .map(([key, value]) => [key, toSerializable(value, options, currentDepth + 1, nextAncestors)] as const);
     return Object.fromEntries(entries);
   }
   return repr(obj);

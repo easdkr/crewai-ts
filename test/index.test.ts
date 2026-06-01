@@ -1235,6 +1235,11 @@ describe("serialization and project utilities", () => {
       output: { raw: "done", agent: "Researcher" },
       circular: { name: "root", self: "<circular_ref:Object>" },
     });
+    const shared = { value: "shared" };
+    expect(toSerializable({ first: shared, second: shared })).toEqual({
+      first: { value: "shared" },
+      second: { value: "shared" },
+    });
     expect(_to_serializable_key("name")).toBe("name");
     expect(_to_serializable_key(42)).toBe("42");
     expect(_to_serializable_key({ key: true })).toContain("key_");
