@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 810 passing tests.
+- Test suite: 811 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -228,6 +228,7 @@ When more goal budget is available, continue from the behavioral parity audits b
 - `AgentExecutor.invoke` / `invoke_async` now run kickoff inside an upstream-style LLM stop-word override scope without mutating the base LLM stop list.
 - `AgentExecutor.invoke` / `invoke_async` now preserve `ask_for_human_input` and apply sync/async human-feedback handlers to the final answer before returning output.
 - `AgentExecutor.invoke` / `invoke_async` now save final answers to unified memory through upstream-style extraction and agent root-scope routing when memory is configured.
+- `Memory.remember_many` / background batch saves now mirror upstream batch embedding behavior by calling the configured embedder once for the active batch and reusing those embeddings when records are created.
 - `AgentExecutor.use_stop_words` now mirrors upstream executor behavior for both executor-level and agent-level LLMs, including snake_case `supports_stop_words` providers used by upstream tests.
 - `AgentExecutor.handle_goal_achieved` now preserves pending todo status while routing to finalization, matching upstream early-goal state semantics.
 - `AgentExecutor.handle_refine_and_continue` now applies the latest planner observation refinements to pending todos before continuing.

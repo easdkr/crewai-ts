@@ -2759,7 +2759,7 @@ export class Memory {
     }));
     const start = performance.now();
     try {
-      const activeItems = deduplicateMemoryBatch(items, this.config);
+      const activeItems = this.attachBatchEmbeddings(deduplicateMemoryBatch(items, this.config));
       const records = this.applyBatchSavePlans(activeItems);
       crewaiEventBus.emit(this, new MemorySaveCompletedEvent({
         value: `${String(records.length)} memories saved`,
@@ -2783,6 +2783,7 @@ export class Memory {
     items: readonly {
       content: string;
       options: NonNullable<Parameters<Memory["remember"]>[1]>;
+      embedding?: readonly number[] | null;
       similarRecords?: readonly MemoryRecord[];
       plan?: ConsolidationPlan | null;
     }[],
@@ -2865,7 +2866,7 @@ export class Memory {
     return resultRecords;
   }
 
-  private createMemoryRecordFromResolvedItem(item: { content: string; options: NonNullable<Parameters<Memory["remember"]>[1]> }): MemoryRecord {
+  private createMemoryRecordFromResolvedItem(item: { content: string; options: NonNullable<Parameters<Memory["remember"]>[1]>; embedding?: readonly number[] | null }): MemoryRecord {
     return new MemoryRecord({
       content: item.content,
       scope: this.scopePath(item.options.scope, rootScopeFromOptions(item.options, this.rootScope)),
@@ -2874,13 +2875,21 @@ export class Memory {
       importance: item.options.importance ?? this.config.defaultImportance,
       source: item.options.source ?? null,
       private: item.options.private ?? false,
-      embedding: this.embeddingForText(item.content),
+      embedding: item.embedding ?? this.embeddingForText(item.content),
     });
   }
 
   private embeddingForText(content: string): readonly number[] | null {
     const embedding = embed_text(this.embedder, content);
     return embedding.length > 0 ? embedding : null;
+  }
+
+  private attachBatchEmbeddings<T extends { content: string }>(items: readonly T[]): Array<T & { embedding: readonly number[] | null }> {
+    const embeddings = embed_texts(this.embedder, items.map((item) => item.content));
+    return items.map((item, index) => ({
+      ...item,
+      embedding: embeddings[index]?.length ? embeddings[index] : null,
+    }));
   }
 
   private memoryVectorStorage(): MemoryVectorStorageLike & {

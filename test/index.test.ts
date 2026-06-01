@@ -27867,6 +27867,31 @@ describe("memory", () => {
     expect(seen).toEqual(["analysis", "analysis"]);
   });
 
+  it("embeds memory batch saves in one upstream-style call", () => {
+    const embedder = vi.fn((texts: readonly string[]) => texts.map((text, index) => [text.length, index]));
+    const memory = new Memory({ embedder });
+
+    expect(memory.remember_many([
+      "Fact A.",
+      "Fact B.",
+      "Fact C.",
+    ], {
+      scope: "/batch",
+      categories: ["batch"],
+      importance: 0.5,
+    })).toEqual([]);
+
+    memory.drain_writes();
+
+    expect(embedder).toHaveBeenCalledTimes(1);
+    expect(embedder).toHaveBeenCalledWith(["Fact A.", "Fact B.", "Fact C."]);
+    expect(Object.fromEntries(memory.list_records("/batch").map((record) => [record.content, record.embedding]))).toEqual({
+      "Fact A.": [7, 0],
+      "Fact B.": [7, 1],
+      "Fact C.": [7, 2],
+    });
+  });
+
   it("consolidates async batch saves against existing memories with first action winning", async () => {
     const seen: string[] = [];
     const memory = new Memory({
