@@ -157,6 +157,147 @@ export class AnthropicCompletion extends ConfiguredLLM {
     return await super.acall(messages, options);
   }
 
+  formatMessagesForAnthropic(
+    messages: LLMMessageInput,
+  ): [Record<string, unknown>[], string | Record<string, unknown>[] | null] {
+    const cacheSystem = Array.isArray(messages)
+      && messages.some((message) => {
+        const record = readObject(message);
+        return record.role === "system" && record.cache_breakpoint === true;
+      });
+    const cacheMatchContents = Array.isArray(messages)
+      ? messages
+        .map((message) => readObject(message))
+        .filter((message) => message.role === "user" && message.cache_breakpoint === true)
+        .map((message) => anthropicCacheMatchText(message.content))
+        .filter((text): text is string => text !== null)
+      : [];
+    const baseFormatted = typeof messages === "string"
+      ? [{ role: "user" as const, content: messages }]
+      : this.processMessageFiles(messages.map((message, index) => {
+          if (Array.isArray(message)) {
+            throw new Error(`Message at index ${String(index)} must be a dictionary.`);
+          }
+          const role = message.role;
+          if (!isAnthropicRole(role) || !("content" in message)) {
+            throw new Error(`Message at index ${String(index)} must have 'role' and 'content' keys.`);
+          }
+          const { cache_breakpoint: _cacheBreakpoint, ...copy } = message;
+          void _cacheBreakpoint;
+          return copy as LLMMessage;
+        }));
+
+    const formattedMessages: Record<string, unknown>[] = [];
+    let systemMessage: string | null = null;
+    let pendingToolResults: Record<string, unknown>[] = [];
+
+    for (const rawMessage of baseFormatted) {
+      const message = rawMessage as LLMMessage & Record<string, unknown>;
+      const role = message.role;
+      const content = message.content as unknown;
+
+      if (role === "system") {
+        const textContent = anthropicContentToText(content);
+        systemMessage = systemMessage ? `${systemMessage}\n\n${textContent}` : textContent;
+        continue;
+      }
+
+      if (role === "tool") {
+        const toolCallId = scalarToString(message.tool_call_id);
+        if (!toolCallId) {
+          throw new Error("Tool message missing required tool_call_id");
+        }
+        pendingToolResults.push({
+          type: "tool_result",
+          tool_use_id: toolCallId,
+          content: content || "",
+        });
+        continue;
+      }
+
+      if (role === "assistant") {
+        if (pendingToolResults.length > 0) {
+          formattedMessages.push({ role: "user", content: pendingToolResults });
+          pendingToolResults = [];
+        }
+
+        const toolCalls = Array.isArray(message.tool_calls) ? message.tool_calls : [];
+        if (toolCalls.length > 0) {
+          const assistantContent = toolCalls
+            .map((toolCall) => anthropicToolUseBlock(toolCall))
+            .filter((toolUse): toolUse is Record<string, unknown> => toolUse !== null);
+          if (assistantContent.length > 0) {
+            formattedMessages.push({ role: "assistant", content: assistantContent });
+          }
+          continue;
+        }
+
+        if (Array.isArray(content)) {
+          formattedMessages.push({ role: "assistant", content });
+        } else if (this.thinking && this.previousThinkingBlocks.length > 0) {
+          formattedMessages.push({
+            role: "assistant",
+            content: [
+              ...this.previousThinkingBlocks.map((block) => ({ ...block })),
+              { type: "text", text: scalarToString(content) ?? "" },
+            ],
+          });
+        } else {
+          formattedMessages.push({ role: "assistant", content: scalarToString(content) ?? "" });
+        }
+        continue;
+      }
+
+      if (pendingToolResults.length > 0) {
+        formattedMessages.push({ role: "user", content: pendingToolResults });
+        pendingToolResults = [];
+      }
+      formattedMessages.push({ role, content: content ?? "" });
+    }
+
+    if (pendingToolResults.length > 0) {
+      formattedMessages.push({ role: "user", content: pendingToolResults });
+    }
+    if (formattedMessages.length === 0) {
+      formattedMessages.push({ role: "user", content: "Hello" });
+    } else if (formattedMessages[0]?.role !== "user") {
+      formattedMessages.unshift({ role: "user", content: "Hello" });
+    }
+
+    for (const needle of cacheMatchContents) {
+      const match = formattedMessages.find((message) => message.role === "user" && anthropicCacheMatchText(message.content) === needle);
+      if (match) {
+        AnthropicCompletion.stampCacheControlOnMessage(match);
+      }
+    }
+
+    const systemPayload = systemMessage && cacheSystem
+      ? [{ type: "text", text: systemMessage, cache_control: { type: "ephemeral" } }]
+      : systemMessage;
+    return [formattedMessages, systemPayload];
+  }
+
+  _format_messages_for_anthropic(
+    messages: LLMMessageInput,
+  ): [Record<string, unknown>[], string | Record<string, unknown>[] | null] {
+    return this.formatMessagesForAnthropic(messages);
+  }
+
+  static stampCacheControlOnMessage(message: Record<string, unknown>): void {
+    const content = message.content;
+    if (typeof content === "string") {
+      message.content = [{ type: "text", text: content, cache_control: { type: "ephemeral" } }];
+      return;
+    }
+    if (Array.isArray(content) && content.length > 0) {
+      const contentBlocks: unknown[] = content;
+      const last = contentBlocks.at(-1);
+      if (last && typeof last === "object" && !Array.isArray(last)) {
+        (last as Record<string, unknown>).cache_control = { type: "ephemeral" };
+      }
+    }
+  }
+
   prepareCompletionParams(
     messages: readonly LLMMessage[],
     systemMessage: string | readonly Record<string, unknown>[] | null = null,
@@ -2143,6 +2284,48 @@ function scalarToString(value: unknown): string | null {
     return String(value);
   }
   return null;
+}
+
+function isAnthropicRole(value: unknown): value is LLMMessage["role"] {
+  return value === "system" || value === "user" || value === "assistant" || value === "tool";
+}
+
+function anthropicContentToText(content: unknown): string {
+  if (Array.isArray(content)) {
+    return content
+      .map((block) => scalarToString(readObject(block).text))
+      .filter((text): text is string => text !== null)
+      .join("\n");
+  }
+  return scalarToString(content) ?? "";
+}
+
+function anthropicCacheMatchText(content: unknown): string | null {
+  if (typeof content === "string" && content.length > 0) {
+    return content;
+  }
+  if (!Array.isArray(content)) {
+    return null;
+  }
+  const textBlocks = content
+    .map((block) => scalarToString(readObject(block).text))
+    .filter((text): text is string => text !== null);
+  return textBlocks.length === 1 ? textBlocks[0] ?? null : null;
+}
+
+function anthropicToolUseBlock(toolCall: unknown): Record<string, unknown> | null {
+  const toolCallRecord = readObject(toolCall);
+  const functionRecord = readObject(toolCallRecord.function);
+  const name = scalarToString(functionRecord.name);
+  if (!name) {
+    return null;
+  }
+  return {
+    type: "tool_use",
+    id: scalarToString(toolCallRecord.id) ?? "",
+    name,
+    input: parseToolArguments(functionRecord.arguments),
+  };
 }
 
 function geminiVersion(model: string): number {

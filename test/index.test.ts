@@ -19550,6 +19550,39 @@ describe("LLM providers", () => {
     });
   });
 
+  it("preserves Anthropic thinking blocks across formatted assistant turns", () => {
+    const anthropic = new AnthropicCompletion({
+      model: "claude-sonnet-4-5",
+      thinking: { type: "enabled", budget_tokens: 5000 },
+    });
+    const finalMessage = {
+      content: [
+        { type: "thinking", thinking: "2 + 2 equals 4", signature: "sig-1" },
+        { type: "text", text: "4" },
+      ],
+    };
+    (anthropic as unknown as {
+      _accumulate_stream_events(events: unknown[], finalMessage?: unknown): unknown;
+    })._accumulate_stream_events([], finalMessage);
+
+    const [formattedMessages, systemMessage] = (anthropic as unknown as {
+      _format_messages_for_anthropic(messages: LLMMessage[]): [Record<string, unknown>[], string | Record<string, unknown>[] | null];
+    })._format_messages_for_anthropic([
+      { role: "user", content: "What is 2+2?" },
+      { role: "assistant", content: "4" },
+      { role: "user", content: "Now what is 3+3?" },
+    ]);
+
+    expect(systemMessage).toBeNull();
+    expect(formattedMessages[1]).toEqual({
+      role: "assistant",
+      content: [
+        { type: "thinking", thinking: "2 + 2 equals 4", signature: "sig-1" },
+        { type: "text", text: "4" },
+      ],
+    });
+  });
+
   it("executes Anthropic tool uses into Claude tool result blocks", async () => {
     const anthropic = new AnthropicCompletion({ model: "claude-3-5-sonnet-20241022" });
     const availableFunctions = {
