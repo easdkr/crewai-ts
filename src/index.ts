@@ -2830,7 +2830,17 @@ export const SupportedProviderConfig = Object.freeze({ kind: "SupportedProviderC
 export const SupportedProvider = Object.freeze({ kind: "SupportedProvider" });
 
 export function extract_knowledge_context(items: readonly unknown[] = []): string {
-  return items.map((item) => String(item)).join("\n");
+  const content = items
+    .map((item) => {
+      if (!item || typeof item !== "object" || Array.isArray(item)) {
+        return "";
+      }
+      const value = (item as { content?: unknown }).content;
+      return typeof value === "string" ? value.trim() : "";
+    })
+    .filter(Boolean)
+    .join("\n");
+  return content ? `Additional Information:\n${content}` : "";
 }
 
 export class KnowledgeConfig {

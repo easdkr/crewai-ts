@@ -1130,7 +1130,7 @@ export function extractKnowledgeContext(results: readonly KnowledgeSearchResult[
     .map((result) => result.content.trim())
     .filter(Boolean)
     .join("\n");
-  return content ? `Additional Information: ${content}` : "";
+  return content ? `Additional Information:\n${content}` : "";
 }
 
 function searchResultToKnowledgeResult(result: SearchResult): KnowledgeSearchResult {
