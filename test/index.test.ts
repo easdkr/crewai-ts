@@ -695,6 +695,7 @@ import {
   executeSingleNativeToolCall,
   executeToolAndCheckFinality,
   aexecuteToolAndCheckFinality,
+  ToolCalling,
   to_langchain,
   createContentId,
   createRagClient,
@@ -20015,6 +20016,51 @@ describe("tools", () => {
       task_id: "task-1",
       task_name: "Investigate",
     });
+  });
+
+  it("does not emit ToolUsageFinishedEvent after ToolUsage.use tool failures", async () => {
+    const events: Array<ToolUsageStartedEvent | ToolUsageErrorEvent | ToolUsageFinishedEvent> = [];
+    crewaiEventBus.on("tool_usage_started", (_source, event) => {
+      if (event.toolName === "failing_tool") {
+        events.push(event);
+      }
+    });
+    crewaiEventBus.on("tool_usage_error", (_source, event) => {
+      if (event.toolName === "failing_tool") {
+        events.push(event);
+      }
+    });
+    crewaiEventBus.on("tool_usage_finished", (_source, event) => {
+      if (event.toolName === "failing_tool") {
+        events.push(event);
+      }
+    });
+    const failingTool = new StructuredTool({
+      name: "failing_tool",
+      description: "Fails intentionally",
+      func: () => {
+        throw new Error("intentional failure");
+      },
+    });
+    const usage = new ToolUsage({
+      toolsHandler: new ToolsHandler(),
+      tools: [failingTool],
+      task: { id: "test-task-id", name: "Test Task", description: "A test task", delegations: 0 },
+      agent: { key: "test_agent_key", role: "test_agent_role", _original_role: "test_agent_role", verbose: false },
+      action: new AgentAction({
+        thought: "use tool",
+        tool: "failing_tool",
+        toolInput: "{}",
+        text: "Action: failing_tool\nAction Input: {}",
+      }),
+    });
+
+    await expect(usage.use(new ToolCalling({ toolName: "failing_tool", arguments: {} }), "Action: failing_tool"))
+      .rejects.toThrow("intentional failure");
+
+    expect(events.filter((event) => event instanceof ToolUsageStartedEvent)).toHaveLength(1);
+    expect(events.filter((event) => event instanceof ToolUsageErrorEvent)).toHaveLength(1);
+    expect(events.filter((event) => event instanceof ToolUsageFinishedEvent)).toEqual([]);
   });
 
   it("exposes upstream ToolUsage helper methods for selection, parsing, format reminders, and fingerprints", async () => {
