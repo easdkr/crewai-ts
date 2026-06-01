@@ -3353,13 +3353,24 @@ describe("i18n and prompt utilities", () => {
     expect(noTools.prompt).toContain("You are Researcher. Careful analyst");
     expect(noTools.prompt).toContain("Current Task: {input}");
     expect(noTools.prompt).toContain("Provide your complete response:");
+    expect(noTools.prompt).not.toContain("Thought:");
+    expect(noTools.prompt.toLowerCase()).not.toContain("your job depends on it");
+    expect(noTools.prompt.toLowerCase()).not.toContain("i must use these formats");
     expect(noTools.__getitem__("prompt")).toBe(noTools.prompt);
     expect(noTools.__contains__("prompt")).toBe(true);
     expect(noTools.__contains__("missing")).toBe(false);
 
     const tools = new Prompts({ agent: agentLike, hasTools: true }).task_execution();
     expect(tools.prompt).toContain("You ONLY have access to the following tools");
+    expect(tools.prompt).toContain("Thought:");
     expect(tools.prompt).toContain("Action Input:");
+
+    const nativeTools = new Prompts({ agent: agentLike, hasTools: true, useNativeToolCalling: true }).taskExecution();
+    expect(nativeTools.prompt).toContain("You are Researcher. Careful analyst");
+    expect(nativeTools.prompt).toContain("Current Task: {input}");
+    expect(nativeTools.prompt).not.toContain("Thought:");
+    expect(nativeTools.prompt).not.toContain("Action Input:");
+    expect(nativeTools.prompt.toLowerCase()).not.toContain("your job depends on it");
 
     const system = new Prompts({
       agent: agentLike,
@@ -3369,6 +3380,15 @@ describe("i18n and prompt utilities", () => {
     expect(system).toBeInstanceOf(SystemPromptResult);
     expect(system.get("system")).toContain("You ONLY have access to the following tools");
     expect(system.get("user")).toContain("Current Task: {input}");
+
+    const noToolsSystem = new Prompts({
+      agent: agentLike,
+      use_system_prompt: true,
+    }).taskExecution();
+    expect(noToolsSystem).toBeInstanceOf(SystemPromptResult);
+    expect(noToolsSystem.get("system")).not.toContain("Thought:");
+    expect(noToolsSystem.get("user")).not.toContain("Thought:");
+    expect(String(noToolsSystem.get("user"))).toContain("Provide your complete response:");
 
     const templated = new Prompts({
       agent: agentLike,
