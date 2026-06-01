@@ -14493,6 +14493,67 @@ describe("flow runtime", () => {
     });
   });
 
+  it("serializes listen plus human feedback emit methods as routers", () => {
+    class ListenerReviewFlow extends Flow {
+      generate() {
+        return "draft";
+      }
+
+      review() {
+        return "reviewed";
+      }
+
+      publish() {
+        return "published";
+      }
+
+      revise() {
+        return "revise";
+      }
+    }
+
+    const initializers = [
+      decorateMethod(ListenerReviewFlow, "generate", start() as unknown as Decorator),
+      decorateMethod(ListenerReviewFlow, "review", humanFeedback({
+        message: "Review",
+        emit: ["approved", "needs_changes"],
+      }) as unknown as Decorator),
+      decorateMethod(ListenerReviewFlow, "review", listen("generate") as unknown as Decorator),
+      decorateMethod(ListenerReviewFlow, "publish", listen("approved") as unknown as Decorator),
+      decorateMethod(ListenerReviewFlow, "revise", listen("needs_changes") as unknown as Decorator),
+    ];
+    const flow = new ListenerReviewFlow();
+    initializers.forEach((initializer) => {
+      initializer.call(flow);
+    });
+
+    const structure = flowStructure(flow);
+
+    expect(structure.methods.find((method) => method.name === "review")).toMatchObject({
+      type: "router",
+      router_paths: ["approved", "needs_changes"],
+      has_human_feedback: true,
+    });
+    expect(structure.edges).toContainEqual({
+      from_method: "generate",
+      to_method: "review",
+      edge_type: "listen",
+      condition: null,
+    });
+    expect(structure.edges).toContainEqual({
+      from_method: "review",
+      to_method: "publish",
+      edge_type: "route",
+      condition: "approved",
+    });
+    expect(structure.edges).toContainEqual({
+      from_method: "review",
+      to_method: "revise",
+      edge_type: "route",
+      condition: "needs_changes",
+    });
+  });
+
   it("preserves upstream human feedback config fields in metadata and pending context", async () => {
     class ReviewFlow extends Flow {
       review() {

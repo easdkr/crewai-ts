@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 692 passing tests.
+- Test suite: 693 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -209,6 +209,7 @@ When more goal budget is available, continue from the behavioral parity audits b
   - Persisted Flow resume now skips pre-completed methods and continues downstream listeners, matching upstream listener resumability semantics.
   - `Flow.plot` now emits `flow_plot` and writes an interactive HTML visualization through the existing flow structure renderer.
   - Flow visualization `CSSExtension` and `JSExtension` now expose upstream-style `parse` helpers for CSS/JS template tags.
+  - `flow_structure` now has default-gate coverage for listener methods that become routers through `human_feedback(emit=[...])`.
 - Added adapter-level LLM provider parity helpers:
   - `BaseLLM.acall` now provides the upstream async call surface by formatting string/list messages and delegating through the concrete `call` implementation.
   - `supportsFunctionCalling` / `supports_function_calling`
