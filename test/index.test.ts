@@ -45,6 +45,8 @@ import {
   A2ATaskState,
   APIKeyAuth,
   AuthMetadataPlugin,
+  _AuthStore,
+  _auth_store,
   _build_task_description,
   _create_grpc_channel_factory,
   _create_grpc_interceptors,
@@ -58,6 +60,7 @@ import {
   _normalize_mime_type,
   _normalize_grpc_metadata,
   _parse_redis_url,
+  _raise_auth_mismatch,
   Agent,
   AgentCardSigningConfig,
   AgentExecutor,
@@ -4085,6 +4088,29 @@ describe("a2a utilities", () => {
     expect(fetchMock).toHaveBeenNthCalledWith(1, "https://cache.example.com/a2a?api_key=query-secret", expect.objectContaining({ method: "GET" }));
     expect(fetchMock).toHaveBeenNthCalledWith(2, "https://cache.example.com/a2a?api_key=query-secret", expect.objectContaining({ method: "GET" }));
     fetchMock.mockRestore();
+  });
+
+  it("stores A2A auth schemes with upstream-compatible auth utility helpers", () => {
+    const key = _AuthStore.compute_key("api_key", "secret");
+    const auth = new APIKeyAuth({ api_key: "secret", location: "header", name: "X-API-Key" });
+    const localStore = new _AuthStore<APIKeyAuth>();
+
+    expect(key).toHaveLength(64);
+    expect(new _AuthStore().compute_key("api_key", "secret")).toBe(key);
+    localStore.set(key, auth);
+    expect(localStore.get(key)).toBe(auth);
+    localStore.__setitem__("empty", null);
+    expect(localStore.__getitem__("empty")).toBeNull();
+    _auth_store.set(key, auth);
+    expect(_auth_store.get(key)).toBe(auth);
+    expect(() => _raise_auth_mismatch([APIKeyAuth, BearerTokenAuth], new HTTPBasicAuth({
+      username: "user",
+      password: "pass",
+    }))).toThrow(A2AHTTPException);
+    expect(() => _raise_auth_mismatch(APIKeyAuth, new HTTPBasicAuth({
+      username: "user",
+      password: "pass",
+    }))).toThrow("AgentCard requires APIKeyAuth authentication");
   });
 
   it("exposes upstream A2A task utility helpers", () => {

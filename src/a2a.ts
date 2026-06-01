@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { readFileSync } from "node:fs";
 
 import { validateJwtToken } from "./auth.js";
@@ -1388,6 +1388,64 @@ export function parse_www_authenticate(header_value: string): Record<string, Rec
     challenges[scheme] = params;
   }
   return challenges;
+}
+
+export class _AuthStore<TAuth = unknown> {
+  private readonly store = new Map<string, TAuth | null>();
+
+  static compute_key(auth_type: string, auth_data: string): string {
+    return createHash("sha256").update(`${auth_type}:${auth_data}`).digest("hex");
+  }
+
+  compute_key(auth_type: string, auth_data: string): string {
+    return _AuthStore.compute_key(auth_type, auth_data);
+  }
+
+  set(key: string, auth: TAuth | null): void {
+    this.store.set(key, auth);
+  }
+
+  get(key: string): TAuth | null {
+    return this.store.get(key) ?? null;
+  }
+
+  __setitem__(key: string, value: TAuth | null): void {
+    this.set(key, value);
+  }
+
+  __getitem__(key: string): TAuth | null {
+    const value = this.store.get(key);
+    if (value === undefined) {
+      throw new Error(`Auth key not found: ${key}`);
+    }
+    return value;
+  }
+}
+
+export const _auth_store = new _AuthStore<ClientAuthScheme>();
+
+type AuthConstructor = { readonly name: string };
+
+export function _raise_auth_mismatch(
+  expected_classes: AuthConstructor | readonly AuthConstructor[],
+  provided_auth: unknown,
+): never {
+  const expected: readonly AuthConstructor[] = Array.isArray(expected_classes)
+    ? expected_classes
+    : [expected_classes];
+  const required = expected.length === 1
+    ? expected[0]?.name ?? "authentication"
+    : `one of (${expected.map((item) => item.name || "authentication").join(", ")})`;
+  const constructorName = provided_auth && typeof provided_auth === "object"
+    ? (provided_auth as { constructor?: { name?: unknown } }).constructor?.name
+    : null;
+  const provided = typeof constructorName === "string" && constructorName.length > 0
+    ? constructorName
+    : typeof provided_auth;
+  throw new A2AHTTPException({
+    statusCode: 401,
+    detail: `AgentCard requires ${required} authentication, but ${provided} was provided`,
+  });
 }
 
 export function validate_auth_against_agent_card(agent_card: { security?: readonly Record<string, unknown>[] | null }, auth: unknown): void {
