@@ -503,6 +503,34 @@ export class OpenAICompletion extends ConfiguredLLM {
     return this.convertToolsForResponses(tools);
   }
 
+  getClientParams(env: NodeJS.ProcessEnv = process.env): Record<string, unknown> {
+    const apiKey = this.apiKey ?? env.OPENAI_API_KEY ?? null;
+    if (!apiKey) {
+      throw new Error("OPENAI_API_KEY is required");
+    }
+    const baseParams: Record<string, unknown> = {
+      api_key: apiKey,
+      organization: this.organization,
+      project: this.project,
+      base_url: this.baseUrl ?? this.apiBase ?? env.OPENAI_BASE_URL ?? null,
+      timeout: this.timeout,
+      max_retries: this.maxRetries,
+      default_headers: this.defaultHeaders,
+      default_query: this.defaultQuery,
+    };
+    const clientParams = Object.fromEntries(
+      Object.entries(baseParams).filter(([, value]) => value !== null && value !== undefined),
+    );
+    if (this.clientParams) {
+      Object.assign(clientParams, this.clientParams);
+    }
+    return clientParams;
+  }
+
+  _get_client_params(env: NodeJS.ProcessEnv = process.env): Record<string, unknown> {
+    return this.getClientParams(env);
+  }
+
   extractOpenAITokenUsage(response: unknown): Record<string, number> {
     const usage = readObject(readObject(response).usage);
     if (!hasNumericField(usage, "prompt_tokens", "completion_tokens", "total_tokens")) {

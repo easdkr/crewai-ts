@@ -19066,6 +19066,69 @@ describe("LLM providers", () => {
     });
   });
 
+  it("builds OpenAI SDK client params with upstream priority and overrides", () => {
+    const previousApiKey = process.env.OPENAI_API_KEY;
+    const previousBaseUrl = process.env.OPENAI_BASE_URL;
+    try {
+      process.env.OPENAI_API_KEY = "env-openai-key";
+      process.env.OPENAI_BASE_URL = "https://env.openai.example/v1";
+
+      const explicitBase = new OpenAICompletion({
+        model: "gpt-4o",
+        api_key: "explicit-key",
+        base_url: "https://base-url.openai.example/v1",
+        api_base: "https://api-base.openai.example/v1",
+        organization: "org-1",
+        project: "project-1",
+        default_headers: { "x-default": "default" },
+        default_query: { api_version: "2026-01-01" },
+        client_params: {
+          max_retries: 9,
+          default_headers: { "x-override": "override" },
+        },
+      });
+      expect((explicitBase as unknown as {
+        _get_client_params(): Record<string, unknown>;
+      })._get_client_params()).toEqual({
+        api_key: "explicit-key",
+        organization: "org-1",
+        project: "project-1",
+        base_url: "https://base-url.openai.example/v1",
+        max_retries: 9,
+        default_headers: { "x-override": "override" },
+        default_query: { api_version: "2026-01-01" },
+      });
+
+      const apiBase = new OpenAICompletion({ model: "gpt-4o", api_base: "https://api-base.openai.example/v1" });
+      expect((apiBase as unknown as {
+        _get_client_params(): Record<string, unknown>;
+      })._get_client_params()).toMatchObject({
+        api_key: "env-openai-key",
+        base_url: "https://api-base.openai.example/v1",
+        max_retries: 2,
+      });
+
+      const envBase = new OpenAICompletion({ model: "gpt-4o" });
+      expect((envBase as unknown as {
+        _get_client_params(): Record<string, unknown>;
+      })._get_client_params()).toMatchObject({
+        api_key: "env-openai-key",
+        base_url: "https://env.openai.example/v1",
+      });
+    } finally {
+      if (previousApiKey === undefined) {
+        delete process.env.OPENAI_API_KEY;
+      } else {
+        process.env.OPENAI_API_KEY = previousApiKey;
+      }
+      if (previousBaseUrl === undefined) {
+        delete process.env.OPENAI_BASE_URL;
+      } else {
+        process.env.OPENAI_BASE_URL = previousBaseUrl;
+      }
+    }
+  });
+
   it("extracts OpenAI token usage from SDK response shapes", () => {
     const openai = new OpenAICompletion({ model: "gpt-4o" });
 
