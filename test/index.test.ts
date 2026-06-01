@@ -25042,6 +25042,29 @@ describe("task guardrails", () => {
     expect(seen).toEqual(["draft", "draft with facts"]);
   });
 
+  it("uses guardrails list instead of a single task guardrail when both are configured", async () => {
+    const agentInstance = new Agent({
+      role: "Writer",
+      goal: "Write reports",
+      backstory: "Careful writer",
+      llm: () => "draft",
+    });
+    const taskInstance = new Task({
+      description: "Write",
+      expectedOutput: "A report",
+      agent: agentInstance,
+      guardrail: (output) => [true, `single:${output.raw}`],
+      guardrails: [
+        (output) => [true, `list:${output.raw}`],
+      ],
+    });
+
+    const output = await taskInstance.execute();
+
+    expect(taskInstance.guardrail).toBeNull();
+    expect(output.raw).toBe("list:draft");
+  });
+
   it("defers structured output parsing until after guardrails run", async () => {
     const agentInstance = new Agent({
       role: "Writer",
