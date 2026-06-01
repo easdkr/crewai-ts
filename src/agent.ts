@@ -27,6 +27,7 @@ import { RpmController } from "./rpm.js";
 import {
   addUsageMetrics,
   callLLM,
+  createLLM,
   createLLMClient,
   emptyUsageMetrics,
   estimateUsageMetrics,
@@ -316,7 +317,9 @@ export class Agent {
     this.config = options.config ?? null;
     this.llm = options.llm ?? null;
     this.crew = options.crew ?? null;
-    this.functionCallingLlm = options.functionCallingLlm ?? options.function_calling_llm ?? null;
+    this.functionCallingLlm = normalizeAgentFunctionCallingLlm(
+      options.functionCallingLlm ?? options.function_calling_llm ?? null,
+    );
     this.function_calling_llm = this.functionCallingLlm;
     this.memory = options.memory ?? null;
     this.knowledge = options.knowledge ?? (
@@ -424,8 +427,8 @@ export class Agent {
     this.llmClient = options.llm && typeof options.llm !== "string"
       ? createLLMClient(options.llm)
       : null;
-    this.functionCallingLlmClient = options.functionCallingLlm && typeof options.functionCallingLlm !== "string"
-      ? createLLMClient(options.functionCallingLlm)
+    this.functionCallingLlmClient = this.functionCallingLlm && typeof this.functionCallingLlm !== "string"
+      ? createLLMClient(this.functionCallingLlm)
       : null;
   }
 
@@ -2560,6 +2563,10 @@ export class AgentExecutionTimeoutError extends Error {
     super(message);
     this.name = "AgentExecutionTimeoutError";
   }
+}
+
+function normalizeAgentFunctionCallingLlm(llm: LLM | string | null): LLM | null {
+  return typeof llm === "string" ? createLLM(llm) : llm;
 }
 
 function validateMaxExecutionTime(value: number | null): number | null {

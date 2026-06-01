@@ -10614,6 +10614,16 @@ describe("core crew runtime", () => {
       model: "openai/gpt-4o-mini",
     });
     expect(functionCallingCrew.functionCallingLlm).toBe(functionCallingCrew.function_calling_llm);
+    const functionCallingAgent = new Agent({
+      role: "Tool Caller",
+      goal: "Use tools",
+      backstory: "Normalizes function calling LLM",
+      function_calling_llm: "openai/gpt-4o-mini",
+    });
+    expect(functionCallingAgent.function_calling_llm).toMatchObject({
+      model: "openai/gpt-4o-mini",
+    });
+    expect(functionCallingAgent.functionCallingLlm).toBe(functionCallingAgent.function_calling_llm);
     expect(crewInstance.query_knowledge(["collaborative"])?.[0]?.content).toContain("collaborative agents");
     expect(crewInstance.knowledge?.collection_name).toBe("crew");
     await expect(crewInstance.aquery_knowledge(["CrewAI"])).resolves.toHaveLength(1);
