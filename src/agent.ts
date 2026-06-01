@@ -723,7 +723,10 @@ export class Agent {
     if (!this.embedder) {
       this.embedder = knowledgeOrCrewEmbedder;
     }
-    this.knowledge = this.createKnowledgeFromSources();
+    const knowledge = this.createKnowledgeFromSources();
+    if (knowledge) {
+      this.knowledge = knowledge;
+    }
   }
 
   set_knowledge(knowledgeOrCrewEmbedder: Knowledge | EmbedderConfig | null = null): void {

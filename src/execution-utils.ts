@@ -189,14 +189,11 @@ export function setupAgents(crew: Record<string, unknown>, agents: Iterable<Reco
   const crewSkills = _resolve_crew_skills(crew) ?? [];
   for (const agent of agents) {
     agent.crew = crew;
-    agent.embedder ??= embedder;
-    if ((agent.knowledge === null || agent.knowledge === undefined) && (crew.knowledge !== null && crew.knowledge !== undefined)) {
-      const setKnowledge = agent.setKnowledge ?? agent.set_knowledge;
-      if (typeof setKnowledge === "function") {
-        callUnknown(setKnowledge, agent, crew.knowledge);
-      } else {
-        agent.knowledge = crew.knowledge;
-      }
+    const setKnowledge = agent.setKnowledge ?? agent.set_knowledge;
+    if (typeof setKnowledge === "function") {
+      callUnknown(setKnowledge, agent, embedder);
+    } else {
+      agent.embedder ??= embedder;
     }
     const setSkills = agent.setSkills ?? agent.set_skills;
     if (typeof setSkills === "function") {

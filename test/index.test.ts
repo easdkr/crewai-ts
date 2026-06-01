@@ -7570,9 +7570,10 @@ describe("crew execution utilities", () => {
     expect(streaming.results.map((output) => output.raw)).toEqual(["first", "second"]);
   });
 
-  it("sets up agents with crew defaults, skills, knowledge, and executors", () => {
+  it("sets up agents with crew defaults, skills, agent knowledge, and executors", () => {
     const crewSkill = { name: "crew-skill" };
     const crewKnowledge = { source: "crew-knowledge" };
+    const crewEmbedder = { provider: "crew" };
     const created: string[] = [];
     const knowledgeCalls: unknown[] = [];
     const skillCalls: unknown[] = [];
@@ -7585,9 +7586,9 @@ describe("crew execution utilities", () => {
     } = {
       role: "Researcher",
       skills: [{ name: "agent-skill" }],
-      setKnowledge(knowledge: unknown) {
-        knowledgeCalls.push(knowledge);
-        this.knowledge = knowledge;
+      setKnowledge(crewEmbedderValue: unknown) {
+        knowledgeCalls.push(crewEmbedderValue);
+        this.embedder = crewEmbedderValue;
       },
       setSkills(skills: readonly unknown[]) {
         skillCalls.push(skills);
@@ -7625,15 +7626,14 @@ describe("crew execution utilities", () => {
     setupAgents(
       crew,
       [firstAgent, resumingAgent, ownDefaultsAgent],
-      { provider: "crew" },
+      crewEmbedder,
       "crew-llm",
       "crew-step",
     );
 
     expect(firstAgent).toMatchObject({
       crew,
-      embedder: { provider: "crew" },
-      knowledge: crewKnowledge,
+      embedder: crewEmbedder,
       function_calling_llm: "crew-llm",
       step_callback: "crew-step",
       agent_executor: { ready: true },
@@ -7651,7 +7651,8 @@ describe("crew execution utilities", () => {
       function_calling_llm: "agent-llm",
       step_callback: "agent-step",
     });
-    expect(knowledgeCalls).toEqual([crewKnowledge]);
+    expect(firstAgent.knowledge).toBeUndefined();
+    expect(knowledgeCalls).toEqual([crewEmbedder]);
     expect(skillCalls).toEqual([[crewSkill]]);
     expect(created).toEqual(["first", "own"]);
   });
@@ -7663,6 +7664,36 @@ describe("crew execution utilities", () => {
 
     expect(agent.skills).toEqual([skill, { name: "new" }]);
     expect(agent.create_agent_executor).toHaveBeenCalledOnce();
+  });
+
+  it("initializes agent knowledge sources with crew embedder during setup", () => {
+    const savedCollections: string[] = [];
+    registerRagClientFactory("chromadb", () => ({
+      get_or_create_collection() {},
+      add_documents(params: { collection_name: string }) {
+        savedCollections.push(params.collection_name);
+      },
+      search: () => [],
+    }));
+    const crewKnowledge = new Knowledge({
+      sources: [new StringKnowledgeSource("Crew knowledge stays on crew.")],
+    });
+    const agent = new Agent({
+      role: "Researcher",
+      goal: "Use own knowledge",
+      backstory: "Careful analyst",
+      knowledgeSources: [new StringKnowledgeSource("Agent knowledge uses crew embedder.")],
+    });
+
+    setup_agents(
+      { skills: [], knowledge: crewKnowledge },
+      [agent],
+      { provider: "custom", config: { embedding_callable: (texts: readonly unknown[]) => texts.map(() => [3]) } },
+    );
+
+    expect(agent.knowledge).not.toBe(crewKnowledge);
+    expect(agent.knowledge?.collection_name).toBe("Researcher");
+    expect(savedCollections).toContain("knowledge_Researcher");
   });
 
   it("prepares task execution with agent tool fallback, crew tool preparation, and start logging", () => {
