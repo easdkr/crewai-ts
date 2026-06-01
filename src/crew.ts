@@ -924,13 +924,14 @@ export class Crew {
     return await this.akickoffForEach(options);
   }
 
-  async train(nIterations: number, filename: string, inputs: InputValues = {}): Promise<void> {
+  async train(nIterations: number, filename: string, inputs: InputValues | null = {}): Promise<void> {
+    const trainingInputs = inputs ?? {};
     crewaiEventBus.emit(this, new CrewTrainStartedEvent({
       crewName: this.name,
       crew: this,
       n_iterations: nIterations,
       filename,
-      inputs,
+      inputs: trainingInputs,
     }));
     try {
       const trainingCrew = this.copy();
@@ -938,7 +939,7 @@ export class Crew {
       for (let iteration = 0; iteration < nIterations; iteration += 1) {
         (trainingCrew as unknown as { _train_iteration: number; trainIteration: number })._train_iteration = iteration;
         (trainingCrew as unknown as { trainIteration: number }).trainIteration = iteration;
-        await trainingCrew.kickoff({ inputs });
+        await trainingCrew.kickoff({ inputs: trainingInputs });
       }
       const trainingData = new CrewTrainingHandler(TRAINING_DATA_FILE).load();
       const trainingRecords = isPlainRecord(trainingData) ? trainingData : {};
@@ -965,27 +966,32 @@ export class Crew {
     }
   }
 
-  async test(nIterations: number, evalLlm: LLM | string | null, inputs: InputValues = {}): Promise<string> {
+  async test(nIterations: number, evalLlm: LLM | string | null, inputs: InputValues | null = {}): Promise<string> {
+    const testInputs = inputs ?? {};
+    const llmInstance = createLLM(evalLlm);
+    if (!llmInstance) {
+      throw new Error("Failed to create LLM instance.");
+    }
     crewaiEventBus.emit(this, new CrewTestStartedEvent({
       crewName: this.name,
       crew: this,
       n_iterations: nIterations,
-      eval_llm: evalLlm,
-      inputs,
+      eval_llm: llmInstance,
+      inputs: testInputs,
     }));
     try {
       const testCrew = this.copy();
       for (const task of testCrew.tasks) {
-        task.interpolateInputsAndAddConversationHistory(inputs);
+        task.interpolateInputsAndAddConversationHistory(testInputs);
       }
       for (const agent of testCrew.agents) {
         const interpolateInputs = (agent as unknown as { interpolateInputs?: (inputValues: InputValues) => void }).interpolateInputs;
-        interpolateInputs?.call(agent, inputs);
+        interpolateInputs?.call(agent, testInputs);
       }
-      const evaluator = new CrewEvaluator(testCrew, evalLlm);
+      const evaluator = new CrewEvaluator(testCrew, llmInstance);
       for (let iteration = 1; iteration <= nIterations; iteration += 1) {
         evaluator.setIteration(iteration);
-        await testCrew.kickoff({ inputs });
+        await testCrew.kickoff({ inputs: testInputs });
       }
       const result = evaluator.printCrewEvaluationResult();
       crewaiEventBus.emit(this, new CrewTestCompletedEvent({ crewName: this.name, crew: this }));

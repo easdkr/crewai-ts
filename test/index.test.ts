@@ -10642,9 +10642,15 @@ describe("core crew runtime", () => {
 
   it("exposes upstream Crew validation, knowledge, train, and test lifecycle methods", async () => {
     const events: string[] = [];
+    const testStartedEvalLlms: unknown[] = [];
+    const testStartedInputs: unknown[] = [];
     crewaiEventBus.on("crew_train_started", () => { events.push("train-started"); });
     crewaiEventBus.on("crew_train_completed", () => { events.push("train-completed"); });
-    crewaiEventBus.on("crew_test_started", () => { events.push("test-started"); });
+    crewaiEventBus.on("crew_test_started", (_source, event: CrewTestStartedEvent) => {
+      events.push("test-started");
+      testStartedEvalLlms.push(event.eval_llm);
+      testStartedInputs.push(event.inputs);
+    });
     crewaiEventBus.on("crew_test_completed", () => { events.push("test-completed"); });
     const researcher = new Agent({
       role: "Researcher",
@@ -10760,9 +10766,13 @@ describe("core crew runtime", () => {
       rmSync(`${trainingFile}.pkl`, { force: true });
       rmSync(TRAINING_DATA_FILE, { force: true });
     }
-    const testResult = await crewInstance.test(1, () => JSON.stringify({ quality: 8 }), { topic: "CrewAI" });
+    const evalLlm = () => JSON.stringify({ quality: 8 });
+    const testResult = await crewInstance.test(1, evalLlm, { topic: "CrewAI" });
 
     expect(testResult).toContain("Task 1");
+    expect(testStartedEvalLlms[0]).not.toBe(evalLlm);
+    expect(typeof (testStartedEvalLlms[0] as { call?: unknown }).call).toBe("function");
+    expect(testStartedInputs[0]).toEqual({ topic: "CrewAI" });
     expect(events).toEqual(expect.arrayContaining([
       "train-started",
       "train-completed",
