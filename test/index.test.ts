@@ -7991,8 +7991,8 @@ describe("crew execution utilities", () => {
     try {
       rmSync(TRAINING_DATA_FILE, { force: true });
       await crewFromConfig._setup_for_training(trainingFile);
-      expect(readFileSync(trainingFile, "utf8")).toBe("");
-      expect(readFileSync(TRAINING_DATA_FILE, "utf8")).toBe("");
+      expect(readFileSync(trainingFile.endsWith(".pkl") ? trainingFile : `${trainingFile}.pkl`, "utf8")).toBe("{}\n");
+      expect(readFileSync(TRAINING_DATA_FILE, "utf8")).toBe("{}\n");
       expect(crewFromConfig.tasks.every((task) => task.human_input)).toBe(true);
       expect(crewFromConfig.agents.some((agent) => agent.allow_delegation)).toBe(false);
     } finally {

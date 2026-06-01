@@ -34,6 +34,7 @@ import { TRAINING_DATA_FILE } from "./settings.js";
 import { ConditionalTask, Task, type TaskInputFiles } from "./task.js";
 import { TaskOutputStorageHandler, type StoredTaskOutput } from "./task-output-storage.js";
 import { BaseTool, CacheHandler, StructuredTool, sanitizeToolName } from "./tools.js";
+import { CrewTrainingHandler } from "./training-handler.js";
 import { Process, type AgentStepCallback, type CrewKickoffCallback, type InputValues, type TaskCallback, type Tool } from "./types.js";
 import type { LLM } from "./types.js";
 import { createReadFileTool, extractInputFilesFromInputs } from "./input-files.js";
@@ -2836,8 +2837,8 @@ function bindMemoryView(value: unknown, backing: Memory): void {
 }
 
 async function initializeTrainingFile(filename: string): Promise<void> {
-  await mkdir(dirname(filename), { recursive: true });
-  await writeFile(filename, "", { flag: "a" });
+  new CrewTrainingHandler(filename).initializeFile();
+  await Promise.resolve();
 }
 
 function copyKnowledge(knowledge: Knowledge | null): Knowledge | null {
