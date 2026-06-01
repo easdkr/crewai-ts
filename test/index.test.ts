@@ -19999,6 +19999,66 @@ describe("async task execution", () => {
     expect(events.indexOf("sync:start")).toBeGreaterThan(events.indexOf("second:end"));
   });
 
+  it("uses only the last synchronous output as implicit async task context", async () => {
+    const asyncPrompts: string[] = [];
+    const agent = new Agent({
+      role: "Worker",
+      goal: "Run tasks",
+      backstory: "Async capable",
+      llm: (messages) => {
+        const prompt = messages.at(-1)?.content ?? "";
+        if (prompt.includes("async-two")) {
+          asyncPrompts.push(prompt);
+          return "async two output";
+        }
+        if (prompt.includes("async-one")) {
+          return "async one output";
+        }
+        if (prompt.includes("sync-two")) {
+          return "sync two output";
+        }
+        return "sync one output";
+      },
+    });
+    const syncOne = new Task({
+      description: "sync-one",
+      expectedOutput: "sync-one",
+      agent,
+    });
+    const asyncOne = new Task({
+      description: "async-one",
+      expectedOutput: "async-one",
+      agent,
+      asyncExecution: true,
+    });
+    const syncTwo = new Task({
+      description: "sync-two",
+      expectedOutput: "sync-two",
+      agent,
+    });
+    const asyncTwo = new Task({
+      description: "async-two",
+      expectedOutput: "async-two",
+      agent,
+      asyncExecution: true,
+    });
+
+    const output = await new Crew({
+      agents: [agent],
+      tasks: [syncOne, asyncOne, syncTwo, asyncTwo],
+    }).kickoff();
+
+    expect(output.tasksOutput.map((taskOutput) => taskOutput.raw)).toEqual([
+      "sync one output",
+      "async one output",
+      "sync two output",
+      "async two output",
+    ]);
+    expect(asyncPrompts[0]).toContain("sync two output");
+    expect(asyncPrompts[0]).not.toContain("async one output");
+    expect(asyncPrompts[0]).not.toContain("sync one output");
+  });
+
   it("rejects crews ending with more than one async task", () => {
     const agent = new Agent({
       role: "Worker",

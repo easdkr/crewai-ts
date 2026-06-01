@@ -1308,10 +1308,14 @@ export class Crew {
     const effectiveStart = checkpointStart ?? startIndex ?? 0;
     const tasksOutput: TaskOutput[] = [];
     const pendingTasks: PendingTaskExecution[] = [];
+    let lastSyncOutput: TaskOutput | null = null;
     for (const [taskIndex, task] of tasks.entries()) {
       if (taskIndex < effectiveStart) {
         if (task.output) {
           tasksOutput.push(task.output);
+          if (!task.asyncExecution) {
+            lastSyncOutput = task.output;
+          }
         }
         continue;
       }
@@ -1335,7 +1339,7 @@ export class Crew {
         }
       }
       if (task.asyncExecution) {
-        const context = this.contextForTask(task, tasksOutput);
+        const context = this.contextForTask(task, lastSyncOutput ? [lastSyncOutput] : []);
         pendingTasks.push({
           task,
           taskIndex,
@@ -1377,6 +1381,7 @@ export class Crew {
       await this.processTaskResult(task, output);
       await this.storeExecutionLog(task, output, taskIndex, inputs, wasReplayed);
       tasksOutput.push(output);
+      lastSyncOutput = output;
     }
     if (pendingTasks.length > 0) {
       tasksOutput.push(...await this.processAsyncTaskResults(pendingTasks, wasReplayed));
@@ -1496,6 +1501,7 @@ export class Crew {
     this.validateSequentialTasks();
     const tasksOutput: TaskOutput[] = [];
     const pendingTasks: Array<{ task: Task; taskIndex: number; inputs: InputValues; promise: Promise<TaskOutput> }> = [];
+    let lastSyncOutput: TaskOutput | null = null;
     for (const [index, task] of this.tasks.entries()) {
       const fallbackAgent = this.agents[index] ?? this.agents.at(-1) ?? null;
       const tools = this.toolsForTask(task, fallbackAgent);
@@ -1512,7 +1518,7 @@ export class Crew {
       }
       if (task.asyncExecution) {
         this.logTaskStart(task, fallbackAgent);
-        const context = this.contextForTask(task, tasksOutput);
+        const context = this.contextForTask(task, lastSyncOutput ? [lastSyncOutput] : []);
         pendingTasks.push({
           task,
           taskIndex: index,
@@ -1555,6 +1561,7 @@ export class Crew {
       this.logTaskResult(task, output);
       await this.storeExecutionLog(task, output, index, inputs);
       tasksOutput.push(output);
+      lastSyncOutput = output;
     }
 
     if (pendingTasks.length > 0) {
