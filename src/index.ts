@@ -1242,6 +1242,7 @@ export {
   astoreTaskFiles,
   astore_files,
   astore_task_files,
+  _run_sync,
   clearFileStore,
   clearFiles,
   clearTaskFiles,

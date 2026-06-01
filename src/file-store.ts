@@ -127,6 +127,10 @@ export function clearFileStore(): void {
 
 export const clear_file_store = clearFileStore;
 
+export async function _run_sync<T>(task: Promise<T> | (() => T | Promise<T>)): Promise<T> {
+  return await (typeof task === "function" ? task() : task);
+}
+
 function createEntry(files: FileInputMap, ttl: number): StoreEntry {
   return {
     files: { ...files },

@@ -56,19 +56,26 @@ export class RPMController extends RpmController {
     if (this.max_rpm === null) {
       return true;
     }
-    if (this._current_rpm < this.max_rpm) {
-      this._current_rpm += 1;
-      void this.waitForSlot();
-      return true;
-    }
-    void this._wait_for_next_minute().then(() => {
-      this._current_rpm = 1;
-    });
-    return true;
+    return this._check_and_increment();
   }
 
   check_or_wait(): boolean {
     return this.checkOrWait();
+  }
+
+  _check_and_increment(): boolean {
+    if (this.max_rpm !== null && this._current_rpm < this.max_rpm) {
+      this._current_rpm += 1;
+      void this.waitForSlot();
+      return true;
+    }
+    if (this.max_rpm !== null) {
+      void this._wait_for_next_minute().then(() => {
+        this._current_rpm = 1;
+      });
+      return true;
+    }
+    return true;
   }
 
   resetCounter(): this {

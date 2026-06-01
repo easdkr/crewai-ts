@@ -390,6 +390,8 @@ import {
   _resolve_tool_dict,
   _serialize_schema,
   TodoItem,
+  TodoList,
+  TodoStatus,
   ToolSelectionErrorEvent,
   ToolsHandler,
   GoalAlignmentEvaluator,
@@ -412,6 +414,7 @@ import {
   agetAllFiles,
   beforeLlmCall,
   beforeToolCall,
+  _run_sync,
   agent_to_agent_card,
   agent,
   agentOptionsFromConfig,
@@ -1397,7 +1400,7 @@ describe("serialization and project utilities", () => {
 });
 
 describe("environment, logging, and file store utilities", () => {
-  it("emits environment context once with CrewAI upstream precedence", () => {
+  it("emits environment context once with CrewAI upstream precedence", async () => {
     const events: CrewAIEvent[] = [];
     crewaiEventBus.on("cc_env", (_source, event) => {
       events.push(event);
@@ -1425,6 +1428,8 @@ describe("environment, logging, and file store utilities", () => {
     expect(events.at(-1)).toBeInstanceOf(DefaultEnvEvent);
     expect(_is_codex_env({ CODEX_THREAD_ID: "thread" })).toBe(true);
     expect(_is_cursor_env({ CURSOR_TRACE_ID: "trace" })).toBe(true);
+    await expect(_run_sync(Promise.resolve("file-store-result"))).resolves.toBe("file-store-result");
+    await expect(_run_sync(() => Promise.resolve("callback-result"))).resolves.toBe("callback-result");
   });
 
   it("logs only in verbose mode with colored timestamped output", async () => {
@@ -10483,6 +10488,9 @@ describe("agent planning", () => {
 
     expect(controller.reset_counter()).toBe(controller);
     expect(controller.resetCounter()).toBe(controller);
+    expect(controller._check_and_increment()).toBe(true);
+    expect(controller._current_rpm).toBe(1);
+    controller._reset_request_count();
     expect(controller.check_or_wait()).toBe(true);
     expect(controller._current_rpm).toBe(1);
     controller._reset_request_count();
@@ -10491,6 +10499,21 @@ describe("agent planning", () => {
     await vi.advanceTimersByTimeAsync(60_000);
     await expect(wait).resolves.toBeUndefined();
     controller.stop_rpm_counter();
+  });
+
+  it("treats completed and failed todo dependencies as satisfied", () => {
+    const todos = new TodoList({
+      items: [
+        { step_number: 1, description: "Done", status: TodoStatus.COMPLETED },
+        { step_number: 2, description: "Failed", status: TodoStatus.FAILED },
+        { step_number: 3, description: "Ready", depends_on: [1, 2] },
+        { step_number: 4, description: "Blocked", depends_on: [5] },
+      ],
+    });
+
+    expect(todos._dependencies_satisfied(todos.get_by_step_number(3) as TodoItem)).toBe(true);
+    expect(todos._dependencies_satisfied(todos.get_by_step_number(4) as TodoItem)).toBe(false);
+    expect(todos.get_ready_todos().map((todo) => todo.step_number)).toEqual([3]);
   });
 
   it("exposes upstream StepObservation refinement coercion helper", () => {

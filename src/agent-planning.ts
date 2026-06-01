@@ -238,6 +238,10 @@ export class TodoList {
       return !!dependency && (dependency.status === TodoStatus.COMPLETED || dependency.status === TodoStatus.FAILED);
     });
   }
+
+  _dependencies_satisfied(item: TodoItem): boolean {
+    return this.dependenciesSatisfied(item);
+  }
 }
 
 export class StepRefinement {
