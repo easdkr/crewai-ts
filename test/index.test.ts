@@ -563,6 +563,16 @@ import {
   ChromaDBClient,
   ChromaDBConfig,
   _MissingProvider,
+  _convert_chromadb_results_to_search_results,
+  _convert_distance_to_score,
+  _create_batch_slice,
+  _ensure_list_embedding,
+  _extract_search_params,
+  _is_ipv4_pattern,
+  _normalize_qdrant_score,
+  _prepare_documents_for_chromadb,
+  _process_query_results,
+  _sanitize_collection_name,
   AnthropicCompletion,
   AzureCompletion,
   BedrockProvider,
@@ -8093,6 +8103,59 @@ describe("RAG configuration and factories", () => {
       }),
     ]);
     expect(order).toEqual(["first-start", "first-end", "second"]);
+  });
+
+  it("exposes upstream ChromaDB and Qdrant utility helpers", () => {
+    expect(_sanitize_collection_name("192.168.0.1")).toBe("ip_192_168_0_1");
+    expect(_sanitize_collection_name("-bad name!")).toBe("a-bad_namez");
+    expect(_sanitize_collection_name("")).toBe("default_collection");
+    expect(_is_ipv4_pattern("192.168.0.1")).toBe(true);
+
+    const prepared = _prepare_documents_for_chromadb([
+      { content: "same", metadata: { topic: "old", doc_id: "doc-1" } },
+      { content: "same updated", metadata: { topic: "new", doc_id: "doc-1" } },
+      { content: "no metadata" },
+    ]);
+    expect(prepared.ids).toHaveLength(2);
+    expect(prepared.texts[0]).toBe("same updated");
+    expect(prepared.metadatas[0]).toEqual({ topic: "new", doc_id: "doc-1" });
+    expect(_create_batch_slice(prepared, 0, 1)).toEqual([
+      ["doc-1"],
+      ["same updated"],
+      [{ topic: "new", doc_id: "doc-1" }],
+    ]);
+
+    const params = _extract_search_params({
+      collection_name: "docs",
+      query: "CrewAI",
+      metadata_filter: { topic: "rag" },
+    });
+    expect(params).toMatchObject({
+      collection_name: "docs",
+      query: "CrewAI",
+      limit: 10,
+      metadata_filter: { topic: "rag" },
+      score_threshold: null,
+    });
+    expect(_convert_distance_to_score(0.4, "cosine")).toBe(0.8);
+    expect(_convert_distance_to_score(1, "l2")).toBe(0.5);
+    expect(() => _convert_distance_to_score(1, "ip")).toThrow("Unsupported distance metric");
+    const chromaResults = {
+      ids: [["a", "b"]],
+      documents: [["Alpha", "Beta"]],
+      metadatas: [[{ topic: "a" }, { topic: "b" }]],
+      distances: [[0, 2]],
+    };
+    expect(_convert_chromadb_results_to_search_results(chromaResults, ["documents", "metadatas", "distances"], "l2", 0.4)).toEqual([
+      { id: "a", content: "Alpha", metadata: { topic: "a" }, score: 1 },
+    ]);
+    expect(_process_query_results({ metadata: { "hnsw:space": "cosine" } }, chromaResults, {
+      include: ["documents", "metadatas", "distances"],
+      score_threshold: null,
+    })[1]?.score).toBe(0);
+    expect(_ensure_list_embedding({ tolist: () => 3 })).toEqual([3]);
+    expect(_normalize_qdrant_score(-1)).toBe(0);
+    expect(_normalize_qdrant_score(1)).toBe(1);
   });
 
   it("creates RAG clients through registered provider factories", () => {

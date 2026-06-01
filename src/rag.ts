@@ -11,7 +11,7 @@ export const DEFAULT_DATABASE = DEFAULT_CHROMADB_DATABASE;
 export const MIN_COLLECTION_LENGTH = 3;
 export const MAX_COLLECTION_LENGTH = 63;
 export const DEFAULT_COLLECTION = "default_collection";
-export const INVALID_CHARS_PATTERN = /[^a-zA-Z0-9_-]/;
+export const INVALID_CHARS_PATTERN = /[^a-zA-Z0-9_-]/g;
 export const IPV4_PATTERN = /^(\d{1,3}\.){3}\d{1,3}$/;
 export const DEFAULT_QDRANT_STORAGE_PATH = "./qdrant";
 export const DEFAULT_QDRANT_EMBEDDING_MODEL = "BAAI/bge-small-en";
@@ -2563,10 +2563,40 @@ function collectionNameFrom(params: BaseCollectionParams): string {
 }
 
 function sanitizeCollectionName(collectionName: string): string {
-  return collectionName
-    .replace(/[^a-zA-Z0-9_-]/g, "_")
-    .slice(0, MAX_COLLECTION_LENGTH)
-    .padEnd(Math.min(MIN_COLLECTION_LENGTH, MAX_COLLECTION_LENGTH), "_");
+  if (!collectionName) {
+    return DEFAULT_COLLECTION;
+  }
+  let sanitized = IPV4_PATTERN.test(collectionName) ? `ip_${collectionName}` : collectionName;
+  sanitized = sanitized.replace(/[^a-zA-Z0-9_-]/g, "_");
+  if (!/^[a-zA-Z0-9]/.test(sanitized)) {
+    sanitized = `a${sanitized}`;
+  }
+  if (!/[a-zA-Z0-9]$/.test(sanitized)) {
+    sanitized = `${sanitized.slice(0, -1)}z`;
+  }
+  if (sanitized.length < MIN_COLLECTION_LENGTH) {
+    sanitized = sanitized.padEnd(MIN_COLLECTION_LENGTH, "x");
+  }
+  if (sanitized.length > MAX_COLLECTION_LENGTH) {
+    sanitized = sanitized.slice(0, MAX_COLLECTION_LENGTH);
+    if (!/[a-zA-Z0-9]$/.test(sanitized)) {
+      sanitized = `${sanitized.slice(0, -1)}z`;
+    }
+  }
+  return sanitized;
+}
+
+export function _sanitize_collection_name(name: string | null | undefined, max_collection_length = MAX_COLLECTION_LENGTH): string {
+  const sanitized = sanitizeCollectionName(name ?? "");
+  if (sanitized.length <= max_collection_length) {
+    return sanitized;
+  }
+  const truncated = sanitized.slice(0, max_collection_length);
+  return /[a-zA-Z0-9]$/.test(truncated) ? truncated : `${truncated.slice(0, -1)}z`;
+}
+
+export function _is_ipv4_pattern(name: string): boolean {
+  return IPV4_PATTERN.test(name);
 }
 
 function normalizeChromaMetadata(metadata: Record<string, unknown> | undefined): Record<string, unknown> {
@@ -2587,7 +2617,50 @@ function prepareDocuments(documents: readonly BaseRecord[]): PreparedDocuments {
   return prepared;
 }
 
-function normalizeSearchParams(params: BaseCollectionSearchParams, defaultLimit: number, defaultScoreThreshold: number): {
+export function _prepare_documents_for_chromadb(documents: readonly BaseRecord[]): PreparedDocuments {
+  const prepared = new PreparedDocuments();
+  const seenIds = new Map<string, number>();
+  for (const document of documents) {
+    const rawMetadata: unknown = document.metadata;
+    const firstMetadata: unknown = Array.isArray(rawMetadata) ? rawMetadata[0] : rawMetadata;
+    const metadata: RagMetadata | null = isRagMetadata(firstMetadata) ? firstMetadata : null;
+    const docId = document.docId ?? document.doc_id
+      ?? (metadata && "doc_id" in metadata ? String(metadata.doc_id) : null)
+      ?? createContentId(metadata ? `${document.content}|${JSON.stringify(metadata, Object.keys(metadata).sort())}` : document.content);
+    const processedMetadata = metadata ? { ...metadata } : {};
+    const existingIndex = seenIds.get(docId);
+    if (existingIndex !== undefined) {
+      prepared.texts[existingIndex] = document.content;
+      prepared.metadatas[existingIndex] = processedMetadata;
+      continue;
+    }
+    seenIds.set(docId, prepared.ids.length);
+    prepared.ids.push(docId);
+    prepared.texts.push(document.content);
+    prepared.metadatas.push(processedMetadata);
+  }
+  return prepared;
+}
+
+function isRagMetadata(value: unknown): value is RagMetadata {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+export function _create_batch_slice(
+  prepared: PreparedDocuments,
+  start_index: number,
+  batch_size: number,
+): [string[], string[], Array<Record<string, string | number | boolean>> | null] {
+  const end = Math.min(start_index + batch_size, prepared.ids.length);
+  const metadatas = prepared.metadatas.slice(start_index, end);
+  return [
+    prepared.ids.slice(start_index, end),
+    prepared.texts.slice(start_index, end),
+    metadatas.some((metadata) => Object.keys(metadata).length > 0) ? metadatas : null,
+  ];
+}
+
+function normalizeSearchParams(params: BaseCollectionSearchParams, defaultLimit: number, defaultScoreThreshold: number | null): {
   collection_name: string;
   query: string;
   limit: number;
@@ -2607,6 +2680,19 @@ function normalizeSearchParams(params: BaseCollectionSearchParams, defaultLimit:
     where_document: params.where_document ?? null,
     include: params.include ?? null,
   };
+}
+
+export function _extract_search_params(kwargs: BaseCollectionSearchParams): {
+  collection_name: string;
+  query: string;
+  limit: number;
+  metadata_filter: Record<string, unknown> | null;
+  score_threshold: number | null;
+  where: Record<string, unknown> | null;
+  where_document: unknown;
+  include: unknown;
+} {
+  return normalizeSearchParams(kwargs, 10, null);
 }
 
 function callMethod(target: Record<string, unknown>, snakeName: string, camelName: string, params?: unknown): unknown {
@@ -2656,6 +2742,63 @@ function processChromaQueryResult(result: unknown, scoreThreshold: number | null
     .filter((resultItem) => scoreThreshold === null || resultItem.score >= scoreThreshold);
 }
 
+export function _convert_distance_to_score(distance: number, distance_metric: "l2" | "cosine" | "ip"): number {
+  if (distance_metric === "cosine") {
+    return Math.max(0, Math.min(1, 1 - 0.5 * distance));
+  }
+  if (distance_metric === "l2") {
+    return Math.max(0, Math.min(1, 1 / (1 + distance)));
+  }
+  throw new Error(`Unsupported distance metric: ${distance_metric}`);
+}
+
+export function _convert_chromadb_results_to_search_results(
+  results: unknown,
+  include: readonly string[] | null = ["metadatas", "documents", "distances"],
+  distance_metric: "l2" | "cosine" | "ip" = "l2",
+  score_threshold: number | null = null,
+): SearchResult[] {
+  const includeSet = new Set(include ?? []);
+  const value = results as {
+    ids?: string[][];
+    documents?: string[][];
+    metadatas?: Record<string, unknown>[][];
+    distances?: number[][];
+  };
+  const ids = value.ids?.[0] ?? [];
+  const documents = includeSet.has("documents") ? value.documents?.[0] ?? [] : [];
+  const metadatas = includeSet.has("metadatas") ? value.metadatas?.[0] ?? [] : [];
+  const distances = includeSet.has("distances") ? value.distances?.[0] ?? [] : [];
+  const output: SearchResult[] = [];
+  for (const [index, id] of ids.entries()) {
+    if (distances[index] === undefined) {
+      continue;
+    }
+    const score = _convert_distance_to_score(distances[index], distance_metric);
+    if (score_threshold !== null && score < score_threshold) {
+      continue;
+    }
+    output.push({
+      id,
+      content: documents[index] ?? "",
+      metadata: metadatas[index] ?? {},
+      score,
+    });
+  }
+  return output;
+}
+
+export function _process_query_results(
+  collection: { metadata?: Record<string, unknown> | null },
+  results: unknown,
+  params: { include?: readonly string[] | null; score_threshold?: number | null },
+): SearchResult[] {
+  const metric = typeof collection.metadata?.["hnsw:space"] === "string"
+    ? collection.metadata["hnsw:space"] as "l2" | "cosine" | "ip"
+    : "l2";
+  return _convert_chromadb_results_to_search_results(results, params.include ?? ["metadatas", "documents", "distances"], metric, params.score_threshold ?? null);
+}
+
 function processQdrantQueryResult(result: unknown, scoreThreshold: number | null): SearchResult[] {
   const points = Array.isArray((result as { points?: unknown[] }).points)
     ? (result as { points: Array<{ id?: unknown; payload?: Record<string, unknown>; score?: number }> }).points
@@ -2671,6 +2814,18 @@ function processQdrantQueryResult(result: unknown, scoreThreshold: number | null
       };
     })
     .filter((resultItem) => scoreThreshold === null || resultItem.score >= scoreThreshold);
+}
+
+export function _ensure_list_embedding(embedding: QueryEmbedding | { tolist?: () => unknown }): number[] {
+  if (Array.isArray(embedding)) {
+    return embedding.map((value) => Number(value));
+  }
+  const listed = (embedding as { tolist?: () => unknown }).tolist?.();
+  return Array.isArray(listed) ? listed.map((value) => Number(value)) : [Number(listed)];
+}
+
+export function _normalize_qdrant_score(score: number): number {
+  return Math.max(0, Math.min(1, (score + 1) / 2));
 }
 
 function stringFromUnknown(value: unknown): string {
