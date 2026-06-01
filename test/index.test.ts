@@ -709,7 +709,9 @@ import {
   EventPairingError,
   FileBytes,
   FilePath,
+  FileReference,
   FileResolver,
+  FileResolverConfig,
   FileStream,
   FileUrl,
   createResolver,
@@ -2224,6 +2226,36 @@ describe("environment, logging, and file store utilities", () => {
     expect(geminiResolver.config.upload_threshold_bytes).toBe(20_971_520);
     const explicitThreshold = createResolver({ provider: "gemini", upload_threshold_bytes: 1234 });
     expect(explicitThreshold.config.upload_threshold_bytes).toBe(1234);
+  });
+
+  it("resolves cached upstream file uploads before inline fallback", async () => {
+    const png = Buffer.concat([
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      Buffer.from("cached-upload-body"),
+    ]);
+    const file = new ImageFile({ source: new FileBytes({ data: png, filename: "cached.png" }) });
+    const cache = new UploadCache();
+    cache.set(file, "gemini", "file-cached", "files/file-cached", new Date(Date.now() + 60_000));
+
+    const resolver = new FileResolver({
+      config: new FileResolverConfig({ prefer_upload: true }),
+      upload_cache: cache,
+    });
+    const resolved = resolver.resolve(file, "gemini");
+    expect(resolved).toBeInstanceOf(FileReference);
+    expect(resolved).toMatchObject({
+      file_id: "file-cached",
+      file_uri: "files/file-cached",
+      provider: "gemini",
+      content_type: "image/png",
+    });
+    await expect(resolver.aresolve(file, "gemini")).resolves.toBeInstanceOf(FileReference);
+
+    const missResolver = new FileResolver({
+      config: new FileResolverConfig({ prefer_upload: true }),
+      upload_cache: new UploadCache(),
+    });
+    expect(missResolver.resolve(file, "gemini")).toBeInstanceOf(InlineBase64);
   });
 
   it("validates upstream crewai-files provider constraints deterministically", () => {

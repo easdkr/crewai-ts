@@ -1343,6 +1343,10 @@ export class FileResolver {
       return new UrlReference({ contentType: file.contentType, url: source.url });
     }
     const content = file.read();
+    const cached = this.resolveCachedUpload(file, provider, content);
+    if (cached) {
+      return cached;
+    }
     if (provider.toLowerCase() === "bedrock" && this.config.useBytesForBedrock) {
       return new InlineBytes({ contentType: file.contentType, data: content });
     }
@@ -1355,6 +1359,10 @@ export class FileResolver {
       return new UrlReference({ contentType: file.contentType, url: source.url });
     }
     const content = await file.aread();
+    const cached = this.resolveCachedUpload(file, provider, content);
+    if (cached) {
+      return cached;
+    }
     if (provider.toLowerCase() === "bedrock" && this.config.useBytesForBedrock) {
       return new InlineBytes({ contentType: file.contentType, data: content });
     }
@@ -1392,6 +1400,38 @@ export class FileResolver {
 
   clear_cache(): void {
     this.clearCache();
+  }
+
+  private resolveCachedUpload(file: FileInput, provider: FileProvider, content: Uint8Array): FileReference | null {
+    if (!this.uploadCache || !this.shouldUseUpload(file, provider, content.length)) {
+      return null;
+    }
+    const cached = this.uploadCache.getByHash(createHash("sha256").update(content).digest("hex"), provider);
+    if (!cached) {
+      return null;
+    }
+    return new FileReference({
+      contentType: cached.contentType,
+      fileId: cached.fileId,
+      provider: cached.provider,
+      expiresAt: cached.expiresAt,
+      fileUri: cached.fileUri,
+    });
+  }
+
+  private shouldUseUpload(file: FileInput, provider: FileProvider, sizeBytes: number): boolean {
+    const constraints = getConstraintsForProvider(provider);
+    if (!constraints?.supportsFileUpload) {
+      return false;
+    }
+    if (this.config.preferUpload) {
+      return true;
+    }
+    const typeConstraint = getFileTypeConstraint(file, constraints);
+    if (typeConstraint && sizeBytes > typeConstraint.maxSizeBytes) {
+      return true;
+    }
+    return this.config.uploadThresholdBytes !== null && sizeBytes > this.config.uploadThresholdBytes;
   }
 }
 
@@ -1487,6 +1527,25 @@ function unsupportedFileType(file: FileInput, providerName: string, typeName: st
     throw new UnsupportedFileTypeError(message, { fileName: file.filename, contentType: file.contentType });
   }
   return [message];
+}
+
+function getFileTypeConstraint(file: FileInput, constraints: ProviderConstraints): ImageConstraints | PDFConstraints | AudioConstraints | VideoConstraints | TextConstraints | null {
+  if (file instanceof ImageFile) {
+    return constraints.image;
+  }
+  if (file instanceof PDFFile) {
+    return constraints.pdf;
+  }
+  if (file instanceof AudioFile) {
+    return constraints.audio;
+  }
+  if (file instanceof VideoFile) {
+    return constraints.video;
+  }
+  if (file instanceof TextFile) {
+    return constraints.text;
+  }
+  return null;
 }
 
 function formatSize(sizeBytes: number): string {
