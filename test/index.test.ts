@@ -10225,6 +10225,57 @@ describe("core crew runtime", () => {
     expect(executor.state.messages.at(-1)).toEqual({ role: "user", content: "Summarize CrewAI" });
   });
 
+  it("executes AgentExecutor pending native tool calls and records tool messages", () => {
+    const executor = new AgentExecutor();
+    Object.assign(executor, {
+      _available_functions: {
+        slow_one: () => "one",
+        slow_two: () => "two",
+      },
+    });
+    executor.state.pending_tool_calls = [
+      { id: "call_1", function: { name: "slow_one", arguments: "{}" } },
+      { id: "call_2", function: { name: "slow_two", arguments: "{}" } },
+    ];
+
+    expect(executor.execute_native_tool()).toBe("native_tool_completed");
+    expect(executor.state.pending_tool_calls).toEqual([]);
+    expect(executor.state.messages.filter((message) => message.role === "tool")).toEqual([
+      { role: "tool", content: "one", tool_call_id: "call_1" },
+      { role: "tool", content: "two", tool_call_id: "call_2" },
+    ]);
+  });
+
+  it("short-circuits AgentExecutor native tool execution for result_as_answer tools", () => {
+    const finalTool = new StructuredTool({
+      name: "slow_one",
+      description: "Return final",
+      resultAsAnswer: true,
+      func: () => "tool fallback",
+    });
+    const executor = new AgentExecutor({
+      tools: [finalTool],
+    });
+    Object.assign(executor, {
+      _available_functions: {
+        slow_one: () => "one",
+        slow_two: () => "two",
+      },
+    });
+    executor.state.pending_tool_calls = [
+      { id: "call_1", function: { name: "slow_one", arguments: "{}" } },
+      { id: "call_2", function: { name: "slow_two", arguments: "{}" } },
+    ];
+
+    expect(executor.execute_native_tool()).toBe("tool_result_is_final");
+    expect(executor.state.current_answer).toBeInstanceOf(AgentFinish);
+    expect((executor.state.current_answer as AgentFinish).output).toBe("one");
+    expect(executor.state.pending_tool_calls).toEqual([]);
+    expect(executor.state.messages.filter((message) => message.role === "tool")).toEqual([
+      { role: "tool", content: "one", tool_call_id: "call_1" },
+    ]);
+  });
+
   it("exposes upstream CrewAgentExecutor multimodal, native tool, and callback helpers", async () => {
     const callbackValues: unknown[] = [];
     const agentInstance = new Agent({

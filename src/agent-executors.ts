@@ -687,7 +687,26 @@ export class AgentExecutor extends BaseAgentExecutor {
   }
 
   executeNativeTool(): "native_tool_completed" | "tool_result_is_final" {
+    const pendingCalls = [...this.state.pending_tool_calls];
     this.state.pending_tool_calls = [];
+    for (const toolCall of pendingCalls) {
+      const { name, args, id } = normalizeNativeToolCall(toolCall);
+      if (!name) {
+        continue;
+      }
+      const result = this.executeNativeToolCall(name, asNativeArgsRecord(args));
+      const text = stringifyStepResult(result);
+      this.state.messages.push({
+        role: "tool",
+        content: text,
+        tool_call_id: id ?? name,
+      } as unknown as LLMMessage);
+      if (this.nativeToolResultAsAnswer(name)) {
+        this.state.current_answer = new AgentFinish({ thought: "", output: text, text });
+        this.state.is_finished = true;
+        return "tool_result_is_final";
+      }
+    }
     return "native_tool_completed";
   }
 
@@ -952,6 +971,52 @@ export class AgentExecutor extends BaseAgentExecutor {
       ? config.maxReplans ?? config.max_replans
       : null;
     return typeof value === "number" && Number.isFinite(value) ? Math.max(0, Math.trunc(value)) : 3;
+  }
+
+  private executeNativeToolCall(name: string, args: Record<string, unknown>): unknown {
+    const availableFunctions = this.availableNativeFunctions();
+    const fn = availableFunctions[name] ?? availableFunctions[sanitizeToolName(name)];
+    if (typeof fn === "function") {
+      const result = fn(args);
+      if (isPromiseLike(result)) {
+        throw new Error(`Native tool '${name}' returned a Promise in synchronous execution.`);
+      }
+      return result;
+    }
+    const tool = this.nativeToolByName(name);
+    if (tool) {
+      const result = tool.run(args);
+      if (isPromiseLike(result)) {
+        throw new Error(`Native tool '${name}' returned a Promise in synchronous execution.`);
+      }
+      return result;
+    }
+    return "Tool not found";
+  }
+
+  private availableNativeFunctions(): Record<string, (input?: unknown) => unknown> {
+    const record = this as unknown as {
+      _available_functions?: Record<string, (input?: unknown) => unknown>;
+      availableFunctions?: Record<string, (input?: unknown) => unknown>;
+      available_functions?: Record<string, (input?: unknown) => unknown>;
+    };
+    return record._available_functions ?? record.availableFunctions ?? record.available_functions ?? {};
+  }
+
+  private nativeToolByName(name: string): Tool | null {
+    const record = this as unknown as { originalTools?: readonly Tool[]; original_tools?: readonly Tool[] };
+    const candidates = [...(record.originalTools ?? record.original_tools ?? []), ...this.tools];
+    const sanitized = sanitizeToolName(name);
+    return candidates.find((tool) => sanitizeToolName(tool.name) === sanitized) ?? null;
+  }
+
+  private nativeToolResultAsAnswer(name: string): boolean {
+    const tool = this.nativeToolByName(name);
+    if (!tool) {
+      return false;
+    }
+    const record = tool as Tool & { result_as_answer?: unknown };
+    return Boolean(tool.resultAsAnswer || record.result_as_answer);
   }
 
   private triggerReplan(reason: string): void {
@@ -2254,4 +2319,10 @@ function stringifyInput(value: unknown): string {
     return value.toString();
   }
   return JSON.stringify(value);
+}
+
+function asNativeArgsRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : { input: value };
 }
