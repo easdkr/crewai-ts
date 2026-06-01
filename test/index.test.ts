@@ -16157,6 +16157,52 @@ describe("flow runtime", () => {
     ]);
   });
 
+  it("emits upstream-style diagnostics for dynamic routers and orphaned string listeners", () => {
+    class DynamicRouterFlow extends Flow {
+      begin() {
+        return "started";
+      }
+
+      route() {
+        return String(Date.now());
+      }
+
+      handleA() {
+        return "a";
+      }
+
+      handleB() {
+        return "b";
+      }
+    }
+
+    const initializers = [
+      decorateMethod(DynamicRouterFlow, "begin", start() as unknown as Decorator),
+      decorateMethod(DynamicRouterFlow, "route", router("begin") as unknown as Decorator),
+      decorateMethod(DynamicRouterFlow, "handleA", listen("path_a") as unknown as Decorator),
+      decorateMethod(DynamicRouterFlow, "handleB", listen("path_b") as unknown as Decorator),
+    ];
+    const flow = new DynamicRouterFlow();
+    initializers.forEach((initializer) => {
+      initializer.call(flow);
+    });
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    try {
+      const structure = buildFlowStructure(flow);
+
+      expect(structure.nodes.route?.router_paths).toEqual([]);
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("Could not determine return paths for router 'route'"));
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("Found listeners waiting for triggers"));
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("path_a"));
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("path_b"));
+    } finally {
+      warnSpy.mockRestore();
+      errorSpy.mockRestore();
+    }
+  });
+
   it("infers router paths from possible string return constants", () => {
     class InferredRouterFlow extends Flow {
       begin() {

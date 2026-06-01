@@ -3043,9 +3043,9 @@ export function buildFlowStructure(instanceOrConstructor: object | FlowMetadataT
     };
     if (method.type === "router" || method.type === "start_router") {
       const inferredPaths = getPossibleReturnConstants(methodValue);
-      const routerPaths = inferredPaths && inferredPaths.length > 0
-        ? inferredPaths
-        : method.routerPaths;
+      const routerPaths = method.hasHumanFeedback
+        ? method.routerPaths
+        : inferredPaths ?? [];
       metadata.is_router = true;
       metadata.router_paths = uniqueStrings(routerPaths);
       metadata.condition_type = method.conditionType ?? "IF";
@@ -3074,6 +3074,8 @@ export function buildFlowStructure(instanceOrConstructor: object | FlowMetadataT
     }
     edges.push(...createVisualizationEdgesFromCondition(entry.condition, String(entry.name), nodes));
   }
+
+  emitFlowVisualizationDiagnostics(entries, nodes, routerMethods);
 
   for (const routerName of routerMethods) {
     const routerPaths = nodes[routerName]?.router_paths ?? [];
@@ -3522,6 +3524,54 @@ function dedupeVisualizationEdges(edges: readonly FlowVisualizationEdge[]): read
     seen.add(key);
     return true;
   });
+}
+
+function emitFlowVisualizationDiagnostics(
+  entries: readonly FlowMethodEntry[],
+  nodes: Record<string, FlowNodeMetadata>,
+  routerMethods: readonly string[],
+): void {
+  const nodeNames = new Set(Object.keys(nodes));
+  const allStringTriggers = new Set<string>();
+  for (const entry of entries) {
+    if (!entry.condition) {
+      continue;
+    }
+    for (const trigger of extractDirectOrTriggers(entry.condition)) {
+      if (!nodeNames.has(trigger)) {
+        allStringTriggers.add(trigger);
+      }
+    }
+  }
+
+  const allRouterOutputs = new Set<string>();
+  for (const routerName of routerMethods) {
+    const routerPaths = nodes[routerName]?.router_paths ?? [];
+    if (routerPaths.length === 0) {
+      console.warn(
+        `Could not determine return paths for router '${routerName}'. `
+        + "Add a return type annotation like '-> Literal[\"path1\", \"path2\"]' "
+        + "or '-> YourEnum' to enable proper flow visualization.",
+      );
+      continue;
+    }
+    for (const path of routerPaths) {
+      allRouterOutputs.add(path);
+    }
+  }
+
+  const orphanedTriggers = [...allStringTriggers].filter((trigger) => !allRouterOutputs.has(trigger));
+  if (orphanedTriggers.length > 0) {
+    console.error(
+      `Found listeners waiting for triggers ${formatSetLike(orphanedTriggers)} `
+      + "but no router outputs these values explicitly. "
+      + "If your router returns a non-static value, check that your router has proper return type annotations.",
+    );
+  }
+}
+
+function formatSetLike(values: readonly string[]): string {
+  return `{${values.map((value) => `'${value}'`).join(", ")}}`;
 }
 
 function normalizeVisualizationStructure(value: object | FlowMetadataTarget | FlowVisualizationStructure): FlowVisualizationStructure {

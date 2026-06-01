@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 792 passing tests.
+- Test suite: 793 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -193,6 +193,7 @@ When more goal budget is available, continue from the behavioral parity audits b
 
 - `interpolateOnly` now mirrors upstream sequential replacement behavior for task prompt variables: placeholders introduced by an earlier variable value are resolved when the placeholder also appears later in the original template variable list, preserving deterministic task interpolation parity without adding alias/helper surface.
 - Flow visualization router paths now prefer statically inferred return constants for each router before falling back to listener-trigger discovery, preventing chained/shared router output strings from creating extra route edges or self loops while preserving deterministic graph rendering.
+- Flow visualization now emits upstream-style diagnostics when router return paths cannot be determined and when listeners wait on string triggers that no router explicitly outputs, keeping graph gaps visible in the deterministic gate.
 
 ## Completed In Current Tool Behavior Pass
 
