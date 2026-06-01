@@ -2267,7 +2267,7 @@ export class Crew {
             return;
           }
           if (system instanceof MemoryScope) {
-            system.memory.reset(system.rootPath);
+            system._require_memory().reset(system.rootPath);
           }
         },
       },

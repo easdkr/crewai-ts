@@ -2881,17 +2881,7 @@ export class Memory {
 
   private formatTree(path: string, maxDepth = 3): string {
     const lines: string[] = [];
-    const walk = (currentPath: string, depth: number, prefix: string): void => {
-      if (depth > maxDepth) {
-        return;
-      }
-      const info = this.scopeInfoForPath(currentPath);
-      lines.push(`${prefix}${info.path} (${String(info.recordCount)} records)`);
-      for (const child of info.childScopes.slice(0, 20)) {
-        walk(child, depth + 1, `${prefix}  `);
-      }
-    };
-    walk(normalize_scope_path(path), 0, "");
+    _walk(this, lines, normalize_scope_path(path), 0, "", maxDepth);
     return lines.length > 0 ? lines.join("\n") : `${path || "/"} (0 records)`;
   }
 
@@ -3009,17 +2999,73 @@ type MemoryRememberOptions = NonNullable<Parameters<Memory["remember"]>[1]>;
 type MemoryRecallOptions = NonNullable<Parameters<Memory["recall"]>[1]>;
 type MemoryForgetOptions = NonNullable<Parameters<Memory["forget"]>[0]>;
 
-export class MemoryScope {
-  memory: Memory;
-  readonly rootPath: string;
+export function _ensure_memory_kind<T>(value: T): T {
+  if (isRecord(value) && !("memory_kind" in value)) {
+    const record = value as Record<string, unknown>;
+    if ("scopes" in value) {
+      record.memory_kind = "slice";
+    } else if ("root_path" in value || "rootPath" in value) {
+      record.memory_kind = "scope";
+    } else {
+      record.memory_kind = "memory";
+    }
+  }
+  return value;
+}
 
-  constructor(memory: Memory, rootPath = "/") {
+export function _walk(memory: Memory, lines: string[], path: string, depth: number, prefix: string, maxDepth: number): void {
+  if (depth > maxDepth) {
+    return;
+  }
+  const normalized = normalize_scope_path(path);
+  const records = memory.allRecords().filter((record) => record.scope.startsWith(normalized));
+  const childPrefix = normalized === "/" ? "/" : `${normalized}/`;
+  const children = new Set<string>();
+  for (const record of records) {
+    if (!record.scope.startsWith(childPrefix) || record.scope === normalized) {
+      continue;
+    }
+    const rest = record.scope.slice(childPrefix.length);
+    const firstComponent = rest.split("/", 1)[0];
+    if (firstComponent) {
+      children.add(`${childPrefix}${firstComponent}`);
+    }
+  }
+  lines.push(`${prefix}${normalized} (${String(records.length)} records)`);
+  for (const child of [...children].sort().slice(0, 20)) {
+    _walk(memory, lines, child, depth + 1, `${prefix}  `, maxDepth);
+  }
+}
+
+export class MemoryScope {
+  readonly memoryKind = "scope";
+  readonly memory_kind = "scope";
+  memory: Memory | null;
+  readonly rootPath: string;
+  readonly root_path: string;
+
+  constructor(memory: Memory | null, rootPath = "/") {
     this.memory = memory;
     this.rootPath = normalizeScope(rootPath);
+    this.root_path = this.rootPath;
+  }
+
+  static _accept_memory(data: unknown): MemoryScope {
+    if (data instanceof MemoryScope) {
+      return data;
+    }
+    if (!isRecord(data)) {
+      throw new Error(`Expected object or MemoryScope, got ${typeof data}`);
+    }
+    const memory = data.memory instanceof Memory ? data.memory : null;
+    const rootPath = typeof data.root_path === "string"
+      ? data.root_path
+      : typeof data.rootPath === "string" ? data.rootPath : "/";
+    return new MemoryScope(memory, rootPath);
   }
 
   get readOnly(): boolean {
-    return this.memory.readOnly;
+    return this._requireMemory().readOnly;
   }
 
   get read_only(): boolean {
@@ -3027,6 +3073,9 @@ export class MemoryScope {
   }
 
   _requireMemory(): Memory {
+    if (!this.memory) {
+      throw new Error("MemoryScope is not bound to a Memory; call .bind(memory) after restore.");
+    }
     return this.memory;
   }
 
@@ -3043,15 +3092,15 @@ export class MemoryScope {
   }
 
   remember(content: string, options: MemoryRememberOptions = {}): MemoryRecord | null {
-    return this.memory.remember(content, { ...options, scope: joinScopePaths(this.rootPath, options.scope ?? "/") });
+    return this._requireMemory().remember(content, { ...options, scope: joinScopePaths(this.rootPath, options.scope ?? "/") });
   }
 
   recall(query: string, options: MemoryRecallOptions = {}): MemoryMatch[] {
-    return this.memory.recall(query, { ...options, scope: joinScopePaths(this.rootPath, options.scope ?? "/") });
+    return this._requireMemory().recall(query, { ...options, scope: joinScopePaths(this.rootPath, options.scope ?? "/") });
   }
 
   rememberMany(contents: readonly string[], options: MemoryRememberOptions = {}): MemoryRecord[] {
-    return this.memory.rememberMany(contents, { ...options, scope: joinScopePaths(this.rootPath, options.scope ?? "/") });
+    return this._requireMemory().rememberMany(contents, { ...options, scope: joinScopePaths(this.rootPath, options.scope ?? "/") });
   }
 
   remember_many(contents: readonly string[], options: MemoryRememberOptions = {}): MemoryRecord[] {
@@ -3059,7 +3108,7 @@ export class MemoryScope {
   }
 
   extractMemories(content: string): readonly string[] {
-    return this.memory.extractMemories(content);
+    return this._requireMemory().extractMemories(content);
   }
 
   extract_memories(content: string): readonly string[] {
@@ -3067,22 +3116,22 @@ export class MemoryScope {
   }
 
   forget(options: MemoryForgetOptions = {}): number {
-    return this.memory.forget({ ...options, scope: joinScopePaths(this.rootPath, options.scope ?? "/") });
+    return this._requireMemory().forget({ ...options, scope: joinScopePaths(this.rootPath, options.scope ?? "/") });
   }
 
   reset(scope?: string | null): void {
-    this.memory.reset(joinScopePaths(this.rootPath, scope ?? "/"));
+    this._requireMemory().reset(joinScopePaths(this.rootPath, scope ?? "/"));
   }
 
   listScopes(full?: boolean): readonly string[] | readonly ScopeInfo[];
   listScopes(path: string | null): readonly string[];
   listScopes(pathOrFull: string | null | boolean = false): readonly string[] | readonly ScopeInfo[] {
     if (typeof pathOrFull === "string" || pathOrFull === null) {
-      return this.memory.list_scopes(joinScopePaths(this.rootPath, pathOrFull ?? "/"));
+      return this._requireMemory().list_scopes(joinScopePaths(this.rootPath, pathOrFull ?? "/"));
     }
     const full = pathOrFull;
     const prefix = this.rootPath;
-    const infos = this.memory.allRecords()
+    const infos = this._requireMemory().allRecords()
       .filter((record) => record.scope.startsWith(prefix))
       .reduce<Map<string, { count: number; categories: Set<string>; lastUpdated: Date | null }>>((accumulator, record) => {
         const entry = accumulator.get(record.scope) ?? { count: 0, categories: new Set<string>(), lastUpdated: null };
@@ -3117,10 +3166,10 @@ export class MemoryScope {
   info(path: string | null): ScopeInfo;
   info(pathOrFull: string | null | boolean = false): MemoryInfo | ScopeInfo {
     if (typeof pathOrFull === "string" || pathOrFull === null) {
-      return this.memory.info(joinScopePaths(this.rootPath, pathOrFull ?? "/"));
+      return this._requireMemory().info(joinScopePaths(this.rootPath, pathOrFull ?? "/"));
     }
     const full = pathOrFull;
-    const records = this.memory.allRecords().filter((record) => record.scope.startsWith(this.rootPath));
+    const records = this._requireMemory().allRecords().filter((record) => record.scope.startsWith(this.rootPath));
     return {
       totalRecords: records.length,
       total_records: records.length,
@@ -3135,10 +3184,10 @@ export class MemoryScope {
   listCategories(path: string | null): Record<string, number>;
   listCategories(pathOrFull: string | null | boolean = false): Record<string, number> | Record<string, { count: number; scopes: readonly string[] }> {
     if (typeof pathOrFull === "string" || pathOrFull === null) {
-      return this.memory.list_categories(joinScopePaths(this.rootPath, pathOrFull ?? "/"));
+      return this._requireMemory().list_categories(joinScopePaths(this.rootPath, pathOrFull ?? "/"));
     }
     const full = pathOrFull;
-    return categoriesForRecords(this.memory.allRecords().filter((record) => record.scope.startsWith(this.rootPath)), full);
+    return categoriesForRecords(this._requireMemory().allRecords().filter((record) => record.scope.startsWith(this.rootPath)), full);
   }
 
   list_categories(full?: boolean): Record<string, number> | Record<string, { count: number; scopes: readonly string[] }>;
@@ -3151,10 +3200,10 @@ export class MemoryScope {
   tree(path: string | null, maxDepth?: number): string;
   tree(pathOrFull: string | null | boolean = false, maxDepth = Number.POSITIVE_INFINITY): MemoryTreeNode | string {
     if (typeof pathOrFull === "string" || pathOrFull === null) {
-      return this.memory.tree(joinScopePaths(this.rootPath, pathOrFull ?? "/"), maxDepth);
+      return this._requireMemory().tree(joinScopePaths(this.rootPath, pathOrFull ?? "/"), maxDepth);
     }
     const full = pathOrFull;
-    return treeForRecords(this.memory.allRecords().filter((record) => record.scope.startsWith(this.rootPath)), full, maxDepth);
+    return treeForRecords(this._requireMemory().allRecords().filter((record) => record.scope.startsWith(this.rootPath)), full, maxDepth);
   }
 
   subscope(path: string): MemoryScope {
@@ -3168,20 +3217,38 @@ export class MemoryScope {
 }
 
 export class MemorySlice {
-  memory: Memory;
+  readonly memoryKind = "slice";
+  readonly memory_kind = "slice";
+  memory: Memory | null;
   readonly scopes: readonly string[];
   readonly categories: readonly string[] | null;
   private readonly readOnlyValue: boolean;
 
-  constructor(memory: Memory, scopes: readonly string[], options: { categories?: readonly string[] | null; readOnly?: boolean } = {}) {
+  constructor(memory: Memory | null, scopes: readonly string[], options: { categories?: readonly string[] | null; readOnly?: boolean } = {}) {
     this.memory = memory;
     this.scopes = scopes.map((scope) => normalizeScope(scope));
     this.categories = options.categories ?? null;
     this.readOnlyValue = options.readOnly ?? true;
   }
 
+  static _accept_memory(data: unknown): MemorySlice {
+    if (data instanceof MemorySlice) {
+      return data;
+    }
+    if (!isRecord(data)) {
+      throw new Error(`Expected object or MemorySlice, got ${typeof data}`);
+    }
+    const memory = data.memory instanceof Memory ? data.memory : null;
+    const scopes = Array.isArray(data.scopes) ? data.scopes.map(String) : [];
+    const categories = Array.isArray(data.categories) ? data.categories.map(String) : null;
+    const readOnly = typeof data.read_only === "boolean"
+      ? data.read_only
+      : typeof data.readOnly === "boolean" ? data.readOnly : true;
+    return new MemorySlice(memory, scopes.map((scope) => scope.replace(/\/+$/, "") || "/"), { categories, readOnly });
+  }
+
   get readOnly(): boolean {
-    return this.readOnlyValue || this.memory.readOnly;
+    return this.readOnlyValue || (this.memory?.readOnly ?? false);
   }
 
   get read_only(): boolean {
@@ -3189,6 +3256,9 @@ export class MemorySlice {
   }
 
   _requireMemory(): Memory {
+    if (!this.memory) {
+      throw new Error("MemorySlice is not bound to a Memory; call .bind(memory) after restore.");
+    }
     return this.memory;
   }
 
@@ -3200,14 +3270,14 @@ export class MemorySlice {
     if (this.readOnly) {
       return null;
     }
-    return this.memory.remember(content, { ...options, scope: options.scope ?? this.scopes[0] ?? "/" });
+    return this._requireMemory().remember(content, { ...options, scope: options.scope ?? this.scopes[0] ?? "/" });
   }
 
   rememberMany(contents: readonly string[], options: MemoryRememberOptions = {}): MemoryRecord[] {
     if (this.readOnly) {
       return [];
     }
-    return this.memory.rememberMany(contents, { ...options, scope: options.scope ?? this.scopes[0] ?? "/" });
+    return this._requireMemory().rememberMany(contents, { ...options, scope: options.scope ?? this.scopes[0] ?? "/" });
   }
 
   remember_many(contents: readonly string[], options: MemoryRememberOptions = {}): MemoryRecord[] {
@@ -3224,7 +3294,7 @@ export class MemorySlice {
       if (categories !== undefined) {
         recallOptions.categories = categories;
       }
-      for (const match of this.memory.recall(query, recallOptions)) {
+      for (const match of this._requireMemory().recall(query, recallOptions)) {
         const existing = matches.get(match.record.id);
         if (!existing || match.score > existing.score) {
           matches.set(match.record.id, match);
@@ -3235,7 +3305,7 @@ export class MemorySlice {
   }
 
   extractMemories(content: string): readonly string[] {
-    return this.memory.extractMemories(content);
+    return this._requireMemory().extractMemories(content);
   }
 
   extract_memories(content: string): readonly string[] {
@@ -3255,7 +3325,7 @@ export class MemorySlice {
     if (typeof pathOrFull === "string" || pathOrFull === null) {
       const paths = new Set<string>();
       for (const scope of this.scopes) {
-        for (const childScope of this.memory.list_scopes(this.slicePath(scope, pathOrFull))) {
+        for (const childScope of this._requireMemory().list_scopes(this.slicePath(scope, pathOrFull))) {
           paths.add(childScope);
         }
       }
@@ -3265,7 +3335,7 @@ export class MemorySlice {
     const paths = new Set<string>();
     const infos = new Map<string, ScopeInfo>();
     for (const scope of this.scopes) {
-      for (const info of this.memory.scope(scope).listScopes(true) as readonly ScopeInfo[]) {
+      for (const info of this._requireMemory().scope(scope).listScopes(true) as readonly ScopeInfo[]) {
         paths.add(info.path);
         infos.set(info.path, info);
       }
@@ -3289,7 +3359,7 @@ export class MemorySlice {
       let oldestRecord: Date | null = null;
       let newestRecord: Date | null = null;
       for (const scope of this.scopes) {
-        const info = this.memory.info(this.slicePath(scope, pathOrFull));
+        const info = this._requireMemory().info(this.slicePath(scope, pathOrFull));
         recordCount += info.recordCount;
         for (const category of info.categories) {
           categories.add(category);
@@ -3315,7 +3385,7 @@ export class MemorySlice {
       });
     }
     const full = pathOrFull;
-    const records = this.memory.allRecords().filter((record) =>
+    const records = this._requireMemory().allRecords().filter((record) =>
       this.scopes.some((scope) => record.scope.startsWith(scope)),
     );
     return {
@@ -3334,7 +3404,7 @@ export class MemorySlice {
     if (typeof pathOrFull === "string" || pathOrFull === null) {
       const counts: Record<string, number> = {};
       for (const scope of this.scopes) {
-        const categories = this.memory.list_categories(this.slicePath(scope, pathOrFull));
+        const categories = this._requireMemory().list_categories(this.slicePath(scope, pathOrFull));
         for (const [category, count] of Object.entries(categories)) {
           counts[category] = (counts[category] ?? 0) + count;
         }
@@ -3361,7 +3431,7 @@ export class MemorySlice {
   }
 
   private recordsInSlice(): readonly MemoryRecord[] {
-    return this.memory.allRecords().filter((record) =>
+    return this._requireMemory().allRecords().filter((record) =>
       this.scopes.some((scope) => record.scope.startsWith(scope)),
     );
   }

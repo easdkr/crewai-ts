@@ -279,9 +279,12 @@ import {
   MemoryAnalysis,
   MemoryConfig,
   MemoryRecord,
+  MemoryScope,
   MemorySlice,
   _default_embedder,
+  _ensure_memory_kind,
   _passthrough,
+  _walk,
   ScopeInfo,
   EncodingFlow,
   RecallFlow,
@@ -19546,6 +19549,43 @@ describe("memory", () => {
     expect(slice._require_memory()).toBe(restored);
     slice.remember("slice rebound");
     expect(restored.list_records().map((record) => record.content)).toEqual(["slice rebound", "scoped rebound"]);
+  });
+
+  it("accepts legacy memory scope and slice records after restore", () => {
+    const memory = new Memory();
+    memory.remember("alpha scoped", { scope: "/team/alpha" });
+    memory.remember("beta scoped", { scope: "/team/beta" });
+    const scopeRecord: Record<string, unknown> = { root_path: "team" };
+    const sliceRecord: Record<string, unknown> = { scopes: ["/team/alpha/"] };
+    const plainRecord: Record<string, unknown> = {};
+
+    expect(_ensure_memory_kind(scopeRecord)).toMatchObject({ memory_kind: "scope" });
+    expect(_ensure_memory_kind(sliceRecord)).toMatchObject({ memory_kind: "slice" });
+    expect(_ensure_memory_kind(plainRecord)).toMatchObject({ memory_kind: "memory" });
+
+    const scope = MemoryScope._accept_memory(scopeRecord);
+    const slice = MemorySlice._accept_memory({ ...sliceRecord, read_only: false });
+
+    expect(scope.memory_kind).toBe("scope");
+    expect(scope.root_path).toBe("/team");
+    expect(() => scope._require_memory()).toThrow("not bound");
+    expect(scope.bind(memory).list_scopes("/")).toEqual(["/team/alpha", "/team/beta"]);
+
+    expect(slice.memory_kind).toBe("slice");
+    expect(slice.scopes).toEqual(["/team/alpha"]);
+    expect(() => slice.recall("alpha")).toThrow("not bound");
+    expect(slice.bind(memory).recall("alpha", { limit: 1 })[0]?.record.content).toBe("alpha scoped");
+  });
+
+  it("exposes the upstream memory tree walk helper", () => {
+    const memory = new Memory();
+    memory.remember("alpha scoped", { scope: "/team/alpha" });
+    const lines: string[] = [];
+
+    _walk(memory, lines, "/", 0, "", 3);
+
+    expect(lines).toContain("/ (1 records)");
+    expect(lines).toContain("  /team (1 records)");
   });
 
   it("automatically appends relevant crew memories to task prompts", async () => {
