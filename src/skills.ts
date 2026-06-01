@@ -470,6 +470,7 @@ export function parseRegistryRef(ref: string): [org: string, name: string] {
 export const parse_registry_ref = parseRegistryRef;
 
 export function resolveRegistryRef(ref: string, source: unknown = null, options: { cacheRoot?: string | null; cwd?: string } = {}): Skill {
+  require_experimental_skills();
   const [org, name] = parseRegistryRef(ref);
   const localPath = join(options.cwd ?? process.cwd(), "skills", name);
   if (existsSync(join(localPath, SKILL_FILENAME))) {

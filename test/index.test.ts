@@ -3538,7 +3538,9 @@ describe("skills", () => {
     const localSkill = join(dir, "skills", "local-skill");
     const cachedSource = join(dir, "cached-source");
     const cacheRoot = join(dir, "cache");
+    const previousExperimental = process.env.CREWAI_EXPERIMENTAL;
     try {
+      process.env.CREWAI_EXPERIMENTAL = "1";
       mkdirSync(localSkill, { recursive: true });
       writeFileSync(join(localSkill, "SKILL.md"), [
         "---",
@@ -3570,17 +3572,36 @@ describe("skills", () => {
       expect(cache.invalidate("org", "cached-skill")).toBe(true);
       expect(() => resolveRegistryRef("@org/missing", null, { cwd: dir, cacheRoot })).toThrow(SkillNotCachedError);
     } finally {
+      if (previousExperimental === undefined) {
+        delete process.env.CREWAI_EXPERIMENTAL;
+      } else {
+        process.env.CREWAI_EXPERIMENTAL = previousExperimental;
+      }
       rmSync(dir, { recursive: true, force: true });
     }
   });
 
   it("gates experimental skills registry helpers like upstream", () => {
     const previous = process.env[ENV_VAR];
+    const dir = mkdtempSync(join(tmpdir(), "crewai-ts-skill-gate-"));
     try {
+      const localSkill = join(dir, "skills", "my-skill");
+      mkdirSync(localSkill, { recursive: true });
+      writeFileSync(join(localSkill, "SKILL.md"), [
+        "---",
+        "name: my-skill",
+        "description: Local skill.",
+        "---",
+        "Local instructions.",
+      ].join("\n"));
+
       delete process.env.CREWAI_EXPERIMENTAL;
       expect(is_enabled()).toBe(false);
       expect(() => {
         require_experimental_skills();
+      }).toThrow(ExperimentalFeatureDisabledError);
+      expect(() => {
+        resolveRegistryRef("@acme/my-skill", null, { cwd: dir, cacheRoot: join(dir, "cache") });
       }).toThrow(ExperimentalFeatureDisabledError);
 
       process.env.CREWAI_EXPERIMENTAL = "1";
@@ -3594,6 +3615,7 @@ describe("skills", () => {
       } else {
         process.env.CREWAI_EXPERIMENTAL = previous;
       }
+      rmSync(dir, { recursive: true, force: true });
     }
   });
 
