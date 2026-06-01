@@ -856,12 +856,20 @@ function buildCheckpointPath(directory: string, branch: string, parentId: string
   return join(directory, branch, `${timestamp}_${shortUuid}_p-${parent}.json`);
 }
 
+export function _build_path(directory: string, branch = "main", parent_id: string | null = null): string {
+  return buildCheckpointPath(directory, branch, parent_id);
+}
+
 function assertSafeBranch(base: string, branch: string): void {
   const baseResolved = resolve(base);
   const target = resolve(base, branch);
   if (target !== baseResolved && !target.startsWith(`${baseResolved}${sep}`)) {
     throw new Error(`Branch name escapes checkpoint directory: ${JSON.stringify(branch)}`);
   }
+}
+
+export function _safe_branch(base: string, branch: string): void {
+  assertSafeBranch(base, branch);
 }
 
 function dirname(path: string): string {
@@ -897,6 +905,11 @@ function makeCheckpointId(): { checkpointId: string; timestamp: string } {
     checkpointId: `${timestamp}_${randomUUID().replaceAll("-", "").slice(0, 8)}`,
     timestamp,
   };
+}
+
+export function _make_id(): [string, string] {
+  const { checkpointId, timestamp } = makeCheckpointId();
+  return [checkpointId, timestamp];
 }
 
 function splitSqliteLocation(location: string): { dbPath: string; checkpointId: string } {

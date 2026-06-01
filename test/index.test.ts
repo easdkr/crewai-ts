@@ -92,8 +92,11 @@ import {
   ClientTransportConfig,
   CheckpointConfig,
   _build_event_type_map,
+  _build_path,
   _coerce_checkpoint,
+  _make_id,
   _resolve_event,
+  _safe_branch,
   ConditionalTask,
   ConsoleFormatter,
   Crew,
@@ -21234,6 +21237,20 @@ describe("checkpoint state providers", () => {
     expect(await provider.afrom_checkpoint(fork)).toBe("{\"fork\":true}");
   });
 
+  it("exposes CrewAI-compatible JSON provider path helpers", () => {
+    const directory = mkdtempSync(join(tmpdir(), "crewai-ts-checkpoint-path-"));
+
+    _safe_branch(directory, "fork/exp1");
+    const path = _build_path(directory, "fork/exp1", "parent-1");
+
+    expect(path).toContain("/fork/exp1/");
+    expect(path).toContain("_p-parent-1.json");
+    expect(() => {
+      _safe_branch(directory, "../../etc");
+    }).toThrow("escapes checkpoint directory");
+    expect(() => _build_path(directory, "../../etc")).toThrow("escapes checkpoint directory");
+  });
+
   it("prunes JSON checkpoints branch-locally and rejects traversal", async () => {
     const directory = mkdtempSync(join(tmpdir(), "crewai-ts-checkpoint-prune-"));
     const provider = new JsonProvider();
@@ -21338,6 +21355,14 @@ describe("checkpoint state providers", () => {
     expect(provider.from_checkpoint(first)).toBe("{\"step\":1}");
     await expect(provider.afrom_checkpoint(second)).resolves.toBe("{\"step\":2}");
     expect(detectProvider(first)).toBeInstanceOf(SqliteProvider);
+  });
+
+  it("exposes CrewAI-compatible SQLite checkpoint id helper", () => {
+    const [checkpointId, timestamp] = _make_id();
+
+    expect(timestamp).toMatch(/^\d{8}T\d{6}$/);
+    expect(checkpointId).toMatch(/^\d{8}T\d{6}_[0-9a-f]{8}$/);
+    expect(checkpointId.startsWith(`${timestamp}_`)).toBe(true);
   });
 
   it("prunes SQLite checkpoints branch-locally and normalizes config locations", () => {
