@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 814 passing tests.
+- Test suite: 815 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -529,6 +529,7 @@ When more goal budget is available, continue from the behavioral parity audits b
    - Flow now supports auto memory plus `remember`, `recall`, and `extract_memories` delegation.
    - Flow checkpoint snapshots now restore/fork completed methods, method outputs/counts, and state through `from_checkpoint`/`fork`; kickoff-time `from_checkpoint` delegates to the restored flow and does not replay completed methods; restored checkpoint RuntimeState is wired through the event bus and handlers can receive it as a third argument; locked dict/list proxies now mutate the backing values.
    - Flow `_copy_state` now preserves non-structured-cloneable state values by reference while still deep-copying cloneable containers, matching upstream resilience for locks and other deepcopy-hostile state values.
+   - Cyclic Flow router loops now have default-gate coverage for upstream OR listener reset behavior, ensuring merge listeners and loop-back listeners fire once per iteration.
    - `Flow.ask` now mirrors upstream input durability by saving an `_ask_checkpoint` state snapshot before invoking the input provider, preserving state gathered before a blocking or timed-out human input wait.
    - `Flow.ask` input history now exposes upstream `_input_history` / `input_history` access with snake_case `method_name` and `response_metadata` fields while preserving camelCase `inputHistory`.
    - `Flow.ask` provider resolution now honors upstream class-level `input_provider` / `inputProvider` before global `flowConfig.inputProvider`, and accepts both `request_input` and `requestInput` provider protocols.

@@ -18507,6 +18507,66 @@ describe("flow runtime", () => {
     expect(flow.methodExecutionCounts.get("repeatStart")).toBe(2);
   });
 
+  it("fires cyclic OR listeners on every router loop iteration", async () => {
+    class CyclicOrFlow extends Flow<{ events: string[]; iteration: number }> {
+      constructor() {
+        super({
+          initialState: { events: [], iteration: 0 },
+          maxMethodCalls: 20,
+        });
+      }
+
+      begin() {
+        this.state.events.push("begin");
+      }
+
+      route() {
+        this.state.iteration += 1;
+        this.state.events.push(`route:${String(this.state.iteration)}`);
+        return this.state.iteration <= 3
+          ? this.state.iteration % 2 === 1 ? "type_a" : "type_b"
+          : "done";
+      }
+
+      handlerA() {
+        this.state.events.push(`handler_a:${String(this.state.iteration)}`);
+      }
+
+      handlerB() {
+        this.state.events.push(`handler_b:${String(this.state.iteration)}`);
+      }
+
+      merge() {
+        this.state.events.push(`merge:${String(this.state.iteration)}`);
+      }
+
+      loopBack() {
+        this.state.events.push(`loop_back:${String(this.state.iteration)}`);
+      }
+    }
+
+    const initializers = [
+      decorateMethod(CyclicOrFlow, "begin", start() as unknown as Decorator),
+      decorateMethod(CyclicOrFlow, "route", router(or_("begin", "loopBack")) as unknown as Decorator),
+      decorateMethod(CyclicOrFlow, "handlerA", listen("type_a") as unknown as Decorator),
+      decorateMethod(CyclicOrFlow, "handlerB", listen("type_b") as unknown as Decorator),
+      decorateMethod(CyclicOrFlow, "merge", listen(or_("handlerA", "handlerB")) as unknown as Decorator),
+      decorateMethod(CyclicOrFlow, "loopBack", listen("merge") as unknown as Decorator),
+    ];
+    const flow = new CyclicOrFlow();
+    initializers.forEach((initializer) => {
+      initializer.call(flow);
+    });
+
+    await flow.kickoff();
+
+    expect(flow.state.events.filter((event) => event.startsWith("merge:"))).toHaveLength(3);
+    expect(flow.state.events.filter((event) => event.startsWith("loop_back:"))).toHaveLength(3);
+    expect(flow.state.events.filter((event) => event.startsWith("handler_a:"))).toHaveLength(2);
+    expect(flow.state.events.filter((event) => event.startsWith("handler_b:"))).toHaveLength(1);
+    expect(flow.state.events.at(-1)).toBe("route:4");
+  });
+
   it("preserves non-structured-cloneable flow state values when copying state", () => {
     const handler = () => "locked";
     const flow = new Flow<{
