@@ -930,21 +930,34 @@ export const OPENAI_COMPATIBLE_PROVIDERS: Readonly<Record<string, ProviderConfig
 
 export class OpenAICompatibleCompletion extends OpenAICompletion {
   constructor(options: OpenAICompletionOptions & { provider?: string | null } = { model: "gpt-4o-mini", provider: "openrouter" }) {
-    const provider = options.provider ?? "";
+    const resolved = OpenAICompatibleCompletion._resolveProviderConfig(options);
+    super({
+      ...options,
+      ...resolved,
+    });
+  }
+
+  static _resolveProviderConfig<TOptions extends OpenAICompletionOptions & { provider?: string | null }>(data: TOptions): TOptions {
+    const provider = data.provider ?? "";
     const config = OPENAI_COMPATIBLE_PROVIDERS[provider];
     if (!config) {
       throw new Error(`Unknown OpenAI-compatible provider: ${provider}. Supported providers: ${Object.keys(OPENAI_COMPATIBLE_PROVIDERS).sort().join(", ")}`);
     }
-    const apiKey = OpenAICompatibleCompletion.resolveApiKey(options.api_key ?? options.apiKey ?? null, config, provider);
-    const baseUrl = OpenAICompatibleCompletion.resolveBaseUrl(options.base_url ?? options.baseUrl ?? null, config, provider);
-    const defaultHeaders = OpenAICompatibleCompletion.resolveHeaders(options.default_headers ?? options.defaultHeaders ?? null, config);
-    super({
-      ...options,
+    return {
+      ...data,
       provider,
-      api_key: apiKey,
-      base_url: baseUrl,
-      default_headers: defaultHeaders,
-    });
+      api_key: OpenAICompatibleCompletion.resolveApiKey(data.api_key ?? data.apiKey ?? null, config, provider),
+      base_url: OpenAICompatibleCompletion.resolveBaseUrl(data.base_url ?? data.baseUrl ?? null, config, provider),
+      default_headers: OpenAICompatibleCompletion.resolveHeaders(data.default_headers ?? data.defaultHeaders ?? null, config),
+    };
+  }
+
+  static _resolve_provider_config<TOptions extends OpenAICompletionOptions & { provider?: string | null }>(data: TOptions): TOptions {
+    return OpenAICompatibleCompletion._resolveProviderConfig(data);
+  }
+
+  override supports_function_calling(): boolean {
+    return super.supports_function_calling();
   }
 
   static resolveApiKey(apiKey: string | null, config: ProviderConfig, provider: string): string | null {

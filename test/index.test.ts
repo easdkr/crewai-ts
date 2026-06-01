@@ -17265,6 +17265,7 @@ describe("LLM providers", () => {
 
   it("resolves OpenAI-compatible provider configuration like upstream", () => {
     const helper = OpenAICompatibleCompletion as unknown as {
+      _resolve_provider_config(data: Record<string, unknown> & { model: string; provider?: string | null }): Record<string, unknown> & { model: string; provider?: string | null };
       _resolve_api_key(apiKey: string | null, config: ProviderConfig, provider: string): string | null;
       _resolve_base_url(baseUrl: string | null, config: ProviderConfig, provider: string): string;
       _resolve_headers(headers: Record<string, string> | null, config: ProviderConfig): Record<string, string> | null;
@@ -17309,6 +17310,12 @@ describe("LLM providers", () => {
       expect(compatible.api_key).toBe("ollama");
       expect(compatible.base_url).toBe("http://localhost:11434/v1");
       expect(compatible.supports_function_calling()).toBe(true);
+      expect(Object.hasOwn(OpenAICompatibleCompletion.prototype, "supports_function_calling")).toBe(true);
+      expect(helper._resolve_provider_config({ model: "llama3", provider: "ollama" })).toMatchObject({
+        provider: "ollama",
+        api_key: "ollama",
+        base_url: "http://localhost:11434/v1",
+      });
     } finally {
       if (previousDeepSeekKey === undefined) {
         delete process.env.DEEPSEEK_API_KEY;
