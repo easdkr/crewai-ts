@@ -91,6 +91,9 @@ import {
   CrewDoclingSource,
   ClientTransportConfig,
   CheckpointConfig,
+  _build_event_type_map,
+  _coerce_checkpoint,
+  _resolve_event,
   ConditionalTask,
   ConsoleFormatter,
   Crew,
@@ -21206,6 +21209,8 @@ describe("checkpoint state providers", () => {
     expect(all.maxCheckpoints).toBe(3);
     expect(all.restoreFrom).toBe("/tmp/cp.json");
     expect(all._register_handlers()).toBe(all);
+    expect(_coerce_checkpoint(true)).toBeInstanceOf(CheckpointConfig);
+    expect(_coerce_checkpoint(false)).toBe(false);
     expect(detectProvider("/tmp/checkpoint.json")).toBeInstanceOf(JsonProvider);
   });
 
@@ -21407,6 +21412,23 @@ describe("event record", () => {
     expect(childNode.neighbors("next")).toEqual([triggered.eventId]);
     expect(triggeredNode.neighbors("triggered_by")).toEqual([child.eventId]);
     expect(rootNode.neighbors("completed_by")).toEqual([triggered.eventId]);
+  });
+
+  it("resolves serialized events with upstream event record helpers", () => {
+    const eventTypeMap = _build_event_type_map();
+    const resolved = _resolve_event({
+      type: "task_started",
+      source_type: "task",
+      parent_event_id: "parent-1",
+      previous_event_id: "previous-1",
+    });
+
+    expect(eventTypeMap.task_started).toBe(BaseEvent);
+    expect(resolved).toBeInstanceOf(BaseEvent);
+    expect(resolved.type).toBe("task_started");
+    expect(resolved.sourceType).toBe("task");
+    expect(resolved.parentEventId).toBe("parent-1");
+    expect(resolved.previousEventId).toBe("previous-1");
   });
 
   it("returns roots, descendants, snapshots, and supports clear", () => {

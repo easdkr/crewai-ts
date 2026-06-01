@@ -14,7 +14,7 @@ import {
   CheckpointRestoreStartedEvent,
   CheckpointStartedEvent,
   crewaiEventBus,
-  type BaseEvent,
+  BaseEvent,
   type EventType,
 } from "./events.js";
 import { __version__ } from "./version.js";
@@ -26,6 +26,77 @@ export type CheckpointEventType = EventType | "lite_agent_execution_started" | "
 export const CheckpointEventType = Object.freeze({ kind: "CheckpointEventType" });
 
 export type CheckpointTrigger = CheckpointEventType | "*";
+
+export const _event_type_map: Record<string, typeof BaseEvent> = {};
+
+export function buildEventTypeMap(): Record<string, typeof BaseEvent> {
+  if (Object.keys(_event_type_map).length === 0) {
+    for (const eventType of checkpointEventTypes()) {
+      _event_type_map[eventType] = BaseEvent;
+    }
+  }
+  return _event_type_map;
+}
+
+export const _build_event_type_map = buildEventTypeMap;
+
+export function resolveEvent(value: unknown): BaseEvent {
+  if (value instanceof BaseEvent) {
+    return value;
+  }
+  const record = isRecord(value) ? value : {};
+  buildEventTypeMap();
+  const type = typeof record.type === "string" ? record.type : "default_env";
+  return new BaseEvent({
+    type: type as EventType,
+    sourceType: typeof record.sourceType === "string"
+      ? record.sourceType
+      : typeof record.source_type === "string" ? record.source_type : null,
+    sourceFingerprint: typeof record.sourceFingerprint === "string"
+      ? record.sourceFingerprint
+      : typeof record.source_fingerprint === "string" ? record.source_fingerprint : null,
+    parentEventId: typeof record.parentEventId === "string"
+      ? record.parentEventId
+      : typeof record.parent_event_id === "string" ? record.parent_event_id : null,
+    previousEventId: typeof record.previousEventId === "string"
+      ? record.previousEventId
+      : typeof record.previous_event_id === "string" ? record.previous_event_id : null,
+    triggeredByEventId: typeof record.triggeredByEventId === "string"
+      ? record.triggeredByEventId
+      : typeof record.triggered_by_event_id === "string" ? record.triggered_by_event_id : null,
+    startedEventId: typeof record.startedEventId === "string"
+      ? record.startedEventId
+      : typeof record.started_event_id === "string" ? record.started_event_id : null,
+  });
+}
+
+export const _resolve_event = resolveEvent;
+
+function checkpointEventTypes(): EventType[] {
+  return [
+    "crew_kickoff_started",
+    "crew_kickoff_completed",
+    "crew_kickoff_failed",
+    "task_started",
+    "task_completed",
+    "task_failed",
+    "agent_execution_started",
+    "agent_execution_completed",
+    "agent_execution_error",
+    "flow_started",
+    "flow_finished",
+    "llm_call_started",
+    "llm_call_completed",
+    "llm_call_failed",
+    "tool_usage_started",
+    "tool_usage_finished",
+    "tool_usage_error",
+    "mcp_connection_started",
+    "mcp_connection_completed",
+    "mcp_connection_failed",
+    "default_env",
+  ];
+}
 
 export type EdgeType =
   | "parent"
@@ -725,6 +796,8 @@ export function coerceCheckpointConfig(value: CheckpointOption): CheckpointConfi
   }
   return new CheckpointConfig(value);
 }
+
+export const _coerce_checkpoint = coerceCheckpointConfig;
 
 export function apply_checkpoint(instance: unknown, from_checkpoint: CheckpointConfig | null): unknown {
   if (!from_checkpoint) {
