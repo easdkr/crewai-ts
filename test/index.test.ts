@@ -2258,6 +2258,22 @@ describe("environment, logging, and file store utilities", () => {
     expect(missResolver.resolve(file, "gemini")).toBeInstanceOf(InlineBase64);
   });
 
+  it("keeps successful upstream async file resolutions when one item fails", async () => {
+    const resolver = new FileResolver();
+    const ok = new ImageFile({
+      source: new FileBytes({
+        data: Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from("ok")]),
+        filename: "ok.png",
+      }),
+    });
+    const failing = new ImageFile({ source: new FileUrl({ url: "https://example.com/missing.png" }) });
+
+    const resolved = await resolver.aresolve_files({ ok, failing }, "local", 1);
+    expect(Object.keys(resolved)).toEqual(["ok"]);
+    expect(resolved.ok).toBeInstanceOf(InlineBase64);
+    await expect(resolver.aresolve(failing, "local")).rejects.toThrow("FileUrl.aread requires an injected fetcher");
+  });
+
   it("validates upstream crewai-files provider constraints deterministically", () => {
     const png = Buffer.concat([
       Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),

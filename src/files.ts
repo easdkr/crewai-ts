@@ -1377,13 +1377,31 @@ export class FileResolver {
     return this.resolveFiles(files, provider);
   }
 
-  async aresolveFiles(files: Record<string, FileInput>, provider: FileProvider): Promise<Record<string, ResolvedFileType>> {
-    const entries = await Promise.all(Object.entries(files).map(async ([name, file]) => [name, await this.aresolve(file, provider)] as const));
-    return Object.fromEntries(entries);
+  async aresolveFiles(files: Record<string, FileInput>, provider: FileProvider, maxConcurrency = 10): Promise<Record<string, ResolvedFileType>> {
+    const entries = Object.entries(files);
+    const output: Record<string, ResolvedFileType> = {};
+    let nextIndex = 0;
+    const workerCount = Math.max(1, Math.min(maxConcurrency, entries.length));
+    await Promise.all(Array.from({ length: workerCount }, async () => {
+      while (nextIndex < entries.length) {
+        const entry = entries[nextIndex];
+        nextIndex += 1;
+        if (!entry) {
+          continue;
+        }
+        const [name, file] = entry;
+        try {
+          output[name] = await this.aresolve(file, provider);
+        } catch {
+          // Upstream async batch resolution keeps successful entries when one file fails.
+        }
+      }
+    }));
+    return output;
   }
 
-  async aresolve_files(files: Record<string, FileInput>, provider: FileProvider): Promise<Record<string, ResolvedFileType>> {
-    return await this.aresolveFiles(files, provider);
+  async aresolve_files(files: Record<string, FileInput>, provider: FileProvider, max_concurrency = 10): Promise<Record<string, ResolvedFileType>> {
+    return await this.aresolveFiles(files, provider, max_concurrency);
   }
 
   getCachedUploads(provider: FileProvider): CachedUpload[] {
