@@ -645,14 +645,28 @@ function effectiveSchema(schema: JsonSchema, rootSchema: JsonSchema): JsonSchema
 
 const SUPPORTED_SCHEMA_TYPES = new Set(["null", "string", "integer", "number", "boolean", "array", "object"]);
 
-function validateSupportedSchemaTypes(schema: JsonSchema, rootSchema: JsonSchema, seen = new WeakSet<object>()): void {
+function validateSupportedSchemaTypes(
+  schema: JsonSchema,
+  rootSchema: JsonSchema,
+  seen = new WeakSet<object>(),
+  seenRefs = new Set<string>(),
+): void {
   if (seen.has(schema)) {
     return;
   }
   seen.add(schema);
+  if (typeof schema.$ref === "string") {
+    if (seenRefs.has(schema.$ref)) {
+      return;
+    }
+    const nextSeenRefs = new Set(seenRefs);
+    nextSeenRefs.add(schema.$ref);
+    validateSupportedSchemaTypes(_resolve_ref(schema.$ref, rootSchema), rootSchema, seen, nextSeenRefs);
+    return;
+  }
   const resolved = effectiveSchema(schema, rootSchema);
   if (resolved !== schema) {
-    validateSupportedSchemaTypes(resolved, rootSchema, seen);
+    validateSupportedSchemaTypes(resolved, rootSchema, seen, seenRefs);
     return;
   }
 
@@ -675,17 +689,17 @@ function validateSupportedSchemaTypes(schema: JsonSchema, rootSchema: JsonSchema
     }
     for (const variant of variants) {
       if (isSchemaRecord(variant)) {
-        validateSupportedSchemaTypes(variant, rootSchema, seen);
+        validateSupportedSchemaTypes(variant, rootSchema, seen, seenRefs);
       }
     }
   }
   if (isSchemaRecord(resolved.items)) {
-    validateSupportedSchemaTypes(resolved.items, rootSchema, seen);
+    validateSupportedSchemaTypes(resolved.items, rootSchema, seen, seenRefs);
   }
   if (isSchemaRecord(resolved.properties)) {
     for (const value of Object.values(resolved.properties)) {
       if (isSchemaRecord(value)) {
-        validateSupportedSchemaTypes(value, rootSchema, seen);
+        validateSupportedSchemaTypes(value, rootSchema, seen, seenRefs);
       }
     }
   }
@@ -867,7 +881,7 @@ export function createModelFromSchema(
     ?? options.model_name
     ?? (typeof schema.title === "string" ? schema.title : "DynamicModel");
   const enrichDescriptions = options.enrichDescriptions ?? options.enrich_descriptions ?? false;
-  const resolvedSchema = forceAdditionalPropertiesFalse(resolveRefs(cloneSchema(schema)));
+  const resolvedSchema = forceAdditionalPropertiesFalse(_inline_top_level_ref(cloneSchema(schema)));
   const normalizedSchema = Array.isArray(resolvedSchema.allOf) ? _merge_all_of_schemas(resolvedSchema.allOf.filter(isSchemaRecord), resolvedSchema) : resolvedSchema;
   validateSupportedSchemaTypes(normalizedSchema, normalizedSchema);
   const modelFields = buildModelFields(normalizedSchema, normalizedSchema, enrichDescriptions);

@@ -2541,6 +2541,35 @@ describe("schema utilities", () => {
       required: ["weird"],
     })).toThrow(/Unsupported JSON schema type: hyperspace/);
   });
+
+  it("accepts recursive ref data in created schema models", () => {
+    const Model = create_model_from_schema({
+      $defs: {
+        Node: {
+          type: "object",
+          properties: {
+            name: { type: "string" },
+            children: {
+              type: "array",
+              items: { $ref: "#/$defs/Node" },
+            },
+          },
+          required: ["name"],
+        },
+      },
+      $ref: "#/$defs/Node",
+    }, { model_name: "Node" });
+
+    expect(Model.__name__).toBe("Node");
+    expect(Model.model_validate({
+      name: "root",
+      children: [{ name: "child", children: [] }],
+    })).toEqual({
+      name: "root",
+      children: [{ name: "child", children: [] }],
+    });
+    expect(() => Model.model_validate({ children: [] })).toThrow(/name/);
+  });
 });
 
 describe("i18n and prompt utilities", () => {

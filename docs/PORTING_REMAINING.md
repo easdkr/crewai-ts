@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 705 passing tests.
+- Test suite: 706 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -296,7 +296,7 @@ When more goal budget is available, continue from the behavioral parity audits b
   - `MCPClient.list_prompts` and `get_prompt` now normalize SDK prompt responses into upstream-style prompt definition and prompt-content shapes.
   - `MCPToolWrapper._run_async` now returns upstream-style classified execution error strings instead of leaking wrapper execution exceptions.
   - `StaticToolFilter.__call__` now mirrors upstream callable filter semantics while preserving the existing `filter`/`call` helpers.
-  - `create_model_from_schema` now returns an upstream-style model-like schema validator for MCP/tool JSON schemas, including creation-time unsupported-type rejection, required fields, optional `null` defaults, enum/const rejection, string/numeric field constraints, supported date/date-time/time format checks, closed-object extra-field rejection, nested objects, arrays, `$ref`, `allOf`, `anyOf`/`oneOf`, and enriched field descriptions.
+  - `create_model_from_schema` now returns an upstream-style model-like schema validator for MCP/tool JSON schemas, including creation-time unsupported-type rejection, required fields, optional `null` defaults, enum/const rejection, string/numeric field constraints, supported date/date-time/time format checks, closed-object extra-field rejection, nested and recursive objects, arrays, `$ref`, `allOf`, `anyOf`/`oneOf`, and enriched field descriptions.
 - Added project wrapper compatibility behavior:
   - `TaskMethod` now exposes upstream-style `ensure_task_name` and applies default task names on direct `call`/`invoke` paths.
   - `DecoratedMethod`, `TaskMethod`, and `BoundTaskMethod` now expose upstream-style `__call__` aliases for direct wrapper invocation.
