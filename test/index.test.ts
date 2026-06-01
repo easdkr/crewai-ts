@@ -184,6 +184,7 @@ import {
   AgentExecutionCompletedEvent,
   AgentExecutionErrorEvent,
   AgentExecutionStartedEvent,
+  TaskCompletedEvent,
   AgentReasoningCompletedEvent,
   AgentReasoningFailedEvent,
   AgentReasoningStartedEvent,
@@ -6050,6 +6051,41 @@ describe("evaluator utilities", () => {
       offCompleted();
       offFailed();
     }
+  });
+
+  it("routes upstream task and lite completion events into accumulated evaluations", () => {
+    const agentInstance = new Agent({
+      role: "Researcher",
+      goal: "Find facts",
+      backstory: "Careful analyst",
+      llm: () => "done",
+    });
+    const taskInstance = new Task({
+      description: "Summarize CrewAI",
+      expectedOutput: "A concise summary",
+      agent: agentInstance,
+    });
+    const evaluator = new AgentEvaluator([agentInstance], [new ToolSelectionEvaluator()]);
+    const output = new TaskOutput({
+      description: "Summarize CrewAI",
+      raw: "CrewAI summary",
+      agent: "Researcher",
+    });
+
+    evaluator._handle_task_completed(null, Object.assign(new TaskCompletedEvent({
+      taskName: "Summarize",
+      taskDescription: "Summarize CrewAI",
+      output,
+    }), { task: taskInstance }));
+    expect(evaluator.get_evaluation_results().Researcher).toHaveLength(1);
+    expect(evaluator.get_evaluation_results().Researcher?.[0]?.taskId).toBe(taskInstance.id);
+
+    evaluator._handle_lite_agent_completed(null, new LiteAgentExecutionCompletedEvent({
+      agent_info: { id: agentInstance.id, role: "Researcher" },
+      output: new LiteAgentOutput({ raw: "Lite summary", agentRole: "Researcher" }),
+    }));
+    expect(evaluator.get_evaluation_results().Researcher).toHaveLength(2);
+    expect(evaluator.get_evaluation_results().Researcher?.[1]?.taskId).toBe("lite_task");
   });
 
   it("collects evaluation traces from event bus listener hooks", () => {

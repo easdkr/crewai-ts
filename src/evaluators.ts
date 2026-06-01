@@ -8,6 +8,8 @@ import {
   AgentEvaluationFailedEvent,
   AgentEvaluationStartedEvent,
   CrewTestResultEvent,
+  LiteAgentExecutionCompletedEvent,
+  TaskCompletedEvent,
   TaskEvaluationEvent,
   crewaiEventBus,
   type EventBus,
@@ -226,6 +228,7 @@ export class AgentEvaluator {
   readonly evaluators: readonly BaseEvaluator[] | null;
   readonly callback: EvaluationTraceCallback;
   private readonly executionState = new ExecutionState();
+  readonly _execution_state = this.executionState;
 
   constructor(agents: readonly unknown[] = [], evaluators: readonly BaseEvaluator[] | null = null) {
     this.agents = [...agents];
@@ -234,6 +237,79 @@ export class AgentEvaluator {
     for (const agent of this.agents) {
       this.executionState.agentEvaluators[stringifyEvaluationValue((agent as { id?: unknown }).id ?? "")] = this.evaluators;
     }
+    this._subscribe_to_events();
+  }
+
+  _subscribe_to_events(): void {
+    crewaiEventBus.register_handler("task_completed", (_source, event) => {
+      this._handle_task_completed(_source, event);
+    });
+    crewaiEventBus.register_handler("lite_agent_execution_completed", (_source, event) => {
+      this._handle_lite_agent_completed(_source, event);
+    });
+  }
+
+  _handle_task_completed(_source: unknown, event: TaskCompletedEvent | (TaskCompletedEvent & { task?: unknown })): void {
+    void _source;
+    const eventRecord = asNullableRecord(event) ?? {};
+    if (!("task" in eventRecord)) {
+      return;
+    }
+    const task = eventRecord.task as Task | null | undefined;
+    if (!task) {
+      throw new Error("TaskCompletedEvent must have a task");
+    }
+    const agent = (task as { agent?: unknown }).agent;
+    const agentId = stringifyEvaluationValue((agent as { id?: unknown } | null | undefined)?.id ?? "");
+    if (!agent || !(agentId in this.executionState.agentEvaluators)) {
+      return;
+    }
+
+    const taskId = stringifyEvaluationValue((task as { id?: unknown }).id ?? "");
+    const agentRole = stringifyEvaluationValue((agent as { role?: unknown }).role ?? "");
+    this.emit_evaluation_started_event(agentRole, agentId, taskId);
+
+    const state = new ExecutionState();
+    state.currentAgentId = agentId;
+    state.current_agent_id = agentId;
+    state.currentTaskId = taskId;
+    state.current_task_id = taskId;
+    const trace = this.callback.get_trace(agentId, taskId);
+    const result = this.evaluate({
+      agent,
+      task,
+      executionTrace: trace,
+      finalOutput: event.output,
+      state,
+    });
+    this.appendEvaluationResult(agentRole, result);
+  }
+
+  _handle_lite_agent_completed(_source: unknown, event: LiteAgentExecutionCompletedEvent): void {
+    void _source;
+    const agentInfo = event.agent_info;
+    const agentId = stringifyEvaluationValue(agentInfo.id ?? "");
+    if (!(agentId in this.executionState.agentEvaluators)) {
+      return;
+    }
+    const targetAgent = this.agents.find((agent) => stringifyEvaluationValue((agent as { id?: unknown }).id ?? "") === agentId);
+    if (!targetAgent) {
+      return;
+    }
+
+    const state = new ExecutionState();
+    state.currentAgentId = agentId;
+    state.current_agent_id = agentId;
+    state.currentTaskId = "lite_task";
+    state.current_task_id = "lite_task";
+    const trace = this.callback.get_trace(agentId, "lite_task");
+    const result = this.evaluate({
+      agent: targetAgent,
+      executionTrace: trace,
+      finalOutput: event.output,
+      state,
+    });
+    this.appendEvaluationResult(stringifyEvaluationValue((targetAgent as { role?: unknown }).role ?? ""), result);
   }
 
   set_iteration(iteration: number): void {
@@ -336,6 +412,13 @@ export class AgentEvaluator {
       iteration: this.executionState.iteration,
       error,
     }));
+  }
+
+  private appendEvaluationResult(agentRole: string, result: AgentEvaluationResult): void {
+    const currentIteration = this.executionState.iteration;
+    this.executionState.iterationsResults[currentIteration] ??= {};
+    this.executionState.iterationsResults[currentIteration][agentRole] ??= [];
+    this.executionState.iterationsResults[currentIteration][agentRole].push(result);
   }
 }
 
