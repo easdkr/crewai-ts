@@ -11067,6 +11067,91 @@ describe("core crew runtime", () => {
     expect(executor.state.last_replan_reason).toBeNull();
   });
 
+  it("uses PlannerObserver LLM observation for medium/high AgentExecutor steps", () => {
+    const calls: LLMMessage[][] = [];
+    const executor = new AgentExecutor({
+      agent: {
+        role: "Observer",
+        planning_config: new PlanningConfig({ reasoning_effort: "medium" }),
+        llm: {
+          call(messages: readonly LLMMessage[]) {
+            calls.push([...messages]);
+            return JSON.stringify({
+              step_completed_successfully: false,
+              key_information_learned: "tool returned stale data",
+              remaining_plan_still_valid: false,
+              needs_full_replan: true,
+              replan_reason: "Need a fresh source",
+            });
+          },
+        },
+      } as unknown as Agent,
+      task: { description: "Research CrewAI", expected_output: "Current answer" },
+    });
+    executor.state.todos.items = [
+      new TodoItem({
+        stepNumber: 1,
+        description: "Search docs",
+        status: TodoStatus.RUNNING,
+        result: "Error: stale cache",
+      }),
+      new TodoItem({ stepNumber: 2, description: "Write summary" }),
+    ];
+    executor.state.execution_log.push({ type: "step_execution", step_number: 1, success: false });
+
+    expect(executor.observe_step_result()).toBe("step_observed_medium");
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.[1]?.content).toContain("Research CrewAI");
+    expect(executor.state.observations[1]?.needs_full_replan).toBe(true);
+    expect(executor.state.execution_log.at(-1)).toMatchObject({
+      type: "observation",
+      step_number: 1,
+      step_completed_successfully: false,
+      llm_observation: true,
+      reasoning_effort: "medium",
+    });
+    expect(executor.handle_step_observed_medium()).toBe("replan_now");
+    expect(executor.state.last_replan_reason).toBe("Need a fresh source");
+  });
+
+  it("uses heuristic AgentExecutor step observation when observe_steps is disabled", () => {
+    const executor = new AgentExecutor({
+      agent: {
+        role: "Observer",
+        planning_config: new PlanningConfig({ reasoning_effort: "high", observe_steps: false }),
+        llm: {
+          call() {
+            throw new Error("planner observer should not be called");
+          },
+        },
+      } as unknown as Agent,
+    });
+    executor.state.todos.items = [
+      new TodoItem({
+        stepNumber: 1,
+        description: "Run build",
+        status: TodoStatus.RUNNING,
+        result: "Error: build failed",
+      }),
+    ];
+    executor.state.execution_log.push({ type: "step_execution", step_number: 1, success: false });
+
+    expect(executor._should_observe_steps()).toBe(false);
+    expect(executor.observe_step_result()).toBe("step_observed_high");
+    expect(executor.state.observations[1]).toMatchObject({
+      step_completed_successfully: false,
+      remaining_plan_still_valid: true,
+      needs_full_replan: false,
+    });
+    expect(executor.state.execution_log.at(-1)).toMatchObject({
+      type: "observation",
+      llm_observation: false,
+      reasoning_effort: "high",
+    });
+    expect(executor.decide_next_action()).toBe("replan_now");
+    expect(executor.state.last_replan_reason).toBe("Step did not complete successfully");
+  });
+
   it("executes AgentExecutor pending native tool calls and records tool messages", () => {
     const executor = new AgentExecutor();
     Object.assign(executor, {

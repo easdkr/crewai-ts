@@ -471,6 +471,7 @@ export class AgentExecutor extends BaseAgentExecutor {
   private finalizeCalled = false;
   private isExecuting = false;
   private kickoffInput = "";
+  private plannerObserver: PlannerObserver | null = null;
 
   constructor(options: BaseAgentExecutorOptions & { state?: AgentExecutorState } = {}) {
     super(options);
@@ -532,17 +533,25 @@ export class AgentExecutor extends BaseAgentExecutor {
 
   observeStepResult(): "step_observed_low" | "step_observed_medium" | "step_observed_high" {
     const current = this.state.todos.currentTodo;
-    const effort = this.reasoningEffort();
+    const effort = this._getReasoningEffort();
     if (current) {
-      this.state.observations[current.stepNumber] = new StepObservation({
-        stepCompletedSuccessfully: current.status !== TodoStatus.FAILED,
-        keyInformationLearned: current.result ?? "",
-        remainingPlanStillValid: true,
+      const observation = this._observeCompletedStep({
+        completedStep: current,
+        result: current.result ?? "",
+        allCompleted: this.state.todos.getCompletedTodos(),
+        remainingTodos: this.state.todos.getPendingTodos(),
       });
+      this.state.observations[current.stepNumber] = observation;
       this.state.execution_log.push({
         type: "observation",
         step_number: current.stepNumber,
+        step_completed_successfully: observation.stepCompletedSuccessfully,
+        key_information_learned: observation.keyInformationLearned,
+        remaining_plan_still_valid: observation.remainingPlanStillValid,
+        needs_full_replan: observation.needsFullReplan,
+        goal_already_achieved: observation.goalAlreadyAchieved,
         reasoning_effort: effort,
+        llm_observation: this._shouldObserveSteps(),
       });
     }
     return effort === "high" ? "step_observed_high" : effort === "medium" ? "step_observed_medium" : "step_observed_low";
@@ -553,7 +562,7 @@ export class AgentExecutor extends BaseAgentExecutor {
   }
 
   handleStepObservedLow(): "continue_plan" | "replan_now" {
-    return this.finishCurrentObservedTodo(false);
+    return this.finishCurrentObservedTodo();
   }
 
   handle_step_observed_low(): ReturnType<AgentExecutor["handleStepObservedLow"]> {
@@ -561,7 +570,7 @@ export class AgentExecutor extends BaseAgentExecutor {
   }
 
   handleStepObservedMedium(): "continue_plan" | "replan_now" {
-    return this.finishCurrentObservedTodo(true);
+    return this.finishCurrentObservedTodo();
   }
 
   handle_step_observed_medium(): ReturnType<AgentExecutor["handleStepObservedMedium"]> {
@@ -1335,11 +1344,98 @@ export class AgentExecutor extends BaseAgentExecutor {
     return result;
   }
 
+  _getReasoningEffort(): "low" | "medium" | "high" {
+    return this.reasoningEffort();
+  }
+
+  _get_reasoning_effort(): ReturnType<AgentExecutor["_getReasoningEffort"]> {
+    return this._getReasoningEffort();
+  }
+
+  _shouldObserveSteps(): boolean {
+    const config = this.planningConfigRecord();
+    if (config && (config.observeSteps !== undefined || config.observe_steps !== undefined)) {
+      const value = config.observeSteps ?? config.observe_steps;
+      if (value !== null) {
+        return Boolean(value);
+      }
+    }
+    return this._getReasoningEffort() !== "low";
+  }
+
+  _should_observe_steps(): boolean {
+    return this._shouldObserveSteps();
+  }
+
+  private planningConfigRecord(): Record<string, unknown> | null {
+    const agentRecord = this.agent && typeof this.agent === "object"
+      ? this.agent as unknown as Record<string, unknown>
+      : null;
+    return asPlannerRecord(agentRecord?.planningConfig ?? agentRecord?.planning_config);
+  }
+
+  _stepSuccessFromLog(stepNumber: number): boolean | null {
+    for (const entry of [...this.state.execution_log].reverse()) {
+      if (entry.type !== "step_execution" || entry.step_number !== stepNumber) {
+        continue;
+      }
+      return entry.success === undefined ? null : Boolean(entry.success);
+    }
+    return null;
+  }
+
+  _step_success_from_log(step_number: number): boolean | null {
+    return this._stepSuccessFromLog(step_number);
+  }
+
+  _ensurePlannerObserver(): PlannerObserver {
+    this.plannerObserver ??= new PlannerObserver(this.agent, this.task, this.kickoffInput);
+    return this.plannerObserver;
+  }
+
+  _ensure_planner_observer(): PlannerObserver {
+    return this._ensurePlannerObserver();
+  }
+
+  _observeCompletedStep(options: {
+    completedStep?: TodoItem;
+    completed_step?: TodoItem;
+    result?: unknown;
+    allCompleted?: readonly TodoItem[];
+    all_completed?: readonly TodoItem[];
+    remainingTodos?: readonly TodoItem[];
+    remaining_todos?: readonly TodoItem[];
+    stepSuccess?: boolean | null;
+    step_success?: boolean | null;
+  }): StepObservation {
+    const completedStep = options.completedStep ?? options.completed_step;
+    if (!completedStep) {
+      return new StepObservation({ step_completed_successfully: true, remaining_plan_still_valid: true });
+    }
+    const result = stringifyStepResult(options.result ?? completedStep.result ?? "");
+    const allCompleted = options.allCompleted ?? options.all_completed ?? [];
+    const remainingTodos = options.remainingTodos ?? options.remaining_todos ?? [];
+    if (this._shouldObserveSteps()) {
+      return this._ensurePlannerObserver().observe({
+        completedStep,
+        result,
+        allCompleted,
+        remainingTodos,
+      });
+    }
+    const stepSuccess = options.stepSuccess ?? options.step_success ?? this._stepSuccessFromLog(completedStep.stepNumber) ?? true;
+    return PlannerObserver.heuristicObservation({ stepSuccess, result });
+  }
+
+  _observe_completed_step(options: Parameters<AgentExecutor["_observeCompletedStep"]>[0]): StepObservation {
+    return this._observeCompletedStep(options);
+  }
+
   private routeFinishWithTodos<T extends string>(defaultRoute: T): T | "todo_satisfied" {
     return this.state.todos.currentTodo ? "todo_satisfied" : defaultRoute;
   }
 
-  private finishCurrentObservedTodo(replanOnFailure: boolean): "continue_plan" | "replan_now" {
+  private finishCurrentObservedTodo(): "continue_plan" | "replan_now" {
     const current = this.state.todos.currentTodo;
     if (!current) {
       return "continue_plan";
@@ -1347,7 +1443,7 @@ export class AgentExecutor extends BaseAgentExecutor {
     const observation = this.state.observations[current.stepNumber];
     if (observation?.stepCompletedSuccessfully === false) {
       this.state.todos.markFailed(current.stepNumber, current.result);
-      if (replanOnFailure || observation.needsFullReplan) {
+      if (observation.needsFullReplan) {
         this.state.last_replan_reason = observation.replanReason ?? "Step did not complete successfully";
         return "replan_now";
       }
@@ -2478,6 +2574,19 @@ export class PlannerObserver {
       keyInformationLearned: `${step}${result === undefined ? "" : `: ${typeof result === "string" ? result : JSON.stringify(result)}`}`,
       remainingPlanStillValid: true,
     });
+  }
+
+  static heuristicObservation(options: { stepSuccess?: boolean; step_success?: boolean; result?: unknown }): StepObservation {
+    return new StepObservation({
+      stepCompletedSuccessfully: options.stepSuccess ?? options.step_success ?? true,
+      keyInformationLearned: "",
+      remainingPlanStillValid: true,
+      needsFullReplan: false,
+    });
+  }
+
+  static heuristic_observation(options: { step_success?: boolean; stepSuccess?: boolean; result?: unknown }): StepObservation {
+    return PlannerObserver.heuristicObservation(options);
   }
 
   heuristicObservation(step: string, result: unknown): StepObservation {
