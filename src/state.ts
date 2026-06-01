@@ -1051,6 +1051,7 @@ export class SqliteProvider implements BaseProvider {
   checkpoint(data: string, location: string, options: CheckpointProviderOptions = {}): string {
     const branch = options.branch ?? "main";
     const parentId = options.parentId ?? options.parent_id ?? null;
+    const canonicalData = canonicalizeSqliteCheckpointJSON(data);
     const { checkpointId, timestamp } = makeCheckpointId();
     mkdirSync(dirname(location), { recursive: true });
     const db = new (databaseSync())(location);
@@ -1058,7 +1059,7 @@ export class SqliteProvider implements BaseProvider {
       db.exec("PRAGMA journal_mode=WAL");
       db.exec(CREATE_CHECKPOINTS_TABLE);
       db.prepare("INSERT INTO checkpoints (id, created_at, parent_id, branch, data) VALUES (?, ?, ?, ?, ?)")
-        .run(checkpointId, timestamp, parentId, branch, data);
+        .run(checkpointId, timestamp, parentId, branch, canonicalData);
     } finally {
       db.close();
     }
@@ -1105,7 +1106,7 @@ export class SqliteProvider implements BaseProvider {
       if (!row) {
         throw new Error(`Checkpoint not found: ${checkpointId}`);
       }
-      return String(row.data);
+      return canonicalizeSqliteCheckpointJSON(String(row.data));
     } finally {
       db.close();
     }
@@ -1380,6 +1381,10 @@ function splitSqliteLocation(location: string): { dbPath: string; checkpointId: 
     dbPath: location.slice(0, marker),
     checkpointId: location.slice(marker + 1),
   };
+}
+
+function canonicalizeSqliteCheckpointJSON(data: string): string {
+  return JSON.stringify(JSON.parse(data));
 }
 
 function databaseSync(): typeof import("node:sqlite").DatabaseSync {

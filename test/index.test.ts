@@ -28205,6 +28205,18 @@ describe("checkpoint state providers", () => {
     expect(detectProvider(first)).toBeInstanceOf(SqliteProvider);
   });
 
+  it("validates and canonicalizes SQLite checkpoint JSON like upstream", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "crewai-ts-sqlite-json-"));
+    const provider = new SqliteProvider();
+    const db = join(directory, "cp.db");
+
+    const location = provider.checkpoint("{ \"step\" : 1, \"items\" : [ true, null ] }", db);
+
+    expect(provider.from_checkpoint(location)).toBe("{\"step\":1,\"items\":[true,null]}");
+    await expect(provider.afrom_checkpoint(location)).resolves.toBe("{\"step\":1,\"items\":[true,null]}");
+    expect(() => provider.checkpoint("{bad json", db)).toThrow(SyntaxError);
+  });
+
   it("exposes CrewAI-compatible SQLite checkpoint id helper", () => {
     const [checkpointId, timestamp] = _make_id();
 

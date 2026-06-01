@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 790 passing tests.
+- Test suite: 791 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -96,6 +96,7 @@ This register is the source of truth for continuing porting work while parity sc
 - `crewai-files` provider constraints, file validators, and `FileProcessor` mode handling are deterministic local shims for size/type/duration checks, provider alias lookup, strict/warn/default processing, and async processing wrappers; image/PDF/audio/video metadata extraction and transformations stay best-effort or optional rather than adding Python-only dependencies.
 - `crewai-files` text transformation is release-gated through deterministic `chunk_text` / `chunkText` behavior, including filenames, extension preservation, newline splitting, overlap, and `FileProcessor` CHUNK routing; Pillow/pypdf-backed image and PDF transformations remain explicit optional-dependency boundaries.
 - JSON checkpoint storage is release-gated as a deterministic local filesystem shim: sync `checkpoint`, `prune`, and `from_checkpoint` calls now complete synchronously like upstream, while async wrappers remain available for async callers.
+- SQLite checkpoint storage is release-gated as a deterministic local database shim: checkpoint payloads are validated and returned as canonical JSON like upstream's `jsonb(?)` / `json(data)` path, while branch, parent, prune, and async wrapper behavior remain in the default gate.
 - `PickleHandler` remains a deterministic JSON-backed `.pkl` shim in the TypeScript runtime, but mirrors upstream corrupted-load behavior by surfacing a `pickle data was truncated` error instead of silently resetting damaged persistence files.
 - MCP transports may use the installed JS SDK shape, but release tests should continue to rely on local/fake clients and error classification rather than live MCP servers.
 - MCP native tool discovery is release-gated with deterministic fake-client behavior: empty or fully filtered tool lists warn and return no clients, and unexpected discovery failures are wrapped with a clear native MCP discovery error. Live MCP servers remain outside the default gate.
