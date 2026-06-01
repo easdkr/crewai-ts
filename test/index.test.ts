@@ -19403,6 +19403,26 @@ describe("LLM providers", () => {
     });
   });
 
+  it("passes through Anthropic tool-search and native tool definitions unchanged", () => {
+    const anthropic = new AnthropicCompletion({ model: "claude-sonnet-4-5" });
+    const tools = [
+      { type: "tool_search_tool_regex_20251119", name: "tool_search_tool_regex" },
+      {
+        name: "get_weather",
+        description: "Get weather",
+        input_schema: {
+          type: "object",
+          properties: { location: { type: "string" } },
+          required: ["location"],
+        },
+      },
+    ];
+
+    expect((anthropic as unknown as {
+      _convert_tools_for_interference(tools: unknown[]): Record<string, unknown>[];
+    })._convert_tools_for_interference(tools)).toEqual(tools);
+  });
+
   it("extracts Anthropic token usage from SDK response shapes", () => {
     class AnthropicUsage {
       get input_tokens(): number {

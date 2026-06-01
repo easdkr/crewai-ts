@@ -214,13 +214,33 @@ export class AnthropicCompletion extends ConfiguredLLM {
   }
 
   convertToolsForInterference(tools: readonly Tool[]): Record<string, unknown>[] {
-    const [schemas] = convertToolsToOpenAISchema(tools);
-    return schemas.map((tool) => ({
-      name: tool.function.name,
-      description: tool.function.description,
-      input_schema: tool.function.parameters,
-      strict: true,
-    }));
+    return tools.map((tool) => {
+      const record = readObject(tool);
+      const type = scalarToString(record.type);
+      if (type && TOOL_SEARCH_TOOL_TYPES.includes(type as (typeof TOOL_SEARCH_TOOL_TYPES)[number])) {
+        return { ...record };
+      }
+      if (typeof record.name === "string" && Object.keys(readObject(record.input_schema)).length > 0) {
+        return { ...record };
+      }
+      const functionRecord = readObject(record.function);
+      if (type === "function" && typeof functionRecord.name === "string") {
+        return {
+          name: functionRecord.name,
+          description: scalarToString(functionRecord.description) ?? "",
+          input_schema: readObject(functionRecord.parameters),
+          strict: true,
+        };
+      }
+      const [schemas] = convertToolsToOpenAISchema([tool]);
+      const converted = schemas[0];
+      return {
+        name: converted?.function.name ?? "",
+        description: converted?.function.description ?? "",
+        input_schema: converted?.function.parameters ?? {},
+        strict: true,
+      };
+    });
   }
 
   _convert_tools_for_interference(tools: readonly Tool[]): Record<string, unknown>[] {
