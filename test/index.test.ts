@@ -578,6 +578,7 @@ import {
   BaseRAGStorage,
   ChromaDBClient,
   ChromaDBConfig,
+  ClientMethodMismatchError,
   MissingChromaDBConfig,
   _MissingProvider,
   _convert_chromadb_results_to_search_results,
@@ -9207,6 +9208,12 @@ class FakeQdrantClient {
   }
 }
 
+class FakeAsyncQdrantClient extends FakeQdrantClient {
+  aquery_points(): Promise<{ points: Array<{ id: string; payload: FakeDocument; score: number }> }> {
+    return Promise.resolve({ points: [] });
+  }
+}
+
 function metadataMatches(metadata: Record<string, unknown>, filter: Record<string, unknown> | null): boolean {
   return !filter || Object.entries(filter).every(([key, value]) => metadata[key] === value);
 }
@@ -9510,21 +9517,41 @@ describe("RAG configuration and factories", () => {
       { id: "a", content: "CrewAI storage parity updated", metadata: { topic: "storage" }, score: 1 },
     ]);
 
-    await client.adelete_collection({ collection_name: "docs" });
-    await client.acreate_collection({ collection_name: "docs" });
-    await client.aadd_documents({
+    const asyncFake = new FakeAsyncQdrantClient();
+    const asyncClient = new QdrantClient(asyncFake, (text: string) => [text.length], 2, 0.5, 1);
+
+    await asyncClient.acreate_collection({ collection_name: "docs" });
+    await asyncClient.aadd_documents({
       collection_name: "docs",
       documents: [{ content: "Async Qdrant document", metadata: { mode: "async" } }],
     });
 
-    expect(await client.asearch({
+    expect(await asyncClient.asearch({
       collection_name: "docs",
       query: "Qdrant",
       metadata_filter: { mode: "async" },
     })).toHaveLength(1);
 
-    await client.areset();
-    expect(fake.collections.size).toBe(0);
+    await asyncClient.areset();
+    expect(asyncFake.collections.size).toBe(0);
+  });
+
+  it("raises upstream Qdrant client method mismatch errors for wrong sync or async clients", async () => {
+    const syncClient = new QdrantClient(new FakeQdrantClient(), (text: string) => [text.length]);
+    const asyncClient = new QdrantClient(new FakeAsyncQdrantClient(), (text: string) => [text.length]);
+
+    expect(() => {
+      asyncClient.create_collection({ collection_name: "docs" });
+    }).toThrow(ClientMethodMismatchError);
+    expect(() => {
+      asyncClient.create_collection({ collection_name: "docs" });
+    }).toThrow(
+      "Method create_collection() requires a QdrantClient. Use acreate_collection() for AsyncQdrantClient.",
+    );
+    await expect(syncClient.acreate_collection({ collection_name: "docs" })).rejects.toThrow(ClientMethodMismatchError);
+    await expect(syncClient.asearch({ collection_name: "docs", query: "CrewAI" })).rejects.toThrow(
+      "Method asearch() requires a AsyncQdrantClient. Use search() for QdrantClient.",
+    );
   });
 
   it("saves and searches knowledge through the configured RAG client", async () => {

@@ -2439,6 +2439,7 @@ export class QdrantClient {
   }
 
   create_collection(params: BaseCollectionParams = {}): void {
+    this.ensureSyncClient("create_collection", "acreate_collection");
     const collectionName = collectionNameFrom(params);
     if (callMethod(this.client, "collection_exists", "collectionExists", collectionName) === true) {
       throw new Error(`Collection '${collectionName}' already exists`);
@@ -2447,6 +2448,7 @@ export class QdrantClient {
   }
 
   async acreate_collection(params: BaseCollectionParams = {}): Promise<void> {
+    this.ensureAsyncClient("acreate_collection", "create_collection");
     const collectionName = collectionNameFrom(params);
     if ((await callMethodAsync(this.client, "collection_exists", "collectionExists", collectionName)) === true) {
       throw new Error(`Collection '${collectionName}' already exists`);
@@ -2455,6 +2457,7 @@ export class QdrantClient {
   }
 
   get_or_create_collection(params: BaseCollectionParams = {}): unknown {
+    this.ensureSyncClient("get_or_create_collection", "aget_or_create_collection");
     const collectionName = collectionNameFrom(params);
     if (callMethod(this.client, "collection_exists", "collectionExists", collectionName) !== true) {
       callMethod(this.client, "create_collection", "createCollection", { collection_name: collectionName, ...params });
@@ -2467,6 +2470,7 @@ export class QdrantClient {
   }
 
   async aget_or_create_collection(params: BaseCollectionParams = {}): Promise<unknown> {
+    this.ensureAsyncClient("aget_or_create_collection", "get_or_create_collection");
     const collectionName = collectionNameFrom(params);
     if ((await callMethodAsync(this.client, "collection_exists", "collectionExists", collectionName)) !== true) {
       await callMethodAsync(this.client, "create_collection", "createCollection", { collection_name: collectionName, ...params });
@@ -2475,6 +2479,7 @@ export class QdrantClient {
   }
 
   add_documents(params: BaseCollectionAddParams): void {
+    this.ensureSyncClient("add_documents", "aadd_documents");
     const collectionName = collectionNameFrom(params);
     if (params.documents.length === 0) {
       throw new Error("Documents list cannot be empty");
@@ -2501,6 +2506,7 @@ export class QdrantClient {
   }
 
   async aadd_documents(params: BaseCollectionAddParams): Promise<void> {
+    this.ensureAsyncClient("aadd_documents", "add_documents");
     const collectionName = collectionNameFrom(params);
     if (params.documents.length === 0) {
       throw new Error("Documents list cannot be empty");
@@ -2523,6 +2529,7 @@ export class QdrantClient {
   }
 
   search(params: BaseCollectionSearchParams): SearchResult[] {
+    this.ensureSyncClient("search", "asearch");
     const collectionName = collectionNameFrom(params);
     if (callMethod(this.client, "collection_exists", "collectionExists", collectionName) !== true) {
       throw new Error(`Collection '${collectionName}' does not exist`);
@@ -2540,6 +2547,7 @@ export class QdrantClient {
   }
 
   async asearch(params: BaseCollectionSearchParams): Promise<SearchResult[]> {
+    this.ensureAsyncClient("asearch", "search");
     const collectionName = collectionNameFrom(params);
     if ((await callMethodAsync(this.client, "collection_exists", "collectionExists", collectionName)) !== true) {
       throw new Error(`Collection '${collectionName}' does not exist`);
@@ -2557,6 +2565,7 @@ export class QdrantClient {
   }
 
   delete_collection(params: BaseCollectionParams): void {
+    this.ensureSyncClient("delete_collection", "adelete_collection");
     const collectionName = collectionNameFrom(params);
     if (callMethod(this.client, "collection_exists", "collectionExists", collectionName) !== true) {
       throw new Error(`Collection '${collectionName}' does not exist`);
@@ -2569,6 +2578,7 @@ export class QdrantClient {
   }
 
   async adelete_collection(params: BaseCollectionParams): Promise<void> {
+    this.ensureAsyncClient("adelete_collection", "delete_collection");
     const collectionName = collectionNameFrom(params);
     if ((await callMethodAsync(this.client, "collection_exists", "collectionExists", collectionName)) !== true) {
       throw new Error(`Collection '${collectionName}' does not exist`);
@@ -2577,6 +2587,7 @@ export class QdrantClient {
   }
 
   reset(): void {
+    this.ensureSyncClient("reset", "areset");
     const response = callMethod(this.client, "get_collections", "getCollections");
     for (const collection of extractCollectionNames(response)) {
       callMethod(this.client, "delete_collection", "deleteCollection", { collection_name: collection });
@@ -2584,9 +2595,22 @@ export class QdrantClient {
   }
 
   async areset(): Promise<void> {
+    this.ensureAsyncClient("areset", "reset");
     const response = await callMethodAsync(this.client, "get_collections", "getCollections");
     for (const collection of extractCollectionNames(response)) {
       await callMethodAsync(this.client, "delete_collection", "deleteCollection", { collection_name: collection });
+    }
+  }
+
+  private ensureSyncClient(methodName: string, altMethod: string): void {
+    if (!_is_sync_client(this.client)) {
+      throw new ClientMethodMismatchError(methodName, "QdrantClient", altMethod, "AsyncQdrantClient");
+    }
+  }
+
+  private ensureAsyncClient(methodName: string, altMethod: string): void {
+    if (!_is_async_client(this.client)) {
+      throw new ClientMethodMismatchError(methodName, "AsyncQdrantClient", altMethod, "QdrantClient");
     }
   }
 }
