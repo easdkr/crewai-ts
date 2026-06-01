@@ -7237,20 +7237,21 @@ describe("config and token counter utilities", () => {
 
   it("tracks token usage from litellm-style success callbacks", () => {
     const calls: Record<string, number> = {};
-    const handler = new TokenCalcHandler({
-      sum_successful_requests: (value) => {
+    const tokenProcess = {
+      sum_successful_requests: (value: number) => {
         calls.successful = (calls.successful ?? 0) + value;
       },
-      sum_prompt_tokens: (value) => {
+      sum_prompt_tokens: (value: number) => {
         calls.prompt = (calls.prompt ?? 0) + value;
       },
-      sum_completion_tokens: (value) => {
+      sum_completion_tokens: (value: number) => {
         calls.completion = (calls.completion ?? 0) + value;
       },
-      sum_cached_prompt_tokens: (value) => {
+      sum_cached_prompt_tokens: (value: number) => {
         calls.cached = (calls.cached ?? 0) + value;
       },
-    });
+    };
+    const handler = new TokenCalcHandler({ token_cost_process: tokenProcess });
 
     handler.log_success_event({}, {
       usage: {
@@ -7266,6 +7267,7 @@ describe("config and token counter utilities", () => {
       completion: 5,
       cached: 3,
     });
+    expect(handler.token_cost_process).toBe(tokenProcess);
     new TokenCalcHandler().logSuccessEvent({}, { usage: { prompt_tokens: 1 } }, 0, 1);
   });
 

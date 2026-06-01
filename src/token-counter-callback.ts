@@ -18,13 +18,19 @@ export type TokenUsageLike = {
   promptTokensDetails?: { cached_tokens?: number; cachedTokens?: number } | null;
 };
 
+export type TokenCalcHandlerOptions = {
+  tokenCostProcess?: TokenProcessLike | null;
+  token_cost_process?: TokenProcessLike | null;
+};
+
 export class TokenCalcHandler {
   tokenCostProcess: TokenProcessLike | null;
   token_cost_process: TokenProcessLike | null;
 
-  constructor(tokenCostProcess: TokenProcessLike | null = null) {
-    this.tokenCostProcess = tokenCostProcess;
-    this.token_cost_process = tokenCostProcess;
+  constructor(tokenCostProcess: TokenProcessLike | TokenCalcHandlerOptions | null = null) {
+    const normalizedTokenCostProcess = normalizeTokenCostProcess(tokenCostProcess);
+    this.tokenCostProcess = normalizedTokenCostProcess;
+    this.token_cost_process = normalizedTokenCostProcess;
   }
 
   logSuccessEvent(
@@ -75,6 +81,13 @@ export class TokenCalcHandler {
       callCounter(process.sumCachedPromptTokens, process.sum_cached_prompt_tokens, cachedTokens);
     }
   }
+}
+
+function normalizeTokenCostProcess(value: TokenProcessLike | TokenCalcHandlerOptions | null): TokenProcessLike | null {
+  if (value && typeof value === "object" && ("tokenCostProcess" in value || "token_cost_process" in value)) {
+    return value.tokenCostProcess ?? value.token_cost_process ?? null;
+  }
+  return value as TokenProcessLike | null;
 }
 
 function callCounter(
