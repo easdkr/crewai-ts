@@ -19009,12 +19009,24 @@ describe("LLM providers", () => {
       reasoning_effort: "medium",
       store: false,
     });
+    const responseModel = {
+      name: "Person",
+      model_json_schema: () => ({
+        title: "Person",
+        type: "object",
+        properties: {
+          name: { type: "string" },
+          age: { type: "integer" },
+        },
+        required: ["name", "age"],
+      }),
+    };
     const responseParams = (responses as unknown as {
-      _prepare_responses_params(messages: LLMMessage[], tools?: StructuredTool[]): Record<string, unknown>;
+      _prepare_responses_params(messages: LLMMessage[], tools?: StructuredTool[], responseModel?: unknown): Record<string, unknown>;
     })._prepare_responses_params([
       { role: "system", content: "Be concise" },
       { role: "user", content: "Find CrewAI" },
-    ], [search]);
+    ], [search], responseModel);
 
     expect(responseParams).toMatchObject({
       model: "gpt-4.1",
@@ -19025,6 +19037,22 @@ describe("LLM providers", () => {
       store: false,
       max_output_tokens: 256,
       reasoning: { effort: "medium" },
+      text: {
+        format: {
+          type: "json_schema",
+          name: "Person",
+          strict: true,
+          schema: {
+            type: "object",
+            additionalProperties: false,
+            properties: {
+              name: { type: "string" },
+              age: { type: "integer" },
+            },
+            required: ["name", "age"],
+          },
+        },
+      },
       tools: [
         { type: "web_search_preview" },
         { type: "file_search" },

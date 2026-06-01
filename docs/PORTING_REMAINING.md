@@ -59,6 +59,7 @@ Use this map before starting any new porting change. If a behavior lands in **co
 - RAG/vector storage integrations use deterministic in-memory or fake-client-backed shims in the default gate. Real Qdrant, LanceDB, ChromaDB, and provider SDK integration can be added later as optional peer-dependency coverage, but should not be required for release validation.
 - LLM provider classes model request construction, capability flags, response parsing, usage extraction, streaming accumulation, file conversion, and error classification with SDK-like test doubles. Live OpenAI/Azure/Anthropic/Bedrock/Gemini SDK calls and real API credentials are intentionally outside the default gate.
 - Azure `api: "responses"` is modeled as a deterministic shim over the OpenAI Responses adapter: endpoint-to-`/openai/v1/` base URL normalization, Responses request preparation, response-chain state delegation, config fields, and call/acall routing are release-gated without creating Azure SDK clients or making live calls.
+- OpenAI Responses structured-output formatting is release-gated with deterministic schema-provider fixtures: local model-like schemas are converted to the flat `text.format` JSON schema shape expected by upstream Responses API requests.
 - Google Vertex legacy `textembedding-gecko*` embeddings remain intentionally unsupported in the TypeScript runtime without Vertex AI SDK credentials; the current behavior raises a clear error.
 - PDF/Excel/Docling-style optional parsing uses built-in or injected local extractors where possible. Python-only optional dependencies such as `pdfplumber` or Docling converters are not bundled.
 - MCP transports may use the installed JS SDK shape, but release tests should continue to rely on local/fake clients and error classification rather than live MCP servers.
@@ -82,7 +83,7 @@ High-value behavior audits still worth running:
 
 3. **SDK-backed provider response translation**
    - Current provider shims cover deterministic request building and SDK-like response parsing.
-   - Azure Responses API delegation is covered by local OpenAI Responses adapter fixtures; continue auditing other provider gaps with SDK-shaped responses rather than live credentials.
+   - Azure Responses API delegation and OpenAI Responses structured-output request formatting are covered by local adapter fixtures; continue auditing other provider gaps with SDK-shaped responses rather than live credentials.
    - Audit upstream edge cases with SDK-shaped fixtures only.
    - Keep live API calls out of the default gate.
 

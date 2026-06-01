@@ -1,5 +1,6 @@
 import { ConfiguredLLM, LocalFileUploader, type BaseLLMOptions, type LLMCallOptions, type LLMMessageInput, type LLMResponse } from "./llm.js";
 import { convertToolsToOpenAISchema } from "./agent-utils.js";
+import { generateModelDescription, type JsonSchema } from "./schema-utils.js";
 import type { LLMMessage, Tool } from "./types.js";
 
 export const WebSearchResult = Object.freeze({ kind: "WebSearchResult" });
@@ -452,7 +453,7 @@ export class OpenAICompletion extends ConfiguredLLM {
     }
     const formatModel = responseModel ?? this.responseFormat;
     if (formatModel !== null) {
-      params.text = { format: formatModel };
+      params.text = { format: openAIResponsesTextFormat(formatModel) };
     }
     const allTools: Record<string, unknown>[] = [];
     if (this.builtinTools) {
@@ -836,6 +837,31 @@ export class OpenAICompletion extends ConfiguredLLM {
   override to_config_dict(): Record<string, unknown> {
     return this.toConfigDict();
   }
+}
+
+function openAIResponsesTextFormat(formatModel: unknown): unknown {
+  const schemaProvider = formatModel as {
+    name?: unknown;
+    model_json_schema?: () => unknown;
+    modelJsonSchema?: () => unknown;
+    schema?: unknown;
+  } | null;
+  const schema = schemaProvider?.model_json_schema?.() ?? schemaProvider?.modelJsonSchema?.() ?? schemaProvider?.schema;
+  if (schema && typeof schema === "object" && !Array.isArray(schema)) {
+    const name = typeof schemaProvider?.name === "string"
+      ? schemaProvider.name
+      : typeof (schema as Record<string, unknown>).title === "string"
+        ? String((schema as Record<string, unknown>).title)
+        : "ResponseFormat";
+    const description = generateModelDescription(name, schema as JsonSchema);
+    return {
+      type: "json_schema",
+      name: description.json_schema.name,
+      strict: description.json_schema.strict,
+      schema: description.json_schema.schema,
+    };
+  }
+  return formatModel;
 }
 
 export type ProviderConfigOptions = {
