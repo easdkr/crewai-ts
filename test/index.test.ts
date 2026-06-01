@@ -10256,6 +10256,30 @@ describe("core crew runtime", () => {
     }).toThrow("without reaching a final answer");
   });
 
+  it("formats AgentExecutor object-style invoke prompt messages before kickoff", () => {
+    const executor = new AgentExecutor({
+      prompt: {
+        system: "System: {input}",
+        user: "User: {input} {tool_names} {tools}",
+      },
+    });
+    Object.assign(executor, {
+      kickoff() {
+        executor.state.current_answer = new AgentFinish({
+          thought: "done",
+          output: "Done",
+          text: "complete",
+        });
+      },
+    });
+
+    expect(executor.invoke({ input: "test", tool_names: "search", tools: "Search tool" })).toEqual({ output: "Done" });
+    expect(executor.state.messages).toEqual([
+      { role: "system", content: "System: test" },
+      { role: "user", content: "User: test search Search tool" },
+    ]);
+  });
+
   it("requires AgentExecutor async object-style invoke to reach an AgentFinish when kickoff_async is provided", async () => {
     const success = new AgentExecutor();
     Object.assign(success, {

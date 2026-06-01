@@ -315,6 +315,7 @@ export class BaseAgentExecutor {
   readonly agent: Agent | null;
   readonly task: unknown;
   readonly tools: readonly Tool[];
+  readonly prompt: Record<string, string> | null;
   responseModel: unknown;
   response_model: unknown;
   readonly maxIter: number;
@@ -330,6 +331,7 @@ export class BaseAgentExecutor {
     this.agent = options.agent ?? null;
     this.task = options.task ?? null;
     this.tools = options.tools ?? this.agent?.tools ?? [];
+    this.prompt = options.prompt ?? null;
     this.responseModel = options.responseModel ?? options.response_model ?? null;
     this.response_model = this.responseModel;
     this.maxIter = options.maxIter ?? options.max_iter ?? this.agent?.maxIter ?? 25;
@@ -962,7 +964,12 @@ export class AgentExecutor extends BaseAgentExecutor {
     this.state.observations = {};
     this.state.execution_log = [];
     this.kickoffInput = stringifyInput(inputs.input);
-    if (this.kickoffInput) {
+    if (this.prompt && "system" in this.prompt) {
+      this.state.messages.push(formatMessageForLLM(formatExecutorPrompt(this.prompt.system, inputs), "system"));
+      this.state.messages.push(formatMessageForLLM(formatExecutorPrompt(this.prompt.user ?? "", inputs), "user"));
+    } else if (this.prompt) {
+      this.state.messages.push(formatMessageForLLM(formatExecutorPrompt(this.prompt.prompt ?? "", inputs), "user"));
+    } else if (this.kickoffInput) {
       this.state.messages.push({ role: "user", content: this.kickoffInput });
     }
   }
@@ -2383,4 +2390,11 @@ function asNativeArgsRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
     ? value as Record<string, unknown>
     : { input: value };
+}
+
+function formatExecutorPrompt(prompt: string, inputs: Record<string, unknown>): string {
+  return prompt.replaceAll(/\{([A-Za-z_][A-Za-z0-9_]*)\}/g, (match, key: string) => {
+    const value = inputs[key];
+    return value === undefined || value === null ? "" : stringifyInput(value);
+  });
 }
