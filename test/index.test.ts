@@ -8144,7 +8144,8 @@ describe("crew chat utilities", () => {
   });
 
   it("loads crews through a project-specific crew chat loader", () => {
-    const crewInstance = new Crew({ agents: [], tasks: [] });
+    const agent = new Agent({ role: "Loader Agent", goal: "Load crews", backstory: "Crew chat loader" });
+    const crewInstance = new Crew({ agents: [agent] });
 
     try {
       setCrewChatLoader(() => [crewInstance, "ResearchCrew"]);
@@ -9788,7 +9789,8 @@ describe("core crew runtime", () => {
   });
 
   it("uses native akickoff for akickoff_for_each crew copies", async () => {
-    const crewInstance = new Crew();
+    const agent = new Agent({ role: "Native Agent", goal: "Run native copies", backstory: "For-each testing" });
+    const crewInstance = new Crew({ agents: [agent] });
     const nativeKickoff = vi.fn(({ inputs, inputFiles }: { inputs?: Record<string, unknown>; inputFiles?: Record<string, unknown> }) => {
       const inlineFiles = inputs?.input_files as Record<string, unknown> | undefined;
       return Promise.resolve(new CrewOutput({
@@ -10569,6 +10571,7 @@ describe("core crew runtime", () => {
     expect(crewInstance.toString()).toBe(crewInstance.__repr__());
     expect(crewInstance.check_config()).toBe(crewInstance);
     expect(crewInstance.validate_tasks()).toBe(crewInstance);
+    expect(() => new Crew()).toThrow("Either 'agents' and 'tasks' need to be set or 'config'.");
     expect(crewInstance.query_knowledge(["collaborative"])?.[0]?.content).toContain("collaborative agents");
     await expect(crewInstance.aquery_knowledge(["CrewAI"])).resolves.toHaveLength(1);
 
@@ -10740,6 +10743,7 @@ describe("core crew runtime", () => {
       successfulRequests: 1,
     };
     const crewInstance = new Crew({
+      agents: [new Agent({ role: "Runtime Field Agent", goal: "Expose runtime fields", backstory: "Snake case crew config" })],
       share_crew: true,
       prompt_file: "prompts.json",
       token_usage: usage,
@@ -12332,7 +12336,7 @@ describe("standard decorators", () => {
       }
 
       crew() {
-        return new Crew({ process: Process.sequential });
+        return new Crew({ agents: [this.researcher()], tasks: [this.researchTask()], process: Process.sequential });
       }
     }
 
@@ -14365,7 +14369,9 @@ describe("flow runtime", () => {
       }
 
       publish() {
-        return new Crew();
+        return new Crew({
+          agents: [new Agent({ role: "Publisher", goal: "Publish flow output", backstory: "Flow serializer" })],
+        });
       }
     }
 
@@ -15020,7 +15026,7 @@ describe("project config mapping", () => {
       }
 
       crew() {
-        return new Crew({ process: Process.sequential });
+        return new Crew({ agents: [this.researcher()], tasks: [this.researchTask()], process: Process.sequential });
       }
     }
 
@@ -22613,7 +22619,8 @@ describe("knowledge", () => {
   });
 
   it("throws when resetting knowledge systems that are not initialized", () => {
-    const crewInstance = new Crew();
+    const agent = new Agent({ role: "Memory Agent", goal: "Reset memory", backstory: "Memory reset testing" });
+    const crewInstance = new Crew({ agents: [agent] });
 
     expect(() => {
       crewInstance.resetMemories("knowledge");
@@ -22628,7 +22635,8 @@ describe("crew memory reset", () => {
   it("resets crew memory and supports legacy memory command names", () => {
     const memory = new Memory();
     memory.remember("CrewAI supports reset.");
-    const crewInstance = new Crew({ memory });
+    const agent = new Agent({ role: "Memory Reset Agent", goal: "Reset memory", backstory: "Memory reset" });
+    const crewInstance = new Crew({ agents: [agent], memory });
 
     crewInstance.resetMemories("long");
 
@@ -22709,7 +22717,8 @@ describe("crew memory reset", () => {
     const knowledge = new Knowledge({
       sources: [new StringKnowledgeSource("Crew helper knowledge reset.")],
     });
-    const crewInstance = new Crew({ knowledge });
+    const agent = new Agent({ role: "Knowledge Reset Agent", goal: "Reset knowledge", backstory: "Knowledge reset" });
+    const crewInstance = new Crew({ agents: [agent], knowledge });
 
     expect(resolved).toHaveLength(2);
     expect((resolved as Agent[])[0]).toBe(existing);
@@ -23503,7 +23512,8 @@ describe("runtime state", () => {
   it("resolves checkpoint configs from event sources and trigger filters", () => {
     const crewConfig = new CheckpointConfig({ on_events: ["task_completed"] });
     const agentConfig = new CheckpointConfig({ on_events: ["agent_execution_completed"] });
-    const crew = new Crew({ agents: [], tasks: [], checkpoint: crewConfig });
+    const crewAgent = new Agent({ role: "Checkpoint Crew Agent", goal: "checkpoint", backstory: "crew checkpoint" });
+    const crew = new Crew({ agents: [crewAgent], tasks: [], checkpoint: crewConfig });
     const inheritingAgent = new Agent({
       role: "Inheriting Agent",
       goal: "checkpoint",
@@ -23877,7 +23887,10 @@ describe("runtime state", () => {
   it("registers event sources and avoids duplicating agents owned by registered crews", () => {
     const bus = new EventBus();
     const state = new RuntimeState();
-    const crew = new Crew({ name: "Runtime Crew" });
+    const crew = new Crew({
+      name: "Runtime Crew",
+      agents: [new Agent({ role: "Runtime Crew Agent", goal: "Own runtime agents", backstory: "Runtime state" })],
+    });
     const agentInstance = new Agent({
       role: "Researcher",
       goal: "Research",

@@ -547,6 +547,9 @@ export class Crew {
   }
 
   checkConfig(): this {
+    if (!this.config && this.tasks.length === 0 && this.agents.length === 0) {
+      throw new Error("Either 'agents' and 'tasks' need to be set or 'config'.");
+    }
     if (this.config) {
       this.setupFromConfig(this.config);
     }
