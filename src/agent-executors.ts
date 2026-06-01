@@ -575,6 +575,12 @@ export class AgentExecutor extends BaseAgentExecutor {
   }
 
   handleRefineAndContinue(): "has_todos" {
+    const observationSteps = Object.keys(this.state.observations).map(Number).filter(Number.isFinite);
+    const lastStep = observationSteps.length > 0 ? Math.max(...observationSteps) : null;
+    const observation = lastStep === null ? null : this.state.observations[lastStep];
+    if (observation?.suggestedRefinements && observation.suggestedRefinements.length > 0) {
+      new PlannerObserver().applyRefinements(observation, this.state.todos.getPendingTodos());
+    }
     return "has_todos";
   }
 

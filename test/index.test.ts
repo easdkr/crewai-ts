@@ -10107,6 +10107,40 @@ describe("core crew runtime", () => {
     expect(executor.state.todos.get_by_step_number(2)?.status).toBe(TodoStatus.PENDING);
   });
 
+  it("applies AgentExecutor observation refinements to pending todos before continuing", () => {
+    const executor = new AgentExecutor();
+    executor.state.todos.items = [
+      new TodoItem({
+        stepNumber: 1,
+        description: "Choose the best product",
+        status: TodoStatus.COMPLETED,
+        result: "Product B has the highest rating.",
+      }),
+      new TodoItem({
+        stepNumber: 2,
+        description: "Write recommendation",
+        status: TodoStatus.PENDING,
+      }),
+      new TodoItem({
+        stepNumber: 3,
+        description: "Prepare appendix",
+        status: TodoStatus.PENDING,
+      }),
+    ];
+    executor.state.observations[1] = new StepObservation({
+      step_completed_successfully: true,
+      remaining_plan_still_valid: true,
+      suggested_refinements: [
+        { step_number: 2, new_description: "Recommend product B with rating evidence" },
+        { step_number: 99, new_description: "Ignore missing step" },
+      ],
+    });
+
+    expect(executor.handle_refine_and_continue()).toBe("has_todos");
+    expect(executor.state.todos.get_by_step_number(2)?.description).toBe("Recommend product B with rating evidence");
+    expect(executor.state.todos.get_by_step_number(3)?.description).toBe("Prepare appendix");
+  });
+
   it("routes AgentExecutor dynamic replanning from upstream error signals", () => {
     const executor = new AgentExecutor();
     executor.state.todos.items = [
