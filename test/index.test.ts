@@ -18601,6 +18601,38 @@ describe("flow runtime", () => {
     expect(flow.state.callCount).toBe(1);
   });
 
+  it("fails direct self-listening flow methods as infinite loops", async () => {
+    class SelfListenFlow extends Flow {
+      constructor() {
+        super({ maxMethodCalls: 5 });
+      }
+
+      begin() {
+        return "process";
+      }
+
+      route() {
+        return "process";
+      }
+
+      process() {
+        return null;
+      }
+    }
+
+    const initializers = [
+      decorateMethod(SelfListenFlow, "begin", start() as unknown as Decorator),
+      decorateMethod(SelfListenFlow, "route", router("begin") as unknown as Decorator),
+      decorateMethod(SelfListenFlow, "process", listen("process") as unknown as Decorator),
+    ];
+    const flow = new SelfListenFlow();
+    initializers.forEach((initializer) => {
+      initializer.call(flow);
+    });
+
+    await expect(flow.kickoff()).rejects.toThrow(/infinite loop/i);
+  });
+
   it("continues cyclic router flows with persistence and explicit input ids", async () => {
     const directory = mkdtempSync(join(tmpdir(), "crewai-ts-flow-cyclic-persist-"));
     const persistence = new SQLiteFlowPersistence(join(directory, "flows.db"));

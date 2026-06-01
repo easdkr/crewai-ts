@@ -1730,6 +1730,9 @@ export class Flow<TState extends object = Record<string, unknown>> {
             if (!entry.condition || skipCompletedMethods.has(name) || queue.some((candidate) => candidate.name === name)) {
               continue;
             }
+            if (shouldRaiseDirectSelfRetrigger(entry.condition, name, triggerName, current.name)) {
+              throw new Error(`Flow method '${name}' triggered itself and would cause an infinite loop.`);
+            }
             if (shouldSuppressOrSelfRetrigger(entry.condition, name, triggerName, current.name)) {
               continue;
             }
@@ -4218,6 +4221,18 @@ function shouldSuppressOrSelfRetrigger(
     && condition.conditions.length > 1
     && listenerName === triggerName
     && triggerName === sourceName
+    && conditionIncludesTrigger(condition, triggerName);
+}
+
+function shouldRaiseDirectSelfRetrigger(
+  condition: FlowCondition,
+  listenerName: string,
+  triggerName: string,
+  sourceName: string,
+): boolean {
+  return listenerName === triggerName
+    && triggerName === sourceName
+    && (condition.type !== "OR" || condition.conditions.length === 1)
     && conditionIncludesTrigger(condition, triggerName);
 }
 
