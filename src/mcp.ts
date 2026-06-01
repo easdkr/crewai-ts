@@ -415,6 +415,18 @@ export const MCP_TOOL_EXECUTION_TIMEOUT = 30;
 export const MCP_DISCOVERY_TIMEOUT = 30;
 export const MCP_MAX_RETRIES = 3;
 
+export class _MCPToolResult {
+  readonly content: string;
+  readonly isError: boolean;
+  readonly is_error: boolean;
+
+  constructor(content: string, isError = false) {
+    this.content = content;
+    this.isError = isError;
+    this.is_error = isError;
+  }
+}
+
 type SchemaCacheEntry = { tools: MCPToolDefinition[]; createdAt: number };
 const MCP_SCHEMA_CACHE_TTL_MS = 300_000;
 const mcpSchemaCache = new Map<string, SchemaCacheEntry>();
@@ -565,17 +577,7 @@ export class MCPClient {
         return cached.tools.map((tool) => ({ ...tool }));
       }
     }
-    const tools = await this.retryOperation(async () => {
-      const result = await withTimeout(this.session.listTools(), this.discoveryTimeout, "MCP tool discovery timed out");
-      return result.tools.map((tool) => ({
-        name: sanitizeToolName(tool.name),
-        original_name: tool.name,
-        description: tool.description ?? "",
-        inputSchema: tool.inputSchema,
-        ...(tool.outputSchema ? { outputSchema: tool.outputSchema } : {}),
-        ...(tool.annotations ? { annotations: tool.annotations } : {}),
-      }));
-    });
+    const tools = await this.retryOperation(async () => await this.listToolsImpl(), this.discoveryTimeout);
     if (shouldUseCache) {
       mcpSchemaCache.set(cacheKey, { tools, createdAt: Date.now() });
     }
@@ -584,6 +586,22 @@ export class MCPClient {
 
   async list_tools(useCache: boolean | null = null): Promise<MCPToolDefinition[]> {
     return await this.listTools(useCache);
+  }
+
+  async listToolsImpl(): Promise<MCPToolDefinition[]> {
+    const result = await withTimeout(this.session.listTools(), this.discoveryTimeout, "MCP tool discovery timed out");
+    return result.tools.map((tool) => ({
+      name: sanitizeToolName(tool.name),
+      original_name: tool.name,
+      description: tool.description ?? "",
+      inputSchema: tool.inputSchema,
+      ...(tool.outputSchema ? { outputSchema: tool.outputSchema } : {}),
+      ...(tool.annotations ? { annotations: tool.annotations } : {}),
+    }));
+  }
+
+  async _list_tools_impl(): Promise<MCPToolDefinition[]> {
+    return await this.listToolsImpl();
   }
 
   async callTool(toolName: string, args: Record<string, unknown> | null = null): Promise<string> {
@@ -601,12 +619,13 @@ export class MCPClient {
       tool_args: cleanedArgs,
     }));
     try {
-      const result = await this.retryOperation(async () => {
-        return await withTimeout(this.session.callTool({ name: toolName, arguments: cleanedArgs }), this.executionTimeout, "MCP tool execution timed out");
-      });
-      const content = stringifyMCPToolResult(result);
+      const toolResult = await this.retryOperation(
+        async () => await this.callToolImpl(toolName, cleanedArgs),
+        this.executionTimeout,
+      );
+      const content = toolResult.content;
       const finishedAt = new Date();
-      if (isErrorMCPToolResult(result)) {
+      if (toolResult.isError) {
         crewaiEventBus.emit(this, new MCPToolExecutionFailedEvent({
           server_name: serverName,
           server_url: serverUrl,
@@ -653,16 +672,75 @@ export class MCPClient {
     return await this.callTool(toolName, args);
   }
 
+  cleanToolArguments(args: Record<string, unknown>): Record<string, unknown> {
+    return cleanToolArguments(args);
+  }
+
+  _clean_tool_arguments(args: Record<string, unknown>): Record<string, unknown> {
+    return this.cleanToolArguments(args);
+  }
+
+  async callToolImpl(toolName: string, args: Record<string, unknown>): Promise<_MCPToolResult> {
+    const result = await withTimeout(
+      this.session.callTool({ name: toolName, arguments: args }),
+      this.executionTimeout,
+      "MCP tool execution timed out",
+    );
+    return new _MCPToolResult(stringifyMCPToolResult(result), isErrorMCPToolResult(result));
+  }
+
+  async _call_tool_impl(toolName: string, args: Record<string, unknown>): Promise<_MCPToolResult> {
+    return await this.callToolImpl(toolName, args);
+  }
+
+  emitConnectionFailed(
+    serverName: string,
+    serverUrl: string | null,
+    transportType: string | null,
+    error: unknown,
+    errorType: string,
+    startedAt: Date,
+  ): void {
+    crewaiEventBus.emit(this, new MCPConnectionFailedEvent({
+      server_name: serverName,
+      server_url: serverUrl,
+      transport_type: transportType,
+      error,
+      error_type: errorType,
+      started_at: startedAt,
+      failed_at: new Date(),
+    }));
+  }
+
+  _emit_connection_failed(
+    serverName: string,
+    serverUrl: string | null,
+    transportType: string | null,
+    error: unknown,
+    errorType: string,
+    startedAt: Date,
+  ): void {
+    this.emitConnectionFailed(serverName, serverUrl, transportType, error, errorType, startedAt);
+  }
+
   async listPrompts(): Promise<Record<string, unknown>[]> {
     if (!this.connected) {
       await this.connect();
     }
-    const result = await this.retryOperation(async () => await this.session.listPrompts());
+    return await this.retryOperation(async () => await this.listPromptsImpl(), this.discoveryTimeout);
+  }
+
+  async listPromptsImpl(): Promise<Record<string, unknown>[]> {
+    const result = await withTimeout(this.session.listPrompts(), this.discoveryTimeout, "MCP prompt discovery timed out");
     return result.prompts.map((prompt) => ({
       name: typeof prompt.name === "string" ? prompt.name : "",
       description: typeof prompt.description === "string" ? prompt.description : "",
       arguments: Array.isArray(prompt.arguments) ? prompt.arguments : [],
     }));
+  }
+
+  async _list_prompts_impl(): Promise<Record<string, unknown>[]> {
+    return await this.listPromptsImpl();
   }
 
   async list_prompts(): Promise<Record<string, unknown>[]> {
@@ -674,19 +752,34 @@ export class MCPClient {
       await this.connect();
     }
     const argumentsObject = args ?? {};
-    const result = await this.retryOperation(async () => await this.session.getPrompt({ name, arguments: argumentsObject }));
+    return await this.retryOperation(
+      async () => await this.getPromptImpl(name, argumentsObject),
+      this.executionTimeout,
+    );
+  }
+
+  async getPromptImpl(name: string, args: Record<string, string>): Promise<unknown> {
+    const result = await withTimeout(
+      this.session.getPrompt({ name, arguments: args }),
+      this.executionTimeout,
+      "MCP prompt retrieval timed out",
+    );
     const messages = isPlainRecord(result) && Array.isArray(result.messages)
       ? result.messages.map((message) => normalizePromptMessage(message))
       : [];
     return {
       name,
       messages,
-      arguments: argumentsObject,
+      arguments: args,
     };
   }
 
   async get_prompt(name: string, args: Record<string, string> | null = null): Promise<unknown> {
     return await this.getPrompt(name, args);
+  }
+
+  async _get_prompt_impl(name: string, args: Record<string, string>): Promise<unknown> {
+    return await this.getPromptImpl(name, args);
   }
 
   async listResources(): Promise<Record<string, unknown>[]> {
@@ -712,7 +805,7 @@ export class MCPClient {
     return await this.readResource(uri);
   }
 
-  private getServerInfo(): [string, string | null, string] {
+  getServerInfo(): [string, string | null, string] {
     if (this.transport instanceof StdioTransport) {
       return [[this.transport.command, ...this.transport.args].join(" "), null, this.transport.transportType];
     }
@@ -722,17 +815,34 @@ export class MCPClient {
     return ["Unknown MCP Server", null, this.transport.transportType];
   }
 
-  private getCacheKey(kind: string): string {
+  _get_server_info(): [string, string | null, string] {
+    return this.getServerInfo();
+  }
+
+  getCacheKey(kind: string): string {
     const [serverName, serverUrl, transportType] = this.getServerInfo();
     return JSON.stringify([kind, transportType, serverName, serverUrl]);
   }
 
-  private async retryOperation<T>(operation: () => Promise<T>): Promise<T> {
+  _get_cache_key(kind: string): string {
+    return this.getCacheKey(kind);
+  }
+
+  async retryOperation<T>(operation: () => Promise<T>, timeout: number | null = null): Promise<T> {
     let lastError: unknown;
     for (let attempt = 0; attempt < this.maxRetries; attempt += 1) {
       try {
-        return await operation();
+        return timeout && timeout > 0
+          ? await withTimeout(operation(), timeout, `MCP operation timed out`)
+          : await operation();
       } catch (error) {
+        const errorMessage = formatMCPError(error).toLowerCase();
+        if (errorMessage.includes("authentication") || errorMessage.includes("unauthorized")) {
+          throw new Error(`Authentication failed: ${formatMCPError(error)}`, { cause: error });
+        }
+        if (errorMessage.includes("not found")) {
+          throw new Error(`Resource not found: ${formatMCPError(error)}`, { cause: error });
+        }
         lastError = error;
         if (attempt < this.maxRetries - 1) {
           await delay(Math.min(100 * 2 ** attempt, 1000));
@@ -742,10 +852,18 @@ export class MCPClient {
     throw lastError;
   }
 
-  private async cleanupOnError(): Promise<void> {
+  async _retry_operation<T>(operation: () => Promise<T>, timeout: number | null = null): Promise<T> {
+    return await this.retryOperation(operation, timeout);
+  }
+
+  async cleanupOnError(): Promise<void> {
     this.client = null;
     this.initialized = false;
     await this.transport.disconnect();
+  }
+
+  async _cleanup_on_error(): Promise<void> {
+    await this.cleanupOnError();
   }
 }
 

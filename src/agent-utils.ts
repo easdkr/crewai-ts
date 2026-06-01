@@ -17,6 +17,13 @@ export const SummaryContent = class SummaryContent {
   }
 };
 
+export type AgentKnowledgeContextLike = {
+  agentKnowledgeContext?: string | null;
+  agent_knowledge_context?: string | null;
+  crewKnowledgeContext?: string | null;
+  crew_knowledge_context?: string | null;
+};
+
 export const DELEGATION_TOOL_NAMES: readonly string[] = [
   sanitizeToolName("Delegate work to coworker"),
   sanitizeToolName("Ask question to coworker"),
@@ -138,6 +145,15 @@ export function formatMessageForLLM(
 ): LLMMessage {
   return { role, content: prompt.trimEnd() };
 }
+
+export function combineKnowledgeContext(agent: AgentKnowledgeContextLike): string {
+  const agentContext = agent.agentKnowledgeContext ?? agent.agent_knowledge_context ?? "";
+  const crewContext = agent.crewKnowledgeContext ?? agent.crew_knowledge_context ?? "";
+  const separator = agentContext && crewContext ? "\n" : "";
+  return `${agentContext}${separator}${crewContext}`;
+}
+
+export const _combine_knowledge_context = combineKnowledgeContext;
 
 export function isInsideEventLoop(): boolean {
   return false;

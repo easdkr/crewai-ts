@@ -49,6 +49,7 @@ import {
   _auth_store,
   _build_task_description,
   _clean_action,
+  _combine_knowledge_context,
   _create_grpc_channel_factory,
   _create_grpc_interceptors,
   _create_file_parts,
@@ -240,6 +241,7 @@ import {
   MCPConnectionStartedEvent,
   MCPConfigFetchFailedEvent,
   MCPClient,
+  _MCPToolResult,
   MCPToolResolver,
   MCPToolWrapper,
   MCPToolExecutionFailedEvent,
@@ -2661,6 +2663,64 @@ describe("mcp configuration", () => {
       name: "brief",
       arguments: { topic: "CrewAI" },
     });
+  });
+
+  it("exposes upstream-style MCP client private helpers", async () => {
+    const transport = new StdioTransport({ command: "node", args: ["server.js"] });
+    const sdkClient = {
+      listTools: vi.fn(() => Promise.resolve({
+        tools: [
+          {
+            name: "search docs",
+            description: "Search docs",
+            inputSchema: { type: "object" },
+          },
+        ],
+      })),
+      callTool: vi.fn(() => Promise.resolve({
+        content: [{ text: "tool result" }],
+        isError: false,
+      })),
+      listPrompts: vi.fn(() => Promise.resolve({ prompts: [] })),
+      getPrompt: vi.fn(() => Promise.resolve({ messages: [] })),
+    };
+    const client = new MCPClient(transport, { maxRetries: 1, discoveryTimeout: 1, executionTimeout: 1 });
+    Object.assign(client as unknown as { client: unknown; initialized: boolean }, {
+      client: sdkClient,
+      initialized: true,
+    });
+
+    expect(new _MCPToolResult("failed", true)).toMatchObject({
+      content: "failed",
+      isError: true,
+      is_error: true,
+    });
+    expect(client._get_server_info()).toEqual(["node server.js", null, TransportType.STDIO]);
+    expect(client._get_cache_key("tools")).toContain("tools");
+    expect(() => {
+      client._emit_connection_failed("node server.js", null, TransportType.STDIO, "failed", "network", new Date());
+    }).not.toThrow();
+    expect(client._clean_tool_arguments({
+      query: "CrewAI",
+      optional: null,
+      sources: ["web", { type: "docs" }],
+      nested: { keep: true, skip: undefined },
+    })).toEqual({
+      query: "CrewAI",
+      sources: [{ type: "web" }, { type: "docs" }],
+      nested: { keep: true },
+    });
+    await expect(client._list_tools_impl()).resolves.toEqual([{
+      name: "search_docs",
+      original_name: "search docs",
+      description: "Search docs",
+      inputSchema: { type: "object" },
+    }]);
+    await expect(client._call_tool_impl("search docs", { query: "CrewAI" })).resolves.toMatchObject({
+      content: "tool result",
+      is_error: false,
+    });
+    await expect(client._retry_operation(async () => await Promise.resolve("ok"), 1)).resolves.toBe("ok");
   });
 
   it("returns classified MCP wrapper execution errors from async runs", async () => {
@@ -10506,6 +10566,7 @@ describe("agent planning", () => {
     expect(agentInstance.embedder).toEqual({ provider: "openai", config: { model_name: "text-embedding-3-small" } });
     expect(agentInstance.agent_knowledge_context).toBe("Agent context");
     expect(agentInstance.crew_knowledge_context).toBe("Crew context");
+    expect(_combine_knowledge_context(agentInstance)).toBe("Agent context\nCrew context");
     expect(agentInstance.knowledge_search_query).toBe("CrewAI facts");
     expect(agentInstance.tools_results).toEqual([{ tool: "search", result: "ok" }]);
     expect(agentInstance.callbacks).toHaveLength(1);
