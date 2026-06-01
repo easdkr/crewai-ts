@@ -1,6 +1,12 @@
 import { generateModelDescription, sanitizeToolParamsForOpenAIStrict, type JsonSchema } from "./schema-utils.js";
 import { sanitizeToolName } from "./string-utils.js";
-import { AgentAction, AgentFinish, OutputParserError, parseAgentOutput } from "./agent-parser.js";
+import {
+  AgentAction,
+  AgentFinish,
+  FINAL_ANSWER_AND_PARSABLE_ACTION_ERROR_MESSAGE,
+  OutputParserError,
+  parseAgentOutput,
+} from "./agent-parser.js";
 import { BaseTool, ToolResult, type ToolArgsSchema, type ToolArgumentSpec } from "./tools.js";
 import type { LLM, LLMMessage, MaybePromise, Tool, ToolContext } from "./types.js";
 import { AgentRepositoryError } from "./errors.js";
@@ -439,23 +445,86 @@ export async function getLlmResponse(
 export const get_llm_response = getLlmResponse;
 export const aget_llm_response = getLlmResponse;
 
-export function processLlmResponse(response: unknown): unknown {
-  if (typeof response !== "string") {
+export function processLlmResponse(response: unknown, useStopWords = true): unknown {
+  if (response instanceof AgentAction || response instanceof AgentFinish || typeof response !== "string") {
     return response;
   }
-  if (response.includes("Final Answer:")) {
-    return new AgentFinish({
-      thought: "",
-      output: response.split("Final Answer:").at(-1)?.trim() ?? "",
-      text: response,
-    });
+  let answer = response;
+  if (!useStopWords) {
+    try {
+      parseAgentOutput(answer);
+    } catch (error) {
+      if (error instanceof OutputParserError && error.error.includes(FINAL_ANSWER_AND_PARSABLE_ACTION_ERROR_MESSAGE)) {
+        answer = answer.split("Observation:")[0]?.trim() ?? answer;
+      }
+    }
+    if (containsFinalAnswerAndParsableAction(answer) && answer.includes("Observation:")) {
+      answer = answer.split("Observation:")[0]?.trim() ?? answer;
+    }
   }
-  return response;
+  return parseAgentOutput(answer);
 }
 
 export const process_llm_response = processLlmResponse;
 
-export function handleAgentActionCore(action: AgentAction, tools: readonly Tool[]): ToolResult {
+export function handleAgentActionCore(action: AgentAction, tools: readonly Tool[]): ToolResult;
+export function handleAgentActionCore(
+  formattedAnswer: AgentAction,
+  toolResult: ToolResult,
+  messages?: LLMMessage[] | null,
+  stepCallback?: ((toolResult: ToolResult) => MaybePromise<unknown>) | null,
+  showLogs?: ((formattedAnswer: AgentAction) => unknown) | null,
+): AgentAction | AgentFinish | Promise<AgentAction | AgentFinish>;
+export function handleAgentActionCore(
+  action: AgentAction,
+  toolsOrToolResult: readonly Tool[] | ToolResult,
+  _messages: LLMMessage[] | null = null,
+  stepCallback: ((toolResult: ToolResult) => MaybePromise<unknown>) | null = null,
+  showLogs: ((formattedAnswer: AgentAction) => unknown) | null = null,
+): ToolResult | AgentAction | AgentFinish | Promise<AgentAction | AgentFinish> {
+  void _messages;
+  if (Array.isArray(toolsOrToolResult)) {
+    return runToolForAgentAction(action, toolsOrToolResult);
+  }
+  const toolResult = toolsOrToolResult as ToolResult;
+  const callbackResult = stepCallback?.(toolResult);
+  if (isPromiseLike(callbackResult)) {
+    return Promise.resolve(callbackResult).then(() => finalizeAgentActionCore(action, toolResult, showLogs));
+  }
+  return finalizeAgentActionCore(action, toolResult, showLogs);
+}
+
+function finalizeAgentActionCore(
+  formattedAnswer: AgentAction,
+  toolResult: ToolResult,
+  showLogs: ((formattedAnswer: AgentAction) => unknown) | null,
+): AgentAction | AgentFinish {
+  const text = `${formattedAnswer.text}\nObservation: ${String(toolResult.result)}`;
+  const updatedAction = new AgentAction({
+    thought: formattedAnswer.thought,
+    tool: formattedAnswer.tool,
+    toolInput: formattedAnswer.toolInput,
+    text,
+    result: String(toolResult.result),
+  });
+  if (toolResult.result_as_answer) {
+    return new AgentFinish({
+      thought: "",
+      output: toolResult.result,
+      text,
+    });
+  }
+  showLogs?.(updatedAction);
+  return updatedAction;
+}
+
+function containsFinalAnswerAndParsableAction(answer: string): boolean {
+  return answer.includes("Final Answer:")
+    && /Action\s*\d*\s*:/s.test(answer)
+    && /Action\s*\d*\s*Input\s*\d*\s*:/s.test(answer);
+}
+
+function runToolForAgentAction(action: AgentAction, tools: readonly Tool[]): ToolResult {
   const tool = tools.find((candidate) => sanitizeToolName(candidate.name) === sanitizeToolName(action.tool));
   if (!tool) {
     return new ToolResult(`Tool '${action.tool}' is not available.`);

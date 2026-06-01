@@ -792,8 +792,10 @@ import {
   extractTaskSection,
   formatMessageForLLM,
   getLlmResponse,
+  handleAgentActionCore,
   handleMaxIterationsExceeded,
   hasReachedMaxIterations,
+  processLlmResponse,
   summarizeMessages,
   lock,
   parseToml,
@@ -6086,6 +6088,57 @@ describe("agent utility helpers", () => {
 
     expect(result).toBeInstanceOf(AgentFinish);
     expect((result as AgentFinish).output).toBe("Agent stopped due to max iterations.");
+  });
+
+  it("processes LLM responses through the upstream parser path", () => {
+    const finish = processLlmResponse("Thought: done\nFinal Answer: Complete");
+    const action = processLlmResponse("Thought: search\nAction: Search Tool\nAction Input: {\"query\":\"CrewAI\"}");
+    const repaired = processLlmResponse([
+      "Thought: search",
+      "Action: Search Tool",
+      "Action Input: {\"query\":\"CrewAI\"}",
+      "Observation: old result",
+      "Final Answer: stale final",
+    ].join("\n"), false);
+
+    expect(finish).toBeInstanceOf(AgentFinish);
+    expect((finish as AgentFinish).output).toBe("Complete");
+    expect(action).toBeInstanceOf(AgentAction);
+    expect(action).toMatchObject({ tool: "Search Tool", toolInput: "{\"query\":\"CrewAI\"}" });
+    expect(repaired).toBeInstanceOf(AgentAction);
+    expect((repaired as AgentAction).text).not.toContain("Observation: old result");
+  });
+
+  it("handles tool results in upstream agent action core flow", async () => {
+    const logs: AgentAction[] = [];
+    const callbacks: unknown[] = [];
+    const action = new AgentAction({
+      thought: "Need search",
+      tool: "Search Tool",
+      toolInput: "{\"query\":\"CrewAI\"}",
+      text: "Thought: Need search\nAction: Search Tool\nAction Input: {\"query\":\"CrewAI\"}",
+    });
+    const continued = await handleAgentActionCore(
+      action,
+      new ToolResult({ result: "found docs" }),
+      [],
+      async (toolResult) => {
+        await Promise.resolve();
+        callbacks.push(toolResult.result);
+      },
+      (formattedAnswer) => {
+        logs.push(formattedAnswer);
+      },
+    );
+    const final = handleAgentActionCore(action, new ToolResult({ result: "final answer", result_as_answer: true }));
+
+    expect(callbacks).toEqual(["found docs"]);
+    expect(continued).toBeInstanceOf(AgentAction);
+    expect((continued as AgentAction).text).toContain("Observation: found docs");
+    expect((continued as AgentAction).result).toBe("found docs");
+    expect(logs[0]?.text).toContain("Observation: found docs");
+    expect(final).toBeInstanceOf(AgentFinish);
+    expect((final as AgentFinish).output).toBe("final answer");
   });
 
   it("parses ReAct agent output and normalizes string tool calls", async () => {
