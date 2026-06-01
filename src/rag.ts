@@ -2350,7 +2350,7 @@ export class ChromaDBClient {
       n_results: normalized.limit,
       where: normalized.where ?? normalized.metadata_filter,
       where_document: normalized.where_document,
-      include: normalized.include ?? ["documents", "metadatas", "distances"],
+      include: normalized.include ?? ["metadatas", "documents", "distances"],
     });
     return processChromaQueryResult(result, normalized.score_threshold);
   }
@@ -2363,7 +2363,7 @@ export class ChromaDBClient {
       n_results: normalized.limit,
       where: normalized.where ?? normalized.metadata_filter,
       where_document: normalized.where_document,
-      include: normalized.include ?? ["documents", "metadatas", "distances"],
+      include: normalized.include ?? ["metadatas", "documents", "distances"],
     });
     return processChromaQueryResult(result, normalized.score_threshold);
   }

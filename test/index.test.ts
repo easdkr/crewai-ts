@@ -9513,6 +9513,29 @@ describe("RAG configuration and factories", () => {
     });
   });
 
+  it("uses upstream ChromaDB default search include ordering", () => {
+    const collection = {
+      query: vi.fn(() => ({
+        ids: [["doc-1"]],
+        documents: [["CrewAI docs"]],
+        metadatas: [[{ topic: "rag" }]],
+        distances: [[0]],
+      })),
+    };
+    const client = new ChromaDBClient({
+      get_or_create_collection: vi.fn(() => collection),
+    }, (texts: readonly string[]) => texts.map((text) => [text.length]));
+
+    expect(client.search({ collection_name: "docs", query: "CrewAI" })).toHaveLength(1);
+    expect(collection.query).toHaveBeenCalledWith({
+      query_texts: ["CrewAI"],
+      n_results: 5,
+      where: null,
+      where_document: null,
+      include: ["metadatas", "documents", "distances"],
+    });
+  });
+
   it("wraps Qdrant clients with collection lifecycle, upsert/search filters, and async aliases", async () => {
     const fake = new FakeQdrantClient();
     const client = new QdrantClient(fake, (text: string) => [text.length], 2, 0.5, 1);
