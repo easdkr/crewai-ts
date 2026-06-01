@@ -2194,6 +2194,18 @@ export class Memory {
       return [];
     }
     const values = [...contents];
+    if (this.llm) {
+      const plannedItems = values.map((content) => {
+        const resolvedOptions = this.resolveSaveOptionsSync(content, options);
+        const similarRecords = this.findSimilarRecords(content, resolvedOptions.scope, rootScopeFromOptions(resolvedOptions, this.rootScope));
+        const plan = similarRecords.length > 0
+          ? analyzeForConsolidationSync(content, similarRecords, this.llm as LLM)
+          : new ConsolidationPlan({ actions: [], insertNew: true });
+        return { content, options: resolvedOptions, similarRecords, plan };
+      });
+      this.pendingWrites.push(() => this.runResolvedBackgroundSave(plannedItems, options));
+      return [];
+    }
     this.pendingWrites.push(() => this.runBackgroundSave(values, options));
     return [];
   }
@@ -3795,6 +3807,34 @@ export async function analyzeForConsolidation(
 }
 
 export const analyze_for_consolidation = analyzeForConsolidation;
+
+function analyzeForConsolidationSync(
+  newContent: string,
+  existingRecords: readonly MemoryRecord[],
+  llm: LLM,
+): ConsolidationPlan {
+  if (existingRecords.length === 0) {
+    return new ConsolidationPlan({ actions: [], insertNew: true });
+  }
+  const recordsSummary = existingRecords.map((record) =>
+    `- id=${record.id} | scope=${record.scope} | importance=${record.importance.toFixed(2)} | created=${record.createdAt.toISOString()}\n  content: ${record.content.slice(0, 200)}${record.content.length > 200 ? "..." : ""}`,
+  ).join("\n\n");
+  try {
+    const messages = [
+      { role: "system" as const, content: "You decide whether a new memory should be inserted or consolidated with existing records." },
+      { role: "user" as const, content: `New content:\n${newContent}\n\nExisting records:\n${recordsSummary}\n\nReturn JSON with actions and insert_new.` },
+    ];
+    const response = typeof llm === "function"
+      ? llm(messages, { responseModel: ConsolidationPlan })
+      : llm.call(messages, { responseModel: ConsolidationPlan });
+    if (isPromiseLike(response)) {
+      return new ConsolidationPlan({ actions: [], insertNew: true });
+    }
+    return coerceConsolidationPlan(response);
+  } catch {
+    return new ConsolidationPlan({ actions: [], insertNew: true });
+  }
+}
 
 async function callMemoryLLM(llm: LLM, messages: readonly LLMMessage[], responseModel: unknown): Promise<unknown> {
   return await callLLM(createLLMClient(llm), messages, { responseModel });

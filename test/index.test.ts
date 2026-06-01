@@ -27917,6 +27917,49 @@ describe("memory", () => {
     ]);
   });
 
+  it("consolidates sync memory batch saves against existing records", () => {
+    const memory = new Memory({
+      embedder: (texts: readonly string[]) => texts.map(() => [0.1, 0.1]),
+      llm: (_messages, options) => {
+        if (options?.responseModel === ConsolidationPlan) {
+          return JSON.stringify({
+            actions: [],
+            insert_new: false,
+            insert_reason: "duplicate",
+          });
+        }
+        return JSON.stringify({
+          suggested_scope: "/batch",
+          categories: ["review"],
+          importance: 0.7,
+          extracted_metadata: { entities: [], dates: [], topics: [] },
+        });
+      },
+    });
+    memory.update(new MemoryRecord({
+      id: "existing-memory",
+      content: "CrewAI is great.",
+      scope: "/batch",
+      categories: ["review"],
+      importance: 0.7,
+      embedding: [0.1, 0.1],
+    }));
+
+    expect(memory.remember_many([
+      "CrewAI is great.",
+      "CrewAI is wonderful.",
+    ], {
+      scope: "/batch",
+      categories: ["review"],
+      importance: 0.7,
+    })).toEqual([]);
+    memory.drain_writes();
+
+    expect(memory.list_records("/batch").map((record) => record.content)).toEqual([
+      "CrewAI is great.",
+    ]);
+  });
+
   it("consolidates async batch saves against existing memories with first action winning", async () => {
     const seen: string[] = [];
     const memory = new Memory({
