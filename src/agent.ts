@@ -77,12 +77,18 @@ import { CrewTrainingHandler } from "./training-handler.js";
 import { Prompts, type StandardPromptResult, type SystemPromptResult } from "./prompts.js";
 import { LiteAgentOutput, type TodoExecutionResultOptions } from "./lite-agent-output.js";
 import { loadAgentFromRepository } from "./agent-utils.js";
+import { serializeGuardrailForJson } from "./guardrail.js";
 
 export type AgentGuardrailResult =
   | readonly [boolean, unknown]
   | { success: boolean; result?: unknown; error?: unknown };
 
 export type AgentGuardrail = (output: string) => AgentGuardrailResult | Promise<AgentGuardrailResult>;
+
+type ModelDumpOptions = {
+  mode?: string;
+  exclude?: ReadonlySet<string> | readonly string[] | Record<string, unknown>;
+};
 
 export type CodeExecutionMode = "safe" | "unsafe";
 
@@ -623,6 +629,24 @@ export class Agent {
       executionContext: this.executionContext?.clone() ?? null,
       checkpointKickoffEventId: this.checkpointKickoffEventId,
     });
+  }
+
+  modelDump(options: ModelDumpOptions = {}): Record<string, unknown> {
+    const jsonMode = options.mode === "json";
+    const dumped: Record<string, unknown> = {
+      id: this.key,
+      role: this.role,
+      goal: this.goal,
+      backstory: this.backstory,
+      guardrail: jsonMode ? serializeGuardrailForJson(this.guardrail) : this.guardrail,
+      guardrailMaxRetries: this.guardrailMaxRetries,
+      guardrail_max_retries: this.guardrailMaxRetries,
+    };
+    return omitModelDumpKeys(dumped, options.exclude);
+  }
+
+  model_dump(options: ModelDumpOptions = {}): Record<string, unknown> {
+    return this.modelDump(options);
   }
 
   setPrivateAttrs(): this {
@@ -2475,6 +2499,29 @@ function copyKnowledgeSourcesForAgent(sources: readonly KnowledgeSource[]): Know
     copied.storage = sharedStorage;
     return copied;
   });
+}
+
+function modelDumpExcludeKeys(exclude: ModelDumpOptions["exclude"]): string[] {
+  if (!exclude) {
+    return [];
+  }
+  if (exclude instanceof Set) {
+    return [...exclude].map(String);
+  }
+  if (Array.isArray(exclude)) {
+    return exclude.map(String);
+  }
+  return Object.entries(exclude)
+    .filter(([, value]) => Boolean(value))
+    .map(([key]) => key);
+}
+
+function omitModelDumpKeys(source: Record<string, unknown>, exclude: ModelDumpOptions["exclude"]): Record<string, unknown> {
+  const excluded = new Set(modelDumpExcludeKeys(exclude));
+  if (excluded.size === 0) {
+    return source;
+  }
+  return Object.fromEntries(Object.entries(source).filter(([key]) => !excluded.has(key)));
 }
 
 function copyKnowledgeSource(source: KnowledgeSource): KnowledgeSource {

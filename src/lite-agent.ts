@@ -22,6 +22,7 @@ import { Memory, type MemoryScope } from "./memory.js";
 import { getToolNames, parseTools, renderTextDescriptionAndArgs } from "./agent-utils.js";
 import { AgentFinish } from "./agent-parser.js";
 import type { AgentStepCallback, LLMMessage, Tool } from "./types.js";
+import { serializeGuardrailForJson } from "./guardrail.js";
 import {
   _execute_task_with_a2a,
   create_extension_registry_from_config,
@@ -37,6 +38,11 @@ export type LiteAgentGuardrailResult =
 export type LiteAgentGuardrail = (
   output: LiteAgentOutput,
 ) => LiteAgentGuardrailResult | Promise<LiteAgentGuardrailResult>;
+
+type ModelDumpOptions = {
+  mode?: string;
+  exclude?: ReadonlySet<string> | readonly string[] | Record<string, unknown>;
+};
 
 export type LiteAgentKickoffOptions = {
   responseFormat?: unknown;
@@ -308,6 +314,24 @@ export class LiteAgent {
 
   static validate_guardrail_function(value: LiteAgentGuardrail | string | null | undefined): LiteAgentGuardrail | string | null | undefined {
     return LiteAgent.validateGuardrailFunction(value);
+  }
+
+  modelDump(options: ModelDumpOptions = {}): Record<string, unknown> {
+    const jsonMode = options.mode === "json";
+    const dumped: Record<string, unknown> = {
+      id: this.id,
+      role: this.role,
+      goal: this.goal,
+      backstory: this.backstory,
+      guardrail: jsonMode ? serializeGuardrailForJson(this.guardrail) : this.guardrail,
+      guardrailMaxRetries: this.guardrailMaxRetries,
+      guardrail_max_retries: this.guardrailMaxRetries,
+    };
+    return omitModelDumpKeys(dumped, options.exclude);
+  }
+
+  model_dump(options: ModelDumpOptions = {}): Record<string, unknown> {
+    return this.modelDump(options);
   }
 
   async kickoff(
@@ -812,4 +836,27 @@ function subtractUsageForLiteAgent(current: UsageMetrics, before: UsageMetrics):
     cacheCreationTokens: Math.max(0, current.cacheCreationTokens - before.cacheCreationTokens),
     successfulRequests: Math.max(0, current.successfulRequests - before.successfulRequests),
   };
+}
+
+function modelDumpExcludeKeys(exclude: ModelDumpOptions["exclude"]): string[] {
+  if (!exclude) {
+    return [];
+  }
+  if (exclude instanceof Set) {
+    return [...exclude].map(String);
+  }
+  if (Array.isArray(exclude)) {
+    return exclude.map(String);
+  }
+  return Object.entries(exclude)
+    .filter(([, value]) => Boolean(value))
+    .map(([key]) => key);
+}
+
+function omitModelDumpKeys(source: Record<string, unknown>, exclude: ModelDumpOptions["exclude"]): Record<string, unknown> {
+  const excluded = new Set(modelDumpExcludeKeys(exclude));
+  if (excluded.size === 0) {
+    return source;
+  }
+  return Object.fromEntries(Object.entries(source).filter(([key]) => !excluded.has(key)));
 }

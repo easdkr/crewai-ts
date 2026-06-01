@@ -19,7 +19,7 @@ import { getHumanInputProvider, type HumanInputProvider } from "./human-input.js
 import { TaskOutput } from "./outputs.js";
 import type { Memory, MemoryScope } from "./memory.js";
 import { coerceSecurityConfig, type Fingerprint, type SecurityConfig } from "./security.js";
-import { LLMGuardrail } from "./guardrail.js";
+import { LLMGuardrail, serializeGuardrailForJson, serializeGuardrailsForJson } from "./guardrail.js";
 import { sanitizeToolName, ToolUsageLimitExceededError, ToolValidationError } from "./tools.js";
 import { interpolateOnly } from "./string-utils.js";
 import { OutputFormat, type AgentStepCallback, type InputValues, type LLM, type MaybePromise, type TaskCallback, type Tool } from "./types.js";
@@ -57,6 +57,11 @@ export type TaskExecutionOptions = {
   functionCallingLlm?: LLM | string | null;
   memory?: Memory | MemoryScope | null;
   knowledge?: Knowledge | null;
+};
+
+type ModelDumpOptions = {
+  mode?: string;
+  exclude?: ReadonlySet<string> | readonly string[] | Record<string, unknown>;
 };
 
 type RenderedTask = {
@@ -416,6 +421,31 @@ export class Task {
 
   process_model_config(values: Record<string, unknown>): Record<string, unknown> {
     return this.processModelConfig(values);
+  }
+
+  modelDump(options: ModelDumpOptions = {}): Record<string, unknown> {
+    const jsonMode = options.mode === "json";
+    const dumped: Record<string, unknown> = {
+      id: this.id,
+      name: this.name,
+      description: this.description,
+      expectedOutput: this.expectedOutput,
+      expected_output: this.expectedOutput,
+      agent: this.agent ? {
+        role: this.agent.role,
+        goal: this.agent.goal,
+        backstory: this.agent.backstory,
+      } : null,
+      guardrail: jsonMode ? serializeGuardrailForJson(this.guardrail) : this.guardrail,
+      guardrails: jsonMode ? serializeGuardrailsForJson(this.guardrails) : this.guardrails,
+      guardrailMaxRetries: this.guardrailMaxRetries,
+      guardrail_max_retries: this.guardrailMaxRetries,
+    };
+    return omitModelDumpKeys(dumped, options.exclude);
+  }
+
+  model_dump(options: ModelDumpOptions = {}): Record<string, unknown> {
+    return this.modelDump(options);
   }
 
   validateRequiredFields(): this {
@@ -1556,4 +1586,27 @@ function isToolExecutionError(error: unknown): boolean {
 function isDelegationToolName(toolName: string): boolean {
   const normalized = sanitizeToolName(toolName);
   return normalized === "delegate_work_to_coworker" || normalized === "ask_question_to_coworker";
+}
+
+function modelDumpExcludeKeys(exclude: ModelDumpOptions["exclude"]): string[] {
+  if (!exclude) {
+    return [];
+  }
+  if (exclude instanceof Set) {
+    return [...exclude].map(String);
+  }
+  if (Array.isArray(exclude)) {
+    return exclude.map(String);
+  }
+  return Object.entries(exclude)
+    .filter(([, value]) => Boolean(value))
+    .map(([key]) => key);
+}
+
+function omitModelDumpKeys(source: Record<string, unknown>, exclude: ModelDumpOptions["exclude"]): Record<string, unknown> {
+  const excluded = new Set(modelDumpExcludeKeys(exclude));
+  if (excluded.size === 0) {
+    return source;
+  }
+  return Object.fromEntries(Object.entries(source).filter(([key]) => !excluded.has(key)));
 }

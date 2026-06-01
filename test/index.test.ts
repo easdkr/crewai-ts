@@ -1921,6 +1921,30 @@ describe("formatter and guardrail utilities", () => {
     expect(serializeGuardrailsForJson(["check size", callable])).toEqual(["check size"]);
     expect(warningSpy).toHaveBeenCalled();
 
+    const agent = new Agent({
+      role: "Reviewer",
+      goal: "Review outputs",
+      backstory: "Checks guardrails",
+      llm: new LLM({ model: "gpt-4o-mini" }),
+      guardrail: callable,
+    });
+    const task = new Task({
+      description: "Do the thing",
+      expectedOutput: "A thing",
+      agent,
+      guardrails: [callable, "also check this"],
+    });
+    const liteAgent = new LiteAgent({
+      role: "Lite reviewer",
+      goal: "Review briefly",
+      backstory: "Checks guardrails",
+      guardrail: callable,
+    });
+
+    expect(task.model_dump({ mode: "json" }).guardrails).toEqual(["also check this"]);
+    expect(agent.model_dump({ mode: "json" }).guardrail).toBeNull();
+    expect(liteAgent.model_dump({ mode: "json" }).guardrail).toBeNull();
+
     const passed = StandardGuardrailResult.from_tuple([true, "clean"]);
     const failed = StandardGuardrailResult.fromTuple([false, "too short"]);
     const structuredFailure = { reason: "too short" };
