@@ -1465,6 +1465,31 @@ function parseNativeArgs(rawArgs: string): unknown {
 }
 
 export class PlannerObserver {
+  readonly agent: unknown;
+  readonly task: unknown;
+  readonly kickoffInput: string;
+  readonly kickoff_input: string;
+  readonly llm: unknown;
+
+  constructor(agent: unknown = null, task: unknown = null, kickoffInput = "") {
+    this.agent = agent;
+    this.task = task;
+    this.kickoffInput = kickoffInput;
+    this.kickoff_input = kickoffInput;
+    this.llm = this._resolveLlm();
+  }
+
+  _resolveLlm(): unknown {
+    const agentRecord = asPlannerRecord(this.agent);
+    const planningConfig = asPlannerRecord(agentRecord?.planningConfig ?? agentRecord?.planning_config);
+    const planningLlm = planningConfig?.llm ?? null;
+    return planningLlm ?? agentRecord?.llm ?? null;
+  }
+
+  _resolve_llm(): unknown {
+    return this._resolveLlm();
+  }
+
   observe(step: string, result: unknown): StepObservation {
     return new StepObservation({
       stepCompletedSuccessfully: true,
@@ -1502,6 +1527,95 @@ export class PlannerObserver {
 
   apply_refinements(observation: StepObservation, remaining_todos: TodoItem[]): TodoItem[] {
     return this.applyRefinements(observation, remaining_todos);
+  }
+
+  _buildObservationMessages(
+    completedStep: TodoItem,
+    result: string,
+    allCompleted: readonly TodoItem[],
+    remainingTodos: readonly TodoItem[],
+  ): LLMMessage[] {
+    const taskRecord = asPlannerRecord(this.task);
+    const taskDescription = typeof taskRecord?.description === "string"
+      ? taskRecord.description
+      : this.kickoffInput
+        ? extractTaskSection(this.kickoffInput)
+        : "";
+    const taskGoal = typeof taskRecord?.expectedOutput === "string"
+      ? taskRecord.expectedOutput
+      : typeof taskRecord?.expected_output === "string"
+        ? taskRecord.expected_output
+        : this.kickoffInput
+          ? "Complete the task successfully"
+          : "";
+    const completedSummary = allCompleted.length > 0
+      ? [
+        "## Previously completed steps:",
+        ...allCompleted.map((todo) => [
+          `  Step ${String(todo.stepNumber)}: ${todo.description}`,
+          `    Result: ${(todo.result ?? "").slice(0, 200)}`,
+        ].join("\n")),
+      ].join("\n")
+      : "";
+    const remainingSummary = remainingTodos.length > 0
+      ? [
+        "## Remaining plan steps:",
+        ...remainingTodos.map((todo) => `  Step ${String(todo.stepNumber)}: ${todo.description}`),
+      ].join("\n")
+      : "";
+    return [
+      {
+        role: "system",
+        content: "Observe the completed plan step and decide whether the remaining plan is still valid.",
+      },
+      {
+        role: "user",
+        content: [
+          taskDescription ? `Task description:\n${taskDescription}` : "",
+          taskGoal ? `Task goal:\n${taskGoal}` : "",
+          completedSummary,
+          `Completed step ${String(completedStep.stepNumber)}:\n${completedStep.description}`,
+          `Step result:\n${result}`,
+          remainingSummary,
+        ].filter(Boolean).join("\n\n"),
+      },
+    ];
+  }
+
+  _build_observation_messages(
+    completed_step: TodoItem,
+    result: string,
+    all_completed: readonly TodoItem[],
+    remaining_todos: readonly TodoItem[],
+  ): LLMMessage[] {
+    return this._buildObservationMessages(completed_step, result, all_completed, remaining_todos);
+  }
+
+  static _parseObservationResponse(response: unknown): StepObservation {
+    if (response instanceof StepObservation) {
+      return response;
+    }
+    const parsed = parseObservationPayload(response);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      return new StepObservation(parsed);
+    }
+    return new StepObservation({
+      step_completed_successfully: false,
+      key_information_learned: stringifyInput(response),
+      remaining_plan_still_valid: false,
+    });
+  }
+
+  _parseObservationResponse(response: unknown): StepObservation {
+    return PlannerObserver._parseObservationResponse(response);
+  }
+
+  static _parse_observation_response(response: unknown): StepObservation {
+    return PlannerObserver._parseObservationResponse(response);
+  }
+
+  _parse_observation_response(response: unknown): StepObservation {
+    return PlannerObserver._parseObservationResponse(response);
   }
 }
 
@@ -1626,6 +1740,45 @@ export function parseAgentStep(text: string): ReturnType<typeof parseAgentOutput
 }
 
 export const parse_agent_step = parseAgentStep;
+
+function asPlannerRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+function parseObservationPayload(response: unknown): unknown {
+  if (typeof response !== "string") {
+    return response;
+  }
+  const text = response.trim();
+  if (!text) {
+    return null;
+  }
+  for (const candidate of [text, stripJsonFence(text)]) {
+    if (!candidate) {
+      continue;
+    }
+    try {
+      return JSON.parse(candidate) as unknown;
+    } catch {
+      // Try the next normalized representation.
+    }
+  }
+  return null;
+}
+
+function stripJsonFence(text: string): string | null {
+  if (!text.startsWith("```")) {
+    return null;
+  }
+  const lines = text.split("\n");
+  if (lines.length <= 2) {
+    return null;
+  }
+  const body = lines.at(-1)?.trim() === "```" ? lines.slice(1, -1) : lines.slice(1);
+  return body.join("\n").trim();
+}
 
 function estimateTokens(text: string): number {
   const trimmed = text.trim();

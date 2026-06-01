@@ -11970,6 +11970,42 @@ describe("agent planning", () => {
     expect(observer.applyRefinements(new StepObservation({ step_completed_successfully: true }), remainingTodos)).toBe(remainingTodos);
   });
 
+  it("exposes upstream planner observation message and parsing helpers", () => {
+    const planningLlm = { model: "planner" };
+    const fallbackLlm = { model: "agent" };
+    const observer = new PlannerObserver(
+      { role: "Researcher", llm: fallbackLlm, planning_config: { llm: planningLlm } },
+      { description: "Compare products", expected_output: "Best product" },
+    );
+    const completed = new TodoItem({ step_number: 1, description: "Collect ratings", result: "Product B is best" });
+    const remaining = [new TodoItem({ step_number: 2, description: "Write recommendation" })];
+
+    expect(observer._resolve_llm()).toBe(planningLlm);
+    const messages = observer._build_observation_messages(completed, "done", [completed], remaining);
+    expect(messages[0]).toMatchObject({ role: "system" });
+    expect(messages[1]?.content).toContain("Compare products");
+    expect(messages[1]?.content).toContain("Product B is best");
+    expect(messages[1]?.content).toContain("Write recommendation");
+
+    const parsed = observer._parse_observation_response(JSON.stringify({
+      step_completed_successfully: true,
+      key_information_learned: "Ratings collected",
+      remaining_plan_still_valid: true,
+      suggested_refinements: { step_number: 2, new_description: "Recommend product B" },
+    }));
+    expect(parsed).toBeInstanceOf(StepObservation);
+    expect(parsed.suggested_refinements?.[0]?.new_description).toBe("Recommend product B");
+
+    const fenced = PlannerObserver._parse_observation_response([
+      "```json",
+      "{\"step_completed_successfully\":false,\"remaining_plan_still_valid\":false}",
+      "```",
+    ].join("\n"));
+    expect(fenced.step_completed_successfully).toBe(false);
+    expect(fenced.remaining_plan_still_valid).toBe(false);
+    expect(PlannerObserver._parseObservationResponse("not json").remaining_plan_still_valid).toBe(false);
+  });
+
   it("creates a default bounded low-effort PlanningConfig for planning true", () => {
     const agentInstance = new Agent({
       role: "Planner",
