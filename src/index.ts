@@ -2700,6 +2700,23 @@ export {
 
 export const version = CREWAI_VERSION;
 
+let originalEmitWarning: typeof process.emitWarning | null = null;
+
+export function filtered_warn(warning: string | Error, ...args: Parameters<typeof process.emitWarning> extends [string | Error, ...infer Rest] ? Rest : never): void {
+  const warningName = warning instanceof Error ? warning.name : typeof args[0] === "string" ? args[0] : null;
+  if (warningName?.includes("Pydantic")) {
+    return;
+  }
+  (originalEmitWarning ?? process.emitWarning).call(process, warning, ...args);
+}
+
+export function _suppress_pydantic_deprecation_warnings(): void {
+  if (!originalEmitWarning) {
+    originalEmitWarning = process.emitWarning.bind(process);
+  }
+  process.emitWarning = filtered_warn as typeof process.emitWarning;
+}
+
 export class CrewAIPlugin {
   readonly kind = "CrewAIPlugin";
 
@@ -2734,6 +2751,10 @@ export class CrewAIPlugin {
       fullname: `${info.fullname ?? "Crew"}.tasks_config`,
       type: "dict[str, Any]",
     };
+  }
+
+  static _crew_base_hook(ctx: { cls?: { info?: { fullname?: string; names?: Record<string, unknown> } } }): void {
+    CrewAIPlugin.crewBaseHook(ctx);
   }
 }
 

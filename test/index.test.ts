@@ -411,6 +411,7 @@ import {
   run_experiment,
   _get_baseline_filepath_fallback,
   __version__,
+  _suppress_pydantic_deprecation_warnings,
   afterLlmCall,
   afterToolCall,
   afterKickoff,
@@ -813,6 +814,7 @@ import {
   activateSkill,
   discoverSkills,
   formatSkillContext,
+  filtered_warn,
   loadResources,
   loadSkillMetadata,
   parseFrontmatter,
@@ -11359,6 +11361,9 @@ describe("top-level CrewAI exports", () => {
     const ctx = { cls: { info: { fullname: "demo.Crew", names: {} as Record<string, unknown> } } };
     hook?.(ctx);
     expect(Object.keys(ctx.cls.info.names).sort()).toEqual(["agents_config", "tasks_config"]);
+    const directCtx = { cls: { info: { fullname: "demo.DirectCrew", names: {} as Record<string, unknown> } } };
+    CrewAIPlugin._crew_base_hook(directCtx);
+    expect(Object.keys(directCtx.cls.info.names).sort()).toEqual(["agents_config", "tasks_config"]);
 
     expect(Object.hasOwn(EventListener.prototype, "setup_listeners")).toBe(true);
     expect(Object.hasOwn(TraceCollectionListener.prototype, "setup_listeners")).toBe(true);
@@ -11368,6 +11373,26 @@ describe("top-level CrewAI exports", () => {
     expect(() => {
       new TraceCollectionListener(new EventBus()).setup_listeners(new EventBus());
     }).not.toThrow();
+  });
+
+  it("exposes top-level pydantic warning suppression helpers", () => {
+    const original = process.emitWarning.bind(process);
+    const emitted: unknown[] = [];
+    process.emitWarning = ((warning: string | Error, ...args: unknown[]) => {
+      emitted.push([warning, ...args]);
+    }) satisfies typeof process.emitWarning;
+    try {
+      filtered_warn("ignore", "PydanticDeprecatedSince20");
+      filtered_warn("keep", "DeprecationWarning");
+      expect(emitted).toEqual([["keep", "DeprecationWarning"]]);
+
+      _suppress_pydantic_deprecation_warnings();
+      process.emitWarning("ignore patched", "PydanticDeprecatedSince20");
+      process.emitWarning("keep patched", "Warning");
+      expect(emitted).toEqual([["keep", "DeprecationWarning"], ["keep patched", "Warning"]]);
+    } finally {
+      process.emitWarning = original;
+    }
   });
 
   it("registers upstream-style EventListener console handlers", () => {
