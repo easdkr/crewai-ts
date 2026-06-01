@@ -37,6 +37,16 @@ Remaining work should be classified by behavior parity:
 
 Release readiness is decided by the full validation gate plus this behavior classification, not by commit count or by driving the parity scripts beyond `missing=0`.
 
+## Next-Work Selection Rules
+
+Use these rules before opening a new porting branch or commit:
+
+1. Start from an upstream example, upstream behavior test, or documented user workflow.
+2. Reproduce the gap with a focused deterministic test in this repository.
+3. If the failing condition is only a missing method/property name while behavior already works through an existing API, do not add the alias unless the upstream example/test calls that name directly.
+4. If the upstream behavior depends on live cloud accounts, remote SDK clients, platform subscriptions, or Python-only optional packages, classify it as a shim or intentionally unsupported before writing runtime code.
+5. Consider the work release-ready only after the full validation gate passes.
+
 ## Behavior Parity Release Map
 
 Use this map before starting any new porting change. If a behavior lands in **covered** or **shimmed**, protect it with deterministic tests and keep it in the default gate. If it lands in **unsupported**, document the boundary and do not add runtime code unless the project explicitly chooses an optional integration gate. If it lands in **missing**, add a focused failing behavior test before implementation.
@@ -51,6 +61,21 @@ Use this map before starting any new porting change. If a behavior lands in **co
 | Telemetry, tracing, and evaluation listeners | Documented deterministic shim | Local span/event recording and evaluator behavior are release-gated. Remote exporters and OTLP upload paths are optional only. |
 | CrewAI cloud/platform subscription, enterprise automations, hosted triggers, and remote dashboards | Intentionally unsupported in this port | Keep as documented boundaries. Do not port network/platform side effects into the default runtime. |
 | Python-only optional runtime integrations | Intentionally unsupported or shimmed case-by-case | Prefer injected/local extractors or clear errors. Do not bundle Python-only dependencies into the TS package. |
+
+## Behavior Gap Register
+
+This register is the source of truth for continuing porting work while parity scripts report `missing=0`.
+
+| Area | Status | Missing behavior to prove before coding | Intentionally unsupported boundary |
+| --- | --- | --- | --- |
+| Root/subpath exports and class method names | Parity gate green | None while export and method parity stay at `missing=0`. New aliases require a failing upstream example or behavior test. | Name-only compatibility churn is out of scope for release readiness. |
+| Core Agent/Task/Crew/Flow/Memory/Knowledge/Tool workflows | Deterministically covered, audit by examples | Only workflows from current upstream examples or tests that fail with local LLM/tool fixtures. | None known beyond cloud/platform and live provider dependencies listed below. |
+| Experimental `AgentExecutor` plan-and-execute | Deterministically covered, behavior audit continuing | End-to-end upstream gaps in planning execution, isolated step execution, observation/replan decisions, native tool execution, or human feedback loops. | Private helper parity without behavior impact is out of scope. |
+| LLM providers and provider storage/files | Deterministic shim | SDK-shaped fixtures that fail request construction, response parsing, streaming accumulation, usage extraction, file conversion, or error classification. | Live OpenAI/Azure/Anthropic/Bedrock/Gemini credentials, network SDK calls, provider-hosted state, and remote file storage are optional integration scope only. |
+| RAG/vector storage and embedding providers | Deterministic shim | Fake-client or in-memory behavior that fails lifecycle, filtering, reset, async, error-conversion, embedding config, or collection semantics. | Real Qdrant, LanceDB, ChromaDB, Vertex AI, hosted embedding services, and provider network credentials are optional integration scope only. |
+| Telemetry/tracing/evaluation listeners | Deterministic shim | Local span/event/evaluator behavior that fails upstream-shaped event payloads or lifecycle ordering. | OTLP exporters, remote dashboards, hosted traces, and network upload paths are intentionally unsupported in the default gate. |
+| CrewAI cloud/platform features | Intentionally unsupported | None unless represented as local metadata with no network side effects. | Subscription management, hosted triggers, enterprise automation, remote dashboards, and cloud identity workflows are outside this TS port's default scope. |
+| Python-only optional parsers/integrations | Shimmed or unsupported case-by-case | Local injected extractor behavior that fails an upstream document workflow. | Bundling or invoking Python-only packages such as `pdfplumber`/Docling from the default TS package is out of scope. |
 
 ## Intentionally Unsupported Or Shimmed Areas
 
