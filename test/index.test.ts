@@ -18507,6 +18507,38 @@ describe("flow runtime", () => {
     expect(flow.methodExecutionCounts.get("repeatStart")).toBe(2);
   });
 
+  it("preserves non-structured-cloneable flow state values when copying state", () => {
+    const handler = () => "locked";
+    const flow = new Flow<{
+      count: number;
+      nested: {
+        handler: () => string;
+        value: number;
+      };
+      items: unknown[];
+    }>({
+      initialState: {
+        count: 1,
+        nested: { handler, value: 42 },
+        items: [handler, { value: "normal" }],
+      },
+    });
+
+    const copied = flow._copy_state();
+
+    expect(copied).not.toBe(flow.state);
+    expect(copied.count).toBe(1);
+    expect(copied.nested).not.toBe(flow.state.nested);
+    expect(copied.nested.value).toBe(42);
+    expect(copied.nested.handler).toBe(handler);
+    expect(copied.items).not.toBe(flow.state.items);
+    expect(copied.items[0]).toBe(handler);
+    expect(copied.items[1]).toEqual({ value: "normal" });
+
+    flow.state.nested.value = 100;
+    expect(copied.nested.value).toBe(42);
+  });
+
   it("resets runtime method tracking on each kickoff", async () => {
     class CountingFlow extends Flow<{ value: number }> {
       constructor() {

@@ -4225,7 +4225,54 @@ function cloneFlowState<TState extends object>(state: TState): TState {
       // Fall through for non-cloneable values.
     }
   }
-  return JSON.parse(JSON.stringify(state)) as TState;
+  return cloneFlowStateFallback(state);
+}
+
+function cloneFlowStateFallback<TValue>(value: TValue, seen = new WeakMap<object, unknown>()): TValue {
+  if (value === null || typeof value !== "object") {
+    return value;
+  }
+  if (value instanceof Date) {
+    return new Date(value.getTime()) as TValue;
+  }
+  if (value instanceof RegExp) {
+    return new RegExp(value.source, value.flags) as TValue;
+  }
+  if (seen.has(value)) {
+    return seen.get(value) as TValue;
+  }
+  if (Array.isArray(value)) {
+    const copy: unknown[] = [];
+    seen.set(value, copy);
+    for (const item of value) {
+      copy.push(cloneFlowStateFallback(item, seen));
+    }
+    return copy as TValue;
+  }
+  if (value instanceof Map) {
+    const copy = new Map<unknown, unknown>();
+    seen.set(value, copy);
+    for (const [key, mapValue] of value) {
+      copy.set(cloneFlowStateFallback(key, seen), cloneFlowStateFallback(mapValue, seen));
+    }
+    return copy as TValue;
+  }
+  if (value instanceof Set) {
+    const copy = new Set<unknown>();
+    seen.set(value, copy);
+    for (const item of value) {
+      copy.add(cloneFlowStateFallback(item, seen));
+    }
+    return copy as TValue;
+  }
+
+  const source = value as Record<PropertyKey, unknown>;
+  const copy: Record<PropertyKey, unknown> = {};
+  seen.set(value, copy);
+  for (const key of Reflect.ownKeys(source)) {
+    copy[key] = cloneFlowStateFallback(source[key], seen);
+  }
+  return copy as TValue;
 }
 
 function stringifyRouterOutput(output: unknown): string {
