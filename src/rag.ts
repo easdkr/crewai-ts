@@ -2365,7 +2365,7 @@ export class ChromaDBClient {
   }
 
   delete_collection(params: BaseCollectionParams): void {
-    this.callClient("delete_collection", "deleteCollection", { name: sanitizeCollectionName(collectionNameFrom(params)), ...params });
+    this.callClient("delete_collection", "deleteCollection", { name: sanitizeCollectionName(collectionNameFrom(params)) });
   }
 
   deleteCollection(params: BaseCollectionParams): void {
@@ -2373,7 +2373,7 @@ export class ChromaDBClient {
   }
 
   async adelete_collection(params: BaseCollectionParams): Promise<void> {
-    await this.callClientAsync("delete_collection", "deleteCollection", { name: sanitizeCollectionName(collectionNameFrom(params)), ...params });
+    await this.callClientAsync("delete_collection", "deleteCollection", { name: sanitizeCollectionName(collectionNameFrom(params)) });
   }
 
   reset(): void {

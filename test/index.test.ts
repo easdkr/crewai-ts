@@ -9521,6 +9521,23 @@ describe("RAG configuration and factories", () => {
     });
   });
 
+  it("uses upstream ChromaDB delete collection payload shape", async () => {
+    const deleteCollection = vi.fn();
+    const asyncDeleteCollection = vi.fn(() => Promise.resolve());
+    const client = new ChromaDBClient({
+      delete_collection: deleteCollection,
+    }, (texts: readonly string[]) => texts.map((text) => [text.length]));
+    const asyncClient = new ChromaDBClient({
+      delete_collection: asyncDeleteCollection,
+    }, (texts: readonly string[]) => texts.map((text) => [text.length]));
+
+    client.delete_collection({ collection_name: "docs", ignored: true });
+    await asyncClient.adelete_collection({ collection_name: "async docs", ignored: true });
+
+    expect(deleteCollection).toHaveBeenCalledWith({ name: "docs" });
+    expect(asyncDeleteCollection).toHaveBeenCalledWith({ name: "async_docs" });
+  });
+
   it("passes null ChromaDB metadatas when every added document omits metadata", () => {
     const collection = { upsert: vi.fn() };
     const getOrCreateCollection = vi.fn(() => collection);
