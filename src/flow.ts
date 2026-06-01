@@ -83,9 +83,68 @@ export const EdgeInfo = Object.freeze({ kind: "EdgeInfo" });
 export const StateFieldInfo = Object.freeze({ kind: "StateFieldInfo" });
 export const StateSchemaInfo = Object.freeze({ kind: "StateSchemaInfo" });
 export const FlowStructureInfo = Object.freeze({ kind: "FlowStructureInfo" });
-export const ConsoleProvider = ConsoleInputProvider;
 export const flow_config = flowConfig;
 export const _INITIAL_STATE_CLASS_MARKER = "__crewai_pydantic_class_schema__";
+
+export type ConsoleProviderOptions = {
+  verbose?: boolean;
+  input?: (prompt: string) => MaybePromise<string | null>;
+};
+
+export class ConsoleProvider extends ConsoleInputProvider implements HumanFeedbackProvider {
+  readonly verbose: boolean;
+  private readonly inputFn: ((prompt: string) => MaybePromise<string | null>) | null;
+
+  constructor(options: boolean | ConsoleProviderOptions = true) {
+    super();
+    this.verbose = typeof options === "boolean" ? options : options.verbose ?? true;
+    this.inputFn = typeof options === "boolean" ? null : options.input ?? null;
+  }
+
+  async requestInput(
+    message: string,
+    flow?: Flow<object>,
+    metadata: Record<string, unknown> | null = null,
+  ): Promise<string> {
+    void flow;
+    void metadata;
+    if (this.inputFn) {
+      return (await this.inputFn(this.verbose ? ">>> " : `${message} `) ?? "").trim();
+    }
+    return await super.requestInput(this.verbose ? `${message}\n>>>` : message);
+  }
+
+  async request_input(
+    message: string,
+    flow: Flow<object>,
+    metadata: Record<string, unknown> | null = null,
+  ): Promise<string> {
+    return await this.requestInput(message, flow, metadata);
+  }
+
+  async requestFeedback(context: PendingFeedbackContext, flow: Flow<object>): Promise<string> {
+    const flowName = context.flowName || flow.constructor.name;
+    crewaiEventBus.emit(flow, new HumanFeedbackRequestedEvent({
+      flowName,
+      methodName: context.methodName,
+      output: context.output,
+      message: context.message,
+      emit: context.emit,
+    }));
+    const feedback = (await this.requestInput(context.message, flow, context.metadata)).trim();
+    crewaiEventBus.emit(flow, new HumanFeedbackReceivedEvent({
+      flowName,
+      methodName: context.methodName,
+      feedback,
+      outcome: null,
+    }));
+    return feedback;
+  }
+
+  async request_feedback(context: PendingFeedbackContext, flow: Flow<object>): Promise<string> {
+    return await this.requestFeedback(context, flow);
+  }
+}
 
 export function _resolve_persistence(value: unknown): unknown {
   if (value === null || value === undefined || isFlowPersistence(value)) {
@@ -561,7 +620,8 @@ export type PendingFeedbackContext = HumanFeedbackContext & {
 };
 
 export type HumanFeedbackProvider = {
-  requestFeedback(context: PendingFeedbackContext, flow: Flow<object>): MaybePromise<string | null>;
+  requestFeedback?: (context: PendingFeedbackContext, flow: Flow<object>) => MaybePromise<string | null>;
+  request_feedback?: (context: PendingFeedbackContext, flow: Flow<object>) => MaybePromise<string | null>;
 };
 
 export type HumanFeedbackResult = {
@@ -2079,7 +2139,8 @@ export class Flow<TState extends object = Record<string, unknown>> {
     };
     const provider = config.provider ?? flowConfig.hitlProvider;
     if (isHumanFeedbackProvider(provider)) {
-      return String(await provider.requestFeedback(context, this));
+      const request = provider.requestFeedback ?? provider.request_feedback;
+      return await request?.call(provider, context, this) ?? "";
     }
     const feedback = await this.ask(formatFeedbackPrompt(config.message, methodOutput), {
       metadata: config.metadata ?? null,
@@ -2164,8 +2225,8 @@ function humanFeedbackConfigFor(instanceOrConstructor: object | FlowMetadataTarg
 function isHumanFeedbackProvider(value: unknown): value is HumanFeedbackProvider {
   return value !== null
     && typeof value === "object"
-    && "requestFeedback" in value
-    && typeof value.requestFeedback === "function";
+    && (typeof (value as { requestFeedback?: unknown }).requestFeedback === "function"
+      || typeof (value as { request_feedback?: unknown }).request_feedback === "function");
 }
 
 function serializeHumanFeedbackLlm(value: unknown): string | Record<string, unknown> | null {

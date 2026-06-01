@@ -156,6 +156,7 @@ import {
   FileHandler,
   Flow,
   _FlowGeneric,
+  ConsoleProvider,
   FeedbackOutcome,
   FlowCreatedEvent,
   FlowFinishedEvent,
@@ -12494,6 +12495,44 @@ describe("flow runtime", () => {
     expect((pending as HumanFeedbackPending).context).toMatchObject({
       llm: { model: "gpt-4o-mini", temperature: 0 },
     });
+  });
+
+  it("uses ConsoleProvider for upstream feedback and input provider protocols", async () => {
+    const events: string[] = [];
+    crewaiEventBus.on("human_feedback_requested", (_source, event) => {
+      events.push(`${event.type}:${event.methodName ?? ""}:${event.message ?? ""}`);
+    });
+    crewaiEventBus.on("human_feedback_received", (_source, event) => {
+      events.push(`${event.type}:${event.methodName ?? ""}:${event.feedback}`);
+    });
+
+    class ReviewFlow extends Flow {}
+    const flow = new ReviewFlow();
+    const provider = new ConsoleProvider({
+      verbose: false,
+      input: (prompt) => prompt.includes("Continue") ? "typed input" : "ship it",
+    });
+    const context = {
+      flowName: "ReviewFlow",
+      flowId: "flow-1",
+      flowClass: "ReviewFlow",
+      methodName: "review",
+      output: "draft",
+      methodOutput: "draft",
+      message: "Review draft",
+      emit: ["approved"],
+      defaultOutcome: null,
+      metadata: { channel: "review" },
+      llm: null,
+      requestedAt: new Date(),
+    };
+
+    await expect(provider.request_feedback(context, flow)).resolves.toBe("ship it");
+    await expect(provider.request_input("Continue?", flow)).resolves.toBe("typed input");
+    expect(events).toEqual([
+      "human_feedback_requested:review:Review draft",
+      "human_feedback_received:review:ship it",
+    ]);
   });
 
   it("returns HumanFeedbackPending instead of failing when async feedback pauses a flow", async () => {
