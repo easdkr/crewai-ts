@@ -19,6 +19,7 @@ import { getHumanInputProvider, type HumanInputProvider } from "./human-input.js
 import { TaskOutput } from "./outputs.js";
 import type { Memory, MemoryScope } from "./memory.js";
 import { coerceSecurityConfig, type Fingerprint, type SecurityConfig } from "./security.js";
+import { LLMGuardrail } from "./guardrail.js";
 import { sanitizeToolName, ToolUsageLimitExceededError, ToolValidationError } from "./tools.js";
 import { interpolateOnly } from "./string-utils.js";
 import { OutputFormat, type AgentStepCallback, type InputValues, type LLM, type MaybePromise, type TaskCallback, type Tool } from "./types.js";
@@ -30,6 +31,7 @@ import { serializeModelClass, type JsonSchema } from "./schema-utils.js";
 export type GuardrailResult = readonly [boolean, unknown] | { success: boolean; result: unknown };
 
 export type Guardrail = (output: TaskOutput) => GuardrailResult | Promise<GuardrailResult>;
+export type TaskGuardrail = Guardrail | string;
 
 export type ConditionalTaskCondition = (output: TaskOutput) => MaybePromise<boolean>;
 
@@ -186,8 +188,8 @@ export type TaskOptions = {
   markdown?: boolean;
   allowCrewaiTriggerContext?: boolean | null;
   allow_crewai_trigger_context?: boolean | null;
-  guardrail?: Guardrail | null;
-  guardrails?: Guardrail | readonly Guardrail[] | null;
+  guardrail?: TaskGuardrail | null;
+  guardrails?: TaskGuardrail | readonly TaskGuardrail[] | null;
   guardrailMaxRetries?: number;
   guardrail_max_retries?: number;
   max_retries?: number | null;
@@ -250,8 +252,8 @@ export class Task {
   readonly markdown: boolean;
   allowCrewaiTriggerContext: boolean | null;
   allow_crewai_trigger_context: boolean | null;
-  readonly guardrail: Guardrail | null;
-  readonly guardrails: readonly Guardrail[];
+  readonly guardrail: TaskGuardrail | null;
+  readonly guardrails: readonly TaskGuardrail[];
   guardrailMaxRetries: number;
   guardrail_max_retries: number;
   readonly maxRetries: number | null;
@@ -281,6 +283,8 @@ export class Task {
   checkpointOriginalOutputFile: string | null;
   checkpoint_original_output_file: string | null;
   private executionPlan: string | null = null;
+  private resolvedGuardrail: Guardrail | null = null;
+  private resolvedGuardrails: readonly Guardrail[] = [];
   private readonly guardrailRetryCounts = new Map<number, number>();
 
   constructor(options: TaskOptions) {
@@ -349,6 +353,8 @@ export class Task {
     this.securityConfig = coerceSecurityConfig(options.securityConfig ?? options.security_config ?? null);
     this.security_config = this.securityConfig;
     this.checkOutput();
+    this.ensureGuardrailIsCallable();
+    this.ensureGuardrailsIsListOfCallables();
     this.handleMaxRetriesDeprecation();
   }
 
@@ -408,7 +414,9 @@ export class Task {
 
   ensureGuardrailIsCallable(): this {
     if (this.guardrail) {
-      this.validateGuardrailFunction(this.guardrail);
+      this.resolvedGuardrail = this.resolveGuardrail(this.guardrail, "Agent is required to use LLMGuardrail");
+    } else {
+      this.resolvedGuardrail = null;
     }
     return this;
   }
@@ -418,8 +426,11 @@ export class Task {
   }
 
   ensureGuardrailsIsListOfCallables(): this {
-    for (const guardrail of this.guardrails) {
-      this.validateGuardrailFunction(guardrail);
+    this.resolvedGuardrails = this.guardrails.map((guardrail) => (
+      this.resolveGuardrail(guardrail, "Agent is required to use non-programmatic guardrails")
+    ));
+    if (this.resolvedGuardrails.length > 0) {
+      this.resolvedGuardrail = null;
     }
     return this;
   }
@@ -1086,10 +1097,24 @@ export class Task {
   }
 
   private effectiveGuardrailEntries(): readonly (readonly [Guardrail, number | null])[] {
-    if (this.guardrails.length > 0) {
-      return this.guardrails.map((guardrail, index) => [guardrail, index] as const);
+    if (this.resolvedGuardrails.length > 0) {
+      return this.resolvedGuardrails.map((guardrail, index) => [guardrail, index] as const);
     }
-    return this.guardrail ? [[this.guardrail, null] as const] : [];
+    return this.resolvedGuardrail ? [[this.resolvedGuardrail, null] as const] : [];
+  }
+
+  private resolveGuardrail(guardrail: TaskGuardrail, missingAgentMessage: string): Guardrail {
+    if (typeof guardrail === "function") {
+      this.validateGuardrailFunction(guardrail);
+      return guardrail;
+    }
+    if (!this.agent) {
+      throw new Error(missingAgentMessage);
+    }
+    if (!this.agent.llm || typeof this.agent.llm === "string") {
+      throw new Error("Agent must have a BaseLLM instance to use LLMGuardrail");
+    }
+    return new LLMGuardrail(guardrail, this.agent.llm).asGuardrail();
   }
 
   private async runGuardrail(
@@ -1332,11 +1357,13 @@ function isGuardrailTuple(value: GuardrailResult): value is readonly [boolean, u
   return Array.isArray(value);
 }
 
-function normalizeGuardrails(guardrails: TaskOptions["guardrails"]): readonly Guardrail[] {
+function normalizeGuardrails(guardrails: TaskOptions["guardrails"]): readonly TaskGuardrail[] {
   if (!guardrails) {
     return [];
   }
-  return typeof guardrails === "function" ? [guardrails] : guardrails;
+  return typeof guardrails === "function" || typeof guardrails === "string"
+    ? [guardrails]
+    : guardrails;
 }
 
 function normalizeTaskExecutionOptions(

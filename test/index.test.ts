@@ -14988,7 +14988,7 @@ describe("project config mapping", () => {
       }
 
       appendGuardrail() {
-        return () => [true, "guarded output"] as const;
+        return (output: TaskOutput) => [true, output.raw === "" ? output.raw : "guarded output"] as const;
       }
 
       agentGuardrail() {
@@ -19316,6 +19316,50 @@ describe("task interpolation", () => {
 });
 
 describe("task guardrails", () => {
+  it("resolves string task guardrails through an LLM guardrail", async () => {
+    const prompts: string[] = [];
+    const agentInstance = new Agent({
+      role: "Reviewer",
+      goal: "Validate output",
+      backstory: "Checks task output",
+      llm: (messages, options) => {
+        const prompt = messages.at(-1)?.content ?? "";
+        prompts.push(prompt);
+        if (prompt.includes("Ensure the following task result complies with the given guardrail.")) {
+          expect(options?.responseModel).toBe(LLMGuardrailResult);
+          return "{\"valid\":true,\"feedback\":null}";
+        }
+        return "draft";
+      },
+    });
+    const taskInstance = new Task({
+      description: "Write",
+      expectedOutput: "A report",
+      agent: agentInstance,
+      guardrail: "The report must cite sources.",
+    });
+
+    const output = await taskInstance.execute();
+
+    expect(output.raw).toBe("draft");
+    expect(prompts[1]).toContain("Guardrail:");
+    expect(prompts[1]).toContain("The report must cite sources.");
+  });
+
+  it("requires an agent for non-programmatic task guardrails", () => {
+    expect(() => new Task({
+      description: "Write",
+      expectedOutput: "A report",
+      guardrail: "The report must cite sources.",
+    })).toThrow("Agent is required to use LLMGuardrail");
+
+    expect(() => new Task({
+      description: "Write",
+      expectedOutput: "A report",
+      guardrails: ["The report must cite sources."],
+    })).toThrow("Agent is required to use non-programmatic guardrails");
+  });
+
   it("invokes guardrails through the upstream-compatible helper", async () => {
     const prompts: string[] = [];
     let attempts = 0;
@@ -19470,7 +19514,8 @@ describe("task guardrails", () => {
       description: "Write",
       expectedOutput: "A report",
       agent: agentInstance,
-      guardrail: () => {
+      guardrail: (output) => {
+        expect(output.raw).toBe("draft");
         throw new Error("guardrail exploded");
       },
     });
@@ -19492,7 +19537,7 @@ describe("task guardrails", () => {
       expectedOutput: "A report",
       agent: agentInstance,
       guardrailMaxRetries: 1,
-      guardrail: () => [false, "still invalid"],
+      guardrail: (output) => [false, output.raw === "draft" ? "still invalid" : "unexpected output"],
     });
 
     await expect(taskInstance.execute()).rejects.toThrow(
