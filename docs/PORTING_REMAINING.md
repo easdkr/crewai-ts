@@ -225,6 +225,7 @@ When more goal budget is available, continue from the behavioral parity audits b
 - `AgentExecutor.invoke` / `invoke_async` now run kickoff inside an upstream-style LLM stop-word override scope without mutating the base LLM stop list.
 - `AgentExecutor.invoke` / `invoke_async` now preserve `ask_for_human_input` and apply sync/async human-feedback handlers to the final answer before returning output.
 - `AgentExecutor.invoke` / `invoke_async` now save final answers to unified memory through upstream-style extraction and agent root-scope routing when memory is configured.
+- `AgentExecutor.use_stop_words` now mirrors upstream executor behavior for both executor-level and agent-level LLMs, including snake_case `supports_stop_words` providers used by upstream tests.
 - `AgentExecutor.handle_goal_achieved` now preserves pending todo status while routing to finalization, matching upstream early-goal state semantics.
 - `AgentExecutor.handle_refine_and_continue` now applies the latest planner observation refinements to pending todos before continuing.
 - `PlannerObserver.observe` now builds upstream-style observation prompts, parses deterministic LLM JSON responses into `StepObservation`, and falls back conservatively when observation LLM calls fail.

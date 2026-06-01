@@ -514,15 +514,15 @@ export class AgentExecutor extends BaseAgentExecutor {
   }
 
   get use_stop_words(): boolean {
-    const llm = this.agent?.llm;
+    const llm = this.llm ?? this.agent?.llm;
     const candidate = typeof llm === "object" && llm !== null
-      ? llm as { supportsStopWords?: unknown }
+      ? llm as { supportsStopWords?: unknown; supports_stop_words?: unknown }
       : null;
-    if (typeof candidate?.supportsStopWords !== "function") {
+    const supports = candidate?.supportsStopWords ?? candidate?.supports_stop_words;
+    if (typeof supports !== "function") {
       return false;
     }
-    const supportsStopWords = candidate.supportsStopWords as () => unknown;
-    return Boolean(supportsStopWords());
+    return Boolean((supports as () => unknown).call(llm));
   }
 
   generatePlan(): void {

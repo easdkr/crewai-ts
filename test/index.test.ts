@@ -11730,12 +11730,17 @@ describe("core crew runtime", () => {
       goal: "Find facts",
       backstory: "Careful analyst",
     });
-    const executor = new AgentExecutor({ agent: agentInstance, maxIter: 2 });
+    const executor = new AgentExecutor({
+      agent: agentInstance,
+      maxIter: 2,
+      llm: { supports_stop_words: () => true },
+    });
     executor.state.todos.items.push(new TodoItem({
       stepNumber: 1,
       description: "Collect facts",
     }));
 
+    expect(executor.use_stop_words).toBe(true);
     expect(executor.check_todos_available()).toBe("planning_disabled");
     expect(executor.get_ready_todos_method()).toBe("single_todo_ready");
     expect(executor.execute_todo_sequential()).toBe("todo_injected");
