@@ -850,7 +850,24 @@ export class AgentExecutor extends BaseAgentExecutor {
   }
 
   checkTodoCompletion(): "todo_satisfied" | "todo_not_satisfied" {
-    return this.state.todos.currentTodo ? "todo_satisfied" : "todo_not_satisfied";
+    const current = this.state.todos.currentTodo;
+    if (!current) {
+      return "todo_not_satisfied";
+    }
+    const answer = this.state.current_answer;
+    if (answer instanceof AgentAction) {
+      const expectedTool = current.toolToUse ?? current.tool_to_use;
+      if (!expectedTool) {
+        return "todo_satisfied";
+      }
+      return sanitizeToolName(answer.tool) === sanitizeToolName(expectedTool)
+        ? "todo_satisfied"
+        : "todo_not_satisfied";
+    }
+    if (answer instanceof AgentFinish) {
+      return "todo_satisfied";
+    }
+    return "todo_not_satisfied";
   }
 
   check_todo_completion(): ReturnType<AgentExecutor["checkTodoCompletion"]> {

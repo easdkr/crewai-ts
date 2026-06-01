@@ -11070,6 +11070,41 @@ describe("core crew runtime", () => {
     });
   });
 
+  it("requires AgentExecutor tool actions to match the current todo expected tool", () => {
+    const executor = new AgentExecutor();
+    executor.state.todos.items = [
+      new TodoItem({
+        stepNumber: 1,
+        description: "Search docs",
+        toolToUse: "Search Tool",
+        status: TodoStatus.RUNNING,
+      }),
+    ];
+
+    executor.state.current_answer = new AgentAction({
+      thought: "use lookup",
+      tool: "Lookup Tool",
+      toolInput: "{}",
+      text: "Action: Lookup Tool\nAction Input: {}",
+    });
+    expect(executor.check_todo_completion()).toBe("todo_not_satisfied");
+
+    executor.state.current_answer = new AgentAction({
+      thought: "use search",
+      tool: "Search Tool",
+      toolInput: "{}",
+      text: "Action: Search Tool\nAction Input: {}",
+    });
+    expect(executor.check_todo_completion()).toBe("todo_satisfied");
+
+    executor.state.current_answer = new AgentFinish({
+      thought: "done",
+      output: "final",
+      text: "Final Answer: final",
+    });
+    expect(executor.check_todo_completion()).toBe("todo_satisfied");
+  });
+
   it("short-circuits AgentExecutor native tool execution for result_as_answer tools", () => {
     const finalTool = new StructuredTool({
       name: "slow_one",
