@@ -155,6 +155,8 @@ export function _deserialize_model_class(value: unknown): TaskOutputConverter | 
 
 export type TaskOptions = {
   id?: string;
+  fromCheckpoint?: boolean;
+  from_checkpoint?: boolean;
   name?: string | null;
   description?: string;
   expectedOutput?: string;
@@ -290,7 +292,9 @@ export class Task {
   private readonly guardrailRetryCounts = new Map<number, number>();
 
   constructor(options: TaskOptions) {
-    this.id = options.id ?? randomUUID();
+    this.id = Task.denyUserSetId(options.id, {
+      fromCheckpoint: options.fromCheckpoint ?? options.from_checkpoint ?? false,
+    }) ?? randomUUID();
     this.name = options.name ?? null;
     this.description = options.description as string;
     this.expectedOutput = (options.expectedOutput ?? options.expected_output) as string;

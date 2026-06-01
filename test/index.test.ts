@@ -10514,6 +10514,7 @@ describe("core crew runtime", () => {
     });
     const taskInstance = new Task({
       id: "memory-task",
+      from_checkpoint: true,
       description: "Executor task",
       expectedOutput: "Done",
     });
@@ -10771,6 +10772,7 @@ describe("core crew runtime", () => {
     });
     const taskInstance = new Task({
       id: "task-1",
+      from_checkpoint: true,
       description: "Research CrewAI",
       expectedOutput: "Brief",
       agent: researcher,
@@ -10828,6 +10830,7 @@ describe("core crew runtime", () => {
     });
     const taskInstance = new Task({
       id: "process-task",
+      from_checkpoint: true,
       description: "Research CrewAI",
       expectedOutput: "Brief",
       agent: researcher,
@@ -10848,6 +10851,7 @@ describe("core crew runtime", () => {
 
     const asyncTask = new Task({
       id: "async-process-task",
+      from_checkpoint: true,
       description: "Async",
       expectedOutput: "Done",
       agent: researcher,
@@ -19192,6 +19196,17 @@ describe("task output files", () => {
     expect(Task._normalize_input_files({ notes: "notes.txt" })).toEqual({ notes: "notes.txt" });
     expect(() => Task._deny_user_set_id("manual-id")).toThrow("id");
     expect(Task._deny_user_set_id("restored-id", { from_checkpoint: true })).toBe("restored-id");
+    expect(() => new Task({
+      id: "manual-task-id",
+      description: "Manual id",
+      expectedOutput: "Rejected",
+    })).toThrow("id");
+    expect(new Task({
+      id: "restored-task-id",
+      from_checkpoint: true,
+      description: "Restored id",
+      expectedOutput: "Accepted",
+    }).id).toBe("restored-task-id");
     expect(get_supported_content_types("openai")).toContain("image/");
     expect(is_auto_injected("image/png", ["image/"])).toBe(true);
     expect(is_auto_injected("text/plain", ["image/"])).toBe(false);
@@ -19263,6 +19278,7 @@ describe("task output files", () => {
       agent: "Researcher",
     });
     const copied = taskInstance.copy([clonedAgent]);
+    expect(copied.id).not.toBe(taskInstance.id);
     expect(copied.used_tools).toBe(2);
     expect(copied.tools_errors).toBe(1);
     expect(copied.delegations).toBe(1);

@@ -2672,7 +2672,6 @@ function crewSkillDedupeKey(skill: unknown): string {
 
 function copyTask(task: Task, agentByRole: ReadonlyMap<string, Agent>): Task {
   const options = {
-    id: task.id,
     name: task.name,
     description: task.description,
     expectedOutput: task.expectedOutput,
@@ -2787,6 +2786,7 @@ function deserializeCheckpointTask(record: Record<string, unknown>, agentByRole:
   const agentRole = typeof record.agent === "string" ? record.agent : null;
   const task = new Task({
     ...(typeof record.id === "string" ? { id: record.id } : {}),
+    fromCheckpoint: true,
     name: typeof record.name === "string" ? record.name : null,
     description: stringifyConfigValue(record.description),
     expectedOutput: stringifyConfigValue(record.expectedOutput ?? record.expected_output),
