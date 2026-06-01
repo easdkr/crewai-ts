@@ -10838,6 +10838,48 @@ describe("core crew runtime", () => {
     expect(prompts[1]).not.toContain("Context:");
   });
 
+  it("uses explicit task context outputs instead of all previous outputs", async () => {
+    const prompts: string[] = [];
+    const agentInstance = new Agent({
+      role: "Researcher",
+      goal: "Find facts",
+      backstory: "Careful analyst",
+      llm: (messages) => {
+        const content = messages.at(-1)?.content ?? "";
+        prompts.push(content);
+        if (content.includes("First")) {
+          return "first output";
+        }
+        if (content.includes("Second")) {
+          return "second output";
+        }
+        return "third output";
+      },
+    });
+    const first = new Task({
+      description: "First",
+      expectedOutput: "First result",
+      agent: agentInstance,
+    });
+    const second = new Task({
+      description: "Second",
+      expectedOutput: "Second result",
+      agent: agentInstance,
+      context: [],
+    });
+    const third = new Task({
+      description: "Third",
+      expectedOutput: "Third result",
+      agent: agentInstance,
+      context: [first],
+    });
+
+    await new Crew({ agents: [agentInstance], tasks: [first, second, third] }).kickoff();
+
+    expect(prompts[2]).toContain("Context:\nfirst output");
+    expect(prompts[2]).not.toContain("second output");
+  });
+
   it("preserves unspecified, null, empty, and list task contexts when copying crews", () => {
     const agentInstance = new Agent({
       role: "Researcher",

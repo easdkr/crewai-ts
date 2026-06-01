@@ -37,6 +37,7 @@ import { Process, type AgentStepCallback, type CrewKickoffCallback, type InputVa
 import type { LLM } from "./types.js";
 import { createReadFileTool, extractInputFilesFromInputs } from "./input-files.js";
 import type { EmbedderConfig } from "./rag.js";
+import { aggregateRawOutputsFromTaskOutputs, aggregateRawOutputsFromTasks } from "./formatter.js";
 
 export type KickoffOptions = {
   inputs?: InputValues;
@@ -1749,10 +1750,11 @@ export class Crew {
 
   private contextForTask(task: Task, previousOutputs: readonly TaskOutput[]): string | undefined {
     if (task.context === undefined) {
-      const context = previousOutputs
-        .map((output) => output.toString())
-        .filter(Boolean)
-        .join("\n\n");
+      const context = aggregateRawOutputsFromTaskOutputs(previousOutputs);
+      return context || undefined;
+    }
+    if (Array.isArray(task.context)) {
+      const context = aggregateRawOutputsFromTasks(task.context);
       return context || undefined;
     }
     return undefined;
