@@ -1779,6 +1779,14 @@ export class Flow<TState extends object = Record<string, unknown>> {
     return this.inputProvider ?? flowConfig.inputProvider ?? new ConsoleInputProvider();
   }
 
+  _resolveInputProvider(): InputProvider {
+    return this.resolveInputProvider();
+  }
+
+  _resolve_input_provider(): InputProvider {
+    return this._resolveInputProvider();
+  }
+
   async requestHumanFeedback(
     methodName: string,
     methodOutput: unknown,
@@ -1802,6 +1810,28 @@ export class Flow<TState extends object = Record<string, unknown>> {
     return config.emit && config.emit.length > 0
       ? result.outcome ?? config.defaultOutcome ?? config.emit[0] ?? ""
       : result;
+  }
+
+  async _requestHumanFeedback(
+    message: string,
+    output: unknown,
+    metadata: Record<string, unknown> | null = null,
+    emit: readonly string[] | null = null,
+  ): Promise<string> {
+    return await this.collectHumanFeedback("", output, normalizeHumanFeedbackConfig({
+      message,
+      metadata,
+      emit,
+    }));
+  }
+
+  async _request_human_feedback(
+    message: string,
+    output: unknown,
+    metadata: Record<string, unknown> | null = null,
+    emit: readonly string[] | null = null,
+  ): Promise<string> {
+    return await this._requestHumanFeedback(message, output, metadata, emit);
   }
 
   get humanFeedback(): HumanFeedbackResult | null {

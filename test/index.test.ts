@@ -13348,6 +13348,43 @@ describe("flow runtime", () => {
     await expect(flow.kickoff()).resolves.toBe("from global");
   });
 
+  it("exposes upstream flow input provider and human feedback private helper aliases", async () => {
+    const localProvider = { requestInput: () => "local" };
+    const globalProvider = { requestInput: () => "global" };
+    flowConfig.inputProvider = globalProvider;
+
+    class AliasFlow extends Flow {}
+    const localFlow = new AliasFlow({ inputProvider: localProvider });
+    const globalFlow = new AliasFlow();
+
+    expect(localFlow._resolve_input_provider()).toBe(localProvider);
+    expect(globalFlow._resolve_input_provider()).toBe(globalProvider);
+
+    const feedbackEvents: CrewAIEvent[] = [];
+    crewaiEventBus.on("human_feedback_requested", (_source, event) => {
+      feedbackEvents.push(event);
+    });
+    crewaiEventBus.on("human_feedback_received", (_source, event) => {
+      feedbackEvents.push(event);
+    });
+
+    const feedback = await localFlow._request_human_feedback(
+      "Review direct output",
+      "draft",
+      { channel: "direct" },
+      ["approved"],
+    );
+
+    expect(feedback).toBe("local");
+    expect(feedbackEvents[0]).toMatchObject({
+      type: "human_feedback_requested",
+      methodName: "",
+      message: "Review direct output",
+      output: "draft",
+      emit: ["approved"],
+    });
+  });
+
   it("emits flow input request and receive events", async () => {
     const events: Array<FlowInputRequestedEvent | FlowInputReceivedEvent> = [];
     crewaiEventBus.on("flow_input_requested", (_source, event) => {
