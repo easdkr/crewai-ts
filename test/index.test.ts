@@ -397,7 +397,6 @@ import {
   TextFileKnowledgeSource,
   ToolUsage,
   ToolUsageStartedEvent,
-  ToolUsageLimitExceededError,
   _ArgsSchemaPlaceholder,
   _default_cache_function,
   _deserialize_schema,
@@ -14971,7 +14970,7 @@ describe("tools", () => {
     const direct = _make_tool(function echo(value: unknown): unknown {
       return value;
     });
-    direct._claim_usage();
+    expect(direct._claim_usage()).toBeNull();
     expect(direct.current_usage_count).toBe(1);
   });
 
@@ -15007,7 +15006,8 @@ describe("tools", () => {
     });
 
     await expect(add.arun({ a: 2, b: 3 })).resolves.toBe(5);
-    expect(() => add.run({ a: 1, b: 1 })).toThrow(ToolUsageLimitExceededError);
+    expect(add.run({ a: 1, b: 1 })).toBe("Tool 'add_numbers' has reached its usage limit of 1 times and cannot be used anymore.");
+    expect(add.current_usage_count).toBe(1);
   });
 
   it("emits upstream-style ToolUsage error and finished events", () => {
@@ -15240,7 +15240,7 @@ describe("tools", () => {
     expect(original.current_usage_count).toBe(1);
     expect(structured.invoke({ value: "second" })).toBe("second");
     expect(original.has_reached_max_usage_count()).toBe(true);
-    expect(() => structured.invoke({ value: "third" })).toThrow(ToolUsageLimitExceededError);
+    expect(structured.invoke({ value: "third" })).toBe("Tool 'echo_tool' has reached its usage limit of 2 times and cannot be used anymore.");
     expect(original.current_usage_count).toBe(2);
   });
 

@@ -442,8 +442,8 @@ export abstract class BaseTool implements Tool {
     return this.serializeArgsSchema(schema);
   }
 
-  _claim_usage(): void {
-    this.claimUsage();
+  _claim_usage(): string | null {
+    return this.claimUsage();
   }
 
   validateKwargs(kwargs: Record<string, unknown>): Record<string, unknown> {
@@ -519,7 +519,11 @@ export abstract class BaseTool implements Tool {
       return cached.value;
     }
     try {
-      this.claimUsage();
+      const usageLimitError = this.claimUsage();
+      if (usageLimitError) {
+        this.emitToolFinished(args, startedAt, usageLimitError);
+        return usageLimitError;
+      }
       const result = this._run(args);
       if (isPromiseLike(result)) {
         return result
@@ -564,7 +568,11 @@ export abstract class BaseTool implements Tool {
       return cached.value;
     }
     try {
-      this.claimUsage();
+      const usageLimitError = this.claimUsage();
+      if (usageLimitError) {
+        this.emitToolFinished(args, startedAt, usageLimitError);
+        return usageLimitError;
+      }
       const rawResult = await this._run(args);
       const result = await runAfterToolCallHooks(new ToolCallHookContext({
         toolName: this.name,
@@ -668,14 +676,13 @@ export abstract class BaseTool implements Tool {
     return validateArgs(this.name, this.argsSchema, raw);
   }
 
-  private claimUsage(): void {
+  private claimUsage(): string | null {
     if (this.maxUsageCount !== null && this.currentUsageCount >= this.maxUsageCount) {
-      throw new ToolUsageLimitExceededError(
-        `Tool '${this.name}' has reached its usage limit of ${String(this.maxUsageCount)} times and cannot be used anymore.`,
-      );
+      return `Tool '${this.name}' has reached its usage limit of ${String(this.maxUsageCount)} times and cannot be used anymore.`;
     }
     this.currentUsageCount += 1;
     this.onUsageClaimed();
+    return null;
   }
 
   protected onUsageClaimed(): void {
