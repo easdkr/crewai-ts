@@ -662,6 +662,7 @@ import {
   convertOneOfToAnyOf,
   checkConversationalCrewsVersion,
   chatLoop,
+  CrewContext,
   _dotted_path_to_instance,
   _instance_to_dotted_path,
   _is_non_roundtrippable,
@@ -780,6 +781,7 @@ import {
   sanitizeToolParamsForOpenAIStrict,
   triggeredByScope,
   updateUserData,
+  withCrewContext,
   hasUserDeclinedTracing,
   isTracingEnabled,
   is_replaying,
@@ -814,6 +816,7 @@ import {
   extractTaskSection,
   formatMessageForLLM,
   getLlmResponse,
+  get_crew_context,
   handleAgentActionCore,
   handleMaxIterationsExceeded,
   hasReachedMaxIterations,
@@ -8992,6 +8995,35 @@ describe("crew chat utilities", () => {
 });
 
 describe("execution and event context", () => {
+  it("models upstream crew context metadata and nested baggage-like scopes", async () => {
+    const outer = new CrewContext({ id: "crew-outer", key: "outer" });
+    const inner = new CrewContext({ id: "crew-inner", key: "inner" });
+
+    expect(outer.id).toBe("crew-outer");
+    expect(outer.key).toBe("outer");
+    expect(get_crew_context()).toBeNull();
+
+    const result = await withCrewContext(outer, async () => {
+      expect(get_crew_context()).toBe(outer);
+      const nested = await withCrewContext(inner, async () => {
+        await Promise.resolve();
+        return get_crew_context();
+      });
+      return { nested, restored: get_crew_context() };
+    });
+
+    expect(result).toEqual({ nested: inner, restored: outer });
+    expect(get_crew_context()).toBeNull();
+
+    expect(() => {
+      withCrewContext({ id: "throwing", key: "test" }, () => {
+        expect(get_crew_context()?.id).toBe("throwing");
+        throw new Error("crew context failure");
+      });
+    }).toThrow("crew context failure");
+    expect(get_crew_context()).toBeNull();
+  });
+
   it("matches upstream platform integration token precedence and env fallback", () => {
     const previousToken = process.env.CREWAI_PLATFORM_INTEGRATION_TOKEN;
     setPlatformIntegrationToken(null);

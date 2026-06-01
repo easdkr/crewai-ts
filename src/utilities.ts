@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
+import { AsyncLocalStorage } from "node:async_hooks";
 
 import type { LLMMessage } from "./types.js";
 import { __version__ } from "./version.js";
@@ -186,17 +187,51 @@ function getModelDumpFunction(value: unknown): ((options?: ModelDumpOptions) => 
   return null;
 }
 
+function stringOrEmpty(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
+export type CrewContextOptions = {
+  id?: string;
+  key?: string;
+  crew?: unknown;
+};
+
+const crewContextStorage = new AsyncLocalStorage<CrewContext>();
+
 export class CrewContext {
+  readonly id: string;
+  readonly key: string;
   readonly crew: unknown;
 
-  constructor(crew: unknown = null) {
-    this.crew = crew;
+  constructor(options: CrewContextOptions | string = {}) {
+    if (typeof options === "string") {
+      this.id = options;
+      this.key = "";
+      this.crew = null;
+      return;
+    }
+    this.crew = options.crew ?? null;
+    const record = this.crew && typeof this.crew === "object" ? this.crew as Record<string, unknown> : {};
+    this.id = options.id ?? stringOrEmpty(record.id);
+    this.key = options.key ?? stringOrEmpty(record.key ?? record.name);
   }
 }
 
-export function get_crew_context(crew: unknown = null): CrewContext {
-  return new CrewContext(crew);
+export function getCrewContext(): CrewContext | null {
+  return crewContextStorage.getStore() ?? null;
 }
+
+export function get_crew_context(): CrewContext | null {
+  return getCrewContext();
+}
+
+export function withCrewContext<T>(context: CrewContext | CrewContextOptions, fn: () => T): T {
+  const crewContext = context instanceof CrewContext ? context : new CrewContext(context);
+  return crewContextStorage.run(crewContext, fn);
+}
+
+export const with_crew_context = withCrewContext;
 
 export const console = globalThis.console;
 
