@@ -654,6 +654,10 @@ export class AgentExecutor extends BaseAgentExecutor {
     if (!current) {
       return "todo_injected";
     }
+    if (!this.isPlanningEnabled()) {
+      this.injectTodoContext(current);
+      return "todo_injected";
+    }
     current.result ??= current.description;
     this.state.execution_log.push({ type: "step_execution", step_number: current.stepNumber, success: true });
     return "step_executed";
@@ -1091,12 +1095,48 @@ export class AgentExecutor extends BaseAgentExecutor {
     return await this.withLlmStopWords(callback);
   }
 
+  private isPlanningEnabled(): boolean {
+    const agentRecord = this.agent && typeof this.agent === "object"
+      ? this.agent as unknown as Record<string, unknown>
+      : {};
+    return Boolean(agentRecord.planningEnabled ?? agentRecord.planning_enabled);
+  }
+
   private applyHumanFeedback(answer: AgentFinish): AgentFinish {
     if (!this.state.ask_for_human_input) {
       return answer;
     }
     const handler = (this as unknown as { _handle_human_feedback?: (answer: AgentFinish) => AgentFinish })._handle_human_feedback;
     return typeof handler === "function" ? handler.call(this, answer) : answer;
+  }
+
+  private injectTodoContext(todo: TodoItem): void {
+    this.state.messages.push({
+      role: "user",
+      content: this.buildTodoPrompt(todo, false),
+    });
+  }
+
+  private buildTodoPrompt(todo: TodoItem, includeDependencies = true): string {
+    const total = this.state.todos.items.length;
+    const parts = [`**Current Step ${String(todo.stepNumber)}/${String(total)}**`, `Task: ${todo.description}`];
+    const toolToUse = todo.toolToUse ?? todo.tool_to_use;
+    if (toolToUse) {
+      parts.push(`Suggested tool: ${toolToUse}`);
+    }
+    if (includeDependencies && todo.dependsOn.length > 0) {
+      const dependencyResults = todo.dependsOn
+        .map((stepNumber) => {
+          const dependency = this.state.todos.getByStepNumber(stepNumber);
+          return dependency?.result ? `Step ${String(stepNumber)} result: ${dependency.result}` : null;
+        })
+        .filter((line): line is string => line !== null);
+      if (dependencyResults.length > 0) {
+        parts.push("\nContext from previous steps:", ...dependencyResults);
+      }
+    }
+    parts.push("\nComplete this step. Once done, provide your result.");
+    return parts.join("\n");
   }
 
   private async applyHumanFeedbackAsync(answer: AgentFinish): Promise<AgentFinish> {

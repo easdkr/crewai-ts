@@ -10014,7 +10014,8 @@ describe("core crew runtime", () => {
 
     expect(executor.check_todos_available()).toBe("planning_disabled");
     expect(executor.get_ready_todos_method()).toBe("single_todo_ready");
-    expect(executor.execute_todo_sequential()).toBe("step_executed");
+    expect(executor.execute_todo_sequential()).toBe("todo_injected");
+    expect(executor.state.messages.at(-1)?.content).toContain("**Current Step 1/1**");
     expect(executor.observe_step_result()).toBe("step_observed_medium");
     expect(executor.handle_step_observed_medium()).toBe("continue_plan");
     expect(executor.handle_continue_plan()).toBe("all_todos_complete");
@@ -10139,6 +10140,31 @@ describe("core crew runtime", () => {
     expect(executor.handle_refine_and_continue()).toBe("has_todos");
     expect(executor.state.todos.get_by_step_number(2)?.description).toBe("Recommend product B with rating evidence");
     expect(executor.state.todos.get_by_step_number(3)?.description).toBe("Prepare appendix");
+  });
+
+  it("injects todo context instead of executing isolated steps when planning is disabled", () => {
+    const executor = new AgentExecutor({
+      agent: new Agent({
+        role: "Researcher",
+        goal: "Find facts",
+        backstory: "Careful analyst",
+      }),
+    });
+    executor.state.todos.items = [
+      new TodoItem({
+        stepNumber: 1,
+        description: "Collect facts",
+        toolToUse: "Search Tool",
+        status: TodoStatus.RUNNING,
+      }),
+    ];
+
+    expect(executor.execute_todo_sequential()).toBe("todo_injected");
+    expect(executor.state.todos.get_by_step_number(1)?.status).toBe(TodoStatus.RUNNING);
+    expect(executor.state.todos.get_by_step_number(1)?.result).toBeNull();
+    expect(executor.state.messages.at(-1)?.role).toBe("user");
+    expect(executor.state.messages.at(-1)?.content).toContain("**Current Step 1/1**");
+    expect(executor.state.messages.at(-1)?.content).toContain("Suggested tool: Search Tool");
   });
 
   it("routes AgentExecutor dynamic replanning from upstream error signals", () => {
