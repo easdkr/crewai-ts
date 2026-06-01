@@ -1114,26 +1114,34 @@ export class KnowledgeStorage extends BaseKnowledgeStorage {
   }
 
   reset(): void {
-    const client = this._get_client() as RagClient & {
-      delete_collection?: (params: Record<string, unknown>) => unknown;
-    };
-    if (client.delete_collection) {
-      client.delete_collection({ collection_name: this.rag_collection_name() });
-      return;
+    try {
+      const client = this._get_client() as RagClient & {
+        delete_collection?: (params: Record<string, unknown>) => unknown;
+      };
+      if (client.delete_collection) {
+        client.delete_collection({ collection_name: this.rag_collection_name() });
+        return;
+      }
+      const deleteCollection = client.deleteCollection as ((collectionName: string) => unknown) | undefined;
+      deleteCollection?.(this.rag_collection_name());
+    } catch {
+      // Upstream logs reset failures and keeps knowledge reset best-effort.
     }
-    const deleteCollection = client.deleteCollection as ((collectionName: string) => unknown) | undefined;
-    deleteCollection?.(this.rag_collection_name());
   }
 
   async areset(): Promise<void> {
-    const client = this._get_client() as RagClient & {
-      adelete_collection?: (params: Record<string, unknown>) => Promise<unknown>;
-    };
-    if (client.adelete_collection) {
-      await client.adelete_collection({ collection_name: this.rag_collection_name() });
-      return;
+    try {
+      const client = this._get_client() as RagClient & {
+        adelete_collection?: (params: Record<string, unknown>) => Promise<unknown>;
+      };
+      if (client.adelete_collection) {
+        await client.adelete_collection({ collection_name: this.rag_collection_name() });
+        return;
+      }
+      this.reset();
+    } catch {
+      // Upstream logs reset failures and keeps knowledge reset best-effort.
     }
-    this.reset();
   }
 
   _get_client(): RagClient {

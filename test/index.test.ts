@@ -9618,6 +9618,34 @@ describe("RAG configuration and factories", () => {
     );
   });
 
+  it("ignores upstream KnowledgeStorage reset errors for readonly or missing collections", async () => {
+    const readonlyStorage = new KnowledgeStorage({
+      client: {
+        delete_collection() {
+          throw new Error("attempt to write a readonly database");
+        },
+        adelete_collection() {
+          return Promise.reject(new Error("Collection does not exist"));
+        },
+      } as unknown as RagClient,
+    });
+    const missingStorage = new KnowledgeStorage({
+      client: {
+        deleteCollection() {
+          throw new Error("Collection does not exist");
+        },
+      } as unknown as RagClient,
+    });
+
+    expect(() => {
+      readonlyStorage.reset();
+    }).not.toThrow();
+    await expect(readonlyStorage.areset()).resolves.toBeUndefined();
+    expect(() => {
+      missingStorage.reset();
+    }).not.toThrow();
+  });
+
   it("routes Knowledge through storage-backed sync and async upstream aliases", async () => {
     const fake = new FakeChromaClient();
     const client = new ChromaDBClient(fake, (texts: readonly string[]) => texts.map((text) => [text.length]));
