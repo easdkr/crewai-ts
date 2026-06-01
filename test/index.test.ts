@@ -2594,6 +2594,36 @@ describe("schema utilities", () => {
     expect(Model.model_validate({ id: 1 })).toEqual({ id: 1, label: null });
     expect(() => Model.model_validate({ label: "missing id" })).toThrow(/id/);
   });
+
+  it("validates mutual recursive schema model data beyond the first cycle", () => {
+    const Model = create_model_from_schema({
+      $defs: {
+        A: {
+          type: "object",
+          properties: {
+            val: { type: "string" },
+            b: { $ref: "#/$defs/B" },
+          },
+          required: ["val"],
+        },
+        B: {
+          type: "object",
+          properties: {
+            val: { type: "integer" },
+            a: { $ref: "#/$defs/A" },
+          },
+          required: ["val"],
+        },
+      },
+      $ref: "#/$defs/A",
+    }, { model_name: "A" });
+
+    expect(Model.model_validate({ val: "root", b: { val: 42, a: { val: "again" } } })).toEqual({
+      val: "root",
+      b: { val: 42, a: { val: "again", b: null } },
+    });
+    expect(() => Model.model_validate({ val: "root", b: { val: 42, a: {} } })).toThrow(/b\.a\.val/);
+  });
 });
 
 describe("i18n and prompt utilities", () => {

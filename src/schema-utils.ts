@@ -856,8 +856,9 @@ function buildModelFields(schema: JsonSchema, rootSchema: JsonSchema, enrichDesc
       description,
       schema: resolved,
     };
-    if (schemaTypeMatches(resolved, "object") && isSchemaRecord(resolved.properties)) {
+    if (typeof propertySchema.$ref !== "string" && schemaTypeMatches(resolved, "object") && isSchemaRecord(resolved.properties)) {
       field.annotation = createModelFromSchema(resolved, {
+        rootSchema,
         modelName: typeof resolved.title === "string" ? resolved.title : `${name[0]?.toUpperCase() ?? "Nested"}${name.slice(1)}`,
         enrichDescriptions,
       });
