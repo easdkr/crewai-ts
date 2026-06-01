@@ -27841,6 +27841,31 @@ describe("global hooks", () => {
     expect(new AfterToolCallHookMethod(() => "checked").__call__(toolContext)).toBe("checked");
   });
 
+  it("initializes LLM hook context from executor references like upstream", () => {
+    const executor = {
+      messages: [{ role: "system" as const, content: "Test message" }],
+      agent: { role: "Test Agent" },
+      task: { description: "Test Task" },
+      crew: { name: "Test Crew" },
+      llm: { model: "test-model" },
+      iterations: 2,
+    };
+    const context = new LLMCallHookContext({ executor });
+
+    expect(context.executor).toBe(executor);
+    expect(context.messages).toBe(executor.messages);
+    expect(context.agent).toBe(executor.agent);
+    expect(context.task).toBe(executor.task);
+    expect(context.crew).toBe(executor.crew);
+    expect(context.llm).toBe(executor.llm);
+    expect(context.iterations).toBe(2);
+    expect(context.response).toBeNull();
+
+    const newMessage = { role: "user" as const, content: "New message" };
+    context.messages.push(newMessage);
+    expect(executor.messages).toContain(newMessage);
+  });
+
   it("runs before and after LLM hooks around agent LLM calls", async () => {
     beforeLlmCall((context) => {
       const userMessage = context.messages.find((message) => message.role === "user");

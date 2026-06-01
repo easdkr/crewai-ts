@@ -22,12 +22,13 @@ export class LLMCallHookContext {
     response?: LLMResponse | null;
   } = {}) {
     this.executor = options.executor ?? null;
-    this.messages = options.messages ?? [];
-    this.llm = options.llm ?? null;
-    this.agent = options.agent ?? null;
-    this.task = options.task ?? null;
-    this.crew = options.crew ?? null;
-    this.iterations = options.iterations ?? 0;
+    const executor = readHookExecutor(options.executor);
+    this.messages = options.messages ?? executor.messages ?? [];
+    this.llm = options.llm ?? executor.llm ?? null;
+    this.agent = options.agent ?? executor.agent ?? null;
+    this.task = options.task ?? executor.task ?? null;
+    this.crew = options.crew ?? executor.crew ?? null;
+    this.iterations = options.iterations ?? executor.iterations ?? 0;
     this.response = options.response ?? null;
   }
 
@@ -582,4 +583,26 @@ function hasStringProperty<T extends string>(value: unknown, key: T): value is R
 
 function sanitizeHookToolName(name: string): string {
   return name.trim().replace(/[^\w-]/g, "_");
+}
+
+function readHookExecutor(executor: unknown): {
+  messages?: LLMMessage[];
+  llm?: LLM | string | null;
+  agent?: unknown;
+  task?: unknown;
+  crew?: unknown;
+  iterations?: number;
+} {
+  if (!executor || typeof executor !== "object") {
+    return {};
+  }
+  const record = executor as Record<string, unknown>;
+  return {
+    ...(Array.isArray(record.messages) ? { messages: record.messages as LLMMessage[] } : {}),
+    ...("llm" in record ? { llm: record.llm as LLM | string | null } : {}),
+    ...("agent" in record ? { agent: record.agent } : {}),
+    ...("task" in record ? { task: record.task } : {}),
+    ...("crew" in record ? { crew: record.crew } : {}),
+    ...(typeof record.iterations === "number" ? { iterations: record.iterations } : {}),
+  };
 }

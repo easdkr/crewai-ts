@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 746 passing tests.
+- Test suite: 747 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -163,6 +163,12 @@ When more goal budget is available, continue from the behavioral parity audits b
 - Added upstream-style embedding factory fallback so built-in provider specs instantiate their provider classes when no custom builder is registered.
 - Added Google Vertex, VoyageAI, and WatsonX embedding function `name()` helpers, embedding function `__call__` aliases, plus WatsonX `validate_space_or_project` parity.
 - `BaseRAGStorage` now exposes upstream-style `_initialize_agents` and `_sanitize_role` helpers alongside the TypeScript camelCase internals.
+
+## Completed In Current Hooks/Tracing Pass
+
+- `CREWAI_TRACING_ENABLED=false` / `0` now mirrors upstream explicit tracing opt-out behavior even when local user consent state would otherwise allow tracing.
+- `Telemetry()` now mirrors upstream singleton construction behavior, and telemetry disable env vars such as `CREWAI_DISABLE_TELEMETRY=TRUE` / `OTEL_SDK_DISABLED=TRUE` dynamically suppress local telemetry operations after singleton creation.
+- `LLMCallHookContext` now mirrors upstream executor-derived initialization by taking `messages`, `agent`, `task`, `crew`, `llm`, and `iterations` from the executor when explicit context fields are not supplied, while preserving the mutable `messages` reference used by before-call hooks.
 
 ## Completed In Current AgentExecutor Behavior Pass
 
