@@ -74,6 +74,7 @@ import {
   PlannerObserver,
   StepExecutor,
   StepExecutionContext,
+  BaseAgentAdapter,
   OpenAIAgentAdapter,
   OpenAIAgentToolAdapter,
   BaseConverterAdapter,
@@ -13323,6 +13324,46 @@ describe("core crew runtime", () => {
     expect(toolCalls).toEqual(["raw input"]);
     expect(events).toContain("agent_execution_started");
     expect(events.some((event) => event.startsWith("agent_execution_completed:"))).toBe(true);
+  });
+
+  it("mirrors upstream BaseAgentAdapter initialization state", async () => {
+    class ConcreteAgentAdapter extends BaseAgentAdapter {
+      tools: readonly BaseTool[] = [];
+
+      configureTools(tools: readonly BaseTool[] | null = null): void {
+        this.tools = tools ?? [];
+      }
+
+      configureStructuredOutput(task: unknown): void {
+        void task;
+        this.adaptedStructuredOutput = true;
+        this.adapted_structured_output = true;
+      }
+
+      executeTask(): string {
+        return "Task executed";
+      }
+
+      aexecuteTask(): Promise<string> {
+        return Promise.resolve("Task executed");
+      }
+    }
+    const config = { model: "gpt-4" };
+    const adapter = new ConcreteAgentAdapter({
+      agent_config: config,
+      role: "test role",
+      goal: "test goal",
+      backstory: "test backstory",
+    });
+
+    expect(adapter.role).toBe("test role");
+    expect(adapter._agent_config).toBe(config);
+    expect(adapter.adapted_structured_output).toBe(false);
+    adapter.configure_tools([]);
+    expect(adapter.tools).toEqual([]);
+    adapter.configure_structured_output({});
+    expect(adapter.adapted_structured_output).toBe(true);
+    await expect(adapter.aexecute_task("task")).resolves.toBe("Task executed");
   });
 
   it("mirrors upstream BaseToolAdapter instance helpers and converted tool storage", () => {

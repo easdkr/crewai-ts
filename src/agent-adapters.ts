@@ -146,11 +146,13 @@ export abstract class BaseAgentAdapter extends Agent {
   adapted_structured_output = false;
   protected readonly agentConfig: Record<string, unknown> | null;
   protected readonly agent_config: Record<string, unknown> | null;
+  readonly _agent_config: Record<string, unknown> | null;
 
   constructor(options: AgentOptions & { agentConfig?: Record<string, unknown> | null; agent_config?: Record<string, unknown> | null }) {
     super(options);
     this.agentConfig = options.agentConfig ?? options.agent_config ?? null;
     this.agent_config = this.agentConfig;
+    this._agent_config = this.agentConfig;
   }
 
   abstract configureTools(tools?: readonly CrewTool[] | null): void;
