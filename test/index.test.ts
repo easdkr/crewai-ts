@@ -474,6 +474,7 @@ import {
   extract_provider,
   extract_tool_info,
   extractInputFilesFromInputs,
+  flow_structure,
   flowConfig,
   getBeforeLlmCallHooks,
   getBeforeToolCallHooks,
@@ -17465,6 +17466,22 @@ describe("flow runtime", () => {
       edge_type: "route",
       condition: "approved",
     });
+  });
+
+  it("rejects Flow instances through upstream flow_structure", () => {
+    class ClassOnlyFlow extends Flow {
+      begin() {
+        return "ready";
+      }
+    }
+
+    const initializer = decorateMethod(ClassOnlyFlow, "begin", start() as unknown as Decorator);
+    const flow = new ClassOnlyFlow();
+    initializer.call(flow);
+
+    expect(() => flow_structure(flow)).toThrow("requires a Flow class, not an instance");
+    expect(() => flow_structure("not a class" as unknown as object)).toThrow("requires a Flow class");
+    expect(() => flowStructure(flow)).not.toThrow();
   });
 
   it("plots flow structure to an HTML file and emits the upstream flow_plot event", () => {

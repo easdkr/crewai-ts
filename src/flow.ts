@@ -3131,7 +3131,15 @@ export function flowStructure(instanceOrConstructor: object | FlowMetadataTarget
   };
 }
 
-export const flow_structure = flowStructure;
+export function flow_structure(instanceOrConstructor: object | FlowMetadataTarget): FlowSerializedStructureInfo {
+  if (instanceOrConstructor instanceof Flow) {
+    throw new TypeError("flow_structure requires a Flow class, not an instance");
+  }
+  if (typeof instanceOrConstructor !== "function") {
+    throw new TypeError("flow_structure requires a Flow class");
+  }
+  return flowStructure(instanceOrConstructor);
+}
 
 export function calculateExecutionPaths(structure: FlowVisualizationStructure): number {
   const graph = new Map<string, FlowVisualizationEdge[]>();
