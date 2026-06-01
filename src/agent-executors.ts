@@ -22,7 +22,7 @@ import { BaseLLM, callStopOverrideSync, UsageMetrics, type LLMResponse } from ".
 import { sanitize_scope_name } from "./memory.js";
 import { StepExecutionContext, StepResult } from "./step-execution-context.js";
 import { sanitizeToolName } from "./tools.js";
-import type { LLMMessage, MaybePromise, Tool } from "./types.js";
+import type { InputValues, LLMMessage, MaybePromise, Tool } from "./types.js";
 
 export const ACTION_INPUT_REGEX = /Action\s*\d*\s*:\s*(.*?)\s*Action\s*\d*\s*Input\s*\d*\s*:\s*(.*)/s;
 export const ACTION_REGEX = /Action\s*\d*\s*:\s*(.*?)/s;
@@ -156,11 +156,25 @@ export class BaseAgent extends Agent {
   }
 
   aexecuteTask(
-    promptOrOptions: Parameters<Agent["aexecuteTask"]>[0],
+    prompt: string,
+    inputs?: InputValues,
+    tools?: readonly Tool[],
+    options?: AgentExecutionOptions,
+  ): Promise<string>;
+  aexecuteTask(
+    promptOrOptions: Parameters<Agent["execute_task"]>[0],
     context?: string | null,
     tools?: readonly Tool[],
+  ): Promise<string>;
+  aexecuteTask(
+    promptOrOptions: Parameters<Agent["execute_task"]>[0],
+    contextOrInputs?: string | null | InputValues,
+    tools?: readonly Tool[],
+    options?: AgentExecutionOptions,
   ): Promise<string> {
-    return super.aexecuteTask(promptOrOptions, context, tools);
+    return typeof promptOrOptions === "string" && contextOrInputs && typeof contextOrInputs === "object" && !Array.isArray(contextOrInputs)
+      ? super.aexecuteTask(promptOrOptions, contextOrInputs, tools, options)
+      : super.aexecuteTask(promptOrOptions, typeof contextOrInputs === "string" ? contextOrInputs : null, tools);
   }
 
   aexecute_task(

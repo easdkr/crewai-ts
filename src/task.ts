@@ -3,7 +3,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { createHash, randomUUID } from "node:crypto";
 import { dirname, resolve } from "node:path";
 
-import { Agent } from "./agent.js";
+import { Agent, type AgentExecutionOptions } from "./agent.js";
 import type { Knowledge } from "./knowledge.js";
 import {
   HumanFeedbackReceivedEvent,
@@ -57,6 +57,7 @@ export type TaskExecutionOptions = {
   functionCallingLlm?: LLM | string | null;
   memory?: Memory | MemoryScope | null;
   knowledge?: Knowledge | null;
+  useAsyncAgent?: boolean;
 };
 
 type ModelDumpOptions = {
@@ -670,7 +671,7 @@ export class Task {
   }
 
   aexecuteSync(agent: Agent | null = null, context: string | null = null, tools?: readonly Tool[]): Promise<TaskOutput> {
-    return this.executeSync(agent, context, tools);
+    return this.execute({}, agent, tools, false, { context, useAsyncAgent: true });
   }
 
   aexecute_sync(agent: Agent | null = null, context: string | null = null, tools?: readonly Tool[]): Promise<TaskOutput> {
@@ -1064,7 +1065,7 @@ export class Task {
     }));
     try {
       const tools = overrideTools ?? (this.tools.length > 0 ? this.tools : agent.tools);
-      const raw = await agent.executeTask(renderedTask.prompt, inputs, tools, {
+      const raw = await this.executeAgentTask(agent, renderedTask.prompt, inputs, tools, {
         ...(this.responseModel === undefined ? {} : { responseModel: this.responseModel }),
         stepCallbacks: [
           this.createTrackingStepCallback(agent),
@@ -1077,12 +1078,12 @@ export class Task {
         ...(executionOptions.memory === undefined ? {} : { memory: executionOptions.memory }),
         ...(executionOptions.knowledge === undefined ? {} : { knowledge: executionOptions.knowledge }),
         task: this,
-      });
+      }, Boolean(executionOptions.useAsyncAgent));
       const guardrails = this.effectiveGuardrailEntries();
       let output = await this.createOutput(raw, agent, renderedTask, guardrails.length === 0);
 
       for (const [guardrail, index] of guardrails) {
-        output = await this.runGuardrail(guardrail, output, agent, index, inputs, tools, renderedTask);
+        output = await this.runGuardrail(guardrail, output, agent, index, inputs, tools, renderedTask, Boolean(executionOptions.useAsyncAgent));
       }
       output = await this.handleHumanInput(output, agent, inputs, tools, renderedTask, executionOptions);
 
@@ -1221,6 +1222,7 @@ export class Task {
     inputs: InputValues = {},
     tools: readonly Tool[] = [],
     renderedTask?: RenderedTask,
+    useAsyncAgent = false,
   ): Promise<TaskOutput> {
     let output = initialOutput;
     let currentRetryCount = index === null
@@ -1265,10 +1267,10 @@ export class Task {
       }
       const context = formatGuardrailValidationError(nextValue, output.raw);
       printGuardrailRetry(agent, index, attempt, this.guardrailMaxRetries + 1, nextValue);
-      const raw = await agent.executeTask(context, inputs, tools, {
+      const raw = await this.executeAgentTask(agent, context, inputs, tools, {
         task: this,
         ...(renderedTask === undefined ? {} : { inputFiles: renderedTask.inputFiles }),
-      });
+      }, useAsyncAgent);
       output = await this.createOutput(raw, agent, {
         description: output.description,
         expectedOutput: output.expectedOutput ?? this.expectedOutput,
@@ -1335,7 +1337,7 @@ export class Task {
         `Human feedback:\n${feedback}`,
         "Revise the answer using the human feedback.",
       ].join("\n\n");
-      const raw = await agent.executeTask(prompt, inputs, tools, {
+      const raw = await this.executeAgentTask(agent, prompt, inputs, tools, {
         ...(this.responseModel === undefined ? {} : { responseModel: this.responseModel }),
         stepCallbacks: [
           this.createTrackingStepCallback(agent),
@@ -1346,13 +1348,26 @@ export class Task {
         ...(options.memory === undefined ? {} : { memory: options.memory }),
         ...(options.knowledge === undefined ? {} : { knowledge: options.knowledge }),
         task: this,
-      });
+      }, Boolean(options.useAsyncAgent));
       output = await this.createOutput(raw, agent, renderedTask);
       for (const [guardrail, index] of this.effectiveGuardrailEntries()) {
-        output = await this.runGuardrail(guardrail, output, agent, index, inputs, tools, renderedTask);
+        output = await this.runGuardrail(guardrail, output, agent, index, inputs, tools, renderedTask, Boolean(options.useAsyncAgent));
       }
     }
     return output;
+  }
+
+  private async executeAgentTask(
+    agent: Agent,
+    prompt: string,
+    inputs: InputValues,
+    tools: readonly Tool[],
+    options: AgentExecutionOptions,
+    useAsyncAgent: boolean,
+  ): Promise<string> {
+    return useAsyncAgent
+      ? await agent.aexecuteTask(prompt, inputs, tools, options)
+      : await agent.executeTask(prompt, inputs, tools, options);
   }
 
   private createTrackingStepCallback(agent: Agent): AgentStepCallback {

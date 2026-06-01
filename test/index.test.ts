@@ -22174,6 +22174,46 @@ describe("LLM providers", () => {
     await expect(agentInstance.executeTask("Research CrewAI"))
       .rejects.toThrow("No LLM provider registered");
   });
+
+  it("routes Task aexecute_sync through the async agent execution path", async () => {
+    const agentInstance = new Agent({
+      role: "Async Researcher",
+      goal: "Find facts",
+      backstory: "Careful analyst",
+      llm: () => "sync path should not run",
+    });
+    const asyncSpy = vi.spyOn(agentInstance, "aexecuteTask").mockResolvedValue("Async task result");
+    const syncSpy = vi.spyOn(agentInstance, "executeTask");
+    const tool = new StructuredTool({
+      name: "lookup",
+      description: "Lookup facts",
+      func: () => "facts",
+    });
+    const responseModel = { type: "object", properties: { summary: { type: "string" } } };
+    const taskInstance = new Task({
+      description: "Research CrewAI",
+      expectedOutput: "A short summary",
+      agent: agentInstance,
+      responseModel,
+    });
+
+    const output = await taskInstance.aexecute_sync(null, "Previous context", [tool]);
+
+    expect(output.raw).toBe("Async task result");
+    expect(output.agent).toBe("Async Researcher");
+    expect(taskInstance.prompt_context).toBe("Previous context");
+    expect(taskInstance.processed_by_agents.has("Async Researcher")).toBe(true);
+    expect(taskInstance.start_time).toBeInstanceOf(Date);
+    expect(taskInstance.end_time).toBeInstanceOf(Date);
+    expect(syncSpy).not.toHaveBeenCalled();
+    expect(asyncSpy).toHaveBeenCalledOnce();
+    const [prompt, inputs, tools, options] = asyncSpy.mock.calls[0] ?? [];
+    expect(prompt).toContain("Research CrewAI");
+    expect(prompt).toContain("Context:\nPrevious context");
+    expect(inputs).toEqual({});
+    expect(tools).toEqual([tool]);
+    expect(options).toMatchObject({ responseModel, task: taskInstance });
+  });
 });
 
 describe("task markdown prompts", () => {

@@ -1343,11 +1343,26 @@ export class Agent {
   }
 
   async aexecuteTask(
+    prompt: string,
+    inputs?: InputValues,
+    tools?: readonly Tool[],
+    options?: AgentExecutionOptions,
+  ): Promise<string>;
+  async aexecuteTask(
     promptOrOptions: Parameters<Agent["execute_task"]>[0],
     context?: string | null,
     tools?: readonly Tool[],
+  ): Promise<string>;
+  async aexecuteTask(
+    promptOrOptions: Parameters<Agent["execute_task"]>[0],
+    contextOrInputs?: string | null | InputValues,
+    tools?: readonly Tool[],
+    options?: AgentExecutionOptions,
   ): Promise<string> {
-    return await this.execute_task(promptOrOptions, context, tools);
+    if (typeof promptOrOptions === "string" && isRecord(contextOrInputs)) {
+      return await this.executeTask(promptOrOptions, contextOrInputs, tools ?? [], options ?? {});
+    }
+    return await this.execute_task(promptOrOptions, typeof contextOrInputs === "string" ? contextOrInputs : null, tools);
   }
 
   async aexecute_task(
