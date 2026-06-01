@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 717 passing tests.
+- Test suite: 718 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -237,11 +237,11 @@ When more goal budget is available, continue from the behavioral parity audits b
   - Anthropic completion shim now exposes upstream-style request parameter builders with system prompts, stop sequences, thinking config, thinking-block preservation across formatted assistant turns, custom tool conversion, single-tool forcing, and tool-search injection/deferred loading
   - Anthropic completion shim now exposes upstream-style SDK response token usage extraction, tool-use/structured-output response extraction, deterministic streaming event accumulation, and tool-result block execution helpers, including cache read and cache creation token fields
   - Anthropic completion usage extraction now handles SDK-like usage getter objects for cache read/create token metadata.
-  - Bedrock completion shim now exposes upstream-style Converse request body builders, including Bedrock message content blocks, system prompts, inference config, toolConfig conversion, guardrail config, and additional model request/response fields
+  - Bedrock completion shim now exposes upstream-style Converse request body builders, including Bedrock message content blocks, system prompts, inference config, raw OpenAI-style function tool conversion, toolConfig conversion, guardrail config, and additional model request/response fields
   - Bedrock completion shim now exposes upstream-style document/video content-type format mapping helpers for multimodal payload preparation.
   - Bedrock completion shim now exposes upstream-style client error classification for common AWS Bedrock error codes.
   - Bedrock completion shim now exposes upstream-style Converse token usage extraction/tracking, tool-use/structured-output response extraction, deterministic Converse streaming event accumulation, and tool-result follow-up message helpers, including cache read token fields
-  - Gemini completion shim with upstream-style message formatting, generation config builders, tool conversion, function-call and structured-output response extraction/direct execution, deterministic streaming chunk accumulation, config, context-window, multimodal/text-formatting, token-usage extraction, response text extraction, property ordering, and content conversion helpers
+  - Gemini completion shim with upstream-style message formatting, generation config builders, raw OpenAI-style function tool conversion, function-call and structured-output response extraction/direct execution, deterministic streaming chunk accumulation, config, context-window, multimodal/text-formatting, token-usage extraction, response text extraction, property ordering, and content conversion helpers
   - Gemini message formatting now preserves upstream-style `raw_tool_call_parts` when present, falling back to JSON tool-call conversion otherwise.
   - Gemini completion shim now exposes the upstream-style `_extract_token_usage` alias for SDK usage translation compatibility.
   - Gemini token usage extraction and streaming accumulation now handle SDK-like `usage_metadata` getter objects.

@@ -995,7 +995,7 @@ export class BedrockCompletion extends ConfiguredLLM {
   }
 
   formatToolsForConverse(tools: readonly Tool[]): Record<string, unknown>[] {
-    return convertToolsToOpenAISchema(tools)[0].map((tool) => ({
+    return normalizeOpenAIFunctionToolSchemas(tools).map((tool) => ({
       toolSpec: {
         name: tool.function.name,
         description: tool.function.description,
@@ -1541,7 +1541,7 @@ export class GeminiCompletion extends ConfiguredLLM {
   }
 
   convertToolsForInterference(tools: readonly Tool[]): Record<string, unknown>[] {
-    return convertToolsToOpenAISchema(tools)[0].map((tool) => ({
+    return normalizeOpenAIFunctionToolSchemas(tools).map((tool) => ({
       functionDeclarations: [{
         name: tool.function.name,
         description: tool.function.description,
@@ -2326,6 +2326,38 @@ function anthropicToolUseBlock(toolCall: unknown): Record<string, unknown> | nul
     name,
     input: parseToolArguments(functionRecord.arguments),
   };
+}
+
+function normalizeOpenAIFunctionToolSchemas(tools: readonly unknown[]): Array<{
+  function: {
+    name: string;
+    description: string;
+    parameters: Record<string, unknown>;
+  };
+}> {
+  return tools.map((tool) => {
+    const toolRecord = readObject(tool);
+    const functionRecord = readObject(toolRecord.function);
+    const rawName = scalarToString(functionRecord.name);
+    if (toolRecord.type === "function" && rawName) {
+      return {
+        function: {
+          name: rawName,
+          description: scalarToString(functionRecord.description) ?? "",
+          parameters: readObject(functionRecord.parameters),
+        },
+      };
+    }
+    const [schemas] = convertToolsToOpenAISchema([tool as Tool]);
+    const schema = schemas[0];
+    return {
+      function: {
+        name: schema?.function.name ?? "",
+        description: schema?.function.description ?? "",
+        parameters: schema?.function.parameters ?? {},
+      },
+    };
+  });
 }
 
 function geminiVersion(model: string): number {

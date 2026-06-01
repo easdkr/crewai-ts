@@ -19915,6 +19915,58 @@ describe("LLM providers", () => {
     });
   });
 
+  it("converts raw OpenAI-style function tools for Bedrock and Gemini provider requests", () => {
+    const rawTools = [{
+      type: "function",
+      function: {
+        name: "test_tool",
+        description: "A test tool",
+        parameters: {
+          type: "object",
+          properties: {
+            query: { type: "string", description: "Search query" },
+          },
+          required: ["query"],
+        },
+      },
+    }];
+    const bedrock = new BedrockCompletion({ model: "anthropic.claude-3-5-sonnet-20241022-v2:0" });
+    const gemini = new GeminiCompletion({ model: "gemini-2.0-flash-001" });
+
+    expect((bedrock as unknown as {
+      _format_tools_for_converse(tools: unknown[]): Record<string, unknown>[];
+    })._format_tools_for_converse(rawTools)).toEqual([{
+      toolSpec: {
+        name: "test_tool",
+        description: "A test tool",
+        inputSchema: {
+          json: {
+            type: "object",
+            properties: {
+              query: { type: "string", description: "Search query" },
+            },
+            required: ["query"],
+          },
+        },
+      },
+    }]);
+    expect((gemini as unknown as {
+      _convert_tools_for_interference(tools: unknown[]): Record<string, unknown>[];
+    })._convert_tools_for_interference(rawTools)).toEqual([{
+      functionDeclarations: [{
+        name: "test_tool",
+        description: "A test tool",
+        parametersJsonSchema: {
+          type: "object",
+          properties: {
+            query: { type: "string", description: "Search query" },
+          },
+          required: ["query"],
+        },
+      }],
+    }]);
+  });
+
   it("accumulates Bedrock Converse streaming events", () => {
     const bedrock = new BedrockCompletion({ model: "anthropic.claude-3-5-sonnet-20241022-v2:0" });
 
