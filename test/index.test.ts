@@ -31009,6 +31009,48 @@ describe("runtime state", () => {
     expect(listenerStarted.every((event) => event?.triggeredByEventId === triggerFinished?.eventId)).toBe(true);
   });
 
+  it("records upstream triggered_by event ids for OR-condition listeners", async () => {
+    resetEmissionSequence();
+    setTriggeringEventId(null);
+    const events: Array<MethodExecutionStartedEvent | MethodExecutionFinishedEvent> = [];
+
+    class OrConditionEventFlow extends Flow {
+      pathA() {
+        return "a";
+      }
+
+      afterEither() {
+        return "done";
+      }
+    }
+
+    const pathAInitializer = decorateMethod(OrConditionEventFlow, "pathA", start() as unknown as Decorator);
+    const afterEitherInitializer = decorateMethod(OrConditionEventFlow, "afterEither", listen(or_("pathA", "pathB")) as unknown as Decorator);
+    const flow = new OrConditionEventFlow();
+    pathAInitializer.call(flow);
+    afterEitherInitializer.call(flow);
+
+    await crewaiEventBus.scoped_handlers(async () => {
+      crewaiEventBus.on("method_execution_started", (_source, event) => {
+        events.push(event);
+      });
+      crewaiEventBus.on("method_execution_finished", (_source, event) => {
+        events.push(event);
+      });
+
+      await flow.akickoff();
+    });
+
+    const started = events.filter((event): event is MethodExecutionStartedEvent => event instanceof MethodExecutionStartedEvent);
+    const finished = events.filter((event): event is MethodExecutionFinishedEvent => event instanceof MethodExecutionFinishedEvent);
+    const pathAFinished = finished.find((event) => event.methodName === "pathA");
+    const afterEitherStarted = started.find((event) => event.methodName === "afterEither");
+
+    expect(pathAFinished).toBeDefined();
+    expect(afterEitherStarted).toBeDefined();
+    expect(afterEitherStarted?.triggeredByEventId).toBe(pathAFinished?.eventId);
+  });
+
   it("records upstream previous_event_id chains across flow execution events", async () => {
     resetEmissionSequence();
     setLastEventId(null);
