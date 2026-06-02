@@ -30203,6 +30203,21 @@ describe("checkpoint state providers", () => {
     expect(() => provider.prune(directory, 1, { branch: "../../etc" })).toThrow("escapes checkpoint directory");
   });
 
+  it("handles upstream JSON checkpoint prune boundary cases", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "crewai-ts-checkpoint-prune-boundary-"));
+    const provider = new JsonProvider();
+
+    expect(provider.prune(directory, 2, { branch: "main" })).toBe(0);
+    provider.checkpoint("{\"step\":1}", directory, { branch: "main" });
+    expect(provider.prune(directory, 10, { branch: "main" })).toBe(0);
+    await expect(readdir(join(directory, "main"))).resolves.toHaveLength(1);
+
+    provider.checkpoint("{\"step\":2}", directory, { branch: "main" });
+    provider.checkpoint("{\"step\":3}", directory, { branch: "main" });
+    expect(provider.prune(directory, 0, { branch: "main" })).toBe(3);
+    await expect(readdir(join(directory, "main"))).resolves.toHaveLength(0);
+  });
+
   it("attaches checkpoint configs to agents, crews, and flows", () => {
     const agent = new Agent({
       role: "Checkpoint Agent",
