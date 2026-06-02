@@ -30577,13 +30577,24 @@ describe("runtime state", () => {
       expectedOutput: "Checkpointed",
       agent: inheritingAgent,
     });
+    const blockedTask = new Task({
+      description: "Blocked checkpoint",
+      expectedOutput: "No checkpoint",
+      agent: optedOutAgent,
+    });
+    const flowWithCheckpoint = new Flow({ checkpoint: true });
+    const flowWithoutCheckpoint = new Flow();
     const taskEvent = new BaseEvent({ type: "task_completed" });
     const agentEvent = new BaseEvent({ type: "agent_execution_completed" });
 
     expect(_resolve_from_agent(inheritingAgent)).toBe(crewConfig);
     expect(_resolve_from_agent(optedOutAgent)).toBeNull();
     expect(_find_checkpoint(task)).toBe(crewConfig);
+    expect(_find_checkpoint(blockedTask)).toBeNull();
     expect(_find_checkpoint(directAgent)).toBe(agentConfig);
+    expect(_find_checkpoint(flowWithCheckpoint)).toBeInstanceOf(CheckpointConfig);
+    expect(_find_checkpoint(flowWithoutCheckpoint)).toBeNull();
+    expect(_find_checkpoint("random")).toBeNull();
     expect(_should_checkpoint(task, taskEvent)).toBe(crewConfig);
     expect(_should_checkpoint(task, agentEvent)).toBeNull();
   });
