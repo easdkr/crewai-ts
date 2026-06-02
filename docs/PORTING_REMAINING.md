@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 847 passing tests.
+- Test suite: 848 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -75,7 +75,7 @@ This register is the source of truth for continuing porting work while parity sc
 | LLM providers and provider storage/files | Deterministic shim | SDK-shaped fixtures that fail request construction, response parsing, streaming accumulation, usage extraction, file conversion, or error classification. | Live OpenAI/Azure/Anthropic/Bedrock/Gemini credentials, network SDK calls, provider-hosted state, and remote file storage are optional integration scope only. |
 | RAG/vector storage and embedding providers | Deterministic shim | Fake-client or in-memory behavior that fails lifecycle, filtering, reset, async, error-conversion, embedding config, or collection semantics. | Real Qdrant, LanceDB, ChromaDB, Vertex AI, hosted embedding services, and provider network credentials are optional integration scope only. |
 | Telemetry/tracing/evaluation listeners | Deterministic shim | Local span/event/evaluator behavior that fails upstream-shaped event payloads or lifecycle ordering. | OTLP exporters, remote dashboards, hosted traces, and network upload paths are intentionally unsupported in the default gate. |
-| Experimental skills repository | Deterministically covered, network download shimmed | Local discovery, cache lifecycle, overwrite semantics, archive extraction, metadata, and experimental feature gating are release-gated. Registry downloads should use fake API/archive fixtures only. | Live CrewAI+ registry downloads and authenticated platform calls are optional integration scope only. |
+| Experimental skills repository | Deterministically covered, network download shimmed | Local discovery, registry reference validation, cache lifecycle, overwrite semantics, archive extraction, metadata, and experimental feature gating are release-gated. Registry downloads should use fake API/archive fixtures only. | Live CrewAI+ registry downloads and authenticated platform calls are optional integration scope only. |
 | CrewAI cloud/platform features | Intentionally unsupported | None unless represented as local metadata with no network side effects. | Subscription management, hosted triggers, enterprise automation, remote dashboards, and cloud identity workflows are outside this TS port's default scope. |
 | Python-only optional parsers/integrations | Shimmed or unsupported case-by-case | Local injected extractor behavior that fails an upstream document workflow. | Bundling or invoking Python-only packages such as `pdfplumber`/Docling from the default TS package is out of scope. |
 

@@ -962,6 +962,7 @@ import {
   ENV_VAR,
   ExperimentalFeatureDisabledError,
   is_enabled,
+  isRegistryRef,
   require_experimental_skills,
   HTTPTransport,
   SSETransport,
@@ -3611,6 +3612,20 @@ describe("skills", () => {
       }
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  it("validates upstream skills registry reference formats", () => {
+    expect(isRegistryRef("@acme/my-skill")).toBe(true);
+    expect(isRegistryRef("my-skill")).toBe(false);
+    expect(isRegistryRef("./skills/my-skill")).toBe(false);
+    expect(isRegistryRef(null)).toBe(false);
+    expect(isRegistryRef(42)).toBe(false);
+    expect(parseRegistryRef("@acme/my-skill")).toEqual(["acme", "my-skill"]);
+    expect(parseRegistryRef("@my-org/cool-skill")).toEqual(["my-org", "cool-skill"]);
+    expect(() => parseRegistryRef("acme/my-skill")).toThrow("must start with '@'");
+    expect(() => parseRegistryRef("@acme-skill")).toThrow("'@org/name' format");
+    expect(() => parseRegistryRef("@/my-skill")).toThrow("non-empty");
+    expect(() => parseRegistryRef("@acme/")).toThrow("non-empty");
   });
 
   it("overwrites cached skill versions and removes stale files like upstream", () => {
