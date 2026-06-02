@@ -24137,6 +24137,39 @@ describe("LLM providers", () => {
     })).resolves.toBe("streamed CrewAI");
   });
 
+  it("emits upstream-style streaming tool-call chunk events", async () => {
+    const llm = new ConfiguredLLM({ model: "gpt-4o" });
+    const events: LLMStreamChunkEvent[] = [];
+    const listener = (_source: unknown, event: LLMStreamChunkEvent) => {
+      events.push(event);
+    };
+    crewaiEventBus.on("llm_stream_chunk", listener);
+    try {
+      const accumulated: Record<number, AccumulatedToolArgs> = {};
+      await expect(llm._handle_streaming_tool_calls([
+        { index: 0, id: "call-1", type: "function", function: { name: "search_docs", arguments: "{\"query\":" } },
+        { index: 0, function: { arguments: "\"CrewAI\"}" } },
+      ], accumulated, null, { id: "task-1" }, { role: "agent" }, "response-1")).resolves.toBeNull();
+    } finally {
+      crewaiEventBus.off("llm_stream_chunk", listener);
+    }
+
+    expect(events).toHaveLength(2);
+    expect(events.map((event) => event.call_type)).toEqual([LLMCallType.TOOL_CALL, LLMCallType.TOOL_CALL]);
+    expect(events.map((event) => event.response_id)).toEqual(["response-1", "response-1"]);
+    expect(events.map((event) => event.chunk)).toEqual(["{\"query\":", "\"CrewAI\"}"]);
+    expect(events[0].tool_call).toMatchObject({
+      id: "call-1",
+      type: "function",
+      function: { name: "search_docs", arguments: "{\"query\":" },
+    });
+    expect(events[1].tool_call).toMatchObject({
+      id: "call-1",
+      type: "function",
+      function: { name: "search_docs", arguments: "{\"query\":\"CrewAI\"}" },
+    });
+  });
+
   it("calls object providers with tools and aggregates usage metrics", async () => {
     const calls: Array<{ messages: readonly LLMMessage[]; options: LLMCallOptions | undefined }> = [];
     const events: CrewAIEvent[] = [];

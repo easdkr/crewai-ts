@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 842 passing tests.
+- Test suite: 843 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -85,6 +85,7 @@ This register is the source of truth for continuing porting work while parity sc
 - Telemetry and trace upload paths are deterministic local span/event recordings. OpenTelemetry/remote trace exporters remain out of the default gate.
 - RAG/vector storage integrations use deterministic in-memory or fake-client-backed shims in the default gate. Real Qdrant, LanceDB, ChromaDB, and provider SDK integration can be added later as optional peer-dependency coverage, but should not be required for release validation.
 - LLM provider classes model request construction, capability flags, response parsing, usage extraction, streaming accumulation, file conversion, and error classification with SDK-like test doubles. Live OpenAI/Azure/Anthropic/Bedrock/Gemini SDK calls and real API credentials are intentionally outside the default gate.
+- LLM streaming tool-call events are release-gated with deterministic fixtures: accumulated function arguments, `TOOL_CALL` chunk classification, response ids, and tool-call payloads are emitted without invoking live provider streams.
 - LLM usage normalization mirrors upstream `_usage_to_dict` behavior for dicts, private-field filtering, unsupported primitives, and model-like usage dumps without requiring live provider calls.
 - LLM completion event usage payloads are normalized through the same deterministic `_usage_to_dict` behavior before event emission, so model-like usage objects and private fields do not leak into `LLMCallCompletedEvent.usage`.
 - Azure `api: "responses"` is modeled as a deterministic shim over the OpenAI Responses adapter: endpoint-to-`/openai/v1/` base URL normalization, Responses request preparation, response-chain state delegation, config fields, and call/acall routing are release-gated without creating Azure SDK clients or making live calls.
