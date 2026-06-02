@@ -3613,6 +3613,46 @@ describe("skills", () => {
     }
   });
 
+  it("overwrites cached skill versions and removes stale files like upstream", () => {
+    const dir = mkdtempSync(join(tmpdir(), "crewai-ts-skill-cache-overwrite-"));
+    const sourceV1 = join(dir, "source-v1");
+    const sourceV2 = join(dir, "source-v2");
+    const cacheRoot = join(dir, "cache");
+    try {
+      mkdirSync(sourceV1, { recursive: true });
+      writeFileSync(join(sourceV1, "SKILL.md"), [
+        "---",
+        "name: cached-skill",
+        "description: Cached skill.",
+        "---",
+        "v1 instructions.",
+      ].join("\n"));
+      writeFileSync(join(sourceV1, "extra.txt"), "old");
+
+      mkdirSync(sourceV2, { recursive: true });
+      writeFileSync(join(sourceV2, "SKILL.md"), [
+        "---",
+        "name: cached-skill",
+        "description: Cached skill.",
+        "---",
+        "v2 instructions.",
+      ].join("\n"));
+
+      const cache = new SkillCacheManager(cacheRoot);
+      cache.storeDirectory("org", "cached-skill", "1.0.0", sourceV1);
+      const destination = cache.storeDirectory("org", "cached-skill", "2.0.0", sourceV2);
+      const metadata = JSON.parse(readFileSync(join(destination, ".crewai_meta.json"), "utf8")) as Record<string, unknown>;
+
+      expect(readFileSync(join(destination, "SKILL.md"), "utf8")).toContain("v2 instructions.");
+      expect(existsSync(join(destination, "extra.txt"))).toBe(false);
+      expect(metadata).toMatchObject({ org: "org", name: "cached-skill", version: "2.0.0" });
+      expect(metadata.installed_at).toEqual(expect.any(String));
+      expect(cache.getCachedPath("org", "cached-skill")).toBe(destination);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("gates experimental skills registry helpers like upstream", () => {
     const previous = process.env[ENV_VAR];
     const dir = mkdtempSync(join(tmpdir(), "crewai-ts-skill-gate-"));
