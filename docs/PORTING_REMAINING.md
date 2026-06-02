@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 838 passing tests.
+- Test suite: 840 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -321,6 +321,7 @@ When more goal budget is available, continue from the behavioral parity audits b
   - `EventRecord.model_dump_json` / `model_validate_json` now round-trip event payloads and relationship edges for checkpoint event history.
   - `RuntimeState.from_json` / `_deserialize` now restore serialized `event_record` payloads and keep old-format bare entity-list checkpoint JSON loadable.
   - `resume_task_scope` now restores the latest persisted `task_started` scope from runtime event records before a resumed task completion.
+  - Flow listener and router method execution events now preserve upstream causal `triggered_by_event_id` chains from the triggering `method_execution_finished` event.
   - `Flow.pending_feedback`, `Flow.method_outputs`, and `Flow.flow_id` now expose upstream snake_case property aliases.
   - `Flow.model_post_init` now exposes the upstream post-init hook, emits `flow_created` idempotently, and preserves explicit disabled-memory configuration.
   - `Flow` now uses upstream-style static `initialState` / `initial_state` defaults when no constructor `initialState` is provided.

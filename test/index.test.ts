@@ -174,6 +174,8 @@ import {
   FlowStreamingOutput,
   FlowMethod,
   FlowTrackable,
+  MethodExecutionFinishedEvent,
+  MethodExecutionStartedEvent,
   StateWithId,
   GoalAchievedEarlyEvent,
   GRPCClientConfig,
@@ -30862,6 +30864,112 @@ describe("runtime state", () => {
     })).resolves.toBeUndefined();
 
     expect(getTriggeringEventId()).toBeNull();
+  });
+
+  it("records upstream triggered_by event ids for flow listener chains", async () => {
+    resetEmissionSequence();
+    setTriggeringEventId(null);
+    const events: Array<MethodExecutionStartedEvent | MethodExecutionFinishedEvent> = [];
+
+    class ChainedListenerFlow extends Flow {
+      first() {
+        return "first";
+      }
+
+      second() {
+        return "second";
+      }
+
+      third() {
+        return "third";
+      }
+    }
+
+    const firstInitializer = decorateMethod(ChainedListenerFlow, "first", start() as unknown as Decorator);
+    const secondInitializer = decorateMethod(ChainedListenerFlow, "second", listen("first") as unknown as Decorator);
+    const thirdInitializer = decorateMethod(ChainedListenerFlow, "third", listen("second") as unknown as Decorator);
+    const flow = new ChainedListenerFlow();
+    firstInitializer.call(flow);
+    secondInitializer.call(flow);
+    thirdInitializer.call(flow);
+
+    await crewaiEventBus.scoped_handlers(async () => {
+      crewaiEventBus.on("method_execution_started", (_source, event) => {
+        events.push(event);
+      });
+      crewaiEventBus.on("method_execution_finished", (_source, event) => {
+        events.push(event);
+      });
+
+      await flow.akickoff();
+    });
+
+    const started = events.filter((event): event is MethodExecutionStartedEvent => event instanceof MethodExecutionStartedEvent);
+    const finished = events.filter((event): event is MethodExecutionFinishedEvent => event instanceof MethodExecutionFinishedEvent);
+    const firstFinished = finished.find((event) => event.methodName === "first");
+    const secondStarted = started.find((event) => event.methodName === "second");
+    const secondFinished = finished.find((event) => event.methodName === "second");
+    const thirdStarted = started.find((event) => event.methodName === "third");
+
+    expect(firstFinished).toBeDefined();
+    expect(secondStarted).toBeDefined();
+    expect(secondFinished).toBeDefined();
+    expect(thirdStarted).toBeDefined();
+    expect(secondStarted?.triggeredByEventId).toBe(firstFinished?.eventId);
+    expect(thirdStarted?.triggeredByEventId).toBe(secondFinished?.eventId);
+  });
+
+  it("records upstream triggered_by event ids for flow router paths", async () => {
+    resetEmissionSequence();
+    setTriggeringEventId(null);
+    const events: Array<MethodExecutionStartedEvent | MethodExecutionFinishedEvent> = [];
+
+    class RouterEventFlow extends Flow {
+      begin() {
+        return "begin";
+      }
+
+      routeDecision() {
+        return "approved";
+      }
+
+      handleApproved() {
+        return "handled";
+      }
+    }
+
+    const beginInitializer = decorateMethod(RouterEventFlow, "begin", start() as unknown as Decorator);
+    const routeInitializer = decorateMethod(RouterEventFlow, "routeDecision", router("begin") as unknown as Decorator);
+    const handleInitializer = decorateMethod(RouterEventFlow, "handleApproved", listen("approved") as unknown as Decorator);
+    const flow = new RouterEventFlow();
+    beginInitializer.call(flow);
+    routeInitializer.call(flow);
+    handleInitializer.call(flow);
+
+    await crewaiEventBus.scoped_handlers(async () => {
+      crewaiEventBus.on("method_execution_started", (_source, event) => {
+        events.push(event);
+      });
+      crewaiEventBus.on("method_execution_finished", (_source, event) => {
+        events.push(event);
+      });
+
+      await flow.akickoff();
+    });
+
+    const started = events.filter((event): event is MethodExecutionStartedEvent => event instanceof MethodExecutionStartedEvent);
+    const finished = events.filter((event): event is MethodExecutionFinishedEvent => event instanceof MethodExecutionFinishedEvent);
+    const beginFinished = finished.find((event) => event.methodName === "begin");
+    const routeStarted = started.find((event) => event.methodName === "routeDecision");
+    const routeFinished = finished.find((event) => event.methodName === "routeDecision");
+    const approvedStarted = started.find((event) => event.methodName === "handleApproved");
+
+    expect(beginFinished).toBeDefined();
+    expect(routeStarted).toBeDefined();
+    expect(routeFinished).toBeDefined();
+    expect(approvedStarted).toBeDefined();
+    expect(routeStarted?.triggeredByEventId).toBe(beginFinished?.eventId);
+    expect(approvedStarted?.triggeredByEventId).toBe(routeFinished?.eventId);
   });
 
   it("registers event sources and avoids duplicating agents owned by registered crews", () => {

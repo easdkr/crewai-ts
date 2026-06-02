@@ -232,6 +232,12 @@ export type FlowMethodEntry = {
   condition: FlowCondition | null;
 };
 
+type FlowExecutionQueueItem = {
+  name: string;
+  input: unknown;
+  triggeredByEventId: string | null;
+};
+
 export type FlowOptions<TState extends object = Record<string, unknown>> = {
   initialState?: TState | (() => TState);
   name?: string | null;
@@ -1499,8 +1505,7 @@ export class Flow<TState extends object = Record<string, unknown>> {
   }
 
   async _executeSingleListener(name: string, result: unknown, triggeringEventId: string | null = null): Promise<unknown> {
-    void triggeringEventId;
-    return await this.callFlowMethod(name, result, this.flowName());
+    return (await this.callFlowMethod(name, result, this.flowName(), triggeringEventId)).rawOutput;
   }
 
   async _execute_single_listener(name: string, result: unknown, triggeringEventId: string | null = null): Promise<unknown> {
@@ -1650,7 +1655,7 @@ export class Flow<TState extends object = Record<string, unknown>> {
       const entries = getFlowMetadata(this);
       const outputs = new Map<string, unknown>();
       const completed = new Set<string>(restoredCompletedMethods);
-      const queue: Array<{ name: string; input: unknown }> = [];
+      const queue: FlowExecutionQueueItem[] = [];
       let lastOutput: unknown = restoredMethodOutputs.at(-1);
       let methodCalls = 0;
 
@@ -1661,7 +1666,7 @@ export class Flow<TState extends object = Record<string, unknown>> {
       for (const entry of entries.filter((candidate) => candidate.kind === "start" && !candidate.condition)) {
         const name = String(entry.name);
         if (!skipCompletedMethods.has(name)) {
-          queue.push({ name, input: inputs });
+          queue.push({ name, input: inputs, triggeredByEventId: null });
         }
       }
 
@@ -1679,7 +1684,7 @@ export class Flow<TState extends object = Record<string, unknown>> {
           }
           const trigger = conditionSatisfied(entry.condition, completed);
           if (trigger.satisfied) {
-            queue.push({ name, input: outputs.get(triggerName) });
+            queue.push({ name, input: outputs.get(triggerName), triggeredByEventId: null });
           }
         }
       }
@@ -1694,7 +1699,7 @@ export class Flow<TState extends object = Record<string, unknown>> {
         }
         methodCalls += 1;
         const methodEntry = entries.find((entry) => String(entry.name) === current.name);
-        const rawOutput = await this.callFlowMethod(current.name, current.input, flowName);
+        const { rawOutput, finishedEventId } = await this.callFlowMethod(current.name, current.input, flowName, current.triggeredByEventId);
         const output = unwrapHumanFeedbackMethodOutput(rawOutput);
         const routerOutput = unwrapHumanFeedbackRouterOutput(rawOutput);
         lastOutput = output;
@@ -1741,7 +1746,7 @@ export class Flow<TState extends object = Record<string, unknown>> {
             }
             const trigger = conditionSatisfied(entry.condition, completed);
             if (trigger.satisfied) {
-              queue.push({ name, input: outputs.get(triggerName) });
+              queue.push({ name, input: outputs.get(triggerName), triggeredByEventId: finishedEventId });
             }
           }
         }
@@ -2269,16 +2274,23 @@ export class Flow<TState extends object = Record<string, unknown>> {
     return this.lastHumanFeedback;
   }
 
-  private async callFlowMethod(name: string, input: unknown, flowName: string): Promise<unknown> {
+  private async callFlowMethod(
+    name: string,
+    input: unknown,
+    flowName: string,
+    triggeredByEventId: string | null = null,
+  ): Promise<{ rawOutput: unknown; finishedEventId: string }> {
     const method = (this as Record<string, unknown>)[name];
     if (typeof method !== "function") {
       throw new Error(`Flow method '${name}' is not callable.`);
     }
-    crewaiEventBus.emit(this, new MethodExecutionStartedEvent({
+    const startedEvent = new MethodExecutionStartedEvent({
       flowName,
       methodName: name,
       state: this.stateSnapshot(),
-    }));
+    });
+    startedEvent.triggeredByEventId = triggeredByEventId;
+    crewaiEventBus.emit(this, startedEvent);
     const previousMethodName = this.currentMethodName;
     const previousContext = captureExecutionContext();
     this.currentMethodName = name;
@@ -2292,13 +2304,15 @@ export class Flow<TState extends object = Record<string, unknown>> {
         ? this._injectTriggerPayloadForStartMethod(method as (...args: unknown[]) => MaybePromise<unknown>)
         : method as (...args: unknown[]) => MaybePromise<unknown>;
       const result: unknown = await flowMethod.call(this, input);
-      crewaiEventBus.emit(this, new MethodExecutionFinishedEvent({
+      const finishedEvent = new MethodExecutionFinishedEvent({
         flowName,
         methodName: name,
         result: unwrapHumanFeedbackMethodOutput(result),
         state: this.stateSnapshot(),
-      }));
-      return result;
+      });
+      finishedEvent.triggeredByEventId = triggeredByEventId;
+      crewaiEventBus.emit(this, finishedEvent);
+      return { rawOutput: result, finishedEventId: finishedEvent.eventId };
     } catch (error) {
       if (isHumanFeedbackPending(error)) {
         crewaiEventBus.emit(this, new MethodExecutionPausedEvent({
@@ -2374,7 +2388,7 @@ export class Flow<TState extends object = Record<string, unknown>> {
     const entries = getFlowMetadata(this);
     const outputs = new Map<string, unknown>();
     const completed = new Set<string>();
-    const queue: Array<{ name: string; input: unknown }> = [];
+    const queue: FlowExecutionQueueItem[] = [];
     const methodOutput = context.emit && context.emit.length > 0 ? context.output : result;
     const routerOutput = context.emit && context.emit.length > 0
       ? result.outcome ?? context.defaultOutcome ?? context.emit[0] ?? ""
@@ -2405,7 +2419,7 @@ export class Flow<TState extends object = Record<string, unknown>> {
     await this.saveState(context.methodName);
 
     for (const triggerName of triggers) {
-      enqueueSatisfiedListeners(entries, completed, outputs, queue, triggerName);
+      enqueueSatisfiedListeners(entries, completed, outputs, queue, triggerName, null);
     }
 
     let lastOutput: unknown = methodOutput;
@@ -2420,7 +2434,7 @@ export class Flow<TState extends object = Record<string, unknown>> {
       }
       methodCalls += 1;
       const entry = entries.find((candidate) => String(candidate.name) === current.name);
-      const rawOutput = await this.callFlowMethod(current.name, current.input, flowName);
+      const { rawOutput, finishedEventId } = await this.callFlowMethod(current.name, current.input, flowName, current.triggeredByEventId);
       const output = unwrapHumanFeedbackMethodOutput(rawOutput);
       const currentRouterOutput = unwrapHumanFeedbackRouterOutput(rawOutput);
       lastOutput = output;
@@ -2449,7 +2463,7 @@ export class Flow<TState extends object = Record<string, unknown>> {
       });
       await this.saveState(current.name);
       for (const triggerName of nextTriggers) {
-        enqueueSatisfiedListeners(entries, completed, outputs, queue, triggerName);
+        enqueueSatisfiedListeners(entries, completed, outputs, queue, triggerName, finishedEventId);
       }
     }
 
@@ -3047,8 +3061,9 @@ function enqueueSatisfiedListeners(
   entries: readonly FlowMethodEntry[],
   completed: ReadonlySet<string>,
   outputs: ReadonlyMap<string, unknown>,
-  queue: Array<{ name: string; input: unknown }>,
+  queue: FlowExecutionQueueItem[],
   triggerName: string,
+  triggeredByEventId: string | null,
 ): void {
   for (const entry of entries) {
     const name = String(entry.name);
@@ -3060,7 +3075,7 @@ function enqueueSatisfiedListeners(
     }
     const trigger = conditionSatisfied(entry.condition, completed);
     if (trigger.satisfied) {
-      queue.push({ name, input: outputs.get(triggerName) });
+      queue.push({ name, input: outputs.get(triggerName), triggeredByEventId });
     }
   }
 }
