@@ -31051,6 +31051,78 @@ describe("runtime state", () => {
     expect(afterEitherStarted?.triggeredByEventId).toBe(pathAFinished?.eventId);
   });
 
+  it("keeps upstream triggered_by chains isolated across multiple flow kickoffs", async () => {
+    resetEmissionSequence();
+    setTriggeringEventId(null);
+    setLastEventId(null);
+    const firstRunEvents: Array<MethodExecutionStartedEvent | MethodExecutionFinishedEvent> = [];
+    const secondRunEvents: Array<MethodExecutionStartedEvent | MethodExecutionFinishedEvent> = [];
+    let capturingSecond = false;
+
+    class ReusableEventFlow extends Flow {
+      begin() {
+        return "begin";
+      }
+
+      process() {
+        return "processed";
+      }
+    }
+
+    const beginInitializer = decorateMethod(ReusableEventFlow, "begin", start() as unknown as Decorator);
+    const processInitializer = decorateMethod(ReusableEventFlow, "process", listen("begin") as unknown as Decorator);
+
+    await crewaiEventBus.scoped_handlers(async () => {
+      const capture = (event: MethodExecutionStartedEvent | MethodExecutionFinishedEvent) => {
+        if (capturingSecond) {
+          secondRunEvents.push(event);
+        } else {
+          firstRunEvents.push(event);
+        }
+      };
+      crewaiEventBus.on("method_execution_started", (_source, event) => {
+        capture(event);
+      });
+      crewaiEventBus.on("method_execution_finished", (_source, event) => {
+        capture(event);
+      });
+
+      const firstFlow = new ReusableEventFlow();
+      beginInitializer.call(firstFlow);
+      processInitializer.call(firstFlow);
+      await firstFlow.akickoff();
+
+      capturingSecond = true;
+      const secondFlow = new ReusableEventFlow();
+      beginInitializer.call(secondFlow);
+      processInitializer.call(secondFlow);
+      await secondFlow.akickoff();
+    });
+
+    const firstStarted = firstRunEvents.filter((event): event is MethodExecutionStartedEvent => event instanceof MethodExecutionStartedEvent);
+    const firstFinished = firstRunEvents.filter((event): event is MethodExecutionFinishedEvent => event instanceof MethodExecutionFinishedEvent);
+    const secondStarted = secondRunEvents.filter((event): event is MethodExecutionStartedEvent => event instanceof MethodExecutionStartedEvent);
+    const secondFinished = secondRunEvents.filter((event): event is MethodExecutionFinishedEvent => event instanceof MethodExecutionFinishedEvent);
+    const firstBeginFinished = firstFinished.find((event) => event.methodName === "begin");
+    const firstProcessStarted = firstStarted.find((event) => event.methodName === "process");
+    const secondBeginFinished = secondFinished.find((event) => event.methodName === "begin");
+    const secondProcessStarted = secondStarted.find((event) => event.methodName === "process");
+
+    expect(firstRunEvents).toHaveLength(4);
+    expect(secondRunEvents).toHaveLength(4);
+    expect(firstProcessStarted?.triggeredByEventId).toBe(firstBeginFinished?.eventId);
+    expect(secondProcessStarted?.triggeredByEventId).toBe(secondBeginFinished?.eventId);
+    expect(firstBeginFinished?.eventId).not.toBe(secondBeginFinished?.eventId);
+    expect(secondProcessStarted?.triggeredByEventId).not.toBe(firstBeginFinished?.eventId);
+
+    for (const runEvents of [firstRunEvents, secondRunEvents]) {
+      const ordered = runEvents.toSorted((left, right) => left.emissionSequence - right.emissionSequence);
+      for (const event of ordered.slice(1)) {
+        expect(event.previousEventId).not.toBeNull();
+      }
+    }
+  });
+
   it("records upstream previous_event_id chains across flow execution events", async () => {
     resetEmissionSequence();
     setLastEventId(null);
