@@ -30341,6 +30341,8 @@ describe("checkpoint state providers", () => {
 
     expect(provider.prune(db, 1, { branch: "main" })).toBe(2);
     expect(provider.prune(db, 10, { branch: "fork/a" })).toBe(0);
+    expect(provider.prune(db, 0, { branch: "fork/a" })).toBe(2);
+    expect(provider.prune(db, 0, { branch: "fork/a" })).toBe(0);
     expect(new CheckpointConfig({ location: join(directory, "checkpoints"), provider }).location)
       .toBe(join(directory, "checkpoints.db"));
   });
