@@ -105,6 +105,7 @@ This register is the source of truth for continuing porting work while parity sc
 - MCP native tool discovery is release-gated with deterministic fake-client behavior: empty or fully filtered tool lists warn and return no clients, and unexpected discovery failures are wrapped with a clear native MCP discovery error. Live MCP servers remain outside the default gate.
 - Crew context metadata is release-gated with a deterministic `AsyncLocalStorage` shim rather than OpenTelemetry baggage: `CrewContext` carries upstream-style `id` and `key`, `get_crew_context` returns only an active scoped context, and `withCrewContext` preserves nested and throwing scopes.
 - Flow event causal ordering is release-gated for listener chains, OR-condition listeners, router paths, parallel listeners, and repeated flow kickoffs: downstream method execution events preserve upstream `triggered_by_event_id` links to the exact method completion event that caused them without cross-run event-id leakage.
+- Event bus replay is release-gated with deterministic local dispatch: replayed events preserve upstream event ids, parent ids, and emission sequences, expose replay context inside handlers, and do not re-record replayed events into runtime state.
 
 ## Known Remaining Porting Areas
 

@@ -31371,11 +31371,13 @@ describe("runtime state", () => {
     const replayed = new FlowStartedEvent({ flowName: "ReplayFlow", inputs: {} });
     const originalEventId = replayed.eventId;
     const originalSequence = replayed.emissionSequence;
+    replayed.parentEventId = "parent-abc";
     bus.replay("source", replayed);
     expect(await bus.flush()).toBe(true);
 
     expect(seen).toEqual([false, false, true, true]);
     expect(replayed.eventId).toBe(originalEventId);
+    expect(replayed.parentEventId).toBe("parent-abc");
     expect(replayed.emissionSequence).toBe(originalSequence);
     expect(state.event_record.get(emitted.eventId)?.event).toBe(emitted);
     expect(state.event_record.get(replayed.eventId)).toBeNull();
