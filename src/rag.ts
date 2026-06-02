@@ -2484,7 +2484,7 @@ export class QdrantClient {
     if (callMethod(this.client, "collection_exists", "collectionExists", collectionName) === true) {
       throw new Error(`Collection '${collectionName}' already exists`);
     }
-    callMethod(this.client, "create_collection", "createCollection", { collection_name: collectionName, ...params });
+    callMethod(this.client, "create_collection", "createCollection", _get_collection_params(params));
   }
 
   async acreate_collection(params: BaseCollectionParams = {}): Promise<void> {
@@ -2493,14 +2493,14 @@ export class QdrantClient {
     if ((await callMethodAsync(this.client, "collection_exists", "collectionExists", collectionName)) === true) {
       throw new Error(`Collection '${collectionName}' already exists`);
     }
-    await callMethodAsync(this.client, "create_collection", "createCollection", { collection_name: collectionName, ...params });
+    await callMethodAsync(this.client, "create_collection", "createCollection", _get_collection_params(params));
   }
 
   get_or_create_collection(params: BaseCollectionParams = {}): unknown {
     this.ensureSyncClient("get_or_create_collection", "aget_or_create_collection");
     const collectionName = collectionNameFrom(params);
     if (callMethod(this.client, "collection_exists", "collectionExists", collectionName) !== true) {
-      callMethod(this.client, "create_collection", "createCollection", { collection_name: collectionName, ...params });
+      callMethod(this.client, "create_collection", "createCollection", _get_collection_params(params));
     }
     return callMethod(this.client, "get_collection", "getCollection", collectionName);
   }
@@ -2513,7 +2513,7 @@ export class QdrantClient {
     this.ensureAsyncClient("aget_or_create_collection", "get_or_create_collection");
     const collectionName = collectionNameFrom(params);
     if ((await callMethodAsync(this.client, "collection_exists", "collectionExists", collectionName)) !== true) {
-      await callMethodAsync(this.client, "create_collection", "createCollection", { collection_name: collectionName, ...params });
+      await callMethodAsync(this.client, "create_collection", "createCollection", _get_collection_params(params));
     }
     return callMethodAsync(this.client, "get_collection", "getCollection", collectionName);
   }

@@ -10837,6 +10837,42 @@ describe("RAG configuration and factories", () => {
     expect(point.payload).not.toHaveProperty("metadata");
   });
 
+  it("uses upstream Qdrant collection create payload shape", () => {
+    const createCollection = vi.fn();
+    const getCollection = vi.fn(() => ({ name: "docs" }));
+    const collectionExists = vi.fn()
+      .mockReturnValueOnce(false)
+      .mockReturnValueOnce(false);
+    const client = new QdrantClient({
+      collection_exists: collectionExists,
+      create_collection: createCollection,
+      get_collection: getCollection,
+      query_points: vi.fn(() => ({ points: [] })),
+    });
+
+    client.create_collection({
+      collection_name: "docs",
+      collectionName: "ignored-camel",
+      vectors_config: { size: 3, distance: "Cosine" },
+      shard_number: 2,
+      timeout: 30,
+      ignored: true,
+    });
+    expect(createCollection).toHaveBeenNthCalledWith(1, {
+      collection_name: "docs",
+      vectors_config: { size: 3, distance: "Cosine" },
+      shard_number: 2,
+      timeout: 30,
+    });
+
+    expect(client.get_or_create_collection({ collection_name: "new_docs" })).toEqual({ name: "docs" });
+    expect(createCollection).toHaveBeenNthCalledWith(2, {
+      collection_name: "new_docs",
+      vectors_config: { size: 384, distance: "Cosine" },
+    });
+    expect(getCollection).toHaveBeenCalledWith("new_docs");
+  });
+
   it("uses upstream Qdrant search payload shape and result normalization", () => {
     const queryPoints = vi.fn(() => ({
       points: [

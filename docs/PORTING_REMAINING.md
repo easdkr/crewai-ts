@@ -175,6 +175,7 @@ When more goal budget is available, continue from the behavioral parity audits b
 - `ChromaDBClient.search` / `asearch` now use upstream collection lookup payloads and avoid forwarding search-only fields such as `query`, `limit`, or `include` to the Chroma client.
 - `ChromaDBClient.create_collection` / `get_or_create_collection` and async counterparts now use upstream SDK payload shapes without forwarding wrapper-only `collection_name` fields.
 - `ChromaDBClient.delete_collection` / `adelete_collection` now use upstream SDK payload shapes and pass only the sanitized `name` field.
+- `QdrantClient.create_collection` / `get_or_create_collection` and async counterparts now use upstream SDK payload filtering, including default deterministic vector params and supported collection options without forwarding wrapper-only fields.
 - `QdrantClient.add_documents` / `aadd_documents` now use upstream point payload semantics by flattening document metadata beside `content` instead of nesting it under a `metadata` object.
 - `QdrantClient.search` / `asearch` now use upstream SDK query payloads with embedding arrays, `with_payload`, `with_vectors`, `query_filter`, and upstream score/result normalization.
 - Added upstream-style `KnowledgeStorage` save/asave error conversion for embedding dimension mismatches.
