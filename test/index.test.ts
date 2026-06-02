@@ -30919,6 +30919,57 @@ describe("runtime state", () => {
     expect(thirdStarted?.triggeredByEventId).toBe(secondFinished?.eventId);
   });
 
+  it("records upstream previous_event_id chains across flow execution events", async () => {
+    resetEmissionSequence();
+    setLastEventId(null);
+    const events: Array<FlowStartedEvent | FlowFinishedEvent | MethodExecutionStartedEvent | MethodExecutionFinishedEvent> = [];
+
+    class PreviousEventFlow extends Flow {
+      stepOne() {
+        return "one";
+      }
+
+      stepTwo() {
+        return "two";
+      }
+    }
+
+    const stepOneInitializer = decorateMethod(PreviousEventFlow, "stepOne", start() as unknown as Decorator);
+    const stepTwoInitializer = decorateMethod(PreviousEventFlow, "stepTwo", listen("stepOne") as unknown as Decorator);
+    const flow = new PreviousEventFlow();
+    stepOneInitializer.call(flow);
+    stepTwoInitializer.call(flow);
+
+    await crewaiEventBus.scoped_handlers(async () => {
+      crewaiEventBus.on("flow_started", (_source, event) => {
+        events.push(event);
+      });
+      crewaiEventBus.on("flow_finished", (_source, event) => {
+        events.push(event);
+      });
+      crewaiEventBus.on("method_execution_started", (_source, event) => {
+        events.push(event);
+      });
+      crewaiEventBus.on("method_execution_finished", (_source, event) => {
+        events.push(event);
+      });
+
+      await flow.akickoff();
+    });
+
+    expect(events.length).toBeGreaterThanOrEqual(4);
+    const ordered = events.toSorted((left, right) => left.emissionSequence - right.emissionSequence);
+    const byId = new Map(ordered.map((event) => [event.eventId, event]));
+
+    for (const event of ordered.slice(1)) {
+      expect(event.previousEventId).not.toBeNull();
+      const previous = event.previousEventId ? byId.get(event.previousEventId) : null;
+      if (previous) {
+        expect(previous.emissionSequence).toBeLessThan(event.emissionSequence);
+      }
+    }
+  });
+
   it("records upstream triggered_by event ids for flow router paths", async () => {
     resetEmissionSequence();
     setTriggeringEventId(null);
