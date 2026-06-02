@@ -3512,6 +3512,45 @@ describe("skills", () => {
     }
   });
 
+  it("discovers valid skills in sorted order and skips malformed directories like upstream", () => {
+    const dir = mkdtempSync(join(tmpdir(), "crewai-ts-skills-discover-"));
+    try {
+      const zebra = join(dir, "zebra");
+      const alpha = join(dir, "alpha");
+      const bad = join(dir, "bad-skill");
+      const noSkill = join(dir, "no-skill");
+      mkdirSync(zebra, { recursive: true });
+      mkdirSync(alpha, { recursive: true });
+      mkdirSync(bad, { recursive: true });
+      mkdirSync(noSkill, { recursive: true });
+      writeFileSync(join(zebra, "SKILL.md"), [
+        "---",
+        "name: zebra",
+        "description: Zebra skill.",
+        "---",
+        "Zebra instructions.",
+      ].join("\n"));
+      writeFileSync(join(alpha, "SKILL.md"), [
+        "---",
+        "name: alpha",
+        "description: Alpha skill.",
+        "---",
+        "Alpha instructions.",
+      ].join("\n"));
+      writeFileSync(join(bad, "SKILL.md"), [
+        "---",
+        "name: Invalid--Name",
+        "description: Bad skill.",
+        "---",
+        "Bad instructions.",
+      ].join("\n"));
+
+      expect(discoverSkills(dir).map((skill) => skill.name)).toEqual(["alpha", "zebra"]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("keeps skill version metadata under metadata like upstream", () => {
     const plain = new SkillFrontmatter({
       name: "plain-skill",
