@@ -176,6 +176,7 @@ import {
   FlowTrackable,
   MethodExecutionFinishedEvent,
   MethodExecutionStartedEvent,
+  TaskStartedEvent,
   StateWithId,
   GoalAchievedEarlyEvent,
   GRPCClientConfig,
@@ -30968,6 +30969,75 @@ describe("runtime state", () => {
         expect(previous.emissionSequence).toBeLessThan(event.emissionSequence);
       }
     }
+  });
+
+  it("keeps crew and task event parents scoped inside flow methods", async () => {
+    const events: Array<MethodExecutionStartedEvent | CrewKickoffStartedEvent | TaskStartedEvent> = [];
+    const firstAgent = new Agent({
+      role: "First Flow Agent",
+      goal: "Return the first answer",
+      backstory: "Runs in a flow method",
+      llm: () => "first result",
+    });
+    const secondAgent = new Agent({
+      role: "Second Flow Agent",
+      goal: "Return the second answer",
+      backstory: "Runs in a listener method",
+      llm: () => "second result",
+    });
+    const firstTask = new Task({
+      description: "First task",
+      expectedOutput: "first result",
+      agent: firstAgent,
+    });
+    const secondTask = new Task({
+      description: "Second task",
+      expectedOutput: "second result",
+      agent: secondAgent,
+    });
+
+    class FlowWithCrews extends Flow {
+      firstCrew() {
+        return new Crew({ agents: [firstAgent], tasks: [firstTask] }).kickoff();
+      }
+
+      secondCrew() {
+        return new Crew({ agents: [secondAgent], tasks: [secondTask] }).kickoff();
+      }
+    }
+
+    const firstInitializer = decorateMethod(FlowWithCrews, "firstCrew", start() as unknown as Decorator);
+    const secondInitializer = decorateMethod(FlowWithCrews, "secondCrew", listen("firstCrew") as unknown as Decorator);
+    const flow = new FlowWithCrews();
+    firstInitializer.call(flow);
+    secondInitializer.call(flow);
+
+    await crewaiEventBus.scoped_handlers(async () => {
+      crewaiEventBus.on("method_execution_started", (_source, event) => {
+        events.push(event);
+      });
+      crewaiEventBus.on("crew_kickoff_started", (_source, event) => {
+        events.push(event);
+      });
+      crewaiEventBus.on("task_started", (_source, event) => {
+        events.push(event);
+      });
+
+      await flow.akickoff();
+    });
+
+    const methods = events.filter((event): event is MethodExecutionStartedEvent => event instanceof MethodExecutionStartedEvent);
+    const crews = events.filter((event): event is CrewKickoffStartedEvent => event instanceof CrewKickoffStartedEvent);
+    const tasks = events.filter((event): event is TaskStartedEvent => event instanceof TaskStartedEvent);
+
+    expect(methods.map((event) => event.methodName)).toEqual(["firstCrew", "secondCrew"]);
+    expect(crews).toHaveLength(2);
+    expect(tasks).toHaveLength(2);
+    expect(crews[0]?.parentEventId).toBe(methods[0]?.eventId);
+    expect(crews[1]?.parentEventId).toBe(methods[1]?.eventId);
+    expect(tasks[0]?.parentEventId).toBe(crews[0]?.eventId);
+    expect(tasks[1]?.parentEventId).toBe(crews[1]?.eventId);
+    expect(crews[0]?.eventId).not.toBe(crews[1]?.eventId);
   });
 
   it("records upstream triggered_by event ids for flow router paths", async () => {
