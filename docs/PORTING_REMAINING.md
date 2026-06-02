@@ -147,6 +147,14 @@ High-value behavior audits still worth running:
 
 When more goal budget is available, continue from the behavioral parity audits below. The next pass should stay test-driven: compare the Python upstream method contract, add focused tests for the missing or placeholder behavior, then implement the smallest TS-compatible behavior that keeps decorators standard-only.
 
+### 2026-06-02 Token-Budget Interruption Checkpoint
+
+- The interrupted goal run was checkpointed on `main` at `ecaca59` (`Align Responses reasoning empty state`).
+- `origin/main` is at the same commit and the worktree was clean when this handoff was written.
+- The last recorded full gate is still the 2026-06-02 gate in **Current Verified State** above: 851 tests passing, export parity `total_missing=0`, class method parity `total_missing=0`, and subpath parity `total_missing=0` / `total_mismatched=0`.
+- Root `goal.md` has been refreshed as the next-run entrypoint. Start there, then use this ledger to choose exactly one behavior gap before coding.
+- Next goal run should not mine parity scripts for alias-only work. Continue from upstream examples, documented workflows, or deterministic behavior gaps only.
+
 ## Completed In Current Storage/RAG Pass
 
 - Added deterministic storage backend lifecycle parity for the TypeScript in-memory `QdrantEdgeStorage` and `LanceDBStorage` shims:
