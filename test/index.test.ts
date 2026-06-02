@@ -30712,6 +30712,14 @@ describe("runtime state", () => {
     const oldFormat = RuntimeState.from_json(JSON.stringify([{ type: "legacy" }]));
     expect(oldFormat.root).toEqual([{ type: "legacy" }]);
     expect(oldFormat.event_record.__len__()).toBe(0);
+
+    const missingLineage = RuntimeState.from_json(JSON.stringify({
+      crewai_version: "1.14.6",
+      entities: [{ type: "legacy" }],
+      event_record: { nodes: {} },
+    }));
+    expect(missingLineage.parent_id).toBeNull();
+    expect(missingLineage.branch).toBe("main");
   });
 
   it("exposes upstream RuntimeState serialization and checkpoint helper methods", () => {
