@@ -247,7 +247,7 @@ export class OpenAICompletion extends ConfiguredLLM {
   readonly isGpt4Model: boolean;
   readonly is_gpt4_model: boolean;
   private responseChainId: string | null;
-  private reasoningChainItems: unknown[];
+  private reasoningChainItems: unknown[] | null;
 
   constructor(options: OpenAICompletionOptions = { model: "gpt-4o" }) {
     const model = options.model;
@@ -323,7 +323,7 @@ export class OpenAICompletion extends ConfiguredLLM {
     this.isGpt4Model = lowerModel.includes("gpt-4");
     this.is_gpt4_model = this.isGpt4Model;
     this.responseChainId = this.previousResponseId;
-    this.reasoningChainItems = [];
+    this.reasoningChainItems = null;
   }
 
   override call(messages: readonly LLMMessage[], options?: LLMCallOptions): Promise<LLMResponse> {
@@ -407,7 +407,7 @@ export class OpenAICompletion extends ConfiguredLLM {
       includeItems.push("reasoning.encrypted_content");
     }
     const finalInput: unknown[] = [];
-    if (this.autoChainReasoning && this.reasoningChainItems.length > 0) {
+    if (this.autoChainReasoning && this.reasoningChainItems && this.reasoningChainItems.length > 0) {
       finalInput.push(...this.reasoningChainItems);
     }
     finalInput.push(...(inputMessages.length > 0 ? inputMessages : messages));
@@ -834,11 +834,11 @@ export class OpenAICompletion extends ConfiguredLLM {
     return this.lastResponseId;
   }
 
-  override get lastReasoningItems(): readonly unknown[] {
-    return [...this.reasoningChainItems];
+  override get lastReasoningItems(): readonly unknown[] | null {
+    return this.reasoningChainItems ? [...this.reasoningChainItems] : null;
   }
 
-  override get last_reasoning_items(): readonly unknown[] {
+  override get last_reasoning_items(): readonly unknown[] | null {
     return this.lastReasoningItems;
   }
 
@@ -851,7 +851,7 @@ export class OpenAICompletion extends ConfiguredLLM {
   }
 
   override resetReasoningChain(): void {
-    this.reasoningChainItems = [];
+    this.reasoningChainItems = null;
   }
 
   override reset_reasoning_chain(): void {

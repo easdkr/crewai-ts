@@ -22139,9 +22139,9 @@ describe("LLM providers", () => {
     expect(new AzureCompletion({ model: "o3-mini" }).supports_stop_words()).toBe(false);
 
     expect(openai.last_response_id).toBe("resp-1");
-    expect(openai.last_reasoning_items).toEqual([]);
+    expect(openai.last_reasoning_items).toBeNull();
     openai.reset_reasoning_chain();
-    expect(openai.last_reasoning_items).toEqual([]);
+    expect(openai.last_reasoning_items).toBeNull();
     openai.reset_chain();
     expect(openai.last_response_id).toBeNull();
     expect(azureOpenAI.last_response_id).toBe("az-resp-1");
@@ -22165,7 +22165,7 @@ describe("LLM providers", () => {
       expect(Object.hasOwn(OpenAICompletion.prototype, methodName)).toBe(true);
     }
     expect(openai.last_response_id).toBe("resp-1");
-    expect(openai.last_reasoning_items).toEqual([]);
+    expect(openai.last_reasoning_items).toBeNull();
     expect(openai.to_config_dict()).toMatchObject({ model: "gpt-4o-mini", provider: "openai" });
     await expect(openai.acall([{ role: "user", content: "hello" }])).rejects.toThrow("No LLM provider registered");
   });
@@ -22259,7 +22259,7 @@ describe("LLM providers", () => {
       expect(Object.hasOwn(AzureCompletion.prototype, methodName)).toBe(true);
     }
     expect(azure.last_response_id).toBe("az-resp-1");
-    expect(azure.last_reasoning_items).toEqual([]);
+    expect(azure.last_reasoning_items).toBeNull();
     expect(azure.to_config_dict()).toMatchObject({ model: "gpt-4o", provider: "azure" });
     await expect(azure.aclose()).resolves.toBeUndefined();
     await expect(azure.acall([{ role: "user", content: "hello" }])).rejects.toThrow("No LLM provider registered");

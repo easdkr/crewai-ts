@@ -2027,7 +2027,7 @@ export class AzureCompletion extends ConfiguredLLM {
   readonly max_completion_tokens: number | null;
   readonly _responses_delegate: OpenAICompletion | null;
   private responseChainId: string | null;
-  private reasoningChainItems: unknown[];
+  private reasoningChainItems: unknown[] | null;
 
   constructor(options: AzureCompletionOptions = { model: "gpt-4o-mini" }) {
     const endpoint = options.endpoint ?? process.env.AZURE_ENDPOINT ?? process.env.AZURE_OPENAI_ENDPOINT ?? process.env.AZURE_API_BASE ?? null;
@@ -2093,7 +2093,7 @@ export class AzureCompletion extends ConfiguredLLM {
     this.maxCompletionTokens = options.maxCompletionTokens ?? options.max_completion_tokens ?? null;
     this.max_completion_tokens = this.maxCompletionTokens;
     this.responseChainId = this.previousResponseId;
-    this.reasoningChainItems = [];
+    this.reasoningChainItems = null;
     this._responses_delegate = this.api === "responses"
       ? new OpenAICompletion(stripUndefined({
         model: azureResponsesModelName(options.model),
@@ -2204,14 +2204,14 @@ export class AzureCompletion extends ConfiguredLLM {
     return this.lastResponseId;
   }
 
-  override get lastReasoningItems(): readonly unknown[] {
+  override get lastReasoningItems(): readonly unknown[] | null {
     if (this._responses_delegate) {
       return this._responses_delegate.lastReasoningItems;
     }
-    return [...this.reasoningChainItems];
+    return this.reasoningChainItems ? [...this.reasoningChainItems] : null;
   }
 
-  override get last_reasoning_items(): readonly unknown[] {
+  override get last_reasoning_items(): readonly unknown[] | null {
     return this.lastReasoningItems;
   }
 
@@ -2232,7 +2232,7 @@ export class AzureCompletion extends ConfiguredLLM {
       this._responses_delegate.resetReasoningChain();
       return;
     }
-    this.reasoningChainItems = [];
+    this.reasoningChainItems = null;
   }
 
   override reset_reasoning_chain(): void {
