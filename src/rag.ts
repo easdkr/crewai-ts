@@ -2531,10 +2531,11 @@ export class QdrantClient {
     for (let index = 0; index < params.documents.length; index += batchSize) {
       const points = params.documents.slice(index, index + batchSize).map((document) => {
         const normalized = normalizeBaseRecord(document);
+        const metadata = qdrantPointMetadata(normalized.metadata);
         return {
           id: normalized.docId,
           vector: callEmbeddingFunction(this.embeddingFunction, normalized.content),
-          payload: { id: normalized.docId, content: normalized.content, metadata: normalized.metadata ?? {} },
+          payload: { content: normalized.content, ...metadata },
         };
       });
       callMethod(this.client, "upsert", "upsert", { collection_name: collectionName, points });
@@ -2558,10 +2559,11 @@ export class QdrantClient {
     for (let index = 0; index < params.documents.length; index += batchSize) {
       const points = await Promise.all(params.documents.slice(index, index + batchSize).map(async (document) => {
         const normalized = normalizeBaseRecord(document);
+        const metadata = qdrantPointMetadata(normalized.metadata);
         return {
           id: normalized.docId,
           vector: await callEmbeddingFunctionAsync(this.embeddingFunction, normalized.content),
-          payload: { id: normalized.docId, content: normalized.content, metadata: normalized.metadata ?? {} },
+          payload: { content: normalized.content, ...metadata },
         };
       }));
       await callMethodAsync(this.client, "upsert", "upsert", { collection_name: collectionName, points });

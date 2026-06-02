@@ -10311,13 +10311,21 @@ class FakeQdrantClient {
     return { name: collectionName };
   }
 
-  upsert(options: { collection_name: string; points: readonly { id: string; payload: FakeDocument }[] }): void {
+  upsert(options: { collection_name: string; points: readonly { id: string; payload: Record<string, unknown> }[] }): void {
     const collection = this.collections.get(options.collection_name);
     if (!collection) {
       throw new Error(`Collection ${options.collection_name} does not exist`);
     }
     for (const point of options.points) {
-      collection.set(point.id, point.payload);
+      const { content = "", metadata, ...payloadMetadata } = point.payload;
+      collection.set(point.id, {
+        id: point.id,
+        content: String(content),
+        metadata: {
+          ...(metadata && typeof metadata === "object" && !Array.isArray(metadata) ? metadata as Record<string, unknown> : {}),
+          ...payloadMetadata,
+        },
+      });
     }
   }
 
@@ -10796,6 +10804,36 @@ describe("RAG configuration and factories", () => {
 
     await asyncClient.areset();
     expect(asyncFake.collections.size).toBe(0);
+  });
+
+  it("uses upstream Qdrant point payload shape for document metadata", () => {
+    const upsert = vi.fn();
+    const client = new QdrantClient({
+      collection_exists: vi.fn(() => true),
+      upsert,
+      query_points: vi.fn(() => ({ points: [] })),
+    }, (text: string) => [text.length]);
+
+    client.add_documents({
+      collection_name: "docs",
+      documents: [
+        { doc_id: "custom-id-123", content: "Test document", metadata: { source: "test", page: 2 } },
+      ],
+    });
+
+    expect(upsert).toHaveBeenCalledOnce();
+    const call = upsert.mock.calls[0]?.[0] as { points: Array<{ id: string; vector: number[]; payload: Record<string, unknown> }> };
+    const point = call.points[0];
+    expect(point).toMatchObject({
+      id: "custom-id-123",
+      vector: [13],
+      payload: {
+        content: "Test document",
+        source: "test",
+        page: 2,
+      },
+    });
+    expect(point.payload).not.toHaveProperty("metadata");
   });
 
   it("raises upstream Qdrant client method mismatch errors for wrong sync or async clients", async () => {
