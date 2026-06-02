@@ -3668,6 +3668,42 @@ describe("skills", () => {
     }
   });
 
+  it("lists cached skills and preserves null versions like upstream", () => {
+    const dir = mkdtempSync(join(tmpdir(), "crewai-ts-skill-cache-list-"));
+    const source = join(dir, "source");
+    const cacheRoot = join(dir, "cache");
+    try {
+      mkdirSync(source, { recursive: true });
+      writeFileSync(join(source, "SKILL.md"), [
+        "---",
+        "name: placeholder",
+        "description: Cached skill.",
+        "---",
+        "Instructions.",
+      ].join("\n"));
+
+      const cache = new SkillCacheManager(cacheRoot);
+      expect(cache.listCached()).toEqual([]);
+      expect(cache.invalidate("acme", "ghost-skill")).toBe(false);
+
+      cache.storeDirectory("acme", "skill-a", "1.0.0", source);
+      cache.storeDirectory("acme", "skill-b", "0.1.0", source);
+      cache.storeDirectory("other-org", "skill-c", null, source);
+
+      const entries = cache.listCached();
+      expect(new Set(entries.map((entry) => entry.name))).toEqual(new Set(["skill-a", "skill-b", "skill-c"]));
+      expect(entries.find((entry) => entry.name === "skill-c")).toMatchObject({
+        org: "other-org",
+        name: "skill-c",
+        version: null,
+      });
+      expect(cache.invalidate("acme", "skill-a")).toBe(true);
+      expect(cache.getCachedPath("acme", "skill-a")).toBeNull();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("gates experimental skills registry helpers like upstream", () => {
     const previous = process.env[ENV_VAR];
     const dir = mkdtempSync(join(tmpdir(), "crewai-ts-skill-gate-"));
