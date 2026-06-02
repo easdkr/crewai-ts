@@ -10737,11 +10737,12 @@ describe("RAG configuration and factories", () => {
 
   it("uses upstream ChromaDB default search include ordering", () => {
     const collection = {
+      metadata: { "hnsw:space": "cosine" },
       query: vi.fn(() => ({
         ids: [["doc-1"]],
         documents: [["CrewAI docs"]],
         metadatas: [[{ topic: "rag" }]],
-        distances: [[0]],
+        distances: [[0.4]],
       })),
     };
     const getOrCreateCollection = vi.fn(() => collection);
@@ -10749,7 +10750,9 @@ describe("RAG configuration and factories", () => {
       get_or_create_collection: getOrCreateCollection,
     }, (texts: readonly string[]) => texts.map((text) => [text.length]));
 
-    expect(client.search({ collection_name: "docs", query: "CrewAI" })).toHaveLength(1);
+    expect(client.search({ collection_name: "docs", query: "CrewAI" })).toEqual([
+      { id: "doc-1", content: "CrewAI docs", metadata: { topic: "rag" }, score: 0.8 },
+    ]);
     expect(getOrCreateCollection).toHaveBeenCalledWith({
       name: "docs",
       embedding_function: client.embedding_function,

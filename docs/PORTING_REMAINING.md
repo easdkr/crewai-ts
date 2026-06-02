@@ -173,6 +173,7 @@ When more goal budget is available, continue from the behavioral parity audits b
 - `ChromaDBClient.add_documents` / `aadd_documents` now use upstream collection lookup payloads and avoid forwarding add-only fields such as `documents` or `batch_size` to the Chroma client.
 - `ChromaDBClient.search` / `asearch` now use the upstream default Chroma include ordering: `metadatas`, `documents`, then `distances`.
 - `ChromaDBClient.search` / `asearch` now use upstream collection lookup payloads and avoid forwarding search-only fields such as `query`, `limit`, or `include` to the Chroma client.
+- `ChromaDBClient.search` / `asearch` now apply upstream collection-metadata distance metrics when converting Chroma distances into result scores.
 - `ChromaDBClient.create_collection` / `get_or_create_collection` and async counterparts now use upstream SDK payload shapes without forwarding wrapper-only `collection_name` fields.
 - `ChromaDBClient.delete_collection` / `adelete_collection` now use upstream SDK payload shapes and pass only the sanitized `name` field.
 - `QdrantClient.create_collection` / `get_or_create_collection` and async counterparts now use upstream SDK payload filtering, including default deterministic vector params and supported collection options without forwarding wrapper-only fields.

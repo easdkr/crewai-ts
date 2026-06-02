@@ -2349,14 +2349,18 @@ export class ChromaDBClient {
       name: sanitizeCollectionName(normalized.collection_name),
       embedding_function: this.embeddingFunction,
     }) as Record<string, unknown>;
+    const include = Array.isArray(normalized.include) ? normalized.include as readonly string[] : ["metadatas", "documents", "distances"];
     const result = callMethod(collection, "query", "query", {
       query_texts: [normalized.query],
       n_results: normalized.limit,
       where: normalized.where ?? normalized.metadata_filter,
       where_document: normalized.where_document,
-      include: normalized.include ?? ["metadatas", "documents", "distances"],
+      include,
     });
-    return processChromaQueryResult(result, normalized.score_threshold);
+    return _process_query_results(collection, result, {
+      include,
+      score_threshold: normalized.score_threshold,
+    });
   }
 
   async asearch(params: BaseCollectionSearchParams): Promise<SearchResult[]> {
@@ -2366,14 +2370,18 @@ export class ChromaDBClient {
       name: sanitizeCollectionName(normalized.collection_name),
       embedding_function: this.embeddingFunction,
     }) as Record<string, unknown>;
+    const include = Array.isArray(normalized.include) ? normalized.include as readonly string[] : ["metadatas", "documents", "distances"];
     const result = await callMethodAsync(collection, "query", "query", {
       query_texts: [normalized.query],
       n_results: normalized.limit,
       where: normalized.where ?? normalized.metadata_filter,
       where_document: normalized.where_document,
-      include: normalized.include ?? ["metadatas", "documents", "distances"],
+      include,
     });
-    return processChromaQueryResult(result, normalized.score_threshold);
+    return _process_query_results(collection, result, {
+      include,
+      score_threshold: normalized.score_threshold,
+    });
   }
 
   delete_collection(params: BaseCollectionParams): void {
@@ -2851,27 +2859,6 @@ function callEmbeddingFunction(embeddingFunction: SimpleEmbeddingFunction, text:
 
 function callEmbeddingFunctionAsync(embeddingFunction: SimpleEmbeddingFunction, text: string): Promise<unknown> {
   return Promise.resolve((embeddingFunction as (value: string) => unknown)(text));
-}
-
-function processChromaQueryResult(result: unknown, scoreThreshold: number | null): SearchResult[] {
-  const value = result as {
-    ids?: string[][];
-    documents?: string[][];
-    metadatas?: Record<string, unknown>[][];
-    distances?: number[][];
-  };
-  const ids = value.ids?.[0] ?? [];
-  const documents = value.documents?.[0] ?? [];
-  const metadatas = value.metadatas?.[0] ?? [];
-  const distances = value.distances?.[0] ?? [];
-  return ids
-    .map((id, index) => ({
-      id,
-      content: documents[index] ?? "",
-      metadata: metadatas[index] ?? {},
-      score: 1 / (1 + (distances[index] ?? 0)),
-    }))
-    .filter((resultItem) => scoreThreshold === null || resultItem.score >= scoreThreshold);
 }
 
 export function _convert_distance_to_score(distance: number, distance_metric: "l2" | "cosine" | "ip"): number {
