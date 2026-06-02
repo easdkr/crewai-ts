@@ -170,6 +170,7 @@ When more goal budget is available, continue from the behavioral parity audits b
 - `QdrantClient` now mirrors upstream sync/async client mismatch behavior by raising `ClientMethodMismatchError` when sync methods receive async clients or async methods receive sync clients.
 - `ChromaDBClient` now mirrors upstream sync/async client mismatch behavior by raising clear TypeErrors when sync methods receive async clients or async methods receive sync clients.
 - `ChromaDBClient.add_documents` / `aadd_documents` now mirror upstream upsert payload semantics by passing `metadatas: null` when an entire batch has no metadata.
+- `ChromaDBClient.add_documents` / `aadd_documents` now use upstream document preparation semantics in the runtime path: metadata `doc_id`, metadata-sensitive content hashes, duplicate id overwrite, and batching are release-gated.
 - `ChromaDBClient.add_documents` / `aadd_documents` now use upstream collection lookup payloads and avoid forwarding add-only fields such as `documents` or `batch_size` to the Chroma client.
 - `ChromaDBClient.search` / `asearch` now use the upstream default Chroma include ordering: `metadatas`, `documents`, then `distances`.
 - `ChromaDBClient.search` / `asearch` now use upstream collection lookup payloads and avoid forwarding search-only fields such as `query`, `limit`, or `include` to the Chroma client.

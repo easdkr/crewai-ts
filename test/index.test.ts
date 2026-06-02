@@ -10735,6 +10735,33 @@ describe("RAG configuration and factories", () => {
     });
   });
 
+  it("uses upstream ChromaDB document id hashing and duplicate deduplication in add paths", () => {
+    const collection = { upsert: vi.fn() };
+    const client = new ChromaDBClient({
+      get_or_create_collection: vi.fn(() => collection),
+    }, (texts: readonly string[]) => texts.map((text) => [text.length]));
+
+    client.add_documents({
+      collection_name: "docs",
+      documents: [
+        { content: "Same content", metadata: { source: "old", doc_id: "custom-id" } },
+        { content: "Same content updated", metadata: { source: "new", doc_id: "custom-id" } },
+        { content: "Hash content", metadata: { source: "hash" } },
+      ],
+    });
+
+    const call = collection.upsert.mock.calls[0]?.[0] as {
+      ids: string[];
+      documents: string[];
+      metadatas: Array<Record<string, unknown>>;
+    };
+    expect(call.ids).toHaveLength(2);
+    expect(call.ids[0]).toBe("custom-id");
+    expect(call.documents[0]).toBe("Same content updated");
+    expect(call.metadatas[0]).toEqual({ source: "new", doc_id: "custom-id" });
+    expect(call.ids[1]).toBe(createContentId("Hash content|{\"source\":\"hash\"}"));
+  });
+
   it("uses upstream ChromaDB default search include ordering", () => {
     const collection = {
       metadata: { "hnsw:space": "cosine" },

@@ -2305,7 +2305,7 @@ export class ChromaDBClient {
       embedding_function: this.embeddingFunction,
     }) as Record<string, unknown>;
     const batchSize = params.batchSize ?? params.batch_size ?? this.defaultBatchSize;
-    const prepared = prepareDocuments(params.documents);
+    const prepared = _prepare_documents_for_chromadb(params.documents);
     for (let index = 0; index < prepared.ids.length; index += batchSize) {
       const [ids, documents, metadatas] = _create_batch_slice(prepared, index, batchSize);
       callMethod(collection, "upsert", "upsert", {
@@ -2331,7 +2331,7 @@ export class ChromaDBClient {
       embedding_function: this.embeddingFunction,
     }) as Record<string, unknown>;
     const batchSize = params.batchSize ?? params.batch_size ?? this.defaultBatchSize;
-    const prepared = prepareDocuments(params.documents);
+    const prepared = _prepare_documents_for_chromadb(params.documents);
     for (let index = 0; index < prepared.ids.length; index += batchSize) {
       const [ids, documents, metadatas] = _create_batch_slice(prepared, index, batchSize);
       await callMethodAsync(collection, "upsert", "upsert", {
@@ -2719,20 +2719,6 @@ export function _is_ipv4_pattern(name: string): boolean {
 
 function normalizeChromaMetadata(metadata: Record<string, unknown> | undefined): Record<string, unknown> {
   return { "hnsw:space": "cosine", ...(metadata ?? {}) };
-}
-
-function prepareDocuments(documents: readonly BaseRecord[]): PreparedDocuments {
-  const prepared = new PreparedDocuments();
-  for (const document of documents) {
-    const normalized = normalizeBaseRecord(document);
-    prepared.ids.push(normalized.docId);
-    prepared.texts.push(normalized.content);
-    const metadata = normalized.metadata && !Array.isArray(normalized.metadata)
-      ? normalized.metadata as Record<string, string | number | boolean>
-      : null;
-    prepared.metadatas.push({ ...(metadata ?? {}) });
-  }
-  return prepared;
 }
 
 export function _prepare_documents_for_chromadb(documents: readonly BaseRecord[]): PreparedDocuments {
