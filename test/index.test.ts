@@ -10329,13 +10329,14 @@ class FakeQdrantClient {
     }
   }
 
-  query_points(options: { collection_name: string; query: string; limit: number; filter?: Record<string, unknown> | null }): {
-    points: Array<{ id: string; payload: FakeDocument; score: number }>;
+  query_points(options: { collection_name: string; query: readonly number[]; limit: number; query_filter?: { must?: Array<{ key: string; match: { value: unknown } }> } }): {
+    points: Array<{ id: string; payload: Record<string, unknown>; score: number }>;
   } {
     const collection = this.collections.get(options.collection_name) ?? new Map<string, FakeDocument>();
+    const filters = Object.fromEntries((options.query_filter?.must ?? []).map((condition) => [condition.key, condition.match.value]));
     const points = [...collection.values()]
-      .filter((document) => metadataMatches(document.metadata, options.filter ?? null))
-      .map((document) => ({ id: document.id, payload: document, score: document.content.toLowerCase().includes(options.query.toLowerCase()) ? 1 : 0.25 }))
+      .filter((document) => metadataMatches(document.metadata, Object.keys(filters).length > 0 ? filters : null))
+      .map((document) => ({ id: document.id, payload: { content: document.content, ...document.metadata }, score: 1 }))
       .sort((left, right) => right.score - left.score)
       .slice(0, options.limit);
     return { points };
@@ -10834,6 +10835,48 @@ describe("RAG configuration and factories", () => {
       },
     });
     expect(point.payload).not.toHaveProperty("metadata");
+  });
+
+  it("uses upstream Qdrant search payload shape and result normalization", () => {
+    const queryPoints = vi.fn(() => ({
+      points: [
+        { id: "doc-123", payload: { content: "Test content", source: "test" }, score: 0.95 },
+      ],
+    }));
+    const client = new QdrantClient({
+      collection_exists: vi.fn(() => true),
+      query_points: queryPoints,
+    }, (text: string) => [text.length, 0.2, 0.3]);
+
+    expect(client.search({
+      collection_name: "docs",
+      query: "test query",
+      limit: 5,
+      score_threshold: 0.8,
+      metadata_filter: { category: "tech", status: "published" },
+    })).toEqual([
+      {
+        id: "doc-123",
+        content: "Test content",
+        metadata: { source: "test" },
+        score: 0.975,
+      },
+    ]);
+
+    expect(queryPoints).toHaveBeenCalledWith({
+      collection_name: "docs",
+      query: [10, 0.2, 0.3],
+      limit: 5,
+      with_payload: true,
+      with_vectors: false,
+      score_threshold: 0.8,
+      query_filter: {
+        must: [
+          { key: "category", match: { value: "tech" } },
+          { key: "status", match: { value: "published" } },
+        ],
+      },
+    });
   });
 
   it("raises upstream Qdrant client method mismatch errors for wrong sync or async clients", async () => {

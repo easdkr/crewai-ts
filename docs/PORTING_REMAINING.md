@@ -176,6 +176,7 @@ When more goal budget is available, continue from the behavioral parity audits b
 - `ChromaDBClient.create_collection` / `get_or_create_collection` and async counterparts now use upstream SDK payload shapes without forwarding wrapper-only `collection_name` fields.
 - `ChromaDBClient.delete_collection` / `adelete_collection` now use upstream SDK payload shapes and pass only the sanitized `name` field.
 - `QdrantClient.add_documents` / `aadd_documents` now use upstream point payload semantics by flattening document metadata beside `content` instead of nesting it under a `metadata` object.
+- `QdrantClient.search` / `asearch` now use upstream SDK query payloads with embedding arrays, `with_payload`, `with_vectors`, `query_filter`, and upstream score/result normalization.
 - Added upstream-style `KnowledgeStorage` save/asave error conversion for embedding dimension mismatches.
 - Added upstream-style `KnowledgeStorage._get_client` plus collection-name helper aliases for storage extension compatibility.
 - Added embedding provider config-field compatibility for OpenAI, Azure, SentenceTransformer, VoyageAI, VertexAI, HuggingFace, Instructor, Jina, Ollama, OpenCLIP, Text2Vec, Google Generative AI, Bedrock, Cohere, ONNX, Roboflow, and WatsonX defaults plus direct provider attribute access.

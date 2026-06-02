@@ -2577,15 +2577,15 @@ export class QdrantClient {
       throw new Error(`Collection '${collectionName}' does not exist`);
     }
     const normalized = normalizeSearchParams(params, this.defaultLimit, this.defaultScoreThreshold);
-    const response = callMethod(this.client, "query_points", "queryPoints", {
-      collection_name: collectionName,
-      query: normalized.query,
-      query_embedding: callEmbeddingFunction(this.embeddingFunction, normalized.query),
-      limit: normalized.limit,
-      score_threshold: normalized.score_threshold,
-      filter: normalized.metadata_filter,
-    });
-    return processQdrantQueryResult(response, normalized.score_threshold);
+    const queryEmbedding = _ensure_list_embedding(callEmbeddingFunction(this.embeddingFunction, normalized.query) as QueryEmbedding | { tolist?: () => unknown });
+    const response = callMethod(this.client, "query_points", "queryPoints", _prepare_search_params(
+      collectionName,
+      queryEmbedding,
+      normalized.limit,
+      normalized.score_threshold,
+      normalized.metadata_filter,
+    ));
+    return _process_search_results(response);
   }
 
   async asearch(params: BaseCollectionSearchParams): Promise<SearchResult[]> {
@@ -2595,15 +2595,15 @@ export class QdrantClient {
       throw new Error(`Collection '${collectionName}' does not exist`);
     }
     const normalized = normalizeSearchParams(params, this.defaultLimit, this.defaultScoreThreshold);
-    const response = await callMethodAsync(this.client, "query_points", "queryPoints", {
-      collection_name: collectionName,
-      query: normalized.query,
-      query_embedding: await callEmbeddingFunctionAsync(this.embeddingFunction, normalized.query),
-      limit: normalized.limit,
-      score_threshold: normalized.score_threshold,
-      filter: normalized.metadata_filter,
-    });
-    return processQdrantQueryResult(response, normalized.score_threshold);
+    const queryEmbedding = _ensure_list_embedding(await callEmbeddingFunctionAsync(this.embeddingFunction, normalized.query) as QueryEmbedding | { tolist?: () => unknown });
+    const response = await callMethodAsync(this.client, "query_points", "queryPoints", _prepare_search_params(
+      collectionName,
+      queryEmbedding,
+      normalized.limit,
+      normalized.score_threshold,
+      normalized.metadata_filter,
+    ));
+    return _process_search_results(response);
   }
 
   delete_collection(params: BaseCollectionParams): void {
@@ -2929,23 +2929,6 @@ export function _process_query_results(
     ? collection.metadata["hnsw:space"] as "l2" | "cosine" | "ip"
     : "l2";
   return _convert_chromadb_results_to_search_results(results, params.include ?? ["metadatas", "documents", "distances"], metric, params.score_threshold ?? null);
-}
-
-function processQdrantQueryResult(result: unknown, scoreThreshold: number | null): SearchResult[] {
-  const points = Array.isArray((result as { points?: unknown[] }).points)
-    ? (result as { points: Array<{ id?: unknown; payload?: Record<string, unknown>; score?: number }> }).points
-    : Array.isArray(result) ? result as Array<{ id?: unknown; payload?: Record<string, unknown>; score?: number }> : [];
-  return points
-    .map((point) => {
-      const payload = point.payload ?? {};
-      return {
-        id: stringFromUnknown(payload.id ?? payload.doc_id ?? point.id),
-        content: stringFromUnknown(payload.content),
-        metadata: (payload.metadata ?? {}) as Record<string, unknown>,
-        score: point.score ?? 0,
-      };
-    })
-    .filter((resultItem) => scoreThreshold === null || resultItem.score >= scoreThreshold);
 }
 
 export function _ensure_list_embedding(embedding: QueryEmbedding | { tolist?: () => unknown }): number[] {
