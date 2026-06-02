@@ -30953,6 +30953,62 @@ describe("runtime state", () => {
     expect(thirdStarted?.triggeredByEventId).toBe(secondFinished?.eventId);
   });
 
+  it("records upstream triggered_by event ids for parallel flow listeners", async () => {
+    resetEmissionSequence();
+    setTriggeringEventId(null);
+    const events: Array<MethodExecutionStartedEvent | MethodExecutionFinishedEvent> = [];
+
+    class ParallelListenerFlow extends Flow {
+      trigger() {
+        return "trigger";
+      }
+
+      listenerA() {
+        return "a";
+      }
+
+      listenerB() {
+        return "b";
+      }
+
+      listenerC() {
+        return "c";
+      }
+    }
+
+    const triggerInitializer = decorateMethod(ParallelListenerFlow, "trigger", start() as unknown as Decorator);
+    const listenerAInitializer = decorateMethod(ParallelListenerFlow, "listenerA", listen("trigger") as unknown as Decorator);
+    const listenerBInitializer = decorateMethod(ParallelListenerFlow, "listenerB", listen("trigger") as unknown as Decorator);
+    const listenerCInitializer = decorateMethod(ParallelListenerFlow, "listenerC", listen("trigger") as unknown as Decorator);
+    const flow = new ParallelListenerFlow();
+    triggerInitializer.call(flow);
+    listenerAInitializer.call(flow);
+    listenerBInitializer.call(flow);
+    listenerCInitializer.call(flow);
+
+    await crewaiEventBus.scoped_handlers(async () => {
+      crewaiEventBus.on("method_execution_started", (_source, event) => {
+        events.push(event);
+      });
+      crewaiEventBus.on("method_execution_finished", (_source, event) => {
+        events.push(event);
+      });
+
+      await flow.akickoff();
+    });
+
+    const started = events.filter((event): event is MethodExecutionStartedEvent => event instanceof MethodExecutionStartedEvent);
+    const finished = events.filter((event): event is MethodExecutionFinishedEvent => event instanceof MethodExecutionFinishedEvent);
+    const triggerFinished = finished.find((event) => event.methodName === "trigger");
+    const listenerStarted = ["listenerA", "listenerB", "listenerC"].map((methodName) => (
+      started.find((event) => event.methodName === methodName)
+    ));
+
+    expect(triggerFinished).toBeDefined();
+    expect(listenerStarted).toHaveLength(3);
+    expect(listenerStarted.every((event) => event?.triggeredByEventId === triggerFinished?.eventId)).toBe(true);
+  });
+
   it("records upstream previous_event_id chains across flow execution events", async () => {
     resetEmissionSequence();
     setLastEventId(null);
