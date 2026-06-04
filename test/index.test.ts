@@ -7132,6 +7132,7 @@ describe("a2a utilities", () => {
     };
 
     const signature = sign_agent_card(card, privateKey, "kid-1", "RS256");
+    const secretSignature = sign_agent_card(card, new SecretStr(privateKey.export({ type: "pkcs8", format: "pem" })), "kid-secret", "RS256");
     const protectedHeader = JSON.parse(Buffer.from(signature.protected, "base64url").toString("utf8")) as Record<string, unknown>;
     const canonicalPayload = JSON.stringify({
       capabilities: { streaming: true },
@@ -7146,6 +7147,7 @@ describe("a2a utilities", () => {
       .toBe(signature.signature);
     expect(verifyDetachedJws(publicKey, signature.protected, canonicalPayload, signature.signature)).toBe(true);
     expect(verify_agent_card_signature(card, signature, publicKey, ["RS256"])).toBe(true);
+    expect(verify_agent_card_signature(card, secretSignature, publicKey, ["RS256"])).toBe(true);
     expect(verify_agent_card_signature({ ...card, name: "Tampered Agent" }, signature, publicKey, ["RS256"])).toBe(false);
 
     const protectedWithoutAlg = Buffer.from(JSON.stringify({ typ: "JWS", kid: "kid-1" })).toString("base64url");

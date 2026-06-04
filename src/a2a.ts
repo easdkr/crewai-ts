@@ -1275,6 +1275,10 @@ type A2AHookClient = {
   };
 };
 type MutableClient = Record<string, unknown>;
+type SecretStringLike = {
+  get_secret_value?: () => string;
+  getSecretValue?: () => string;
+};
 export type JWTAlgorithm =
   | "RS256"
   | "RS384"
@@ -2297,7 +2301,7 @@ export class MTLSServerAuth extends ServerAuthScheme {
 
 export function sign_agent_card(
   agent_card: Record<string, unknown>,
-  private_key: string | Uint8Array | KeyObject,
+  private_key: string | Uint8Array | KeyObject | SecretStringLike,
   key_id: string | null = null,
   algorithm: JWTAlgorithm = "RS256",
 ): { protected: string; signature: string; header: Record<string, string> | null } {
@@ -5716,7 +5720,7 @@ function isJWTAlgorithm(value: string): value is JWTAlgorithm {
   return (JWTAlgorithm as readonly string[]).includes(value);
 }
 
-function signKeyOptions(key: string | Uint8Array | KeyObject, algorithm: JWTAlgorithm): Parameters<ReturnType<typeof createSign>["sign"]>[0] {
+function signKeyOptions(key: string | Uint8Array | KeyObject | SecretStringLike, algorithm: JWTAlgorithm): Parameters<ReturnType<typeof createSign>["sign"]>[0] {
   const normalizedKey = normalizePrivateKeyInput(key);
   if (algorithm.startsWith("PS")) {
     return { key: normalizedKey, padding: constants.RSA_PKCS1_PSS_PADDING };
@@ -5738,11 +5742,29 @@ function verifyKeyOptions(key: string | Uint8Array | KeyObject, algorithm: JWTAl
   return normalizedKey;
 }
 
-function normalizePrivateKeyInput(key: string | Uint8Array | KeyObject): KeyObject {
+function normalizePrivateKeyInput(key: string | Uint8Array | KeyObject | SecretStringLike): KeyObject {
+  const secretValue = secretStringValue(key);
+  if (secretValue !== null) {
+    return createPrivateKey(secretValue);
+  }
   if (typeof key === "string") {
     return createPrivateKey(key);
   }
-  return key instanceof Uint8Array ? createPrivateKey(Buffer.from(key)) : key;
+  return key instanceof Uint8Array ? createPrivateKey(Buffer.from(key)) : key as KeyObject;
+}
+
+function secretStringValue(value: unknown): string | null {
+  const record = recordOrNullA2A(value);
+  if (!record) {
+    return null;
+  }
+  if (typeof record.get_secret_value === "function") {
+    return (record.get_secret_value as () => string).call(value);
+  }
+  if (typeof record.getSecretValue === "function") {
+    return (record.getSecretValue as () => string).call(value);
+  }
+  return null;
 }
 
 function normalizePublicKeyInput(key: string | Uint8Array | KeyObject): KeyObject {
