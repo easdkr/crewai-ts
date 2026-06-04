@@ -21803,6 +21803,44 @@ describe("flow runtime", () => {
     }
   });
 
+  it("allows upstream dynamic router and static string listener FlowDefinition contracts", () => {
+    class DynamicRouterListenerFlow extends Flow {
+      begin() {
+        return "started";
+      }
+
+      decide() {
+        return "dynamic_event";
+      }
+
+      handle() {
+        return "handled";
+      }
+    }
+
+    const initializers = [
+      decorateMethod(DynamicRouterListenerFlow, "begin", start() as unknown as Decorator),
+      decorateMethod(DynamicRouterListenerFlow, "decide", router("begin") as unknown as Decorator),
+      decorateMethod(DynamicRouterListenerFlow, "handle", listen("dynamic_event") as unknown as Decorator),
+    ];
+    const flow = new DynamicRouterListenerFlow();
+    initializers.forEach((initializer) => {
+      initializer.call(flow);
+    });
+
+    expect(DynamicRouterListenerFlow.flow_definition().diagnostics).toEqual([]);
+
+    const typoContract = FlowDefinition.from_dict({
+      schema: "crewai.flow/v1",
+      name: "TypoFlow",
+      methods: {
+        begin: { start: true },
+        handle: { listen: "begni" },
+      },
+    });
+    expect(typoContract.diagnostics).toEqual([]);
+  });
+
   it("validates upstream Flow DSL condition dictionaries strictly", () => {
     expect(isFlowConditionDict({
       type: "OR",
