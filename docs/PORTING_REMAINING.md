@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 877 passing tests.
+- Test suite: 878 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -127,6 +127,7 @@ This register is the source of truth for continuing porting work while parity sc
 - AgentExecutor mixed native tool-call responses are release-gated for upstream routing semantics: provider responses are classified by the first upstream-shaped tool-call item and invalid trailing metadata is left for execution-time filtering instead of converting the whole response into a final answer.
 - AgentExecutor lightweight plan refinement events are release-gated for upstream observation semantics: applying suggested refinements mutates pending todo descriptions and emits `plan_refinement` with agent/task context, refined step count, and refinement summaries.
 - PlannerObserver step observation events are release-gated for upstream tracing semantics: LLM-backed observations emit `step_observation_started` and `step_observation_completed` with agent/task context and observation outcome fields, while observation call failures emit `step_observation_failed` before falling back to a conservative observation.
+- AgentExecutor high-effort refinement routing is release-gated for upstream decision semantics: suggested refinements only route to `refine_and_continue` when the observation also reports the remaining plan is still valid.
 
 ## Known Remaining Porting Areas
 

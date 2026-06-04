@@ -12436,6 +12436,34 @@ describe("core crew runtime", () => {
     });
   });
 
+  it("continues AgentExecutor high-effort observations when refinements are present but the plan is invalid", () => {
+    const executor = new AgentExecutor();
+    executor.state.todos.items = [
+      new TodoItem({
+        stepNumber: 1,
+        description: "Search docs",
+        status: TodoStatus.RUNNING,
+        result: "Found enough data",
+      }),
+      new TodoItem({
+        stepNumber: 2,
+        description: "Write summary",
+        status: TodoStatus.PENDING,
+      }),
+    ];
+    executor.state.observations[1] = new StepObservation({
+      step_completed_successfully: true,
+      remaining_plan_still_valid: false,
+      suggested_refinements: [
+        { step_number: 2, new_description: "Write summary with new structure" },
+      ],
+    });
+
+    expect(executor.decide_next_action()).toBe("continue_plan");
+    expect(executor.state.todos.get_by_step_number(1)?.status).toBe(TodoStatus.COMPLETED);
+    expect(executor.state.todos.get_by_step_number(2)?.description).toBe("Write summary");
+  });
+
   it("injects todo context instead of executing isolated steps when planning is disabled", () => {
     const executor = new AgentExecutor({
       agent: new Agent({

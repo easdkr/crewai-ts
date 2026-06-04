@@ -632,7 +632,9 @@ export class AgentExecutor extends BaseAgentExecutor {
       return "replan_now";
     }
     this.state.todos.markCompleted(current.stepNumber, current.result);
-    return observation?.suggestedRefinements?.length ? "refine_and_continue" : "continue_plan";
+    return observation?.remainingPlanStillValid && observation.suggestedRefinements?.length
+      ? "refine_and_continue"
+      : "continue_plan";
   }
 
   decide_next_action(): ReturnType<AgentExecutor["decideNextAction"]> {
