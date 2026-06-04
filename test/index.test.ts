@@ -21765,6 +21765,44 @@ describe("flow runtime", () => {
     expect(new FlowHumanFeedbackDefinition({ message: "Review" }).llm).toBe("gpt-4o-mini");
   });
 
+  it("preserves upstream loaded FlowDefinition diagnostics without duplicating generated diagnostics", () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const definition = FlowDefinition.from_dict({
+        schema: "crewai.flow/v1",
+        name: "LoadedDiagnosticsFlow",
+        methods: {
+          decision: {
+            router: true,
+            emit: ["continue"],
+          },
+        },
+        diagnostics: [
+          {
+            code: "serialized_warning",
+            message: "Preserved serialized diagnostic",
+            severity: "warning",
+            path: "methods.decision",
+          },
+          {
+            code: "router_without_trigger",
+            message: "router: true requires either start or listen",
+            severity: "error",
+            path: "methods.decision",
+          },
+        ],
+      });
+
+      const codes = definition.diagnostics.map((diagnostic) => diagnostic.code);
+      expect(codes).toContain("serialized_warning");
+      expect(codes.filter((code) => code === "router_without_trigger")).toHaveLength(1);
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("LoadedDiagnosticsFlow"));
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("router_without_trigger"));
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
   it("validates upstream Flow DSL condition dictionaries strictly", () => {
     expect(isFlowConditionDict({
       type: "OR",
