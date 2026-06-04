@@ -2581,6 +2581,34 @@ describe("environment, logging, and file store utilities", () => {
     ]);
   });
 
+  it("formats Bedrock multimodal files as Converse image and document blocks", () => {
+    const pngBytes = Buffer.concat([
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      Buffer.from("bedrock-image"),
+    ]);
+    const pdfBytes = Buffer.from("%PDF-1.4 bedrock document");
+    const result = format_multimodal_content({
+      chart: new ImageFile({ source: pngBytes }),
+      doc: new PDFFile({ source: new FileBytes({ data: pdfBytes, filename: "brief.pdf" }) }),
+    }, "bedrock/anthropic.claude-3-sonnet");
+
+    expect(result).toEqual([
+      {
+        image: {
+          format: "png",
+          source: { bytes: pngBytes },
+        },
+      },
+      {
+        document: {
+          name: "brief",
+          format: "pdf",
+          source: { bytes: pdfBytes },
+        },
+      },
+    ]);
+  });
+
   it("skips unsupported OpenAI multimodal text files", () => {
     const files = {
       doc: new TextFile({ source: Buffer.from("hello world") }),

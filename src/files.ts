@@ -1524,10 +1524,11 @@ export function formatMultimodalContent(
     result.push(formatTextBlockForProvider(text, normalizedProvider, api));
   }
   for (const [name, file] of Object.entries(files)) {
-    if (!isOpenAIProvider(normalizedProvider) && !isGeminiProvider(normalizedProvider) && !isAnthropicProvider(normalizedProvider)) {
+    if (!isOpenAIProvider(normalizedProvider) && !isGeminiProvider(normalizedProvider) && !isAnthropicProvider(normalizedProvider) && !isBedrockProvider(normalizedProvider)) {
       continue;
     }
-    const encoded = Buffer.from(file.read()).toString("base64");
+    const bytes = Buffer.from(file.read());
+    const encoded = bytes.toString("base64");
     if (isAnthropicProvider(normalizedProvider) && file instanceof ImageFile) {
       result.push({
         type: "image",
@@ -1544,6 +1545,21 @@ export function formatMultimodalContent(
           type: "base64",
           media_type: file.contentType,
           data: encoded,
+        },
+      });
+    } else if (isBedrockProvider(normalizedProvider) && file instanceof ImageFile) {
+      result.push({
+        image: {
+          format: bedrockImageFormat(file.contentType, file.filename),
+          source: { bytes },
+        },
+      });
+    } else if (isBedrockProvider(normalizedProvider) && file instanceof PDFFile) {
+      result.push({
+        document: {
+          name: bedrockDocumentName(file.filename ?? name),
+          format: "pdf",
+          source: { bytes },
         },
       });
     } else if (isGeminiProvider(normalizedProvider) && file instanceof ImageFile) {
@@ -1637,14 +1653,39 @@ function isAnthropicProvider(provider: string): boolean {
     || provider.startsWith("claude");
 }
 
+function isBedrockProvider(provider: string): boolean {
+  return provider === "bedrock"
+    || provider === "aws"
+    || provider.startsWith("bedrock/")
+    || provider.startsWith("aws/");
+}
+
 function formatTextBlockForProvider(text: string, provider: string, api: MultimodalContentApi): Record<string, string> {
   if (api === "responses") {
     return { type: "input_text", text };
   }
-  if (isGeminiProvider(provider)) {
+  if (isGeminiProvider(provider) || isBedrockProvider(provider)) {
     return { text };
   }
   return { type: "text", text };
+}
+
+function bedrockImageFormat(contentType: string, filename: string | null): string {
+  const mediaType = contentType.split("/").at(-1)?.toLowerCase();
+  if (mediaType === "jpg") {
+    return "jpeg";
+  }
+  if (mediaType) {
+    return mediaType;
+  }
+  const extension = filename?.split(".").at(-1)?.toLowerCase();
+  return extension === "jpg" ? "jpeg" : extension || "png";
+}
+
+function bedrockDocumentName(filename: string): string {
+  const name = filename.replace(/\.[^.]+$/u, "");
+  const sanitized = name.replace(/[^\p{L}\p{N}\s\-()[\]]/gu, " ").replace(/\s+/gu, " ").trim();
+  return sanitized || "document";
 }
 
 function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
