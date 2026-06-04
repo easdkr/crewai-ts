@@ -1419,6 +1419,7 @@ export class GeminiCompletion extends ConfiguredLLM {
   readonly supports_tools: boolean;
   readonly isGemini20: boolean;
   readonly is_gemini_2_0: boolean;
+  _client: Record<string, unknown> | null;
   tools: readonly Tool[] | null;
 
   constructor(options: GeminiCompletionOptions = { model: "gemini-2.5-flash" }) {
@@ -1464,6 +1465,7 @@ export class GeminiCompletion extends ConfiguredLLM {
     this.supports_tools = this.supportsTools;
     this.isGemini20 = geminiVersion(model) >= 2.0;
     this.is_gemini_2_0 = this.isGemini20;
+    this._client = null;
     this.tools = null;
   }
 
@@ -1521,6 +1523,29 @@ export class GeminiCompletion extends ConfiguredLLM {
 
   override get_file_uploader(): LocalFileUploader {
     return this.getFileUploader();
+  }
+
+  getSyncClient(env: NodeJS.ProcessEnv = process.env): Record<string, unknown> {
+    if (this._client) {
+      return this._client;
+    }
+    const apiKey = this.apiKey ?? env.GOOGLE_API_KEY ?? env.GEMINI_API_KEY ?? null;
+    if (apiKey && this.apiKey !== apiKey) {
+      Object.assign(this, { apiKey, api_key: apiKey });
+    }
+    this._client = {
+      provider: "gemini",
+      model: this.model,
+      api_key: apiKey,
+      project: this.project,
+      location: this.location,
+      use_vertexai: this.useVertexai,
+    };
+    return this._client;
+  }
+
+  _get_sync_client(env: NodeJS.ProcessEnv = process.env): Record<string, unknown> {
+    return this.getSyncClient(env);
   }
 
   prepareGenerationConfig(

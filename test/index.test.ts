@@ -25204,6 +25204,31 @@ describe("LLM providers", () => {
       cached_prompt_tokens: 2,
       reasoning_tokens: 3,
     });
+
+    const previousGoogleKey = process.env.GOOGLE_API_KEY;
+    const previousGeminiKey = process.env.GEMINI_API_KEY;
+    try {
+      delete process.env.GOOGLE_API_KEY;
+      delete process.env.GEMINI_API_KEY;
+      const lazyGemini = new GeminiCompletion({ model: "gemini-1.5-pro" });
+      expect(lazyGemini.api_key).toBeNull();
+      expect(lazyGemini._client).toBeNull();
+
+      process.env.GEMINI_API_KEY = "late-key";
+      expect(lazyGemini._get_sync_client()).toMatchObject({ api_key: "late-key" });
+      expect(lazyGemini.api_key).toBe("late-key");
+    } finally {
+      if (previousGoogleKey === undefined) {
+        delete process.env.GOOGLE_API_KEY;
+      } else {
+        process.env.GOOGLE_API_KEY = previousGoogleKey;
+      }
+      if (previousGeminiKey === undefined) {
+        delete process.env.GEMINI_API_KEY;
+      } else {
+        process.env.GEMINI_API_KEY = previousGeminiKey;
+      }
+    }
     expect(GeminiCompletion.extract_text_from_response({
       candidates: [{
         content: {
