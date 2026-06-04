@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 992 passing tests.
+- Test suite: 993 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -305,7 +305,7 @@ When more goal budget is available, continue from the behavioral parity audits b
 ## Completed In Current Core Behavior Pass
 
 - `interpolateOnly` now mirrors upstream sequential replacement behavior for task prompt variables: placeholders introduced by an earlier variable value are resolved when the placeholder also appears later in the original template variable list, preserving deterministic task interpolation parity without adding alias/helper surface.
-- Flow visualization router paths now prefer statically inferred return constants for each router before falling back to listener-trigger discovery, preventing chained/shared router output strings from creating extra route edges or self loops while preserving deterministic graph rendering.
+- Flow visualization router events now stay dynamic unless explicit/static router emits are declared, preventing unannotated router body strings or listener-trigger discovery from creating route edges while preserving deterministic graph rendering for declared events.
 - Flow visualization now emits upstream-style diagnostics when router return paths cannot be determined and when listeners wait on string triggers that no router explicitly outputs, keeping graph gaps visible in the deterministic gate.
 - Flow structure serialization now lets child flow methods override inherited parent method metadata by method/kind, matching upstream inheritance behavior while still preserving inherited methods that are not overridden.
 - Flow human-feedback routing now preserves the reviewed method's real output for terminal `@human_feedback(emit=...)` methods and method-output history, while still using the collapsed outcome for router paths and downstream listener inputs.
@@ -468,6 +468,7 @@ When more goal budget is available, continue from the behavioral parity audits b
 - Flow HITL learning now has deterministic local behavior for injected LLM clients: recalled memory lessons can pre-review method output before provider display, and non-empty feedback can distill new lessons into flow memory.
 - Flow HITL pending feedback context now mirrors upstream LLM serialization safety by preserving deterministic provider config fields such as temperature, project, and location while redacting `api_key` / `apiKey` secrets before provider or persistence handoff.
 - Flow HITL resume now restores serialized LLM config dictionaries into local LLM clients, so persisted pending feedback can still use LLM-backed routing collapse after reload.
+- Flow HITL pause now auto-creates `SQLiteFlowPersistence` when a provider raises `HumanFeedbackPending` without an existing persistence backend, preserving pending feedback context and state for later resume.
 - `toSerializable` now mirrors upstream BaseModel serialization by honoring `modelDump` / `model_dump` output before object entry serialization, with recursive exclude handling and upstream-style Python repr output when max-depth truncation is reached.
   - `Flow.kickoff` / `kickoffAsync` now support upstream-style `restore_from_state_id` / `restoreFromStateId` fork hydration from persisted state without reusing the source flow ID, silently fall back to default kickoff when the restore source is missing, and reject conflicting checkpoint restores.
   - `Flow.kickoff` / `kickoffAsync` now reload persisted state from `inputs.id` before applying non-id input overrides, matching upstream default-value override semantics.

@@ -21942,6 +21942,7 @@ describe("flow runtime", () => {
         provider: {
           requestFeedback: (context) => {
             expect(context.llm).toMatchObject({
+              model: "gemini/gemini-2.0-flash",
               provider: "gemini",
               project: "demo-project",
               location: "europe-west1",
@@ -21964,6 +21965,7 @@ describe("flow runtime", () => {
     expect(pending).toBeInstanceOf(HumanFeedbackPending);
     expect((pending as HumanFeedbackPending).context.llm).not.toHaveProperty("api_key");
     expect((pending as HumanFeedbackPending).context.llm).toMatchObject({
+      model: "gemini/gemini-2.0-flash",
       project: "demo-project",
       location: "europe-west1",
     });
@@ -22131,6 +22133,50 @@ describe("flow runtime", () => {
     expect(pausedEvents[1]).toMatchObject({
       flowName: "PauseFlow",
       pending,
+    });
+  });
+
+  it("auto-creates SQLite persistence when async human feedback pauses without persistence", async () => {
+    class AutoPersistFlow extends Flow<{ id: string; events: string[] }> {
+      constructor() {
+        super({ initialState: { id: "auto-persist-flow", events: [] } });
+      }
+
+      review() {
+        this.state.events.push("review");
+        return "draft";
+      }
+    }
+
+    const initializers = [
+      decorateMethod(AutoPersistFlow, "review", humanFeedback({
+        message: "Review draft",
+        provider: {
+          requestFeedback: (context) => {
+            throw new HumanFeedbackPending({ context, callbackInfo: { paused: true } });
+          },
+        },
+      }) as unknown as Decorator),
+      decorateMethod(AutoPersistFlow, "review", start() as unknown as Decorator),
+    ];
+    const flow = new AutoPersistFlow();
+    initializers.forEach((initializer) => {
+      initializer.call(flow);
+    });
+
+    expect(flow.persistence).toBeNull();
+
+    const paused = await flow.kickoff();
+
+    expect(paused).toBeInstanceOf(HumanFeedbackPending);
+    expect(flow.persistence).toBeInstanceOf(SQLiteFlowPersistence);
+    await expect(flow.persistence?.loadPendingFeedback("auto-persist-flow")).resolves.toMatchObject({
+      state: { id: "auto-persist-flow", events: ["review"] },
+      context: {
+        flowId: "auto-persist-flow",
+        methodName: "review",
+        output: "draft",
+      },
     });
   });
 

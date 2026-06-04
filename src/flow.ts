@@ -2548,9 +2548,10 @@ export class Flow<TState extends object = Record<string, unknown>> {
   }
 
   private async savePendingFeedback(context: PendingFeedbackContext): Promise<void> {
-    if (!this.persistence || !context.flowId) {
+    if (!context.flowId) {
       return;
     }
+    this.persistence ??= new SQLiteFlowPersistence();
     await this.persistence.savePendingFeedback(context.flowId, context, this.stateSnapshot());
   }
 
