@@ -12024,6 +12024,35 @@ describe("RAG configuration and factories", () => {
     expect(jina.config.model_name).toBe("jina-embeddings-v3");
   });
 
+  it("accepts upstream legacy model config keys for local embedding providers", () => {
+    const ollama = new OllamaProvider({
+      model: "nomic-embed-text",
+    });
+    const text2vec = new Text2VecProvider({
+      model: "shibing624/text2vec-base-multilingual",
+    });
+    const sentence = new SentenceTransformerProvider({
+      model: "all-mpnet-base-v2",
+    });
+    const instructor = new InstructorProvider({
+      model: "hkunlp/instructor-xl",
+    });
+    const openclip = new OpenCLIPProvider({
+      model: "ViT-B-16",
+    });
+
+    expect(ollama.model_name).toBe("nomic-embed-text");
+    expect(ollama.config.model_name).toBe("nomic-embed-text");
+    expect(text2vec.model_name).toBe("shibing624/text2vec-base-multilingual");
+    expect(text2vec.config.model_name).toBe("shibing624/text2vec-base-multilingual");
+    expect(sentence.model_name).toBe("all-mpnet-base-v2");
+    expect(sentence.config.model_name).toBe("all-mpnet-base-v2");
+    expect(instructor.model_name).toBe("hkunlp/instructor-xl");
+    expect(instructor.config.model_name).toBe("hkunlp/instructor-xl");
+    expect(openclip.model_name).toBe("ViT-B-16");
+    expect(openclip.config.model_name).toBe("ViT-B-16");
+  });
+
   it("calls OpenAI and Azure embeddings APIs for OpenAI-compatible providers", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch")
       .mockResolvedValueOnce({
