@@ -15,11 +15,13 @@ import {
   handleUnknownError,
   _executor_stop_words,
   checkNativeToolSupport,
+  handleMaxIterationsExceeded,
   isContextLengthExceeded,
   isToolCallList,
   processLlmResponse,
   setupNativeTools,
   summarizeMessages,
+  type MaxIterationsLLM,
 } from "./agent-utils.js";
 import { Converter } from "./converter.js";
 import {
@@ -814,8 +816,22 @@ export class AgentExecutor extends BaseAgentExecutor {
 
   ensureForceFinalAnswer(): "agent_finished" {
     if (!this.state.is_finished) {
-      const output = this.messages.at(-1)?.content ?? "Agent completed execution but produced no final output.";
-      this.state.current_answer = new AgentFinish({ thought: "", output, text: output });
+      const formattedAnswer = handleMaxIterationsExceeded({
+        formattedAnswer: null,
+        printer: {
+          print: ({ content }) => {
+            PRINTER.print(content);
+          },
+        },
+        messages: this.state.messages,
+        llm: this.llm as MaxIterationsLLM | null,
+        callbacks: this.callbacks,
+        verbose: Boolean(this.agent?.verbose),
+      });
+      if (isPromiseLike(formattedAnswer)) {
+        throw new Error("AgentExecutor.ensure_force_final_answer received an async LLM result; use an async execution path instead.");
+      }
+      this.state.current_answer = formattedAnswer;
       this.state.is_finished = true;
     }
     return "agent_finished";

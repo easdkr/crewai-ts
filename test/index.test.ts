@@ -12274,6 +12274,30 @@ describe("core crew runtime", () => {
     expect(events[0]?.verbose).toBe(true);
   });
 
+  it("uses upstream final-answer prompting when AgentExecutor reaches max iterations", () => {
+    const seenMessages: LLMMessage[][] = [];
+    const executor = new AgentExecutor({
+      callbacks: ["callback"],
+      llm: {
+        call(messages: readonly LLMMessage[], options?: Record<string, unknown>) {
+          expect(options?.callbacks).toEqual(["callback"]);
+          seenMessages.push([...messages]);
+          return "Thought: done\nFinal Answer: forced final";
+        },
+      },
+      messages: [{ role: "user", content: "Research CrewAI" }],
+    });
+
+    expect(executor.ensure_force_final_answer()).toBe("agent_finished");
+    expect(executor.state.current_answer).toBeInstanceOf(AgentFinish);
+    expect((executor.state.current_answer as AgentFinish).output).toBe("forced final");
+    expect(executor.state.is_finished).toBe(true);
+    expect(seenMessages).toHaveLength(1);
+    expect(seenMessages[0]?.at(-1)?.content).toContain(
+      "Now it's time you MUST give your absolute best final answer",
+    );
+  });
+
   it("keeps AgentExecutor synthesis fallback when structured output is requested", () => {
     const finalResult = [
       "The final recommendation is to adopt a phased rollout plan with weekly checkpoints.",
