@@ -7,6 +7,17 @@ import type { ToolCalling } from "./tools.js";
 import type { InputFile } from "./input-files.js";
 import type { LLMMessage, MaybePromise, Tool } from "./types.js";
 import {
+  AudioFile,
+  File as CrewAIFile,
+  ImageFile,
+  PDFFile,
+  TextFile,
+  VideoFile,
+  formatMultimodalContent,
+  type FileInput,
+  type MultimodalContentApi,
+} from "./files.js";
+import {
   LLMCallCompletedEvent,
   LLMCallFailedEvent,
   LLMCallStartedEvent,
@@ -1850,6 +1861,23 @@ export abstract class BaseLLM implements LLMClient {
       if (!message.files || Object.keys(message.files).length === 0) {
         return { ...message };
       }
+      const typedFiles = typedMultimodalFiles(message.files);
+      if (!uploader && typedFiles) {
+        const api = llmApiMode(this);
+        const formattedBlocks = formatMultimodalContent(typedFiles, this.provider || this.model, api === undefined ? {} : { api });
+        const { files: _files, ...rest } = message;
+        void _files;
+        if (formattedBlocks.length === 0) {
+          return { ...rest };
+        }
+        const contentBlocks = typeof message.content === "string" && message.content.length > 0
+          ? [this.formatTextContent(message.content), ...formattedBlocks]
+          : formattedBlocks;
+        return {
+          ...rest,
+          content: contentBlocks as unknown as string,
+        };
+      }
       const contentBlocks: Record<string, unknown>[] = [];
       if (typeof message.content === "string" && message.content.length > 0) {
         contentBlocks.push(this.formatTextContent(message.content));
@@ -3315,6 +3343,35 @@ function formatUploadedFileContentBlock(name: string, upload: LocalFileUpload): 
     file_id: upload.id,
     content_type: upload.contentType,
   };
+}
+
+function typedMultimodalFiles(files: Record<string, InputFile>): Record<string, FileInput> | null {
+  const entries = Object.entries(files);
+  if (entries.length === 0) {
+    return null;
+  }
+  const result: Record<string, FileInput> = {};
+  for (const [name, file] of entries) {
+    if (!isCrewAIFileInput(file)) {
+      return null;
+    }
+    result[name] = file;
+  }
+  return result;
+}
+
+function isCrewAIFileInput(file: InputFile): file is FileInput {
+  return file instanceof AudioFile
+    || file instanceof CrewAIFile
+    || file instanceof ImageFile
+    || file instanceof PDFFile
+    || file instanceof TextFile
+    || file instanceof VideoFile;
+}
+
+function llmApiMode(llm: BaseLLM): MultimodalContentApi | undefined {
+  const api = (llm as unknown as { api?: unknown }).api;
+  return api === "responses" || api === "completions" ? api : undefined;
 }
 
 function renderLLMInputFile(name: string, file: InputFile): { filename: string; contentType: string | null; content: string } {

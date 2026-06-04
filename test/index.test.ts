@@ -27955,6 +27955,44 @@ describe("LLM providers", () => {
     expect(new BedrockCompletion({ model: "amazon.nova-pro-v1:0" }).get_file_uploader()).toMatchObject({ provider: "bedrock" });
   });
 
+  it("formats Anthropic BaseLLM message files through provider multimodal blocks", () => {
+    const pngBytes = Buffer.concat([
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      Buffer.from("anthropic-message-image"),
+    ]);
+    const pdfBytes = Buffer.from("%PDF-1.4 anthropic message document");
+    const llm = new AnthropicCompletion({ model: "claude-3-5-sonnet-20241022" });
+    const messages = llm._format_messages([{
+      role: "user",
+      content: "Inspect these files",
+      files: {
+        chart: new ImageFile({ source: pngBytes }),
+        doc: new PDFFile({ source: pdfBytes }),
+      },
+    }]);
+
+    expect(messages[0]?.files).toBeUndefined();
+    expect(messages[0]?.content).toEqual([
+      { type: "text", text: "Inspect these files" },
+      {
+        type: "image",
+        source: {
+          type: "base64",
+          media_type: "image/png",
+          data: pngBytes.toString("base64"),
+        },
+      },
+      {
+        type: "document",
+        source: {
+          type: "base64",
+          media_type: "application/pdf",
+          data: pdfBytes.toString("base64"),
+        },
+      },
+    ]);
+  });
+
   it("uses upstream-style context window sizing and stop-word support rules", () => {
     class WindowLLM extends BaseLLM {
       call(): string {
