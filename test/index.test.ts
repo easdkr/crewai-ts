@@ -13869,6 +13869,40 @@ describe("core crew runtime", () => {
     });
     expect(executor.decide_next_action()).toBe("replan_now");
     expect(executor.state.last_replan_reason).toBe("Step did not complete successfully");
+
+    const fullReplan = new AgentExecutor();
+    fullReplan.state.todos.items = [
+      new TodoItem({
+        stepNumber: 1,
+        description: "Retry with a new source",
+        status: TodoStatus.RUNNING,
+        result: "needs replanning",
+      }),
+    ];
+    fullReplan.state.observations[1] = new StepObservation({
+      step_completed_successfully: true,
+      needs_full_replan: true,
+      replan_reason: null,
+    });
+    expect(fullReplan.decide_next_action()).toBe("replan_now");
+    expect(fullReplan.state.todos.get_by_step_number(1)?.status).toBe(TodoStatus.FAILED);
+    expect(fullReplan.state.last_replan_reason).toBeNull();
+
+    const failedOnly = new AgentExecutor();
+    failedOnly.state.todos.items = [
+      new TodoItem({
+        stepNumber: 1,
+        description: "Failed without full replan signal",
+        status: TodoStatus.RUNNING,
+        result: "bad result",
+      }),
+    ];
+    failedOnly.state.observations[1] = new StepObservation({
+      step_completed_successfully: false,
+      needs_full_replan: false,
+    });
+    expect(failedOnly.decide_next_action()).toBe("replan_now");
+    expect(failedOnly.state.last_replan_reason).toBe("Step did not complete successfully");
   });
 
   it("executes AgentExecutor pending native tool calls and records tool messages", () => {

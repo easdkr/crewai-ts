@@ -647,9 +647,14 @@ export class AgentExecutor extends BaseAgentExecutor {
       this.state.todos.markCompleted(current.stepNumber, current.result);
       return "goal_achieved";
     }
-    if (observation?.needsFullReplan || observation?.stepCompletedSuccessfully === false) {
+    if (observation?.needsFullReplan) {
       this.state.todos.markFailed(current.stepNumber, current.result);
-      this.state.last_replan_reason = observation.replanReason ?? "Step did not complete successfully";
+      this.state.last_replan_reason = observation.replanReason;
+      return "replan_now";
+    }
+    if (observation?.stepCompletedSuccessfully === false) {
+      this.state.todos.markFailed(current.stepNumber, current.result);
+      this.state.last_replan_reason = "Step did not complete successfully";
       return "replan_now";
     }
     this.state.todos.markCompleted(current.stepNumber, current.result);
