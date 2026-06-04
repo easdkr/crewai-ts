@@ -804,6 +804,7 @@ import {
   normalizeBaseRecord,
   normalizeEmbeddings,
   normalizeRagConfig,
+  PROVIDER_PATHS,
   normalizeInputFiles,
   PDFFile,
   PDFConstraints,
@@ -11789,6 +11790,39 @@ describe("RAG configuration and factories", () => {
       expect.objectContaining({
         method: "POST",
         body: JSON.stringify({ model: "nomic-embed-text", prompt: "CrewAI" }),
+      }),
+    );
+    fetchMock.mockRestore();
+  });
+
+  it("resolves upstream google embedding provider alias with legacy model config", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ embeddings: [{ values: [0.4, 0.5, 0.6] }] }),
+    } as Response);
+
+    const embed = buildEmbedderFromDict({
+      provider: "google",
+      config: {
+        api_key: "google-test",
+        model: "gemini-embedding-001",
+        task_type: "retrieval_document",
+      },
+    });
+
+    await expect(embed(["CrewAI"])).resolves.toEqual([[0.4, 0.5, 0.6]]);
+    expect(PROVIDER_PATHS.google).toBe(PROVIDER_PATHS["google-generativeai"]);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:batchEmbedContents?key=google-test",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          requests: [{
+            model: "models/gemini-embedding-001",
+            content: { parts: [{ text: "CrewAI" }] },
+            taskType: "retrieval_document",
+          }],
+        }),
       }),
     );
     fetchMock.mockRestore();
