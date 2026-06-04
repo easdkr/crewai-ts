@@ -934,6 +934,7 @@ export class ProviderConfig {
     this.apiKeyRequired = this.api_key_required;
     this.default_api_key = options.default_api_key ?? options.defaultApiKey ?? null;
     this.defaultApiKey = this.default_api_key;
+    Object.freeze(this);
   }
 }
 

@@ -416,7 +416,7 @@ When more goal budget is available, continue from the behavioral parity audits b
   - OpenAI native completion shim now exposes upstream-style SDK response token usage extraction, Responses API output parsing for function calls, built-in tool outputs, and reasoning items, and deterministic Responses streaming event accumulation, including cached prompt tokens and reasoning tokens
   - OpenAI Responses API parsing now handles SDK-like usage/detail getters and `model_dump` action objects for built-in computer-use outputs.
   - OpenAI native completion shim now explicitly exposes upstream-style provider alias methods on the provider class, including async calls, config serialization, capability checks, file uploaders, context windows, and response-chain reset/getters.
-  - OpenAI-compatible completion shim now exposes upstream-style provider config resolution helpers for API keys, base URLs, Ollama `/v1` normalization, and default header merging.
+  - OpenAI-compatible completion shim now exposes upstream-style provider config resolution helpers for API keys, base URLs, Ollama `/v1` normalization, default header merging, and frozen `ProviderConfig` runtime reassignment guards.
   - Azure completion shim now exposes upstream-style request parameter builders with Azure OpenAI endpoint model omission, Azure AI model inclusion, `model_extras`, prompt cache keys, drop-params handling, stop words, and custom tools
   - Azure completion shim now exposes upstream-style SDK token usage extraction with cached prompt and reasoning token details.
   - Azure completion shim now reads upstream-style credential scopes from `AZURE_CREDENTIAL_SCOPES` when no non-empty scopes are configured explicitly.

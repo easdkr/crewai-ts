@@ -23699,6 +23699,10 @@ describe("LLM providers", () => {
     const ollamaConfig = providerConfig("ollama");
     const ollamaChatConfig = providerConfig("ollama_chat");
     const openrouterConfig = providerConfig("openrouter");
+    expect(() => {
+      (deepseekConfig as unknown as { base_url: string }).base_url = "https://mutated.example/v1";
+    }).toThrow(TypeError);
+    expect(deepseekConfig.base_url).toBe("https://api.deepseek.com/v1");
     try {
       delete process.env.DEEPSEEK_API_KEY;
       expect(() => helper._resolve_api_key(null, deepseekConfig, "deepseek"))
