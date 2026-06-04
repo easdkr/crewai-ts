@@ -2297,6 +2297,7 @@ export class Flow<TState extends object = Record<string, unknown>> {
     setCurrentFlowContext({
       flowRequestId: this.currentFlowRequestId,
       flowId: this.flowPersistenceId(),
+      flowName,
       flowMethodName: name,
     });
     try {

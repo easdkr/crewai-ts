@@ -52,6 +52,7 @@ export type ExecutionContextOptions = {
   currentTaskId?: string | null;
   flowRequestId?: string | null;
   flowId?: string | null;
+  flowName?: string | null;
   flowMethodName?: string;
   eventIdStack?: readonly EventScopeEntry[];
   lastEventId?: string | null;
@@ -66,6 +67,7 @@ export class ExecutionContext {
   currentTaskId: string | null;
   flowRequestId: string | null;
   flowId: string | null;
+  flowName: string | null;
   flowMethodName: string;
   eventIdStack: EventScopeEntry[];
   lastEventId: string | null;
@@ -79,6 +81,7 @@ export class ExecutionContext {
     this.currentTaskId = options.currentTaskId ?? null;
     this.flowRequestId = options.flowRequestId ?? null;
     this.flowId = options.flowId ?? null;
+    this.flowName = options.flowName ?? null;
     this.flowMethodName = options.flowMethodName ?? "unknown";
     this.eventIdStack = [...(options.eventIdStack ?? [])];
     this.lastEventId = options.lastEventId ?? null;
@@ -94,6 +97,7 @@ export class ExecutionContext {
       currentTaskId: this.currentTaskId,
       flowRequestId: this.flowRequestId,
       flowId: this.flowId,
+      flowName: this.flowName,
       flowMethodName: this.flowMethodName,
       eventIdStack: this.eventIdStack,
       lastEventId: this.lastEventId,
@@ -110,6 +114,7 @@ export class ExecutionContext {
       currentTaskId: this.currentTaskId,
       flowRequestId: this.flowRequestId,
       flowId: this.flowId,
+      flowName: this.flowName,
       flowMethodName: this.flowMethodName,
       eventIdStack: this.eventIdStack.map(([eventId, eventType]) => [eventId, eventType]),
       lastEventId: this.lastEventId,
@@ -282,6 +287,7 @@ export function applyExecutionContext(ctx: ExecutionContext): void {
   target.currentTaskId = ctx.currentTaskId;
   target.flowRequestId = ctx.flowRequestId;
   target.flowId = ctx.flowId;
+  target.flowName = ctx.flowName;
   target.flowMethodName = ctx.flowMethodName;
   target.eventIdStack = [...ctx.eventIdStack];
   target.lastEventId = ctx.lastEventId;
@@ -339,6 +345,7 @@ export const get_current_task_id = getCurrentTaskId;
 export function setCurrentFlowContext(options: {
   flowRequestId?: string | null;
   flowId?: string | null;
+  flowName?: string | null;
   flowMethodName?: string;
 }): void {
   const ctx = currentContext();
@@ -347,6 +354,9 @@ export function setCurrentFlowContext(options: {
   }
   if ("flowId" in options) {
     ctx.flowId = options.flowId ?? null;
+  }
+  if ("flowName" in options) {
+    ctx.flowName = options.flowName ?? null;
   }
   if (options.flowMethodName !== undefined) {
     ctx.flowMethodName = options.flowMethodName;
@@ -366,6 +376,12 @@ export function getCurrentFlowId(): string | null {
 }
 
 export const get_current_flow_id = getCurrentFlowId;
+
+export function getCurrentFlowName(): string | null {
+  return currentContext().flowName;
+}
+
+export const get_current_flow_name = getCurrentFlowName;
 
 export function getCurrentFlowMethodName(): string {
   return currentContext().flowMethodName;
@@ -399,6 +415,17 @@ export const currentFlowId: FlowContextVariable<string | null> = {
 };
 
 export const current_flow_id = currentFlowId;
+
+export const currentFlowName: FlowContextVariable<string | null> = {
+  get: getCurrentFlowName,
+  set: (value) => {
+    const previous = getCurrentFlowName();
+    setCurrentFlowContext({ flowName: value });
+    return previous;
+  },
+};
+
+export const current_flow_name = currentFlowName;
 
 export const currentFlowMethodName: FlowContextVariable<string> = {
   get: getCurrentFlowMethodName,

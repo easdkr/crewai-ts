@@ -501,6 +501,7 @@ import {
   getBeforeToolCallHooks,
   getCurrentFlowId,
   getCurrentFlowMethodName,
+  getCurrentFlowName,
   getCurrentFlowRequestId,
   setCurrentFlowContext,
   getFlowMetadata,
@@ -19877,12 +19878,13 @@ describe("flow runtime", () => {
       begin() {
         const tracked = new TrackedThing();
         const resetTracked = new TrackedThing();
-        setCurrentFlowContext({ flowRequestId: null, flowId: null });
+        setCurrentFlowContext({ flowRequestId: null, flowId: null, flowName: null });
         resetTracked._set_flow_context();
-        setCurrentFlowContext({ flowRequestId: tracked._request_id, flowId: tracked._flow_id });
+        setCurrentFlowContext({ flowRequestId: tracked._request_id, flowId: tracked._flow_id, flowName: "ContextFlow" });
         this.state.seen = {
           flowRequestId: getCurrentFlowRequestId(),
           flowId: getCurrentFlowId(),
+          flowName: getCurrentFlowName(),
           methodName: getCurrentFlowMethodName(),
           trackedRequestId: tracked._request_id,
           trackedFlowId: tracked._flow_id,
@@ -19900,6 +19902,7 @@ describe("flow runtime", () => {
 
     expect(output).toMatchObject({
       flowId: "context-flow",
+      flowName: "ContextFlow",
       methodName: "begin",
       trackedFlowId: "context-flow",
     });
@@ -19908,6 +19911,7 @@ describe("flow runtime", () => {
     expect((output as Record<string, unknown>).resetTrackedRequestId).toBeNull();
     expect(getCurrentFlowRequestId()).toBeNull();
     expect(getCurrentFlowId()).toBeNull();
+    expect(getCurrentFlowName()).toBeNull();
     expect(getCurrentFlowMethodName()).toBe("unknown");
   });
 
