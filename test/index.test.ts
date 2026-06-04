@@ -16224,6 +16224,37 @@ describe("core crew runtime", () => {
     expect(memoryCopy.memory).toBe(resolvedMemory);
     expect(memoryCopy.resolvedMemory).toBe(resolvedMemory);
 
+    const crewMemory = new Memory();
+    const extractMemories = vi.spyOn(crewMemory, "extract_memories").mockReturnValue(["Finished research task."]);
+    const rememberMany = vi.spyOn(crewMemory, "remember_many").mockReturnValue([]);
+    const memoryAgent = new Agent({
+      role: "Memory Researcher",
+      goal: "Research memory behavior",
+      backstory: "Careful analyst",
+      llm: () => "Finished research task.",
+    });
+    await new Crew({
+      agents: [memoryAgent],
+      tasks: [
+        new Task({
+          description: "Research crew memory",
+          expectedOutput: "A memory summary",
+          agent: memoryAgent,
+        }),
+      ],
+      memory: crewMemory,
+    }).kickoff();
+
+    expect(extractMemories).toHaveBeenCalledTimes(1);
+    expect(extractMemories.mock.calls[0]?.[0]).toContain("Task: Research crew memory");
+    expect(extractMemories.mock.calls[0]?.[0]).toContain("Agent: Memory Researcher");
+    expect(extractMemories.mock.calls[0]?.[0]).toContain("Expected result: A memory summary");
+    expect(extractMemories.mock.calls[0]?.[0]).toContain("Result: Finished research task.");
+    expect(rememberMany).toHaveBeenCalledWith(["Finished research task."], expect.objectContaining({
+      agentRole: "Memory Researcher",
+      agent_role: "Memory Researcher",
+    }));
+
     try {
       await crewInstance.train(1, trainingFile, { topic: "CrewAI" });
       expect(readFileSync(`${trainingFile}.pkl`, "utf8")).toBe("{}\n");

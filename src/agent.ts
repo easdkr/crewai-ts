@@ -1463,7 +1463,7 @@ export class Agent {
             const finalOutput = await this.applyGuardrail(
               typeof finalResult === "string" ? finalResult : JSON.stringify(finalResult),
             );
-            this.saveResultToAgentMemory(promptWithKnowledge, finalOutput);
+            this.saveResultToMemory(promptWithKnowledge, finalOutput, options);
             await this.emitStep({
               type: "final",
               agentRole: this.role,
@@ -1474,7 +1474,7 @@ export class Agent {
           }
           const output = typeof result === "string" ? result : JSON.stringify(result);
           const finalOutput = await this.applyGuardrail(output);
-          this.saveResultToAgentMemory(promptWithKnowledge, finalOutput);
+          this.saveResultToMemory(promptWithKnowledge, finalOutput, options);
           await this.emitStep({
             type: "final",
             agentRole: this.role,
@@ -1488,7 +1488,7 @@ export class Agent {
         const output = String(toolResult.output);
         if (toolResult.tool.resultAsAnswer) {
           const finalOutput = await this.applyGuardrail(output);
-          this.saveResultToAgentMemory(promptWithKnowledge, finalOutput);
+          this.saveResultToMemory(promptWithKnowledge, finalOutput, options);
           await this.emitStep({
             type: "direct_tool",
             agentRole: this.role,
@@ -1534,7 +1534,7 @@ export class Agent {
       );
       const output = toolResults.join("\n");
       const finalOutput = await this.applyGuardrail(output);
-      this.saveResultToAgentMemory(promptWithKnowledge, finalOutput);
+      this.saveResultToMemory(promptWithKnowledge, finalOutput, options);
       await this.emitStep({
         type: "final",
         agentRole: this.role,
@@ -1545,7 +1545,7 @@ export class Agent {
     }
 
     const output = await this.applyGuardrail(promptWithKnowledge);
-    this.saveResultToAgentMemory(promptWithKnowledge, output);
+    this.saveResultToMemory(promptWithKnowledge, output, options);
     await this.emitStep({
       type: "final",
       agentRole: this.role,
@@ -2096,13 +2096,60 @@ export class Agent {
     }
   }
 
-  private saveResultToAgentMemory(prompt: string, output: string): void {
-    if (!this.memory) {
+  private saveResultToMemory(prompt: string, output: string, options: AgentExecutionOptions): void {
+    if (this.memory) {
+      this.memory.remember(`Input: ${prompt}\nAgent: ${this.role}\nResult: ${output}`, {
+        agentRole: this.role,
+        source: "agent",
+      });
       return;
     }
-    this.memory.remember(`Input: ${prompt}\nAgent: ${this.role}\nResult: ${output}`, {
+    const executionMemory = options.memory ?? null;
+    if (!executionMemory) {
+      return;
+    }
+    if (output.startsWith("Saved to memory")) {
+      return;
+    }
+    const memoryRecord = executionMemory as unknown as Record<string, unknown>;
+    if (memoryRecord.readOnly === true || memoryRecord.read_only === true) {
+      return;
+    }
+    const taskRecord = options.task && typeof options.task === "object"
+      ? options.task as Record<string, unknown>
+      : {};
+    const taskDescription = typeof taskRecord.description === "string"
+      ? taskRecord.description
+      : prompt;
+    const expectedOutput = typeof taskRecord.expectedOutput === "string"
+      ? taskRecord.expectedOutput
+      : typeof taskRecord.expected_output === "string"
+        ? taskRecord.expected_output
+        : "";
+    const raw = [
+      `Task: ${taskDescription}`,
+      `Agent: ${this.role}`,
+      `Expected result: ${expectedOutput}`,
+      `Result: ${output}`,
+    ].join("\n");
+    const extract = (memoryRecord.extract_memories ?? memoryRecord.extractMemories) as
+      | ((content: string) => unknown)
+      | undefined;
+    const extracted = typeof extract === "function"
+      ? extract.call(executionMemory, raw)
+      : [];
+    if (!Array.isArray(extracted) || extracted.length === 0) {
+      return;
+    }
+    const rememberMany = (memoryRecord.remember_many ?? memoryRecord.rememberMany) as
+      | ((contents: readonly unknown[], options: Record<string, unknown>) => unknown)
+      | undefined;
+    if (typeof rememberMany !== "function") {
+      return;
+    }
+    rememberMany.call(executionMemory, extracted, {
       agentRole: this.role,
-      source: "agent",
+      agent_role: this.role,
     });
   }
 
