@@ -939,7 +939,7 @@ export class AgentExecutor extends BaseAgentExecutor {
     this.state.pending_tool_calls = [];
     const normalizedCalls = pendingCalls
       .map((toolCall) => normalizeNativeToolCall(toolCall))
-      .filter((call): call is { name: string; args: unknown; id: string | null } => typeof call.name === "string" && call.name.length > 0);
+      .filter((call): call is NormalizedNativeToolCall & { name: string } => typeof call.name === "string" && call.name.length > 0);
     const executableCalls = normalizedCalls.map((call, index) => ({
       ...call,
       id: call.id ?? `call_${String(index + 1)}`,
@@ -962,7 +962,7 @@ export class AgentExecutor extends BaseAgentExecutor {
           type: "function",
           function: {
             name: call.name,
-            arguments: stringifyNativeToolArguments(call.args),
+            arguments: stringifyNativeToolArguments(call.rawArgs),
           },
         })),
       };
@@ -971,18 +971,23 @@ export class AgentExecutor extends BaseAgentExecutor {
       }
       this.state.messages.push(assistantMessage as unknown as LLMMessage);
     }
-    for (const { name, args, id } of executableCalls) {
+    for (const { name, args, id, argumentParseError } of executableCalls) {
       if (!name) {
         continue;
       }
       let failed = false;
       let result: unknown;
-      try {
-        result = this.executeNativeToolCall(name, asNativeArgsRecord(args));
-      } catch (error) {
+      if (argumentParseError) {
         failed = true;
-        result = `Error executing tool: ${executorErrorMessage(error)}`;
-        this.incrementTaskToolErrors();
+        result = `Error: Failed to parse tool arguments as JSON: ${argumentParseError}. Please provide valid JSON arguments for the '${name}' tool.`;
+      } else {
+        try {
+          result = this.executeNativeToolCall(name, asNativeArgsRecord(args));
+        } catch (error) {
+          failed = true;
+          result = `Error executing tool: ${executorErrorMessage(error)}`;
+          this.incrementTaskToolErrors();
+        }
       }
       const text = stringifyStepResult(result);
       this.state.messages.push({
@@ -2791,9 +2796,17 @@ function stringifyStepResult(result: unknown): string {
   }
 }
 
-function normalizeNativeToolCall(toolCall: unknown): { name: string | null; args: unknown; id: string | null } {
+type NormalizedNativeToolCall = {
+  name: string | null;
+  args: unknown;
+  rawArgs: unknown;
+  argumentParseError: string | null;
+  id: string | null;
+};
+
+function normalizeNativeToolCall(toolCall: unknown): NormalizedNativeToolCall {
   if (!toolCall || typeof toolCall !== "object") {
-    return { name: null, args: {}, id: null };
+    return { name: null, args: {}, rawArgs: {}, argumentParseError: null, id: null };
   }
   const record = toolCall as Record<string, unknown>;
   const fn = record.function && typeof record.function === "object"
@@ -2817,12 +2830,14 @@ function normalizeNativeToolCall(toolCall: unknown): { name: string | null; args
       : functionCall && "arguments" in functionCall
         ? functionCall.arguments
         : record.arguments ?? record.input ?? record.args ?? {};
-  const args = typeof rawArgs === "string"
+  const parsed = typeof rawArgs === "string"
     ? parseNativeArgs(rawArgs)
-    : rawArgs;
+    : { args: rawArgs, error: null };
   return {
     name,
-    args,
+    args: parsed.args,
+    rawArgs,
+    argumentParseError: parsed.error,
     id: typeof record.id === "string"
       ? record.id
       : typeof record.toolUseId === "string"
@@ -2850,14 +2865,14 @@ function isRawNativeToolPart(toolCall: unknown): boolean {
   return Boolean(record.functionCall ?? record.function_call);
 }
 
-function parseNativeArgs(rawArgs: string): unknown {
+function parseNativeArgs(rawArgs: string): { args: unknown; error: string | null } {
   if (!rawArgs.trim()) {
-    return {};
+    return { args: {}, error: null };
   }
   try {
-    return JSON.parse(rawArgs) as unknown;
-  } catch {
-    return { input: rawArgs };
+    return { args: JSON.parse(rawArgs) as unknown, error: null };
+  } catch (error) {
+    return { args: {}, error: executorErrorMessage(error) };
   }
 }
 

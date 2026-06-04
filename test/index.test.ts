@@ -13160,6 +13160,42 @@ describe("core crew runtime", () => {
     });
   });
 
+  it("records AgentExecutor native tool argument parse errors without executing the tool", () => {
+    let calls = 0;
+    const executor = new AgentExecutor();
+    Object.assign(executor, {
+      _available_functions: {
+        execute_code: () => {
+          calls += 1;
+          return "should not run";
+        },
+      },
+    });
+    executor.state.pending_tool_calls = [
+      { id: "call_bad_json", function: { name: "execute_code", arguments: "{\"code\": \"print(\"hello\")\"}" } },
+    ];
+
+    expect(executor.execute_native_tool()).toBe("native_tool_completed");
+    expect(calls).toBe(0);
+    expect(executor.state.messages[0]).toEqual({
+      role: "assistant",
+      content: null,
+      tool_calls: [
+        {
+          id: "call_bad_json",
+          type: "function",
+          function: { name: "execute_code", arguments: "{\"code\": \"print(\"hello\")\"}" },
+        },
+      ],
+    });
+    expect(executor.state.messages.at(-1)).toMatchObject({
+      role: "tool",
+      name: "execute_code",
+      tool_call_id: "call_bad_json",
+    });
+    expect(String(executor.state.messages.at(-1)?.content)).toContain("Failed to parse tool arguments as JSON");
+  });
+
   it("increments task tool errors for failed AgentExecutor native tools", () => {
     const task = {
       toolsErrors: 0,
