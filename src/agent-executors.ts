@@ -1,7 +1,7 @@
 import { Agent, type AgentExecutionOptions, type AgentOptions } from "./agent.js";
 import type { CheckpointConfig } from "./state.js";
 import type { Crew } from "./crew.js";
-import { AgentReasoning, StepObservation, TodoItem, TodoList, TodoStatus } from "./agent-planning.js";
+import { AgentReasoning, PlanStep, StepObservation, TodoItem, TodoList, TodoStatus } from "./agent-planning.js";
 import { AgentAction, AgentFinish, OutputParserError, parseAgentOutput } from "./agent-parser.js";
 import {
   executeSingleNativeToolCall,
@@ -575,10 +575,20 @@ export class AgentExecutor extends BaseAgentExecutor {
     this.state.plan = description;
     this.state.plan_ready = true;
     if (this.state.todos.items.length === 0) {
-      this.state.todos = new TodoList({
-        items: [{ stepNumber: 1, description, status: TodoStatus.PENDING }],
-      });
+      this._create_todos_from_plan([new PlanStep({ stepNumber: 1, description })]);
     }
+  }
+
+  _create_todos_from_plan(steps: readonly PlanStep[]): void {
+    this.state.todos = new TodoList({
+      items: steps.map((step) => new TodoItem({
+        stepNumber: step.stepNumber,
+        description: step.description,
+        toolToUse: step.toolToUse,
+        dependsOn: step.dependsOn,
+        status: TodoStatus.PENDING,
+      })),
+    });
   }
 
   observeStepResult(): "step_observed_low" | "step_observed_medium" | "step_observed_high" {

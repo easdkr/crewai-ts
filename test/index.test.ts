@@ -12517,6 +12517,20 @@ describe("core crew runtime", () => {
     snakePlanningExecutor.generate_plan();
     expect(snakePlanningExecutor.state.plan_ready).toBe(true);
     expect(snakePlanningExecutor.check_todos_available()).toBe("has_todos");
+    snakePlanningExecutor._create_todos_from_plan([
+      new PlanStep({ step_number: 1, description: "Collect evidence", tool_to_use: "Search" }),
+      new PlanStep({ step_number: 2, description: "Write summary", depends_on: [1] }),
+    ]);
+    expect(snakePlanningExecutor.state.todos.items.map((todo) => ({
+      step_number: todo.step_number,
+      description: todo.description,
+      tool_to_use: todo.tool_to_use,
+      depends_on: todo.depends_on,
+      status: todo.status,
+    }))).toEqual([
+      { step_number: 1, description: "Collect evidence", tool_to_use: "Search", depends_on: [], status: TodoStatus.PENDING },
+      { step_number: 2, description: "Write summary", tool_to_use: null, depends_on: [1], status: TodoStatus.PENDING },
+    ]);
 
     executor.state.current_answer = new AgentFinish({
       thought: "done",
