@@ -20954,6 +20954,79 @@ describe("flow runtime", () => {
     expect(order).toEqual(["attach_bus", "route_turn", "do_work"]);
   });
 
+  it("keeps overridden conversational start methods registered without redecorating", async () => {
+    const bootstrapCalls: string[] = [];
+
+    class OverrideStartFlow extends Flow<ConversationState> {
+      static conversational = true;
+      static conversational_config = new ConversationConfig({
+        router: { defaultIntent: "work", fallbackIntent: "work", routes: ["work"] },
+      });
+
+      override conversation_start() {
+        bootstrapCalls.push("ran");
+        return super.conversation_start();
+      }
+
+      doWork() {
+        this.append_assistant_message("worked");
+        return "worked";
+      }
+    }
+
+    const initializer = decorateMethod(OverrideStartFlow, "doWork", listen("work") as unknown as Decorator);
+    const flow = new OverrideStartFlow();
+    initializer.call(flow);
+
+    expect(OverrideStartFlow.flow_definition().methods.conversation_start?.start).toBe(true);
+
+    await expect(flow.handle_turn("hi")).resolves.toBe("worked");
+
+    expect(bootstrapCalls).toEqual(["ran"]);
+    expect(flow.state.messages.at(-1)).toMatchObject({
+      role: "assistant",
+      content: "worked",
+    });
+  });
+
+  it("reruns conversational graphs after a prior turn has completed", async () => {
+    const routerLlm = {
+      calls: 0,
+      call() {
+        this.calls += 1;
+        return { intent: "research" };
+      },
+    };
+
+    class MultiTurnFlow extends Flow<ConversationState> {
+      static conversational = true;
+      static conversational_config = new ConversationConfig({
+        router: new RouterConfig({ llm: routerLlm, routes: ["research"] }),
+      });
+
+      runResearch() {
+        const reply = `researched:${String(this.state.current_user_message)}`;
+        this.append_assistant_message(reply);
+        return reply;
+      }
+    }
+
+    const initializer = decorateMethod(MultiTurnFlow, "runResearch", listen("research") as unknown as Decorator);
+    const flow = new MultiTurnFlow();
+    initializer.call(flow);
+
+    await expect(flow.handle_turn("first")).resolves.toBe("researched:first");
+    await expect(flow.handle_turn("second")).resolves.toBe("researched:second");
+
+    expect(routerLlm.calls).toBe(2);
+    expect(flow.state.messages.map((message) => message.content)).toEqual([
+      "first",
+      "researched:first",
+      "second",
+      "researched:second",
+    ]);
+  });
+
   it("skips experimental conversational router auto-enable for default intents", async () => {
     const routerLlm = {
       call() {
