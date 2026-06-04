@@ -7147,6 +7147,17 @@ describe("a2a utilities", () => {
     expect(verifyDetachedJws(publicKey, signature.protected, canonicalPayload, signature.signature)).toBe(true);
     expect(verify_agent_card_signature(card, signature, publicKey, ["RS256"])).toBe(true);
     expect(verify_agent_card_signature({ ...card, name: "Tampered Agent" }, signature, publicKey, ["RS256"])).toBe(false);
+
+    const protectedWithoutAlg = Buffer.from(JSON.stringify({ typ: "JWS", kid: "kid-1" })).toString("base64url");
+    const signatureWithoutAlg = sign(
+      "RSA-SHA256",
+      Buffer.from(`${protectedWithoutAlg}.${Buffer.from(canonicalPayload).toString("base64url")}`),
+      privateKey,
+    ).toString("base64url");
+    expect(verify_agent_card_signature(card, {
+      protected: protectedWithoutAlg,
+      signature: signatureWithoutAlg,
+    }, publicKey)).toBe(false);
   });
 
   it("attaches signing_config signatures to generated A2A agent cards", () => {

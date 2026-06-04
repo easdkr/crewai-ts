@@ -1334,6 +1334,7 @@ export type RedisCacheConfig = {
 };
 export const RedisCacheConfig = Object.freeze({ kind: "RedisCacheConfig" });
 export const SigningAlgorithm = JWTAlgorithm;
+const DEFAULT_A2A_JWS_ALGORITHMS: readonly string[] = JWTAlgorithm;
 
 type CancellableContext = {
   taskId?: string | null;
@@ -2320,8 +2321,9 @@ export function verify_agent_card_signature(
   algorithms: readonly string[] | null = null,
 ): boolean {
   const header = parseProtectedHeader(signature.protected);
-  const algorithm = stringFromA2A(header?.alg, "RS256") as JWTAlgorithm;
-  if (algorithms && !algorithms.includes(algorithm)) {
+  const algorithm = typeof header?.alg === "string" ? header.alg : null;
+  const allowedAlgorithms = algorithms ?? DEFAULT_A2A_JWS_ALGORITHMS;
+  if (!algorithm || !allowedAlgorithms.includes(algorithm) || !isJWTAlgorithm(algorithm)) {
     return false;
   }
   const payload = base64UrlEncode(serializeAgentCardForSigning(agent_card));
@@ -5708,6 +5710,10 @@ function hashAlgorithmForJWT(algorithm: JWTAlgorithm): string {
     return "sha512";
   }
   return "sha256";
+}
+
+function isJWTAlgorithm(value: string): value is JWTAlgorithm {
+  return (JWTAlgorithm as readonly string[]).includes(value);
 }
 
 function signKeyOptions(key: string | Uint8Array | KeyObject, algorithm: JWTAlgorithm): Parameters<ReturnType<typeof createSign>["sign"]>[0] {
