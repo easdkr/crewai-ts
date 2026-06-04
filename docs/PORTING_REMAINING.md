@@ -291,6 +291,7 @@ When more goal budget is available, continue from the behavioral parity audits b
   - avoids the direct-answer shortcut when structured output is requested through `response_model` / `responseModel`
   - synthesizes non-shortcut todo results through the configured LLM with `response_model`, task, and agent context, then falls back to upstream step-result concatenation when synthesis is unavailable
   - preserves the deterministic fallback step-summary behavior when no synthesis inputs exist, including completed steps with no captured result
+  - emits the upstream skip diagnostic when finalization is reached with an `AgentAction` instead of an `AgentFinish`
 - `AgentExecutor` dynamic replanning now mirrors upstream deterministic routing triggers:
   - multiple failed todos include the upstream failure-count reason
   - multiple `Error:` todo results trigger replanning even when todos are marked completed

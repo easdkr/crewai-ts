@@ -1296,6 +1296,8 @@ export class AgentExecutor extends BaseAgentExecutor {
       });
     }
     if (!(this.state.current_answer instanceof AgentFinish)) {
+      const answerType = this.state.current_answer instanceof AgentAction ? "AgentAction" : typeof this.state.current_answer;
+      PRINTER.print(`Finalize called with ${answerType} instead of AgentFinish - skipping`);
       return "skipped";
     }
     this.state.is_finished = true;

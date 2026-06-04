@@ -12651,6 +12651,26 @@ describe("core crew runtime", () => {
     expect(events[0]?.agent_role).toBe("Researcher");
     expect(events[0]?.formatted_answer).toBe(answer);
     expect(events[0]?.verbose).toBe(true);
+
+    const printSpy = vi.spyOn(PRINTER, "print").mockImplementation(() => undefined);
+    const skipped = new AgentExecutor({ agent });
+    skipped.state.current_answer = new AgentAction({
+      thought: "thinking",
+      tool: "search",
+      toolInput: "query",
+      text: "Action: search\nAction Input: query",
+    });
+
+    try {
+      expect(skipped.finalize()).toBe("skipped");
+      expect(printSpy).toHaveBeenCalledWith(
+        "Finalize called with AgentAction instead of AgentFinish - skipping",
+      );
+    } finally {
+      printSpy.mockRestore();
+    }
+    expect(skipped.state.is_finished).toBe(false);
+    expect(events).toHaveLength(1);
   });
 
   it("uses upstream final-answer prompting when AgentExecutor reaches max iterations", () => {
