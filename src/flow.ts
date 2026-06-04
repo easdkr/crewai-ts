@@ -250,7 +250,7 @@ export type FlowMethodEntry = {
 };
 
 const FLOW_METHOD_DEFINITION_ATTR = "__flow_method_definition__";
-const HUMAN_FEEDBACK_LIVE_LLM_ATTR = "__human_feedback_live_llm__";
+const HUMAN_FEEDBACK_LIVE_LLM_ATTR = "_human_feedback_llm";
 
 type FlowExecutionQueueItem = {
   name: string;

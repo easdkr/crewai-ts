@@ -22416,6 +22416,42 @@ describe("flow runtime", () => {
     });
   });
 
+  it("preserves live human feedback LLM metadata through persist wrappers", () => {
+    const llm = {
+      model: "test/persist-hitl",
+      call() {
+        return "{\"outcome\":\"approved\"}";
+      },
+    };
+
+    class PersistedHitlFlow extends Flow<{ id: string }> {
+      constructor() {
+        super({ initialState: { id: "persist-hitl-flow" } });
+      }
+
+      review() {
+        return "draft";
+      }
+    }
+
+    const initializers = [
+      decorateMethod(PersistedHitlFlow, "review", humanFeedback({
+        message: "Approve?",
+        emit: ["rejected", "approved"],
+        defaultOutcome: "rejected",
+        llm,
+      }) as unknown as Decorator),
+      ...applyMethodDecorator(PersistedHitlFlow, "review", persist() as unknown as Decorator),
+      decorateMethod(PersistedHitlFlow, "review", start() as unknown as Decorator),
+    ];
+    const flow = new PersistedHitlFlow();
+    initializers.forEach((initializer) => {
+      initializer.call(flow);
+    });
+
+    expect((PersistedHitlFlow.prototype.review as unknown as { _human_feedback_llm?: unknown })._human_feedback_llm).toBe(llm);
+  });
+
   it("uses serialized pending LLM when decorator live human feedback LLM is only a string", async () => {
     const persistence = new SQLiteFlowPersistence();
     const llmCalls: LLMMessage[][] = [];

@@ -446,6 +446,7 @@ export function persist(
       await persistState(this, String(context.name), actualPersistence, shouldLog);
       return result;
     };
+    copyDecoratorMetadata(value, wrapped);
     methodPersistMetadata.set(wrapped, metadata(actualPersistence));
     return wrapped as (this: This, ...args: Args) => Return;
   }
@@ -464,6 +465,30 @@ export function persist(
 export const PersistenceDecorator = { persistState };
 export const PersistDecorator = PersistenceDecorator;
 export const persist_state = persistState;
+
+function copyDecoratorMetadata(source: unknown, target: unknown): void {
+  if ((typeof source !== "function" && !isRecord(source)) || (typeof target !== "function" && !isRecord(target))) {
+    return;
+  }
+  const sourceRecord = source as Record<string, unknown>;
+  const targetRecord = target as Record<string, unknown>;
+  for (const key of [
+    "__is_flow_method__",
+    "__is_start_method__",
+    "__trigger_methods__",
+    "__condition_type__",
+    "__trigger_condition__",
+    "__is_router__",
+    "__router_emit__",
+    "__flow_method_definition__",
+    "__human_feedback_config__",
+    "_human_feedback_llm",
+  ]) {
+    if (key in sourceRecord) {
+      targetRecord[key] = sourceRecord[key];
+    }
+  }
+}
 
 export function getPersistDecoratorMetadata(value: object): PersistDecoratorMetadata | null {
   return classPersistMetadata.get(value) ?? null;
