@@ -27656,6 +27656,76 @@ describe("tools", () => {
     });
   });
 
+  it("formats direct Agent Bedrock image and PDF input files", async () => {
+    class CapturingBedrockLLM extends BedrockCompletion {
+      formattedMessages: readonly LLMMessage[] = [];
+
+      constructor() {
+        super({ model: "anthropic.claude-3-5-sonnet-20241022-v2:0" });
+      }
+
+      override call(messages: readonly LLMMessage[]): LLMResponse {
+        this.formattedMessages = this.formatMessages(messages);
+        return "bedrock files done";
+      }
+    }
+
+    const llmInstance = new CapturingBedrockLLM();
+    const agent = new Agent({
+      role: "Bedrock File Analyst",
+      goal: "Analyze Bedrock multimodal files",
+      backstory: "Expert at reading multimodal files",
+      llm: llmInstance,
+    });
+    const pngBytes = Buffer.concat([
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      Buffer.from("direct-bedrock-image"),
+    ]);
+    const pdfBytes = Buffer.from("%PDF-1.4 direct agent bedrock document");
+    const chart = new ImageFile({
+      source: new FileBytes({ data: pngBytes, filename: "chart.png" }),
+    });
+    const document = new PDFFile({
+      source: new FileBytes({ data: pdfBytes, filename: "brief.pdf" }),
+    });
+
+    await expect(agent.kickoff([
+      {
+        role: "user",
+        content: "Inspect these files.",
+      },
+    ], {
+      input_files: {
+        chart,
+        document,
+      },
+    })).resolves.toBe("bedrock files done");
+
+    const userMessage = llmInstance.formattedMessages.findLast((message) => message.role === "user");
+    expect(userMessage?.files).toBeUndefined();
+    const contentBlocks: unknown = userMessage?.content;
+    expect(Array.isArray(contentBlocks)).toBe(true);
+    if (!Array.isArray(contentBlocks)) {
+      throw new Error("Expected Bedrock content blocks");
+    }
+    expect(contentBlocks).toHaveLength(3);
+    const textBlock = contentBlocks[0] as { text?: unknown };
+    expect(String(textBlock.text)).toContain("Inspect these files.");
+    expect(contentBlocks[1]).toEqual({
+      image: {
+        format: "png",
+        source: { bytes: pngBytes },
+      },
+    });
+    expect(contentBlocks[2]).toEqual({
+      document: {
+        name: "brief",
+        format: "pdf",
+        source: { bytes: pdfBytes },
+      },
+    });
+  });
+
   it("uses functionCallingLlm for tool selection and the main LLM for the final answer", async () => {
     const functionCalls: LLMMessage[][] = [];
     const mainCalls: LLMMessage[][] = [];
