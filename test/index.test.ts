@@ -285,6 +285,7 @@ import {
   MCPConnectionStartedEvent,
   MCPConfigFetchFailedEvent,
   MCPClient,
+  MCPNativeTool,
   _MCPToolResult,
   MCPToolResolver,
   MCPToolWrapper,
@@ -4365,6 +4366,54 @@ describe("mcp configuration", () => {
     expect(mockTransport.connected).toBe(true);
     await mockTransport.disconnect();
     expect(mockTransport.connected).toBe(false);
+  });
+
+  it("uses a fresh native MCP client for parallel invocations of the same tool", async () => {
+    const clients: Array<{
+      id: number;
+      connect: ReturnType<typeof vi.fn>;
+      disconnect: ReturnType<typeof vi.fn>;
+      callTool: ReturnType<typeof vi.fn>;
+    }> = [];
+
+    const tool = new MCPNativeTool({
+      clientFactory: () => {
+        const id = clients.length + 1;
+        const client = {
+          id,
+          connect: vi.fn(() => Promise.resolve(client)),
+          disconnect: vi.fn(() => Promise.resolve(undefined)),
+          callTool: vi.fn((toolName: string, args: Record<string, unknown>) => Promise.resolve(`${String(id)}:${toolName}:${String(args.query)}`)),
+        };
+        clients.push(client);
+        return client;
+      },
+      toolName: "search",
+      originalToolName: "search",
+      toolSchema: {
+        name: "search",
+        description: "Search",
+        inputSchema: {
+          type: "object",
+          properties: { query: { type: "string" } },
+        },
+      },
+      serverName: "docs",
+    });
+
+    await expect(Promise.all([
+      tool.run({ query: "alpha" }),
+      tool.run({ query: "beta" }),
+    ])).resolves.toEqual([
+      "1:search:alpha",
+      "2:search:beta",
+    ]);
+
+    expect(clients).toHaveLength(2);
+    expect(clients[0]).not.toBe(clients[1]);
+    expect(clients.map((client) => client.connect.mock.calls.length)).toEqual([1, 1]);
+    expect(clients.map((client) => client.callTool.mock.calls.length)).toEqual([1, 1]);
+    expect(clients.map((client) => client.disconnect.mock.calls.length)).toEqual([1, 1]);
   });
 
   it("exposes upstream-style MCP async context manager aliases", async () => {
