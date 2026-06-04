@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 1058 passing tests.
+- Test suite: 1059 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -151,6 +151,7 @@ This register is the source of truth for continuing porting work while parity sc
 - Flow ask checkpoint recovery is release-gated for upstream multi-question flows: each `ask()` writes an `_ask_checkpoint` before waiting for input, and later ask checkpoints include state changes made from earlier answers.
 - ConsoleProvider input handling is release-gated for upstream interactive prompt behavior: both `request_input` and `requestInput` trim whitespace from injected console responses while preserving the provider protocol surface.
 - Flow ask provider-error handling is release-gated for upstream async method behavior: provider exceptions inside an async start method resolve to `null` while recording a null response and null response metadata.
+- Flow concepts documentation examples are release-gated as deterministic smoke coverage: final-output chaining, state mutation across listeners, `or_` listeners, and `and_` listeners run with local Flow fixtures matching the upstream docs semantics.
 - Event bus replay is release-gated with deterministic local dispatch: replayed events preserve upstream event ids, parent ids, and emission sequences, expose replay context inside handlers, and do not re-record replayed events into runtime state.
 - StepExecutor text-parsed tool execution is release-gated for upstream tool usage event semantics: executing a parsed tool action emits `tool_usage_started` and `tool_usage_finished` events with sanitized tool names, parsed tool args, and final output while preserving isolated step execution results.
 - StepExecutor text-parsed structured-tool events are release-gated for upstream execution context payloads: tool usage started/finished/error events emitted during isolated step execution preserve `from_task`, `from_agent`, `agent_key`, and agent role metadata.

@@ -21520,6 +21520,121 @@ describe("flow runtime", () => {
     });
   });
 
+  it("runs deterministic Flow concepts documentation examples", async () => {
+    class OutputExampleFlow extends Flow {
+      firstMethod() {
+        return "Output from first_method";
+      }
+
+      secondMethod(firstOutput: unknown) {
+        return `Second method received: ${String(firstOutput)}`;
+      }
+    }
+    [
+      decorateMethod(OutputExampleFlow, "firstMethod", start() as unknown as Decorator),
+      decorateMethod(OutputExampleFlow, "secondMethod", listen("firstMethod") as unknown as Decorator),
+    ].forEach((initializer) => {
+      initializer.call(new OutputExampleFlow());
+    });
+    await expect(new OutputExampleFlow().kickoff()).resolves.toBe(
+      "Second method received: Output from first_method",
+    );
+
+    class StateExampleFlow extends Flow<{ id: string; counter: number; message: string }> {
+      constructor() {
+        super({ initialState: { id: "state-doc-flow", counter: 0, message: "" } });
+      }
+
+      firstMethod() {
+        this.state.message = "Hello from first_method";
+        this.state.counter += 1;
+      }
+
+      secondMethod() {
+        this.state.message += " - updated by second_method";
+        this.state.counter += 1;
+        return this.state.message;
+      }
+    }
+    [
+      decorateMethod(StateExampleFlow, "firstMethod", start() as unknown as Decorator),
+      decorateMethod(StateExampleFlow, "secondMethod", listen("firstMethod") as unknown as Decorator),
+    ].forEach((initializer) => {
+      initializer.call(new StateExampleFlow());
+    });
+    const stateFlow = new StateExampleFlow();
+    await expect(stateFlow.kickoff()).resolves.toBe("Hello from first_method - updated by second_method");
+    expect(stateFlow.state).toEqual({
+      id: "state-doc-flow",
+      counter: 2,
+      message: "Hello from first_method - updated by second_method",
+    });
+
+    class OrExampleFlow extends Flow<{ id: string; logs: string[] }> {
+      constructor() {
+        super({ initialState: { id: "or-doc-flow", logs: [] } });
+      }
+
+      startMethod() {
+        return "Hello from the start method";
+      }
+
+      secondMethod() {
+        return "Hello from the second method";
+      }
+
+      logger(result: unknown) {
+        this.state.logs.push(`Logger: ${String(result)}`);
+      }
+    }
+    [
+      decorateMethod(OrExampleFlow, "startMethod", start() as unknown as Decorator),
+      decorateMethod(OrExampleFlow, "secondMethod", listen("startMethod") as unknown as Decorator),
+      decorateMethod(OrExampleFlow, "logger", listen(or_("startMethod", "secondMethod")) as unknown as Decorator),
+    ].forEach((initializer) => {
+      initializer.call(new OrExampleFlow());
+    });
+    const orFlow = new OrExampleFlow();
+    await orFlow.kickoff();
+    expect(orFlow.state.logs).toEqual([
+      "Logger: Hello from the start method",
+      "Logger: Hello from the second method",
+    ]);
+
+    class AndExampleFlow extends Flow<{ id: string; greeting?: string; joke?: string; logs: string[] }> {
+      constructor() {
+        super({ initialState: { id: "and-doc-flow", logs: [] } });
+      }
+
+      startMethod() {
+        this.state.greeting = "Hello from the start method";
+      }
+
+      secondMethod() {
+        this.state.joke = "What do computers eat? Microchips.";
+      }
+
+      logger() {
+        this.state.logs.push(`${this.state.greeting ?? ""}|${this.state.joke ?? ""}`);
+      }
+    }
+    [
+      decorateMethod(AndExampleFlow, "startMethod", start() as unknown as Decorator),
+      decorateMethod(AndExampleFlow, "secondMethod", listen("startMethod") as unknown as Decorator),
+      decorateMethod(AndExampleFlow, "logger", listen(and_("startMethod", "secondMethod")) as unknown as Decorator),
+    ].forEach((initializer) => {
+      initializer.call(new AndExampleFlow());
+    });
+    const andFlow = new AndExampleFlow();
+    await andFlow.kickoff();
+    expect(andFlow.state).toEqual({
+      id: "and-doc-flow",
+      greeting: "Hello from the start method",
+      joke: "What do computers eat? Microchips.",
+      logs: ["Hello from the start method|What do computers eat? Microchips."],
+    });
+  });
+
   it("builds Flow.flow_definition caches per subclass like upstream", () => {
     class ParentFlow extends Flow {
       begin() {

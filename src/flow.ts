@@ -2305,7 +2305,11 @@ export class Flow<TState extends object = Record<string, unknown>> {
       for (const triggerName of restoredCompletedMethods) {
         for (const entry of entries) {
           const name = String(entry.name);
-          if (!entry.condition || skipCompletedMethods.has(name) || queue.some((candidate) => candidate.name === name)) {
+          if (
+            !entry.condition
+            || skipCompletedMethods.has(name)
+            || (!isFlatOrCondition(entry.condition) && queue.some((candidate) => candidate.name === name))
+          ) {
             continue;
           }
           if (shouldSuppressOrSelfRetrigger(entry.condition, name, triggerName, triggerName)) {
@@ -2364,7 +2368,11 @@ export class Flow<TState extends object = Record<string, unknown>> {
         for (const triggerName of triggers) {
           for (const entry of entries) {
             const name = String(entry.name);
-            if (!entry.condition || skipCompletedMethods.has(name) || queue.some((candidate) => candidate.name === name)) {
+            if (
+              !entry.condition
+              || skipCompletedMethods.has(name)
+              || (!isFlatOrCondition(entry.condition) && queue.some((candidate) => candidate.name === name))
+            ) {
               continue;
             }
             if (shouldRaiseDirectSelfRetrigger(entry.condition, name, triggerName, current.name)) {
@@ -3731,7 +3739,10 @@ function enqueueSatisfiedListeners(
 ): void {
   for (const entry of entries) {
     const name = String(entry.name);
-    if (!entry.condition || queue.some((candidate) => candidate.name === name)) {
+    if (
+      !entry.condition
+      || (!isFlatOrCondition(entry.condition) && queue.some((candidate) => candidate.name === name))
+    ) {
       continue;
     }
     if (!conditionIncludesTrigger(entry.condition, triggerName)) {
@@ -5703,6 +5714,10 @@ function conditionSatisfied(
 
 function conditionIncludesTrigger(condition: FlowCondition, triggerName: string): boolean {
   return condition.conditions.some((nested) => nestedIncludesTrigger(nested, triggerName));
+}
+
+function isFlatOrCondition(condition: FlowCondition): boolean {
+  return condition.type === "OR" && condition.conditions.every((nested) => typeof nested === "string");
 }
 
 function flowConditionLabels(condition: FlowCondition | null): string[] {
