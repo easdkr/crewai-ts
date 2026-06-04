@@ -28614,6 +28614,33 @@ describe("task interpolation", () => {
     }).toThrow("Unsupported type Set");
   });
 
+  it("preserves upstream literal formatting for structured interpolation values", () => {
+    expect(interpolateOnly("Available items: {items}", { items: ["apple", "banana", "cherry"] }))
+      .toBe("Available items: ['apple', 'banana', 'cherry']");
+    expect(interpolateOnly("Available items: {items}", { items: [] })).toBe("Available items: []");
+
+    expect(interpolateOnly("{people}", {
+      people: [
+        { name: "Alice", age: 30, skills: ["Python", "AI"] },
+        { name: "Bob", age: 25, skills: ["Java", "Cloud"] },
+      ],
+    })).toBe(
+      "[{'name': 'Alice', 'age': 30, 'skills': ['Python', 'AI']}, {'name': 'Bob', 'age': 25, 'skills': ['Java', 'Cloud']}]",
+    );
+
+    expect(interpolateOnly("{company}", {
+      company: {
+        name: "TechCorp",
+        departments: [
+          { name: "Engineering", employees: 50, tools: ["Git", "Docker", "Kubernetes"] },
+          { name: "Sales", employees: 20, regions: { north: 5, south: 3 } },
+        ],
+      },
+    })).toBe(
+      "{'name': 'TechCorp', 'departments': [{'name': 'Engineering', 'employees': 50, 'tools': ['Git', 'Docker', 'Kubernetes']}, {'name': 'Sales', 'employees': 20, 'regions': {'north': 5, 'south': 3}}]}",
+    );
+  });
+
   it("sanitizes tool names and slugifies strings using upstream-compatible rules", () => {
     expect(sanitizeToolName("Read File Tool")).toBe("read_file_tool");
     expect(sanitizeToolName("XMLHTTPParser")).toBe("xmlhttp_parser");
