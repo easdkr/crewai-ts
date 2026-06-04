@@ -18780,6 +18780,10 @@ describe("flow runtime", () => {
     const jsonRoundTrip = FlowDefinition.from_json(definition.to_json({ indent: null }));
     expect(jsonRoundTrip.name).toBe("ReviewFlow");
     expect(jsonRoundTrip.diagnostics.some((diagnostic) => diagnostic.code === "human_feedback_llm_required")).toBe(true);
+    const yamlRoundTrip = FlowDefinition.from_yaml(definition.to_yaml());
+    expect(yamlRoundTrip.to_dict()).toEqual(definition.to_dict());
+    expect(yamlRoundTrip.methods.route.router).toBe(true);
+    expect(yamlRoundTrip.methods.route.listen).toBe("begin");
     expect(FlowDefinition.json_schema()).toMatchObject({
       title: "FlowDefinition",
       type: "object",

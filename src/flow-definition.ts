@@ -1,3 +1,5 @@
+import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
+
 export type FlowDefinitionCondition = string | Record<string, unknown>;
 export const FlowDefinitionCondition = Object.freeze({ kind: "FlowDefinitionCondition" });
 
@@ -350,6 +352,16 @@ export class FlowDefinition {
     return this.toJson(nextOptions);
   }
 
+  toYaml(options: { excludeNone?: boolean; exclude_none?: boolean } = {}): string {
+    return stringifyYaml(this.toDict({
+      excludeNone: options.excludeNone ?? options.exclude_none ?? false,
+    }));
+  }
+
+  to_yaml(options: { exclude_none?: boolean } = {}): string {
+    return this.toYaml({ excludeNone: options.exclude_none ?? false });
+  }
+
   static fromDict(data: Record<string, unknown>): FlowDefinition {
     const serializedDiagnostics = deserializeDiagnostics(data.diagnostics);
     const options: FlowDefinitionOptions = {
@@ -380,6 +392,18 @@ export class FlowDefinition {
 
   static from_json(data: string): FlowDefinition {
     return FlowDefinition.fromJson(data);
+  }
+
+  static fromYaml(data: string): FlowDefinition {
+    const parsed = parseYaml(data) as unknown;
+    if (!isRecord(parsed)) {
+      throw new Error("FlowDefinition YAML must deserialize to an object.");
+    }
+    return FlowDefinition.fromDict(parsed);
+  }
+
+  static from_yaml(data: string): FlowDefinition {
+    return FlowDefinition.fromYaml(data);
   }
 
   static jsonSchema(): Record<string, unknown> {
