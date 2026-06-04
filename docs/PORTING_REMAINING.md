@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 897 passing tests.
+- Test suite: 898 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -546,6 +546,7 @@ When more goal budget is available, continue from the behavioral parity audits b
   - Generated A2A AgentCards now expose upstream-style `model_dump` / `model_dump_json` helpers with protocol camelCase fields and recursive `exclude_none` handling while preserving the runtime snake_case compatibility shape.
   - Generated A2A AgentCards now normalize configured/provided URLs through WHATWG URL semantics, matching upstream origin URL trailing-slash behavior while preserving invalid/custom URL strings.
   - Generated A2A AgentCards now merge configured server extensions into `capabilities.extensions` without duplicating existing extension URIs.
+  - A2A delegation now honors `trust_remote_completion_status`: trusted completed remote tasks return directly, while the default cautious path feeds the remote result back through the server agent up to the configured max-turn budget.
 - Added A2UI compatibility behavior:
   - `A2UIClientExtension` now filters restored conversation surfaces by configured catalog ID and advertises both default and custom catalog capabilities for v0.8/v0.9 metadata, matching upstream client extension semantics.
   - `A2UIServerExtension` now activates request hooks only when clients declare the server extension URI, matching upstream A2A server extension activation semantics.

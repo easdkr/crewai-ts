@@ -4972,7 +4972,15 @@ export async function _execute_task_with_a2a(options: {
   agentResponse = options.extension_registry?.process_response_with_all(agentResponse, extensionStates) ?? agentResponse;
   if (agentResponse instanceof AgentResponseModel) {
     if (agentResponse.is_a2a) {
-      return await delegateA2AResponse(agentResponse, options.a2a_agents, agentCards);
+      return await delegateA2AResponse(agentResponse, options.a2a_agents, agentCards, {
+        original_fn: options.original_fn,
+        task: options.task,
+        agent_response_model: options.agent_response_model ?? null,
+        context: options.context ?? null,
+        tools: options.tools ?? null,
+        extension_registry: options.extension_registry ?? null,
+        extension_states: extensionStates,
+      });
     }
     return agentResponse.message;
   }
@@ -5115,18 +5123,54 @@ async function delegateA2AResponse(
   agentResponse: AgentResponseModel,
   a2aAgents: readonly A2AClientConfigTypes[],
   agentCards: Record<string, Record<string, unknown>>,
+  continuation?: {
+    original_fn: (...args: unknown[]) => unknown;
+    task: unknown;
+    agent_response_model?: typeof AgentResponseModel | null;
+    context?: string | null;
+    tools?: readonly unknown[] | null;
+    extension_registry?: ExtensionRegistry | null;
+    extension_states?: Map<unknown, ConversationState>;
+    remaining_turns?: number;
+  },
 ): Promise<string> {
   const selectedEndpoint = agentResponse.a2a_ids.find((endpoint) => endpoint in agentCards)
     ?? agentResponse.a2a_ids[0]
     ?? a2aAgents[0]?.endpoint
     ?? "";
   const selectedConfig = a2aAgents.find((config) => config.endpoint === selectedEndpoint) ?? a2aAgents[0];
+  const remainingTurns = continuation?.remaining_turns ?? selectedConfig?.max_turns ?? 10;
   const result = await aexecute_a2a_delegation({
     endpoint: selectedEndpoint,
     agent_config: selectedConfig,
     current_request: agentResponse.message,
     agent_card: agentCards[selectedEndpoint] ?? null,
   });
+  if (continuation && remainingTurns > 0 && !selectedConfig?.trust_remote_completion_status && result.status === A2ATaskState.completed) {
+    const remoteResult = result.result ?? result.error ?? "";
+    const continuationTask = withTaskDescription(
+      continuation.task,
+      [
+        agentResponse.message,
+        "",
+        `A2A Response from ${selectedEndpoint}:`,
+        remoteResult,
+      ].join("\n"),
+    );
+    const raw = await callOriginalA2ATask(continuation.original_fn, continuationTask, continuation.context, continuation.tools);
+    let parsed = _parse_agent_response(raw, continuation.agent_response_model ?? null);
+    parsed = continuation.extension_registry?.process_response_with_all(parsed, continuation.extension_states ?? new Map<unknown, ConversationState>()) ?? parsed;
+    if (parsed instanceof AgentResponseModel) {
+      if (parsed.is_a2a) {
+        return await delegateA2AResponse(parsed, a2aAgents, agentCards, {
+          ...continuation,
+          remaining_turns: remainingTurns - 1,
+        });
+      }
+      return parsed.message;
+    }
+    return String(raw);
+  }
   return result.result ?? result.error ?? "";
 }
 

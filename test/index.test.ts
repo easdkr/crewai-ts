@@ -6324,6 +6324,64 @@ describe("a2a utilities", () => {
     fetchMock.mockRestore();
   });
 
+  it("continues A2A conversations unless remote completion status is trusted", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({
+        name: "remote",
+        description: "Remote research agent",
+        url: "https://remote.example.com/a2a",
+        protocol_version: "0.3.0",
+      }),
+    } as Response);
+
+    const cautiousCalls: string[] = [];
+    const cautiousAgent = {
+      a2a: new A2AConfig({ endpoint: "https://remote.example.com/a2a" }),
+      execute_task: vi.fn((task: { description?: string }) => {
+        cautiousCalls.push(task.description ?? "");
+        return Promise.resolve(cautiousCalls.length === 1
+          ? JSON.stringify({ a2a_ids: ["https://remote.example.com/a2a"], message: "delegate this", is_a2a: true })
+          : JSON.stringify({ a2a_ids: [], message: "server final answer", is_a2a: false }));
+      }),
+    };
+    wrap_agent_with_a2a_instance(cautiousAgent);
+
+    await expect(cautiousAgent.execute_task({ description: "Research CrewAI" })).resolves.toBe("server final answer");
+    expect(cautiousCalls).toHaveLength(2);
+    expect(cautiousCalls[1]).toContain("delegate this");
+    expect(cautiousCalls[1]).toContain("https://remote.example.com/a2a");
+
+    const trustingCalls: string[] = [];
+    const trustingAgent = {
+      a2a: new A2AConfig({
+        endpoint: "https://trusted.example.com/a2a",
+        trust_remote_completion_status: true,
+      }),
+      execute_task: vi.fn((task: { description?: string }) => {
+        trustingCalls.push(task.description ?? "");
+        return Promise.resolve(JSON.stringify({
+          a2a_ids: ["https://trusted.example.com/a2a"],
+          message: "delegate trusted",
+          is_a2a: true,
+        }));
+      }),
+    };
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: () => Promise.resolve({
+        name: "trusted",
+        url: "https://trusted.example.com/a2a",
+        protocol_version: "0.3.0",
+      }),
+    } as Response);
+    wrap_agent_with_a2a_instance(trustingAgent);
+
+    await expect(trustingAgent.execute_task({ description: "Trust remote" })).resolves.toBe("https://trusted.example.com/a2a");
+    expect(trustingCalls).toHaveLength(1);
+    fetchMock.mockRestore();
+  });
+
   it("emits A2A authentication failure events for unauthorized agent-card fetches", async () => {
     const events: A2AAuthenticationFailedEvent[] = [];
     crewaiEventBus.on("a2a_authentication_failed", (_source, event) => {
