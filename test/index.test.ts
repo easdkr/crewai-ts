@@ -18513,6 +18513,70 @@ describe("standard decorators", () => {
     expect(first).toBeInstanceOf(Agent);
   });
 
+  it("registers multiple before and after kickoff hooks in decorator order", () => {
+    class MultiHookCrew {
+      agents: Agent[] = [];
+      tasks: Task[] = [];
+
+      firstBefore(inputs: Record<string, unknown>) {
+        return { ...inputs, topic: "Bicycles" };
+      }
+
+      secondBefore(inputs: Record<string, unknown>) {
+        return { ...inputs, topic: "plants" };
+      }
+
+      firstAfter(output: CrewOutput) {
+        output.raw = [output.raw, "processed first"].join(" ");
+        return output;
+      }
+
+      secondAfter(output: CrewOutput) {
+        output.raw = [output.raw, "processed second"].join(" ");
+        return output;
+      }
+
+      crew() {
+        const hookAgent = new Agent({
+          role: "Hook Agent",
+          goal: "Prepare hook output",
+          backstory: "Runs deterministic hook tests",
+        });
+        return new Crew({
+          agents: [hookAgent],
+          tasks: [
+            new Task({
+              description: "Check hook ordering",
+              expectedOutput: "ordered hooks",
+              agent: hookAgent,
+            }),
+          ],
+        });
+      }
+    }
+
+    const initializers = [
+      decorateMethod(MultiHookCrew, "firstBefore", beforeKickoff),
+      decorateMethod(MultiHookCrew, "secondBefore", beforeKickoff),
+      decorateMethod(MultiHookCrew, "firstAfter", afterKickoff),
+      decorateMethod(MultiHookCrew, "secondAfter", afterKickoff),
+      decorateMethod(MultiHookCrew, "crew", crew),
+    ];
+    const instance = new MultiHookCrew();
+    initializers.forEach((initializer) => {
+      initializer.call(instance);
+    });
+
+    const decoratedCrew = instance.crew();
+    const preparedInputs = decoratedCrew.beforeKickoffCallbacks
+      .reduce<Record<string, unknown>>((inputs, callback) => callback(inputs), { topic: "LLMs" });
+    const output = decoratedCrew.afterKickoffCallbacks
+      .reduce<CrewOutput>((current, callback) => callback(current), new CrewOutput({ raw: "plants" }));
+
+    expect(preparedInputs.topic).toBe("plants");
+    expect(output.raw).toBe("plants processed first processed second");
+  });
+
   it("emits CrewBase display names during prepare_kickoff", () => {
     const capturedNames: Array<string | null> = [];
     const off = crewaiEventBus.on("crew_kickoff_started", (_source, event) => {
