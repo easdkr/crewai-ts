@@ -875,6 +875,11 @@ export class StructuredTool extends BaseTool {
     return this.callStructuredFunction(args);
   }
 
+  protected override parseArgs(input: ToolInvocationInput): Record<string, unknown> {
+    const rawArgs = normalizeStructuredToolInput(input, this.argsSchema, false);
+    return validateArgs(this.name, this.argsSchema, rawArgs);
+  }
+
   override invoke(input?: ToolInvocationInput, _config?: Record<string, unknown> | null): MaybePromise<unknown> {
     void _config;
     const parsedArgs = this._parseArgs(input);
@@ -931,7 +936,7 @@ export class StructuredTool extends BaseTool {
   }
 
   _parseArgs(input: ToolInvocationInput): Record<string, unknown> {
-    const rawArgs = normalizeStructuredToolInput(input);
+    const rawArgs = normalizeStructuredToolInput(input, this.argsSchema, true);
     try {
       return validateArgs(this.name, this.argsSchema, rawArgs);
     } catch (error) {
@@ -2161,17 +2166,27 @@ export function normalizeToolInput(input: ToolInvocationInput): Record<string, u
   return { ...input };
 }
 
-function normalizeStructuredToolInput(input: ToolInvocationInput): Record<string, unknown> {
+function normalizeStructuredToolInput(
+  input: ToolInvocationInput,
+  argsSchema: ToolArgsSchema | null = null,
+  strictJsonStrings = true,
+): Record<string, unknown> {
   if (input === undefined) {
     return {};
   }
   if (typeof input === "string") {
     try {
       const parsed: unknown = JSON.parse(input);
-      return parsed && typeof parsed === "object" && !Array.isArray(parsed)
-        ? parsed as Record<string, unknown>
-        : {};
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        return parsed as Record<string, unknown>;
+      }
+      const singleArgName = singleSchemaArgName(argsSchema);
+      return singleArgName ? { [singleArgName]: parsed } : {};
     } catch (error) {
+      const singleArgName = singleSchemaArgName(argsSchema);
+      if (!strictJsonStrings && singleArgName) {
+        return { [singleArgName]: input };
+      }
       throw new Error(`Failed to parse arguments as JSON: ${error instanceof Error ? error.message : String(error)}`, {
         cause: error,
       });
@@ -2181,6 +2196,14 @@ function normalizeStructuredToolInput(input: ToolInvocationInput): Record<string
     return { input: input.input, inputs: input.inputs };
   }
   return { ...input };
+}
+
+function singleSchemaArgName(argsSchema: ToolArgsSchema | null): string | null {
+  if (!argsSchema) {
+    return null;
+  }
+  const argNames = Object.keys(argsSchema);
+  return argNames.length === 1 ? argNames[0] ?? null : null;
 }
 
 function jsonDumpsForHint(value: unknown): string {

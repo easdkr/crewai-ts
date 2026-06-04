@@ -24465,6 +24465,20 @@ describe("tools", () => {
     expect(defaultTool.current_usage_count).toBe(0);
   });
 
+  it("preserves upstream decorator single-argument string calls", async () => {
+    const greet = createFunctionTool("greet", {
+      description: "Greet someone",
+      argsSchema: {
+        name: { type: "string", required: true },
+      },
+    })(function greetName(name: unknown): string {
+      return `Hello, ${String(name)}!`;
+    });
+
+    expect(greet.run("World")).toBe("Hello, World!");
+    await expect(greet.arun("CrewAI")).resolves.toBe("Hello, CrewAI!");
+  });
+
   it("validates structured tool args and enforces usage limits", async () => {
     const add = new StructuredTool({
       name: "add numbers",
