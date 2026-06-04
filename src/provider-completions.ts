@@ -1962,6 +1962,7 @@ export class GeminiCompletion extends ConfiguredLLM {
             },
             args,
             index,
+            raw_part: rawPart,
           });
         } else if (part.thought === true && typeof part.text === "string") {
           thinkingText += part.text;

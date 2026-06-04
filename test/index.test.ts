@@ -31097,6 +31097,10 @@ describe("LLM providers", () => {
 
   it("accumulates Gemini streaming chunks", () => {
     const gemini = new GeminiCompletion({ model: "gemini-2.5-pro" });
+    const functionCallPart = {
+      functionCall: { name: "search_docs", args: { query: "CrewAI" } },
+      thought_signature: "gemini-thinking-signature",
+    };
 
     const accumulated = (gemini as unknown as {
       _accumulate_stream_chunks(chunks: unknown[]): {
@@ -31122,7 +31126,7 @@ describe("LLM providers", () => {
               { text: "Hel" },
               { text: "thinking", thought: true },
               { text: "lo" },
-              { functionCall: { name: "search_docs", args: { query: "CrewAI" } } },
+              functionCallPart,
             ],
           },
         }],
@@ -31137,6 +31141,7 @@ describe("LLM providers", () => {
         function: { name: "search_docs", arguments: "{\"query\":\"CrewAI\"}" },
         args: { query: "CrewAI" },
         index: 0,
+        raw_part: functionCallPart,
       }],
       usage: {
         prompt_token_count: 10,

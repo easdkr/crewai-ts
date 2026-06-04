@@ -547,6 +547,7 @@ When more goal budget is available, continue from the behavioral parity audits b
   - Bedrock completion shim now exposes upstream-style client error classification for common AWS Bedrock error codes.
   - Bedrock completion shim now exposes upstream-style Converse token usage extraction/tracking, tool-use/structured-output response extraction, deterministic Converse streaming event accumulation, and tool-result follow-up message helpers, including cache read token fields
   - Gemini completion shim with upstream-style message formatting, generation config builders, raw OpenAI-style function tool conversion, function-call and structured-output response extraction/direct execution, deterministic streaming chunk accumulation, config, context-window, multimodal/text-formatting, token-usage extraction, response text extraction, property ordering, and content conversion helpers
+  - Gemini streaming function-call accumulation now preserves the upstream raw part payload, including `thought_signature` metadata from thinking models, so downstream tool-call finalization can retain non-text model context.
   - Gemini message formatting now preserves upstream-style `raw_tool_call_parts` when present, falling back to JSON tool-call conversion otherwise.
   - Gemini completion shim now exposes the upstream-style `_extract_token_usage` alias for SDK usage translation compatibility.
   - Gemini token usage extraction and streaming accumulation now handle SDK-like `usage_metadata` getter objects.
