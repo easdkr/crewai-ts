@@ -12627,6 +12627,51 @@ describe("RAG configuration and factories", () => {
     });
   });
 
+  it("deletes Qdrant collections with upstream existence checks", async () => {
+    const syncCollectionExists = vi.fn()
+      .mockReturnValueOnce(true)
+      .mockReturnValueOnce(false);
+    const syncDeleteCollection = vi.fn();
+    const syncClient = new QdrantClient({
+      collection_exists: syncCollectionExists,
+      delete_collection: syncDeleteCollection,
+      query_points: vi.fn(() => ({ points: [] })),
+    });
+
+    syncClient.delete_collection({ collection_name: "test_collection" });
+    expect(syncCollectionExists).toHaveBeenNthCalledWith(1, "test_collection");
+    expect(syncDeleteCollection).toHaveBeenCalledOnce();
+    expect(syncDeleteCollection).toHaveBeenCalledWith({ collection_name: "test_collection" });
+
+    expect(() => {
+      syncClient.delete_collection({ collection_name: "missing_collection" });
+    }).toThrow("Collection 'missing_collection' does not exist");
+    expect(syncCollectionExists).toHaveBeenNthCalledWith(2, "missing_collection");
+    expect(syncDeleteCollection).toHaveBeenCalledTimes(1);
+
+    const asyncCollectionExists = vi.fn()
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(false);
+    const asyncDeleteCollection = vi.fn(async () => {
+      await Promise.resolve();
+    });
+    const asyncClient = new QdrantClient({
+      aquery_points: async () => await Promise.resolve({ points: [] }),
+      collection_exists: asyncCollectionExists,
+      delete_collection: asyncDeleteCollection,
+    });
+
+    await asyncClient.adelete_collection({ collection_name: "test_collection" });
+    expect(asyncCollectionExists).toHaveBeenNthCalledWith(1, "test_collection");
+    expect(asyncDeleteCollection).toHaveBeenCalledOnce();
+    expect(asyncDeleteCollection).toHaveBeenCalledWith({ collection_name: "test_collection" });
+
+    await expect(asyncClient.adelete_collection({ collection_name: "missing_collection" }))
+      .rejects.toThrow("Collection 'missing_collection' does not exist");
+    expect(asyncCollectionExists).toHaveBeenNthCalledWith(2, "missing_collection");
+    expect(asyncDeleteCollection).toHaveBeenCalledTimes(1);
+  });
+
   it("resets Qdrant collections with upstream sync and async delete payloads", async () => {
     const syncDeleteCollection = vi.fn();
     const syncGetCollections = vi.fn(() => ({
