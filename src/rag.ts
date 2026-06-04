@@ -2673,7 +2673,7 @@ export class RagError extends Error {
 }
 
 function collectionNameFrom(params: BaseCollectionParams): string {
-  const collectionName = params.collectionName ?? params.collection_name;
+  const collectionName = params.collection_name ?? params.collectionName;
   if (!collectionName) {
     throw new Error("collection_name is required");
   }

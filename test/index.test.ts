@@ -12627,6 +12627,7 @@ describe("RAG configuration and factories", () => {
       timeout: 30,
       ignored: true,
     });
+    expect(collectionExists).toHaveBeenNthCalledWith(1, "docs");
     expect(createCollection).toHaveBeenNthCalledWith(1, {
       collection_name: "docs",
       vectors_config: { size: 3, distance: "Cosine" },
