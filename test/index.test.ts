@@ -16234,6 +16234,47 @@ describe("core crew runtime", () => {
     ))).toBe(true);
   });
 
+  it("invokes CrewAgentExecutor sync step callbacks", () => {
+    const executor = new CrewAgentExecutor({});
+    const answer = new AgentFinish({ thought: "thinking", output: "test", text: "final" });
+    const callback = vi.fn();
+    executor.step_callback = callback;
+
+    executor._invoke_step_callback(answer);
+
+    expect(callback).toHaveBeenCalledOnce();
+    expect(callback).toHaveBeenCalledWith(answer);
+  });
+
+  it("schedules CrewAgentExecutor async step callbacks from sync invocation", async () => {
+    const executor = new CrewAgentExecutor({});
+    const answer = new AgentFinish({ thought: "thinking", output: "test", text: "final" });
+    let completed = false;
+    const callback = vi.fn(async () => {
+      await Promise.resolve();
+      completed = true;
+    });
+    executor.step_callback = callback;
+
+    executor._invoke_step_callback(answer);
+
+    expect(callback).toHaveBeenCalledOnce();
+    expect(callback).toHaveBeenCalledWith(answer);
+    expect(completed).toBe(false);
+    await Promise.resolve();
+    expect(completed).toBe(true);
+  });
+
+  it("allows missing CrewAgentExecutor step callbacks", () => {
+    const executor = new CrewAgentExecutor({});
+    const answer = new AgentFinish({ thought: "thinking", output: "test", text: "final" });
+    executor.step_callback = null;
+
+    expect(() => {
+      executor._invoke_step_callback(answer);
+    }).not.toThrow();
+  });
+
   it("surfaces async AgentExecutor step callback task errors without rejecting sync execution", async () => {
     const printSpy = vi.spyOn(PRINTER, "print").mockImplementation(() => undefined);
     try {
