@@ -749,7 +749,11 @@ export class AgentExecutor extends BaseAgentExecutor {
   getReadyTodosMethod(): "single_todo_ready" | "multiple_todos_ready" | "all_todos_complete" | "needs_replan" {
     const ready = this.state.todos.getReadyTodos();
     if (ready.length === 0) {
-      return this.state.todos.isComplete ? "all_todos_complete" : "needs_replan";
+      if (this.state.todos.isComplete) {
+        return "all_todos_complete";
+      }
+      this.state.last_replan_reason = "No todos are ready but plan is not complete — likely a dependency deadlock or missing completion";
+      return "needs_replan";
     }
     if (ready.length === 1) {
       const [todo] = ready;

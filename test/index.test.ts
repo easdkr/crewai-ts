@@ -12510,6 +12510,17 @@ describe("core crew runtime", () => {
     expect(executor.handle_step_observed_medium()).toBe("continue_plan");
     expect(executor.handle_continue_plan()).toBe("all_todos_complete");
 
+    const deadlockedExecutor = new AgentExecutor();
+    deadlockedExecutor.state.todos.items.push(new TodoItem({
+      stepNumber: 2,
+      description: "Blocked step",
+      dependsOn: [1],
+    }));
+    expect(deadlockedExecutor.get_ready_todos_method()).toBe("needs_replan");
+    expect(deadlockedExecutor.state.last_replan_reason).toBe(
+      "No todos are ready but plan is not complete — likely a dependency deadlock or missing completion",
+    );
+
     const snakePlanningExecutor = new AgentExecutor({
       agent: { planning_enabled: true } as unknown as Agent,
       task: { description: "Plan with snake case" },
