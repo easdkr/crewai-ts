@@ -37706,6 +37706,40 @@ describe("runtime state", () => {
     expect(registered).not.toContain("checkpoint_completed");
   });
 
+  it("skips automatic checkpoints while replaying or handling checkpoint events", () => {
+    const provider = {
+      checkpoint: vi.fn(() => "cp-1"),
+      acheckpoint: vi.fn(() => Promise.resolve("cp-1")),
+      from_checkpoint: vi.fn(() => "{}"),
+      afrom_checkpoint: vi.fn(() => Promise.resolve("{}")),
+    };
+    const cfg = new CheckpointConfig({
+      provider,
+      on_events: ["task_completed", "checkpoint_completed"],
+    });
+    const agent = new Agent({
+      role: "Replay Checkpoint Agent",
+      goal: "checkpoint",
+      backstory: "automatic",
+      checkpoint: cfg,
+    });
+    const state = new RuntimeState({ root: [agent], provider });
+
+    void crewaiEventBus.scoped_handlers(() => {
+      crewaiEventBus.replay(agent, new BaseEvent({ type: "task_completed" }));
+      _on_any_event(agent, new CheckpointCompletedEvent({
+        location: "memory",
+        provider: "fake",
+        checkpoint_id: "cp-source",
+        duration_ms: 1,
+      }), state);
+    });
+
+    expect(is_replaying()).toBe(false);
+    expect(provider.checkpoint).not.toHaveBeenCalled();
+    expect(state.checkpoint_id).toBeNull();
+  });
+
   it("serializes entities, event records, and lineage fields", () => {
     const record = new EventRecord();
     const event = new BaseEvent({ type: "crew_kickoff_started" });
