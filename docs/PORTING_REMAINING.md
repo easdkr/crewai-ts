@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 962 passing tests.
+- Test suite: 963 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -350,6 +350,7 @@ When more goal budget is available, continue from the behavioral parity audits b
 - `AgentExecutor.execute_native_tool` now mirrors upstream max-usage ordering: original tool usage limits are checked before deterministic available functions execute, recording the limit result without incrementing or invoking the tool.
 - Native tool argument handling now mirrors upstream deterministic behavior: malformed JSON tool-call arguments return a parse-error result before execution, dict arguments bypass parsing, valid JSON executes normally, and schema validation errors do not increment tool usage.
 - Native tool hook blocking now preserves upstream integration behavior by passing the blocked tool result through after-tool hooks without executing the tool body.
+- Failed direct native tool calls now emit upstream-style `ToolUsageErrorEvent` payloads with tool args, agent context, task context, and error text while preserving deterministic tool-message recording.
 - `CrewAgentExecutor._handle_native_tool_calls` now mirrors upstream native batch execution by running safe async tool-call batches concurrently while preserving ordered tool result messages and keeping `result_as_answer` / usage-limited tools on the sequential path.
 - `CrewAgentExecutor._execute_single_native_tool_call` now applies before/after tool hooks to direct native calls, including upstream-style blocked results that skip the tool body while still flowing through after-hook auditing.
 - `AgentExecutor` replanning now builds previous-execution context, temporarily enhances the task description for the planner, preserves completed/failed history, and replaces only pending todos when a ready structured plan is returned.

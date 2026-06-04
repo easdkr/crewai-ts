@@ -14732,6 +14732,54 @@ describe("core crew runtime", () => {
     expect(failedToolMessage.content).toContain("Error executing tool");
   });
 
+  it("emits upstream tool usage error events for failed AgentExecutor native tool calls", () => {
+    const events: ToolUsageErrorEvent[] = [];
+    const offError = crewaiEventBus.on("tool_usage_error", (_source, event) => {
+      events.push(event);
+    });
+    const failingTool = new StructuredTool({
+      name: "failing_tool",
+      description: "Always fails",
+      func: () => "fallback",
+    });
+    const agentInstance = new Agent({
+      role: "Calculator",
+      goal: "Calculate",
+      backstory: "Uses tools",
+    });
+    const executor = new AgentExecutor({
+      agent: agentInstance,
+      task: { id: "task-native-failure", description: "Use failing tool" },
+      originalTools: [failingTool],
+    });
+    Object.assign(executor, {
+      _available_functions: {
+        failing_tool: () => {
+          throw new Error("This tool always fails");
+        },
+      },
+    });
+    executor.state.pending_tool_calls = [
+      { id: "call_fail", function: { name: "failing_tool", arguments: "{\"value\":\"x\"}" } },
+    ];
+
+    try {
+      expect(executor.execute_native_tool()).toBe("native_tool_completed");
+    } finally {
+      offError();
+    }
+
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      tool_name: "failing_tool",
+      tool_args: { value: "x" },
+      agent_role: "Calculator",
+      agent_key: agentInstance.key,
+    });
+    expect(events[0]?.error).toContain("This tool always fails");
+    expect((events[0]?.from_task as { id?: string } | undefined)?.id).toBe("task-native-failure");
+  });
+
   it("records AgentExecutor native max-usage results before executing available functions", () => {
     let calls = 0;
     const limitedTool = new StructuredTool({

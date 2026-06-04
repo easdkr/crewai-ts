@@ -33,6 +33,7 @@ import {
   StepObservationCompletedEvent,
   StepObservationFailedEvent,
   StepObservationStartedEvent,
+  ToolUsageErrorEvent,
   crewaiEventBus,
 } from "./events.js";
 import { get_provider } from "./human-input.js";
@@ -1127,12 +1128,14 @@ export class AgentExecutor extends BaseAgentExecutor {
       if (argumentParseError) {
         failed = true;
         result = `Error: Failed to parse tool arguments as JSON: ${argumentParseError}. Please provide valid JSON arguments for the '${name}' tool.`;
+        this.emitNativeToolUsageError(name, asNativeArgsRecord(args), result);
       } else {
         try {
           result = this.executeNativeToolCall(name, asNativeArgsRecord(args));
         } catch (error) {
           failed = true;
           result = `Error executing tool: ${executorErrorMessage(error)}`;
+          this.emitNativeToolUsageError(name, asNativeArgsRecord(args), error);
           this.incrementTaskToolErrors();
         }
       }
@@ -2016,6 +2019,32 @@ export class AgentExecutor extends BaseAgentExecutor {
       return result;
     }
     return "Tool not found";
+  }
+
+  private emitNativeToolUsageError(name: string, args: Record<string, unknown>, error: unknown): void {
+    const tool = this.nativeToolByName(name);
+    const context: Record<string, unknown> = {};
+    const agentValue: unknown = this.agent;
+    if (agentValue && typeof agentValue === "object") {
+      const agentRecord = agentValue as Record<string, unknown>;
+      context.from_agent = agentValue;
+      if (typeof agentRecord.key === "string") {
+        context.agent_key = agentRecord.key;
+      }
+      if (typeof agentRecord.role === "string") {
+        context.agent_role = agentRecord.role;
+      }
+    }
+    if (this.task !== null && this.task !== undefined) {
+      context.from_task = this.task;
+    }
+    crewaiEventBus.emit(tool ?? this, new ToolUsageErrorEvent({
+      toolName: sanitizeToolName(name),
+      toolArgs: args,
+      toolClass: tool?.constructor.name ?? null,
+      error,
+      ...context,
+    }));
   }
 
   private availableNativeFunctions(): Record<string, (input?: unknown) => unknown> {
