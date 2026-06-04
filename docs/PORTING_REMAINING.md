@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 997 passing tests.
+- Test suite: 998 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -206,6 +206,7 @@ High-value behavior audits still worth running:
 2. **Latest upstream baseline advancement**
    - Latest upstream post-baseline root/subpath export gaps are currently closed.
    - Snowflake Cortex completion is covered as a deterministic provider shim: token/account URL normalization, generic `create_llm("snowflake/...")` native routing, Claude-family message guards, capability flags, and request-parameter shaping are release-gated without live Snowflake credentials.
+   - Snowflake Claude content-block histories are release-gated for upstream tool-result constraints: provider-native `toolUse` / `toolResult` arrays bypass the generic string-only formatter, dangling tool-use blocks are removed, only matching tool results are summarized, unrelated results are dropped, and streaming params include usage.
    - Latest NVIDIA Nemotron docs are covered as deterministic provider metadata: the documented `nvidia_nim/nvidia/nvidia-nemotron-3-ultra-550b-a55b` model string is in the NIM model list, and hosted NIM accepts both `NVIDIA_NIM_API_KEY` and the documented `NVIDIA_API_KEY` env alias.
    - Flow DSL definition extraction is covered with a deterministic `buildFlowDefinition` / `build_flow_definition` shim over TS decorator metadata, including nested conditions, state/config snapshots, human-feedback routing metadata, explicit router emits, and dynamic routers with no static emit contract.
    - Flow runtime OR-listener rearming is covered for latest upstream: `_rearm_or_listeners_for_trigger` clears only fired OR listeners whose condition includes the router-emitted trigger and mutates the optional `rearmable` set like upstream.

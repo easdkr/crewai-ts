@@ -1,4 +1,4 @@
-import { ConfiguredLLM, CONTEXT_WINDOW_USAGE_RATIO, LocalFileUploader, registerLLMProviderFactory, type BaseLLMOptions, type LLMAvailableFunction, type LLMCallOptions, type LLMMessageInput, type LLMResponse } from "./llm.js";
+import { ConfiguredLLM, CONTEXT_WINDOW_USAGE_RATIO, LocalFileUploader, registerLLMProviderFactory, stripCacheBreakpoint, type BaseLLMOptions, type LLMAvailableFunction, type LLMCallOptions, type LLMMessageInput, type LLMResponse } from "./llm.js";
 import { convertToolsToOpenAISchema } from "./agent-utils.js";
 import { OpenAICompletion, type OpenAICompletionOptions } from "./openai-completion.js";
 import type { LLMMessage, Tool } from "./types.js";
@@ -25,6 +25,7 @@ export const SNOWFLAKE_TOKEN_ENV_VARS = Object.freeze([
   "SNOWFLAKE_TOKEN",
   "SNOWFLAKE_JWT",
 ] as const);
+const LLM_ROLES = new Set(["system", "user", "assistant", "tool"]);
 
 const BEDROCK_DOCUMENT_FORMATS: Record<string, string> = {
   "application/pdf": "pdf",
@@ -2137,7 +2138,9 @@ export class SnowflakeCompletion extends OpenAICompletion {
   }
 
   override formatMessages(messages: LLMMessageInput): LLMMessage[] {
-    let formattedMessages = super.formatMessages(messages);
+    let formattedMessages = SnowflakeCompletion.hasProviderContentBlocks(messages)
+      ? SnowflakeCompletion.formatProviderContentBlockMessages(messages)
+      : super.formatMessages(messages);
     if (!this.isClaudeModel()) {
       return formattedMessages;
     }
@@ -2148,6 +2151,27 @@ export class SnowflakeCompletion extends OpenAICompletion {
 
   override _format_messages(messages: LLMMessageInput): LLMMessage[] {
     return this.formatMessages(messages);
+  }
+
+  static hasProviderContentBlocks(messages: LLMMessageInput): boolean {
+    return Array.isArray(messages) && messages.some((message) => !Array.isArray(message) && Array.isArray(readObject(message).content));
+  }
+
+  static formatProviderContentBlockMessages(messages: LLMMessageInput): LLMMessage[] {
+    if (typeof messages === "string") {
+      return [{ role: "user", content: messages }];
+    }
+    return messages.map((message, index) => {
+      if (Array.isArray(message)) {
+        throw new Error(`Message at index ${String(index)} must be a dictionary.`);
+      }
+      if (!LLM_ROLES.has(String(message.role)) || (typeof message.content !== "string" && !Array.isArray(message.content))) {
+        throw new Error(`Message at index ${String(index)} must have 'role' and 'content' keys.`);
+      }
+      const copy = { ...message };
+      stripCacheBreakpoint(copy);
+      return copy as LLMMessage;
+    });
   }
 
   isClaudeModel(): boolean {
@@ -2241,7 +2265,7 @@ export class SnowflakeCompletion extends OpenAICompletion {
       if (typeof content === "string") {
         summaries.push(`${name}: ${content}`);
       } else if (Array.isArray(content)) {
-        const extractedText = SnowflakeCompletion.extractToolResultText(content);
+        const extractedText = SnowflakeCompletion.extractToolResultText(content, expectedIds);
         summaries.push(`${name}: ${extractedText || String(content)}`);
       }
     }
@@ -2254,10 +2278,14 @@ export class SnowflakeCompletion extends OpenAICompletion {
     return SnowflakeCompletion.summarizeToolResults(messages, expectedIds);
   }
 
-  static extractToolResultText(content: readonly unknown[]): string {
+  static extractToolResultText(content: readonly unknown[], expectedIds: Set<string> | null = null): string {
     const texts: string[] = [];
     for (const item of content) {
       const toolResult = readObject(readObject(item).toolResult);
+      const toolUseId = scalarToString(toolResult.toolUseId);
+      if (expectedIds && (toolUseId === null || !expectedIds.has(toolUseId))) {
+        continue;
+      }
       const resultContent = toolResult.content;
       if (!Array.isArray(resultContent)) {
         continue;

@@ -29375,6 +29375,79 @@ describe("LLM providers", () => {
     ]);
   });
 
+  it("normalizes Snowflake Claude tool-result histories from provider content blocks", () => {
+    const snowflake = new SnowflakeCompletion({
+      model: "claude-sonnet-4-5",
+      api_key: "snowflake-token",
+      account_url: "https://acme.snowflakecomputing.com",
+      stream: true,
+    });
+
+    const formatted = (snowflake as unknown as {
+      _format_messages(messages: Array<LLMMessage & Record<string, unknown>>): Array<LLMMessage & Record<string, unknown>>;
+    })._format_messages([
+      { role: "user", content: "Use the tool." },
+      {
+        role: "assistant",
+        content: [
+          {
+            toolUse: {
+              toolUseId: "tooluse_1",
+              name: "lookup",
+              input: {},
+            },
+          },
+        ],
+      },
+      {
+        role: "user",
+        content: [
+          {
+            toolResult: {
+              toolUseId: "tooluse_1",
+              content: [{ text: "valid result" }],
+            },
+          },
+          {
+            toolResult: {
+              toolUseId: "unrelated_tooluse",
+              content: [{ text: "unrelated result" }],
+            },
+          },
+        ],
+      },
+      {
+        role: "assistant",
+        content: [
+          {
+            toolUse: {
+              toolUseId: "dangling_tooluse",
+              name: "lookup",
+              input: {},
+            },
+          },
+        ],
+      },
+      { role: "user", content: "Continue." },
+    ]);
+
+    expect(formatted).toEqual([
+      { role: "user", content: "Use the tool." },
+      { role: "user", content: "Tool results from previous tool calls:\n- tool: valid result" },
+      { role: "user", content: "Continue." },
+    ]);
+    expect(JSON.stringify(formatted)).not.toContain("unrelated result");
+    expect(JSON.stringify(formatted)).not.toContain("dangling_tooluse");
+
+    const params = (snowflake as unknown as {
+      _prepare_completion_params(messages: LLMMessage[]): Record<string, unknown>;
+    })._prepare_completion_params([{ role: "user", content: "Hello" }]);
+    expect(params).toMatchObject({
+      stream: true,
+      stream_options: { include_usage: true },
+    });
+  });
+
   it("resolves Snowflake Cortex credentials and accounts from environment fallbacks", () => {
     const previousPat = process.env.SNOWFLAKE_PAT;
     const previousToken = process.env.SNOWFLAKE_TOKEN;
