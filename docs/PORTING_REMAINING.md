@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 1014 passing tests.
+- Test suite: 1015 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -399,7 +399,7 @@ When more goal budget is available, continue from the behavioral parity audits b
 - Crew planning summaries now read upstream direct `agent.knowledge_sources` as well as initialized local knowledge stores, preserving deterministic agent knowledge context in planner prompts.
 - `AgentExecutor.call_llm_and_parse` and `call_llm_native_tools` now execute deterministic LLM calls, enforce local RPM hooks, omit structured `response_model` requests while tools are active, and route native tool-call lists into `pending_tool_calls`.
 - Prompt generation now has default-gate coverage for upstream no-thought-leakage behavior: no-tool and native-tool task prompts avoid ReAct `Thought:` / `Action Input:` instructions and job-depends/use-format pressure, while ReAct prompts with non-native tools still retain the tool-action format.
-- `AgentExecutor.observe_step_result` now respects upstream `PlanningConfig.observe_steps` and `reasoning_effort`: medium/high run planner observation by default, low and explicit `observe_steps=false` use heuristic observation, and observation audit logs record whether an LLM observation occurred.
+- `AgentExecutor.observe_step_result` now respects upstream `PlanningConfig.observe_steps` and `reasoning_effort`: medium/high run planner observation by default, low and explicit `observe_steps=false` use heuristic observation, failed low-effort observations mark the running todo failed without triggering replans, and observation audit logs record whether an LLM observation occurred.
 - `StepExecutor.execute` now runs `TodoItem` inputs through isolated step execution and returns a failed `StepResult` when an expected upstream `tool_to_use` is available but was not called.
 
 ## Completed In Current Flow/Persistence Pass

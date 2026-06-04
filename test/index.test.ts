@@ -14616,6 +14616,35 @@ describe("core crew runtime", () => {
     expect(executor.state.last_replan_reason).toBeNull();
   });
 
+  it("keeps failed low-effort AgentExecutor observations from triggering replans", () => {
+    const executor = new AgentExecutor({
+      agent: {
+        planning_config: new PlanningConfig({ reasoning_effort: "low" }),
+      } as unknown as Agent,
+    });
+    executor.state.todos.items = [
+      new TodoItem({
+        stepNumber: 1,
+        description: "Use a brittle tool",
+        status: TodoStatus.RUNNING,
+        result: "Error: tool failed",
+      }),
+    ];
+    executor.state.observations[1] = new StepObservation({
+      step_completed_successfully: false,
+      key_information_learned: "",
+      remaining_plan_still_valid: true,
+      needs_full_replan: false,
+    });
+
+    expect(executor.handle_step_observed_low()).toBe("continue_plan");
+    expect(executor.state.todos.get_by_step_number(1)).toMatchObject({
+      status: TodoStatus.FAILED,
+      result: "Error: tool failed",
+    });
+    expect(executor.state.last_replan_reason).toBeNull();
+  });
+
   it("uses PlannerObserver LLM observation for medium/high AgentExecutor steps", () => {
     const calls: LLMMessage[][] = [];
     const observationEvents: Array<Record<string, unknown>> = [];
