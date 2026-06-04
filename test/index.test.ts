@@ -16626,6 +16626,24 @@ describe("core crew runtime", () => {
     expect(reset).toHaveBeenCalledTimes(3);
   });
 
+  it("rejects non-mapping kickoffForEach inputs", async () => {
+    const researcher = new Agent({
+      role: "{topic} Researcher",
+      goal: "Find facts",
+      backstory: "Careful analyst",
+      llm: () => "done",
+    });
+    const taskInstance = new Task({
+      description: "Research {topic}",
+      expectedOutput: "A concise brief",
+      agent: researcher,
+    });
+    const crewInstance = new Crew({ agents: [researcher], tasks: [taskInstance] });
+    const invalidInput = "invalid input" as unknown as InputValues;
+
+    await expect(crewInstance.kickoffForEach({ inputs: [invalidInput] })).rejects.toThrow("inputs must be a dict or Mapping");
+  });
+
   it("runs kickoffForEachAsync concurrently", async () => {
     const completed: string[] = [];
     const researcher = new Agent({

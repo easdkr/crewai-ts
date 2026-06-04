@@ -840,6 +840,7 @@ export class Crew {
   }
 
   async kickoffForEach(options: KickoffForEachOptions): Promise<CrewOutput[]> {
+    const inputsList = validateKickoffForEachInputs(options.inputs);
     if (this.stream) {
       const output = new CrewStreamingOutput(async () => {
         const results = await this.withStreamDisabled(async () => await this.kickoffForEach(options));
@@ -850,7 +851,7 @@ export class Crew {
     }
     let totalUsage = emptyUsageMetrics();
     const outputs: CrewOutput[] = [];
-    for (const inputs of options.inputs) {
+    for (const inputs of inputsList) {
       const crew = this.copy();
       const output = await crew.kickoff({
         inputs,
@@ -871,6 +872,7 @@ export class Crew {
   }
 
   async kickoffForEachAsync(options: KickoffForEachOptions): Promise<CrewOutput[]> {
+    const inputsList = validateKickoffForEachInputs(options.inputs);
     if (this.stream) {
       const output = new CrewStreamingOutput(async () => {
         const results = await this.withStreamDisabled(async () => await this.kickoffForEachAsync(options));
@@ -880,7 +882,7 @@ export class Crew {
       return [output as unknown as CrewOutput];
     }
     const outputs = await Promise.all(
-      options.inputs.map(async (inputs) => {
+      inputsList.map(async (inputs) => {
         const crew = this.copy();
         return await crew.kickoffAsync({
           inputs,
@@ -903,6 +905,7 @@ export class Crew {
   }
 
   async akickoffForEach(options: KickoffForEachOptions): Promise<CrewOutput[]> {
+    const inputsList = validateKickoffForEachInputs(options.inputs);
     if (this.stream) {
       const output = new CrewStreamingOutput(async () => {
         const results = await this.withStreamDisabled(async () => await this.akickoffForEach(options));
@@ -912,7 +915,7 @@ export class Crew {
       return [output as unknown as CrewOutput];
     }
     const outputs = await Promise.all(
-      options.inputs.map(async (inputs) => {
+      inputsList.map(async (inputs) => {
         const crew = this.copy();
         return await crew.akickoff({
           inputs,
@@ -2898,6 +2901,18 @@ function agentTrainingId(agent: Agent): string {
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function validateKickoffForEachInputs(inputs: readonly unknown[]): readonly InputValues[] {
+  if (!Array.isArray(inputs)) {
+    throw new TypeError("inputs must be a list of dict or Mapping values");
+  }
+  for (const input of inputs) {
+    if (!isPlainRecord(input)) {
+      throw new TypeError("inputs must be a dict or Mapping");
+    }
+  }
+  return inputs as readonly InputValues[];
 }
 
 function withTokenUsage(output: CrewOutput, tokenUsage: UsageMetrics): CrewOutput {
