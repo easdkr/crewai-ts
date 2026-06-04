@@ -19758,6 +19758,19 @@ describe("agent planning", () => {
     expect(PlannerObserver._parseObservationResponse("not json").remaining_plan_still_valid).toBe(false);
   });
 
+  it("passes through upstream StepObservation parser responses unchanged", () => {
+    const observation = new StepObservation({
+      step_completed_successfully: false,
+      key_information_learned: "disk full",
+      remaining_plan_still_valid: false,
+      needs_full_replan: true,
+      replan_reason: "disk is full",
+    });
+
+    expect(PlannerObserver._parse_observation_response(observation)).toBe(observation);
+    expect(new PlannerObserver()._parse_observation_response(observation)).toBe(observation);
+  });
+
   it("observes completed planner steps by parsing deterministic LLM responses", () => {
     const calls: LLMMessage[][] = [];
     const observer = new PlannerObserver(
