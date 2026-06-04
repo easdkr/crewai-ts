@@ -37,7 +37,7 @@ import {
 import { get_provider } from "./human-input.js";
 import { ToolCallHookContext, runAfterToolCallHooks, runBeforeToolCallHooks } from "./hooks.js";
 import { I18N_DEFAULT } from "./i18n.js";
-import { BaseLLM, callStopOverrideSync, UsageMetrics, type LLMResponse } from "./llm.js";
+import { BaseLLM, callStopOverrideSync, UsageMetrics, type LLMCallOptions, type LLMResponse } from "./llm.js";
 import { PRINTER } from "./logger.js";
 import { sanitize_scope_name } from "./memory.js";
 import { StepExecutionContext, StepResult } from "./step-execution-context.js";
@@ -2795,7 +2795,7 @@ export class StepExecutor {
       if (stepTimeout !== null && startTime !== null && Date.now() - startTime >= stepTimeout * 1000) {
         return accumulatedResults.length > 0 ? accumulatedResults.join("\n\n") : `Step timed out after ${String(stepTimeout)}s`;
       }
-      const answer = await this.callStepLlm(messages);
+      const answer = await this.callStepLlm(messages, this.buildNativeStepLlmOptions());
       if (!answer) {
         throw new Error("Empty response from LLM");
       }
@@ -2879,7 +2879,7 @@ export class StepExecutor {
     return StepExecutor._build_observation_message(toolResult);
   }
 
-  private async callStepLlm(messages: readonly LLMMessage[]): Promise<LLMResponse> {
+  private async callStepLlm(messages: readonly LLMMessage[], options?: LLMCallOptions): Promise<LLMResponse> {
     if (!this.agent?.llm) {
       return stringifyStepResult(messages.at(-1)?.content ?? "");
     }
@@ -2887,9 +2887,17 @@ export class StepExecutor {
       return stringifyStepResult(messages.at(-1)?.content ?? "");
     }
     if (typeof this.agent.llm === "function") {
-      return await this.agent.llm(messages);
+      return await this.agent.llm(messages, options);
     }
-    return await this.agent.llm.call(messages);
+    return await this.agent.llm.call(messages, options);
+  }
+
+  private buildNativeStepLlmOptions(): LLMCallOptions | undefined {
+    if (this.tools.length === 0) {
+      return undefined;
+    }
+    const [tools] = setupNativeTools(this.tools);
+    return tools.length > 0 ? { tools } : undefined;
   }
 
   private async runToolByName(name: string, args: unknown): Promise<unknown> {

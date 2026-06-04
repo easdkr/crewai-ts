@@ -14821,6 +14821,30 @@ describe("core crew runtime", () => {
       available_functions: { lookup: () => "unused" },
     });
     await expect(modelLikeNativeExecutor._execute_native([], [])).resolves.toBe("{\"status\":\"complete\"}");
+
+    const nativeToolOptions: Array<LLMCallOptions | undefined> = [];
+    const nativeToolExecutor = new StepExecutor({
+      agent: new Agent({
+        role: "Native",
+        goal: "Expose tools",
+        backstory: "Executor",
+        llm: (_messages, options): LLMResponse => {
+          nativeToolOptions.push(options);
+          return "tool schemas received";
+        },
+      }),
+      tools: [new StructuredTool({
+        name: "Lookup Tool",
+        description: "Lookup facts",
+        func: () => "unused",
+        resultAsAnswer: true,
+      })],
+    });
+    await expect(nativeToolExecutor._execute_native([], [])).resolves.toBe("tool schemas received");
+    const serializedNativeTools = JSON.stringify(nativeToolOptions[0]?.tools);
+    expect(serializedNativeTools).toContain("\"type\":\"function\"");
+    expect(serializedNativeTools).toContain("\"name\":\"lookup_tool\"");
+    expect(serializedNativeTools).toContain("\"description\":\"Lookup facts\"");
   });
 
   it("exposes upstream Agent and BaseAgent compatibility methods", async () => {

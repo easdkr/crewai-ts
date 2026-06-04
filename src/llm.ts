@@ -27,8 +27,10 @@ import {
 
 export type LLMResponse = string | ToolCalling;
 
+export type LLMToolOption = Tool | ({ readonly name?: string } & Record<string, unknown>);
+
 export type LLMCallOptions = {
-  tools?: readonly Tool[];
+  tools?: readonly LLMToolOption[];
   availableFunctions?: Record<string, unknown>;
   available_functions?: Record<string, unknown>;
   responseModel?: unknown;
