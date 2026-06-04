@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 886 passing tests.
+- Test suite: 887 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -136,6 +136,7 @@ This register is the source of truth for continuing porting work while parity sc
 - AgentExecutor native-tool initialization is release-gated for upstream first-iteration semantics: `initialize_reasoning` enables native tool mode only when the LLM reports function-calling support and original tools exist, and prepares OpenAI tool schemas plus available function mappings.
 - AgentExecutor training feedback context is release-gated for upstream human-feedback semantics: executor-level `_is_training_mode` and `_handle_crew_training_output` integrate with `SyncHumanInputProvider` training feedback, preserving initial and improved outputs through the crew training-output shim.
 - AgentExecutor force-final handling is release-gated for upstream max-iteration semantics: `ensure_force_final_answer` delegates through `handleMaxIterationsExceeded`, appends the forced-final prompt, invokes the configured LLM with callbacks, and stores the parsed final answer.
+- Agent utility async LLM calls are release-gated for upstream `aget_llm_response` semantics: async helpers prefer `acall`, preserve callback/options forwarding, reuse response validation, and propagate LLM exceptions.
 
 ## Known Remaining Porting Areas
 
@@ -237,6 +238,7 @@ When more goal budget is available, continue from the behavioral parity audits b
 - `BaseLLM._emit_call_completed_event` now normalizes usage payloads before constructing `LLMCallCompletedEvent`, preserving upstream dict/model-dump behavior and filtering private usage fields in the event stream.
 - `LLMCallHookContext` now mirrors upstream executor-derived initialization by taking `messages`, `agent`, `task`, `crew`, `llm`, and `iterations` from the executor when explicit context fields are not supplied, while preserving the mutable `messages` reference used by before-call hooks.
 - `LLMCallHookContext.request_human_input` and `ToolCallHookContext.request_human_input` now mirror upstream approval-hook behavior in a deterministic TS shim: live-update formatters are paused/resumed around input, responses are trimmed, Enter returns an empty string, and resume runs even when input throws. The default Node path remains non-blocking unless a host `globalThis.prompt` is supplied.
+- `aget_llm_response` now mirrors upstream async LLM utility behavior by calling `llm.acall` when available while preserving shared pre-call hooks, response validation, and exception propagation.
 - `CrewBase` now registers hook-decorated class methods per instance, preserving bound `this`, tool/agent filters, global registration order, and `_registered_hook_functions` tracking without adding name-only helper surface.
 - `ConsoleFormatter.pause_live_updates` now mirrors upstream HITL behavior by stopping and clearing an active streaming session, keeping repeated pauses safe, and letting later stream chunks create a new deterministic live-session shim.
 - `EventBus.aemit` now mirrors upstream async emission behavior by running only async handlers and ignoring dependency ordering on that path; sync handlers and dependency plans remain covered by `emit`.

@@ -916,6 +916,7 @@ import {
   handlePartialJson,
   extractTaskSection,
   formatMessageForLLM,
+  aget_llm_response,
   getLlmResponse,
   get_crew_context,
   handleAgentActionCore,
@@ -7482,6 +7483,30 @@ describe("agent utility helpers", () => {
       clearBeforeLlmCallHooks();
       clearAfterLlmCallHooks();
     }
+  });
+
+  it("uses async LLM acall in aget_llm_response and preserves validation semantics", async () => {
+    const messages: LLMMessage[] = [{ role: "user", content: "test" }];
+    const seen: Array<{ messages: readonly LLMMessage[]; options?: Record<string, unknown> }> = [];
+    const asyncLlm = {
+      acall(callMessages: readonly LLMMessage[], options?: Record<string, unknown>) {
+        seen.push({ messages: callMessages, options });
+        return Promise.resolve("LLM response");
+      },
+      call() {
+        throw new Error("sync call should not be used");
+      },
+    };
+
+    await expect(aget_llm_response(asyncLlm, messages, { callbacks: [] })).resolves.toBe("LLM response");
+    expect(seen).toEqual([{ messages, options: { callbacks: [] } }]);
+
+    await expect(aget_llm_response({
+      acall: () => Promise.resolve(""),
+    }, messages)).rejects.toThrow("Invalid response from LLM call");
+    await expect(aget_llm_response({
+      acall: () => Promise.reject(new Error("LLM error")),
+    }, messages)).rejects.toThrow("LLM error");
   });
 
   it("requests a final answer when max iterations are exceeded", async () => {

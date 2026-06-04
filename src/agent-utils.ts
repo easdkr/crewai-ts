@@ -459,7 +459,26 @@ export async function getLlmResponse(
 }
 
 export const get_llm_response = getLlmResponse;
-export const aget_llm_response = getLlmResponse;
+
+export async function agetLlmResponse(
+  llm: {
+    acall?: (messages: readonly LLMMessage[], options?: Record<string, unknown>) => MaybePromise<unknown>;
+    call?: (messages: readonly LLMMessage[], options?: Record<string, unknown>) => MaybePromise<unknown>;
+  },
+  messages: readonly LLMMessage[],
+  options: Record<string, unknown> = {},
+): Promise<unknown> {
+  const rawExecutorContext = options.executorContext ?? options.executor_context;
+  const executorContext: AgentUtilsExecutorContext | null = isAgentUtilsExecutorContext(rawExecutorContext)
+    ? rawExecutorContext
+    : null;
+  const resolvedMessages = await _prepare_llm_call(executorContext, messages);
+  const invoke = llm.acall ?? llm.call;
+  const answer = await invoke?.call(llm, resolvedMessages, withoutExecutorOptions(options));
+  return await _validate_and_finalize_llm_response(answer, executorContext, resolvedMessages);
+}
+
+export const aget_llm_response = agetLlmResponse;
 
 export function processLlmResponse(response: unknown, useStopWords = true): unknown {
   if (response instanceof AgentAction || response instanceof AgentFinish || typeof response !== "string") {
