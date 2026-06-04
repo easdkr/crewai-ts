@@ -2469,6 +2469,15 @@ describe("environment, logging, and file store utilities", () => {
     );
   });
 
+  it("skips unsupported OpenAI multimodal text files", () => {
+    const files = {
+      doc: new TextFile({ source: Buffer.from("hello world") }),
+    };
+
+    expect(format_multimodal_content(files, "gpt-4o")).toEqual([]);
+    expect(formatMultimodalContent(files, "openai/gpt-4o")).toEqual([]);
+  });
+
   it("validates upstream crewai-files provider constraints deterministically", () => {
     const png = Buffer.concat([
       Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
