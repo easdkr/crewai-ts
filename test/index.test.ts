@@ -33078,6 +33078,50 @@ describe("knowledge", () => {
     expect(crewKnowledge.query("Nest", { scoreThreshold: null })).toEqual([]);
   });
 
+  it("passes crew and agent knowledge systems to resetKnowledge for knowledge resets", () => {
+    const crewKnowledge = new Knowledge({
+      sources: [new StringKnowledgeSource("Crew knowledge reset target.")],
+    });
+    const researcherKnowledge = new Knowledge({
+      sources: [new StringKnowledgeSource("Researcher knowledge reset target.")],
+    });
+    const writerKnowledge = new Knowledge({
+      sources: [new StringKnowledgeSource("Writer knowledge reset target.")],
+    });
+    const researcher = new Agent({
+      role: "Researcher",
+      goal: "Use knowledge",
+      backstory: "Careful analyst",
+      knowledge: researcherKnowledge,
+    });
+    const writer = new Agent({
+      role: "Writer",
+      goal: "Use knowledge",
+      backstory: "Careful writer",
+      knowledge: writerKnowledge,
+    });
+    const crewInstance = new Crew({
+      agents: [researcher, writer],
+      knowledge: crewKnowledge,
+    });
+    const resetKnowledge = vi.spyOn(crewInstance, "resetKnowledge").mockImplementation(() => undefined);
+
+    crewInstance.reset_memories("knowledge");
+    expect(resetKnowledge).toHaveBeenLastCalledWith([
+      crewKnowledge,
+      researcherKnowledge,
+      writerKnowledge,
+    ]);
+
+    crewInstance.reset_memories("agent_knowledge");
+    expect(resetKnowledge).toHaveBeenLastCalledWith([
+      researcherKnowledge,
+      writerKnowledge,
+    ]);
+
+    resetKnowledge.mockRestore();
+  });
+
   it("resets only agent knowledge with agent_knowledge", () => {
     const agentKnowledge = new Knowledge({
       sources: [new StringKnowledgeSource("Agent knowledge prefers standard decorators.")],
