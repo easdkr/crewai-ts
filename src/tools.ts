@@ -1760,6 +1760,7 @@ export class ToolUsage {
       toolArgs: {},
       toolClass: renderToolsDescription(this.tools),
       error,
+      ...this.toolUsageErrorEventContext(toolName, {}),
     }));
     throw new Error(error);
   }
@@ -1855,6 +1856,7 @@ export class ToolUsage {
       toolArgs: this.action?.toolInput ?? "",
       toolClass: this.constructor.name,
       error: finalError,
+      ...this.toolUsageErrorEventContext(this.action?.tool ?? "", this.action?.toolInput ?? ""),
     }));
   }
 
@@ -1931,6 +1933,16 @@ export class ToolUsage {
       tool_class: getConstructorName(tool),
       agent_key: getStringProperty(this.agent, "key") ?? "unknown",
       agent_role: getStringProperty(this.agent, "_original_role") ?? getStringProperty(this.agent, "role") ?? "unknown",
+      ...this.fingerprintContext,
+    };
+  }
+
+  private toolUsageErrorEventContext(toolName: string, toolArgs: Record<string, unknown> | string): Record<string, unknown> {
+    return {
+      agent_key: getStringProperty(this.agent, "key") ?? "unknown",
+      agent_role: getStringProperty(this.agent, "_original_role") ?? getStringProperty(this.agent, "role") ?? "unknown",
+      tool_name: toolName,
+      tool_args: toolArgs,
       ...this.fingerprintContext,
     };
   }

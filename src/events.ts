@@ -1151,31 +1151,77 @@ export class ToolUsageErrorEvent extends BaseEvent {
 
 export class ToolValidateInputErrorEvent extends BaseEvent {
   readonly toolName: string;
+  readonly tool_name: string;
   readonly toolArgs: Record<string, unknown> | string;
+  readonly tool_args: Record<string, unknown> | string;
   readonly toolClass: string | null;
+  readonly tool_class: string | null;
   readonly error: string;
 
-  constructor(options: { toolName: string; toolArgs: Record<string, unknown> | string; toolClass?: string | null; error: unknown }) {
+  constructor(options: {
+    toolName?: string;
+    tool_name?: string;
+    toolArgs?: Record<string, unknown> | string;
+    tool_args?: Record<string, unknown> | string;
+    toolClass?: string | null;
+    tool_class?: string | null;
+    error: unknown;
+  } & Record<string, unknown>) {
     super({ type: "tool_validate_input_error", sourceType: "tool" });
-    this.toolName = options.toolName;
-    this.toolArgs = options.toolArgs;
-    this.toolClass = options.toolClass ?? null;
+    this.toolName = options.toolName ?? options.tool_name ?? "";
+    this.tool_name = this.toolName;
+    this.toolArgs = options.toolArgs ?? options.tool_args ?? {};
+    this.tool_args = this.toolArgs;
+    this.toolClass = options.toolClass ?? options.tool_class ?? null;
+    this.tool_class = this.toolClass;
     this.error = formatError(options.error);
+    Object.assign(this, extraEventOptions(options, [
+      "toolName",
+      "tool_name",
+      "toolArgs",
+      "tool_args",
+      "toolClass",
+      "tool_class",
+      "error",
+    ]));
   }
 }
 
 export class ToolSelectionErrorEvent extends BaseEvent {
   readonly toolName: string;
+  readonly tool_name: string;
   readonly toolArgs: Record<string, unknown> | string;
+  readonly tool_args: Record<string, unknown> | string;
   readonly toolClass: string | null;
+  readonly tool_class: string | null;
   readonly error: string;
 
-  constructor(options: { toolName: string; toolArgs: Record<string, unknown> | string; toolClass?: string | null; error: unknown }) {
+  constructor(options: {
+    toolName?: string;
+    tool_name?: string;
+    toolArgs?: Record<string, unknown> | string;
+    tool_args?: Record<string, unknown> | string;
+    toolClass?: string | null;
+    tool_class?: string | null;
+    error: unknown;
+  } & Record<string, unknown>) {
     super({ type: "tool_selection_error", sourceType: "tool" });
-    this.toolName = options.toolName;
-    this.toolArgs = options.toolArgs;
-    this.toolClass = options.toolClass ?? null;
+    this.toolName = options.toolName ?? options.tool_name ?? "";
+    this.tool_name = this.toolName;
+    this.toolArgs = options.toolArgs ?? options.tool_args ?? {};
+    this.tool_args = this.toolArgs;
+    this.toolClass = options.toolClass ?? options.tool_class ?? null;
+    this.tool_class = this.toolClass;
     this.error = formatError(options.error);
+    Object.assign(this, extraEventOptions(options, [
+      "toolName",
+      "tool_name",
+      "toolArgs",
+      "tool_args",
+      "toolClass",
+      "tool_class",
+      "error",
+    ]));
   }
 }
 

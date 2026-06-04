@@ -27216,6 +27216,9 @@ describe("tools", () => {
         text: "",
       }),
       agent: {
+        key: "agent-key",
+        role: "Researcher",
+        _original_role: "Principal Researcher",
         security_config: {
           fingerprint: { to_dict: () => ({ hash: "agent-fingerprint" }) },
         },
@@ -27282,6 +27285,17 @@ describe("tools", () => {
     expect(task.tools_errors).toBe(1);
     expect(seen[0]).toBeInstanceOf(ToolValidateInputErrorEvent);
     expect(seen[1]).toBeInstanceOf(ToolSelectionErrorEvent);
+    expect(seen[0]).toMatchObject({
+      agent_key: "agent-key",
+      agent_role: "Principal Researcher",
+      tool_name: "Search Tool",
+    });
+    expect(seen[1]).toMatchObject({
+      agent_key: "agent-key",
+      agent_role: "Principal Researcher",
+      tool_name: "Missing Tool",
+      tool_args: {},
+    });
   });
 
   it("supports upstream structured tool invocation and snake_case aliases", async () => {
