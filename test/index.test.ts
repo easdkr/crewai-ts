@@ -7691,6 +7691,35 @@ describe("agent utility helpers", () => {
     expect(await availableFunctions.search_tool?.({ query: "CrewAI" })).toBe("searched CrewAI");
   });
 
+  it("validates tool run inputs before usage accounting", async () => {
+    const seenArgs: Record<string, unknown>[] = [];
+    const toolInstance = new StructuredTool({
+      name: "code executor",
+      description: "Execute code snippets",
+      argsSchema: {
+        code: { type: "string", required: true },
+        language: { type: "string", default: "python" },
+      },
+      func: (args) => {
+        seenArgs.push({ ...args });
+        return `Executed ${String(args.language)}: ${String(args.code)}`;
+      },
+    });
+
+    expect(toolInstance.run({ code: "1+1", extra_hallucinated_field: "junk" }))
+      .toBe("Executed python: 1+1");
+    expect(seenArgs).toEqual([{ code: "1+1", language: "python" }]);
+    expect(toolInstance.current_usage_count).toBe(1);
+
+    expect(() => toolInstance.run({ language: "python" }))
+      .toThrow("Tool 'code_executor' missing required argument 'code'.");
+    expect(toolInstance.current_usage_count).toBe(1);
+
+    await expect(toolInstance.arun({ wrong_arg: "value" }))
+      .rejects.toThrow("Tool 'code_executor' missing required argument 'code'.");
+    expect(toolInstance.current_usage_count).toBe(1);
+  });
+
   it("formats LLM messages and extracts enriched task sections", () => {
     expect(formatMessageForLLM("hello\n\n", "assistant")).toEqual({ role: "assistant", content: "hello" });
     expect(hasReachedMaxIterations(3, 3)).toBe(true);
