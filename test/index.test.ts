@@ -13132,6 +13132,37 @@ describe("core crew runtime", () => {
     ]);
   });
 
+  it("increments task tool errors for failed AgentExecutor native tools", () => {
+    const task = {
+      toolsErrors: 0,
+      tools_errors: 0,
+      increment_tools_errors() {
+        this.toolsErrors += 1;
+        this.tools_errors = this.toolsErrors;
+      },
+    };
+    const executor = new AgentExecutor({ task });
+    Object.assign(executor, {
+      available_functions: {
+        failing_tool: () => {
+          throw new Error("native failed");
+        },
+      },
+    });
+    executor.state.pending_tool_calls = [
+      { id: "call_1", function: { name: "failing_tool", arguments: "{}" } },
+    ];
+
+    expect(executor.execute_native_tool()).toBe("native_tool_completed");
+    expect(task.tools_errors).toBe(1);
+    expect(executor.state.messages.at(-1)).toEqual({
+      role: "tool",
+      name: "failing_tool",
+      content: "Error executing tool: native failed",
+      tool_call_id: "call_1",
+    });
+  });
+
   it("appends post-tool reasoning prompt after non-final AgentExecutor tool actions", () => {
     const searchTool = new StructuredTool({
       name: "Search Tool",

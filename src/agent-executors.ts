@@ -949,6 +949,7 @@ export class AgentExecutor extends BaseAgentExecutor {
       } catch (error) {
         failed = true;
         result = `Error executing tool: ${executorErrorMessage(error)}`;
+        this.incrementTaskToolErrors();
       }
       const text = stringifyStepResult(result);
       this.state.messages.push({
@@ -1676,6 +1677,20 @@ export class AgentExecutor extends BaseAgentExecutor {
     }
     const record = tool as Tool & { result_as_answer?: unknown };
     return Boolean(tool.resultAsAnswer || record.result_as_answer);
+  }
+
+  private incrementTaskToolErrors(): void {
+    if (!this.task || typeof this.task !== "object") {
+      return;
+    }
+    const taskRecord = this.task as {
+      incrementToolsErrors?: () => unknown;
+      increment_tools_errors?: () => unknown;
+    };
+    const increment = taskRecord.incrementToolsErrors ?? taskRecord.increment_tools_errors;
+    if (typeof increment === "function") {
+      increment.call(this.task);
+    }
   }
 
   private triggerReplan(reason: string): void {
