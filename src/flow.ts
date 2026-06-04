@@ -2442,7 +2442,10 @@ export class Flow<TState extends object = Record<string, unknown>> {
 
   private async continueFromHumanFeedback(context: PendingFeedbackContext, feedback: string): Promise<unknown> {
     const flowName = this.flowName();
-    const llm = liveHumanFeedbackLlmFor(this, context.methodName) ?? context.llm ?? null;
+    const liveLlm = liveHumanFeedbackLlmFor(this, context.methodName);
+    const llm = liveLlm !== null && typeof liveLlm !== "string"
+      ? liveLlm
+      : context.llm ?? liveLlm ?? null;
     const result = this.recordHumanFeedbackResult({
       methodName: context.methodName,
       output: context.output,
@@ -2951,8 +2954,11 @@ async function collapseFeedbackToOutcomeAsync(
 }
 
 function resolveHumanFeedbackLlmClient(llm: string | Record<string, unknown> | LLM | null): LLMClient | null {
-  if (!llm || typeof llm === "string") {
+  if (!llm) {
     return null;
+  }
+  if (typeof llm === "string") {
+    return createLLM(llm);
   }
   if (typeof llm === "function") {
     return createLLMClient(llm);

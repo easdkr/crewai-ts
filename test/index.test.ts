@@ -22416,6 +22416,64 @@ describe("flow runtime", () => {
     });
   });
 
+  it("uses serialized pending LLM when decorator live human feedback LLM is only a string", async () => {
+    const persistence = new SQLiteFlowPersistence();
+    const llmCalls: LLMMessage[][] = [];
+    registerLLMProvider("test/context-hitl", (messages) => {
+      llmCalls.push([...messages]);
+      return "{\"outcome\":\"approved\"}";
+    });
+
+    class ContextLlmResumeFlow extends Flow<{ id: string }> {
+      constructor() {
+        super({ initialState: { id: "context-llm-flow" } });
+      }
+
+      review() {
+        return "draft";
+      }
+    }
+
+    try {
+      const initializers = [
+        decorateMethod(ContextLlmResumeFlow, "review", humanFeedback({
+          message: "Approve?",
+          emit: ["rejected", "approved"],
+          defaultOutcome: "rejected",
+          llm: "gpt-4o-mini",
+        }) as unknown as Decorator),
+        decorateMethod(ContextLlmResumeFlow, "review", start() as unknown as Decorator),
+      ];
+      const context = new PendingFeedbackContext({
+        flowId: "context-llm-flow",
+        flowClass: "ContextLlmResumeFlow",
+        methodName: "review",
+        output: "draft",
+        message: "Approve?",
+        emit: ["rejected", "approved"],
+        defaultOutcome: "rejected",
+        llm: { model: "test/context-hitl", temperature: 0.1 },
+      });
+      await persistence.savePendingFeedback("context-llm-flow", context, {
+        id: "context-llm-flow",
+      });
+      const restored = await ContextLlmResumeFlow.from_pending("context-llm-flow", persistence);
+      initializers.forEach((initializer) => {
+        initializer.call(restored);
+      });
+
+      await restored.resume("please ship");
+
+      expect(llmCalls).toHaveLength(1);
+      expect(restored.lastHumanFeedback).toMatchObject({
+        feedback: "please ship",
+        outcome: "approved",
+      });
+    } finally {
+      unregisterLLMProvider("test/context-hitl");
+    }
+  });
+
   it("rejects resume when no human feedback is pending", async () => {
     const flow = new Flow();
 
