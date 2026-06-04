@@ -179,6 +179,9 @@ export type EventType =
   | "cursor_env"
   | "default_env";
 
+type EventClass<TEvent extends CrewAIEvent = CrewAIEvent> = abstract new (...args: unknown[]) => TEvent;
+type EventRegistrationKey = EventType | EventClass;
+
 export type BaseEventOptions = {
   type: EventType;
   sourceType?: string | null;
@@ -4277,45 +4280,41 @@ export abstract class BaseEventListener {
 export class EventBus {
   _shutting_down = false;
   private readonly handlers = new Map<EventType, Set<EventHandler>>();
+  private readonly classHandlers = new Map<EventClass, Set<EventHandler>>();
   private readonly handlerDependencies = new Map<EventType, Map<EventHandler, readonly Depends[]>>();
+  private readonly classHandlerDependencies = new Map<EventClass, Map<EventHandler, readonly Depends[]>>();
   private readonly pendingHandlers = new Set<Promise<unknown>>();
   private currentRuntimeState: RuntimeState | null = null;
   private registeredEntityIds = new WeakSet<object>();
 
+  on<TEvent extends CrewAIEvent>(eventType: EventClass<TEvent>): (registeredHandler: EventHandler<TEvent>) => EventHandler<TEvent>;
+  on<TEvent extends CrewAIEvent>(eventType: EventClass<TEvent>, handler: EventHandler<TEvent>, dependsOn?: Depends | readonly Depends[] | null): () => void;
   on<TEventType extends EventType>(eventType: TEventType): (registeredHandler: EventHandler<EventMap[TEventType]>) => EventHandler<EventMap[TEventType]>;
   on<TEventType extends EventType>(eventType: TEventType, handler: EventHandler<EventMap[TEventType]>, dependsOn?: Depends | readonly Depends[] | null): () => void;
-  on<TEventType extends EventType>(
+  on<TEventType extends EventRegistrationKey>(
     eventType: TEventType,
-    handler?: EventHandler<EventMap[TEventType]>,
+    handler?: EventHandler,
     dependsOn?: Depends | readonly Depends[] | null,
-  ): (() => void) | ((registeredHandler: EventHandler<EventMap[TEventType]>) => EventHandler<EventMap[TEventType]>) {
+  ): (() => void) | ((registeredHandler: EventHandler) => EventHandler) {
     if (!handler) {
-      return (registeredHandler: EventHandler<EventMap[TEventType]>) => {
-        this.on(eventType, registeredHandler);
+      return (registeredHandler: EventHandler) => {
+        this.addHandler(eventType, registeredHandler);
         return registeredHandler;
       };
     }
-    const handlers = this.handlers.get(eventType) ?? new Set<EventHandler>();
-    handlers.add(handler as EventHandler);
-    this.handlers.set(eventType, handlers);
-    const dependencies = normalizeDepends(dependsOn);
-    if (dependencies.length > 0) {
-      const dependencyMap = this.handlerDependencies.get(eventType) ?? new Map<EventHandler, readonly Depends[]>();
-      dependencyMap.set(handler as EventHandler, dependencies);
-      this.handlerDependencies.set(eventType, dependencyMap);
-    }
+    this.addHandler(eventType, handler, dependsOn);
     return () => {
-      this.off(eventType, handler as EventHandler);
+      this.off(eventType, handler);
     };
   }
 
-  off(eventType: EventType, handler: EventHandler): void {
-    const handlers = this.handlers.get(eventType);
+  off(eventType: EventRegistrationKey, handler: EventHandler): void {
+    const handlers = this.handlerSet(eventType);
     if (!handlers) {
       return;
     }
     handlers.delete(handler);
-    const dependencyMap = this.handlerDependencies.get(eventType);
+    const dependencyMap = this.dependencyMap(eventType);
     if (dependencyMap) {
       dependencyMap.delete(handler);
       for (const [registeredHandler, dependencies] of dependencyMap.entries()) {
@@ -4327,14 +4326,15 @@ export class EventBus {
         }
       }
       if (dependencyMap.size === 0) {
-        this.handlerDependencies.delete(eventType);
+        this.deleteDependencyMap(eventType);
       }
     }
     if (handlers.size === 0) {
-      this.handlers.delete(eventType);
+      this.deleteHandlerSet(eventType);
     }
   }
 
+  once<TEvent extends CrewAIEvent>(eventType: EventClass<TEvent>, handler: EventHandler<TEvent>): () => void;
   once<TEventType extends EventType>(eventType: TEventType, handler: EventHandler<EventMap[TEventType]>): () => void {
     const off = this.on(eventType, (source, event) => {
       off();
@@ -4394,21 +4394,25 @@ export class EventBus {
   scopedHandlers<T>(callback: () => MaybePromise<T>): MaybePromise<T> {
     const savedHandlers = cloneHandlerMap(this.handlers);
     const savedDependencies = cloneDependencyMap(this.handlerDependencies);
+    const savedClassHandlers = cloneClassHandlerMap(this.classHandlers);
+    const savedClassDependencies = cloneClassDependencyMap(this.classHandlerDependencies);
     this.handlers.clear();
     this.handlerDependencies.clear();
+    this.classHandlers.clear();
+    this.classHandlerDependencies.clear();
     let result: MaybePromise<T>;
     try {
       result = callback();
     } catch (error) {
-      this.restoreHandlers(savedHandlers, savedDependencies);
+      this.restoreHandlers(savedHandlers, savedDependencies, savedClassHandlers, savedClassDependencies);
       throw error;
     }
     if (isPromiseLike(result)) {
       return result.finally(() => {
-        this.restoreHandlers(savedHandlers, savedDependencies);
+        this.restoreHandlers(savedHandlers, savedDependencies, savedClassHandlers, savedClassDependencies);
       });
     }
-    this.restoreHandlers(savedHandlers, savedDependencies);
+    this.restoreHandlers(savedHandlers, savedDependencies, savedClassHandlers, savedClassDependencies);
     return result;
   }
 
@@ -4417,13 +4421,12 @@ export class EventBus {
   }
 
   private dispatchPrepared(source: unknown, event: CrewAIEvent): void {
-    const handlers = this.handlers.get(event.type);
-    if (!handlers) {
+    const { handlers, dependencies } = this.resolveHandlers(event);
+    if (handlers.length === 0) {
       return;
     }
-    const dependencyMap = this.handlerDependencies.get(event.type);
-    if (dependencyMap && dependencyMap.size > 0) {
-      this.emitWithDependencies(source, event, [...handlers], dependencyMap);
+    if (dependencies.size > 0) {
+      this.emitWithDependencies(source, event, handlers, dependencies);
       return;
     }
     for (const handler of handlers) {
@@ -4432,11 +4435,11 @@ export class EventBus {
   }
 
   private async dispatchPreparedAndWait(source: unknown, event: CrewAIEvent): Promise<void> {
-    const handlers = this.handlers.get(event.type);
-    if (!handlers) {
+    const { handlers } = this.resolveHandlers(event);
+    if (handlers.length === 0) {
       return;
     }
-    const asyncHandlers = [...handlers].filter((handler) => is_async_handler(handler));
+    const asyncHandlers = handlers.filter((handler) => is_async_handler(handler));
     await Promise.all(asyncHandlers.map(async (handler) => {
       await this.callHandler(handler, source, event);
     }));
@@ -4526,7 +4529,9 @@ export class EventBus {
 
   clear(): void {
     this.handlers.clear();
+    this.classHandlers.clear();
     this.handlerDependencies.clear();
+    this.classHandlerDependencies.clear();
     this.pendingHandlers.clear();
     this.currentRuntimeState = null;
     this.registeredEntityIds = new WeakSet<object>();
@@ -4621,15 +4626,91 @@ export class EventBus {
   private restoreHandlers(
     handlers: Map<EventType, Set<EventHandler>>,
     dependencies: Map<EventType, Map<EventHandler, readonly Depends[]>>,
+    classHandlers: Map<EventClass, Set<EventHandler>>,
+    classDependencies: Map<EventClass, Map<EventHandler, readonly Depends[]>>,
   ): void {
     this.handlers.clear();
     this.handlerDependencies.clear();
+    this.classHandlers.clear();
+    this.classHandlerDependencies.clear();
     for (const [eventType, eventHandlers] of handlers.entries()) {
       this.handlers.set(eventType, new Set(eventHandlers));
     }
     for (const [eventType, dependencyMap] of dependencies.entries()) {
       this.handlerDependencies.set(eventType, new Map(dependencyMap));
     }
+    for (const [eventClass, eventHandlers] of classHandlers.entries()) {
+      this.classHandlers.set(eventClass, new Set(eventHandlers));
+    }
+    for (const [eventClass, dependencyMap] of classDependencies.entries()) {
+      this.classHandlerDependencies.set(eventClass, new Map(dependencyMap));
+    }
+  }
+
+  private handlerStores(eventType: EventRegistrationKey): [Set<EventHandler>, Map<EventHandler, readonly Depends[]>] {
+    if (isEventClass(eventType)) {
+      const handlers = this.classHandlers.get(eventType) ?? new Set<EventHandler>();
+      const dependencies = this.classHandlerDependencies.get(eventType) ?? new Map<EventHandler, readonly Depends[]>();
+      this.classHandlers.set(eventType, handlers);
+      this.classHandlerDependencies.set(eventType, dependencies);
+      return [handlers, dependencies];
+    }
+    const handlers = this.handlers.get(eventType) ?? new Set<EventHandler>();
+    const dependencies = this.handlerDependencies.get(eventType) ?? new Map<EventHandler, readonly Depends[]>();
+    this.handlers.set(eventType, handlers);
+    this.handlerDependencies.set(eventType, dependencies);
+    return [handlers, dependencies];
+  }
+
+  private addHandler(
+    eventType: EventRegistrationKey,
+    handler: EventHandler,
+    dependsOn?: Depends | readonly Depends[] | null,
+  ): void {
+    const [handlers, dependenciesByKey] = this.handlerStores(eventType);
+    handlers.add(handler);
+    const dependencies = normalizeDepends(dependsOn);
+    if (dependencies.length > 0) {
+      dependenciesByKey.set(handler, dependencies);
+    }
+  }
+
+  private handlerSet(eventType: EventRegistrationKey): Set<EventHandler> | undefined {
+    return isEventClass(eventType) ? this.classHandlers.get(eventType) : this.handlers.get(eventType);
+  }
+
+  private dependencyMap(eventType: EventRegistrationKey): Map<EventHandler, readonly Depends[]> | undefined {
+    return isEventClass(eventType) ? this.classHandlerDependencies.get(eventType) : this.handlerDependencies.get(eventType);
+  }
+
+  private deleteHandlerSet(eventType: EventRegistrationKey): void {
+    if (isEventClass(eventType)) {
+      this.classHandlers.delete(eventType);
+      return;
+    }
+    this.handlers.delete(eventType);
+  }
+
+  private deleteDependencyMap(eventType: EventRegistrationKey): void {
+    if (isEventClass(eventType)) {
+      this.classHandlerDependencies.delete(eventType);
+      return;
+    }
+    this.handlerDependencies.delete(eventType);
+  }
+
+  private resolveHandlers(event: CrewAIEvent): { handlers: EventHandler[]; dependencies: Map<EventHandler, readonly Depends[]> } {
+    const handlers: EventHandler[] = [...(this.handlers.get(event.type) ?? [])];
+    const dependencies = new Map<EventHandler, readonly Depends[]>(this.handlerDependencies.get(event.type) ?? []);
+    for (const [eventClass, eventHandlers] of this.classHandlers.entries()) {
+      if (event instanceof eventClass) {
+        handlers.push(...eventHandlers);
+        for (const [handler, handlerDepends] of this.classHandlerDependencies.get(eventClass) ?? []) {
+          dependencies.set(handler, handlerDepends);
+        }
+      }
+    }
+    return { handlers, dependencies };
   }
 }
 
@@ -4644,6 +4725,10 @@ function isPromiseLike(value: unknown): value is Promise<unknown> {
   return Boolean(value && typeof value === "object" && "then" in value && typeof (value as { then?: unknown }).then === "function");
 }
 
+function isEventClass(value: EventRegistrationKey): value is EventClass {
+  return typeof value === "function";
+}
+
 function cloneHandlerMap(source: Map<EventType, Set<EventHandler>>): Map<EventType, Set<EventHandler>> {
   return new Map([...source.entries()].map(([eventType, handlers]) => [eventType, new Set(handlers)]));
 }
@@ -4652,6 +4737,16 @@ function cloneDependencyMap(
   source: Map<EventType, Map<EventHandler, readonly Depends[]>>,
 ): Map<EventType, Map<EventHandler, readonly Depends[]>> {
   return new Map([...source.entries()].map(([eventType, dependencies]) => [eventType, new Map(dependencies)]));
+}
+
+function cloneClassHandlerMap(source: Map<EventClass, Set<EventHandler>>): Map<EventClass, Set<EventHandler>> {
+  return new Map([...source.entries()].map(([eventClass, handlers]) => [eventClass, new Set(handlers)]));
+}
+
+function cloneClassDependencyMap(
+  source: Map<EventClass, Map<EventHandler, readonly Depends[]>>,
+): Map<EventClass, Map<EventHandler, readonly Depends[]>> {
+  return new Map([...source.entries()].map(([eventClass, dependencies]) => [eventClass, new Map(dependencies)]));
 }
 
 function getEntityType(entity: unknown): string | null {

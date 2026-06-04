@@ -40590,6 +40590,22 @@ describe("runtime state", () => {
     expect(seen).toEqual(["AsyncFlow"]);
   });
 
+  it("dispatches handlers registered with upstream event classes", async () => {
+    const bus = new EventBus();
+    const seen: string[] = [];
+    bus.on(FlowStartedEvent, (_source: unknown, event: FlowStartedEvent) => {
+      seen.push(`class:${event.flowName}`);
+    });
+    bus.on("flow_started", (_source: unknown, event: FlowStartedEvent) => {
+      seen.push(`type:${event.flowName}`);
+    });
+
+    bus.emit("source", new FlowStartedEvent({ flowName: "ClassFlow", inputs: {} }));
+    await bus.flush();
+
+    expect(seen).toEqual(["type:ClassFlow", "class:ClassFlow"]);
+  });
+
   it("continues event dispatch after handler failures without surfacing uncaught errors", async () => {
     const bus = new EventBus();
     const seen: string[] = [];
