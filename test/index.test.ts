@@ -551,6 +551,7 @@ import {
   get_crewai_version,
   getLLMUsageMetrics,
   humanFeedback,
+  isFlowConditionDict,
   prepare_kwargs,
   enhanced_method,
   run_flow,
@@ -21762,6 +21763,19 @@ describe("flow runtime", () => {
     expect(new FlowConfigDefinition().max_method_calls).toBe(100);
     expect(new FlowPersistenceDefinition().enabled).toBe(false);
     expect(new FlowHumanFeedbackDefinition({ message: "Review" }).llm).toBe("gpt-4o-mini");
+  });
+
+  it("validates upstream Flow DSL condition dictionaries strictly", () => {
+    expect(isFlowConditionDict({
+      type: "OR",
+      conditions: [
+        "approved",
+        { type: "AND", methods: ["validated", "processed"] },
+      ],
+    })).toBe(true);
+    expect(isFlowConditionDict({ type: "OR", conditions: "approved" })).toBe(false);
+    expect(isFlowConditionDict({ type: "OR", methods: "approved" })).toBe(false);
+    expect(isFlowConditionDict({ type: "OR", methods: ["approved"], extra: true })).toBe(false);
   });
 
   it("builds upstream FlowDefinition structures from decorated Flow metadata", () => {

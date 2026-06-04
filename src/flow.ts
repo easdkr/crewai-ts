@@ -4686,13 +4686,24 @@ export function isFlowConditionDict(value: unknown): value is FlowCondition {
   if (!isRecord(value)) {
     return false;
   }
+  if (!Object.keys(value).every((key) => key === "type" || key === "conditions" || key === "methods")) {
+    return false;
+  }
   const type = value.type;
   if (type !== "AND" && type !== "OR") {
     return false;
   }
   const conditions = value.conditions;
-  return conditions === undefined
-    || (Array.isArray(conditions) && conditions.every((condition) => typeof condition === "string" || isFlowConditionDict(condition)));
+  if (conditions !== undefined
+    && (!Array.isArray(conditions) || !conditions.every((condition) => typeof condition === "string" || isFlowConditionDict(condition)))) {
+    return false;
+  }
+  const methods = value.methods;
+  if (methods !== undefined
+    && (!Array.isArray(methods) || !methods.every((method) => typeof method === "string"))) {
+    return false;
+  }
+  return true;
 }
 
 export const is_flow_condition_dict = isFlowConditionDict;
@@ -5419,7 +5430,14 @@ function normalizeFlowCondition(condition: FlowConditionInput | undefined): Flow
   if (!condition) {
     return null;
   }
-  if (typeof condition === "object" && "type" in condition) {
+  if (isFlowConditionDict(condition)) {
+    const conditionRecord = condition as FlowCondition & { methods?: unknown };
+    const methods = Array.isArray(conditionRecord.methods) && conditionRecord.methods.every((method) => typeof method === "string")
+      ? conditionRecord.methods
+      : null;
+    if (!Array.isArray(conditionRecord.conditions) && methods) {
+      return { type: condition.type, conditions: methods };
+    }
     return condition;
   }
   return or_(condition);
