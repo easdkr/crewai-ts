@@ -22319,6 +22319,30 @@ describe("flow runtime", () => {
     expect(errorFlow.inputHistory[0]?.response).toBeNull();
   });
 
+  it("returns null from ask when a provider throws inside an async flow method", async () => {
+    class AsyncErrorFlow extends Flow {
+      async gather() {
+        return await this.ask("Question?");
+      }
+    }
+    const flow = new AsyncErrorFlow({
+      inputProvider: {
+        request_input: () => {
+          throw new Error("provider failed");
+        },
+      },
+    });
+    decorateMethod(AsyncErrorFlow, "gather", start() as unknown as Decorator).call(flow);
+
+    await expect(flow.kickoff()).resolves.toBeNull();
+    expect(flow.inputHistory[0]).toMatchObject({
+      message: "Question?",
+      response: null,
+      methodName: "gather",
+      responseMetadata: null,
+    });
+  });
+
   it("collects human feedback for flow methods and exposes the result", async () => {
     const events: CrewAIEvent[] = [];
     crewaiEventBus.on("human_feedback_requested", (_source, event) => {
