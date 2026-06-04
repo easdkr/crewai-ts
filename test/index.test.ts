@@ -6570,6 +6570,45 @@ describe("a2a utilities", () => {
     expect(card.model_dump({ exclude_none: true })).not.toHaveProperty("iconUrl");
   });
 
+  it("dumps nested A2A agent-card model objects before protocol serialization", () => {
+    class SkillModel {
+      model_dump(options: { exclude_none?: boolean } = {}): Record<string, unknown> {
+        const dumped: Record<string, unknown> = {
+          id: "custom_skill",
+          name: "Custom Skill",
+          description: "Serialized through model_dump",
+          tags: ["custom"],
+          examples: options.exclude_none ? undefined : null,
+        };
+        if (options.exclude_none) {
+          delete dumped.examples;
+        }
+        return dumped;
+      }
+    }
+
+    const agent = new Agent({
+      role: "Custom Skill Agent",
+      goal: "Advertise configured skills",
+      backstory: "A2A-ready",
+      a2a: new A2AServerConfig({ skills: [new SkillModel()] }),
+    }) as Agent & {
+      to_agent_card: (url: string) => Record<string, unknown> & {
+        model_dump: (options?: { exclude_none?: boolean }) => Record<string, unknown>;
+      };
+    };
+
+    const card = agent.to_agent_card("http://localhost:8000");
+
+    expect(Object.entries((card.skills as unknown[])[0] as object)).toEqual([]);
+    expect(card.model_dump({ exclude_none: true }).skills).toEqual([{
+      id: "custom_skill",
+      name: "Custom Skill",
+      description: "Serialized through model_dump",
+      tags: ["custom"],
+    }]);
+  });
+
   it("normalizes configured A2A agent-card origin URLs like upstream", () => {
     const agent = new Agent({
       role: "Configured URL Agent",

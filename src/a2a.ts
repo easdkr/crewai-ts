@@ -4728,12 +4728,17 @@ function attachAgentCardDumpMethods(card: Record<string, unknown>): Record<strin
 
 function dumpAgentCard(card: Record<string, unknown>, options: AgentCardDumpOptions): Record<string, unknown> {
   const excludeNone = options.exclude_none ?? options.excludeNone ?? false;
-  return dumpAgentCardValue(card, excludeNone) as Record<string, unknown>;
+  return dumpAgentCardValue(card, excludeNone, false) as Record<string, unknown>;
 }
 
-function dumpAgentCardValue(value: unknown, excludeNone: boolean): unknown {
+function dumpAgentCardValue(value: unknown, excludeNone: boolean, allowModelDump = true): unknown {
   if (Array.isArray(value)) {
     return value.map((item) => dumpAgentCardValue(item, excludeNone));
+  }
+  const modelDump = allowModelDump ? agentCardModelDumpFunction(value) : null;
+  if (modelDump) {
+    const dumped = modelDump({ exclude_none: excludeNone, excludeNone });
+    return dumpAgentCardValue(dumped, excludeNone, false);
   }
   const record = recordOrNullA2A(value);
   if (!record) {
@@ -4750,6 +4755,20 @@ function dumpAgentCardValue(value: unknown, excludeNone: boolean): unknown {
     dumped[agentCardJsonKey(key)] = dumpAgentCardValue(entry, excludeNone);
   }
   return dumped;
+}
+
+function agentCardModelDumpFunction(value: unknown): ((options?: AgentCardDumpOptions) => unknown) | null {
+  const record = recordOrNullA2A(value);
+  if (!record) {
+    return null;
+  }
+  if (typeof record.model_dump === "function") {
+    return record.model_dump.bind(value) as (options?: AgentCardDumpOptions) => unknown;
+  }
+  if (typeof record.modelDump === "function") {
+    return record.modelDump.bind(value) as (options?: AgentCardDumpOptions) => unknown;
+  }
+  return null;
 }
 
 function agentCardJsonKey(key: string): string {
