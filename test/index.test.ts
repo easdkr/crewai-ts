@@ -38566,6 +38566,96 @@ describe("runtime state", () => {
     expect(crews[0]?.eventId).not.toBe(crews[1]?.eventId);
   });
 
+  it("assigns and closes crew execution spans for crews kicked off inside flow methods", async () => {
+    const previousDisableTelemetry = process.env.CREWAI_DISABLE_TELEMETRY;
+    const previousOtelDisabled = process.env.OTEL_SDK_DISABLED;
+    (Telemetry as unknown as { instance: Telemetry | null; _instance: Telemetry | null }).instance = null;
+    (Telemetry as unknown as { instance: Telemetry | null; _instance: Telemetry | null })._instance = null;
+    delete process.env.CREWAI_DISABLE_TELEMETRY;
+    delete process.env.OTEL_SDK_DISABLED;
+
+    const originalLog = console.log;
+    console.log = () => {};
+    try {
+      const telemetry = new Telemetry();
+      telemetry.clearSpans();
+      let firstCrew: Crew | null = null;
+      let secondCrew: Crew | null = null;
+      const firstAgent = new Agent({
+        role: "First Span Agent",
+        goal: "Return the first answer",
+        backstory: "Runs in a flow method",
+        llm: () => "first span result",
+      });
+      const secondAgent = new Agent({
+        role: "Second Span Agent",
+        goal: "Return the second answer",
+        backstory: "Runs in a listener method",
+        llm: () => "second span result",
+      });
+      const firstTask = new Task({
+        description: "First span task",
+        expectedOutput: "first span result",
+        agent: firstAgent,
+      });
+      const secondTask = new Task({
+        description: "Second span task",
+        expectedOutput: "second span result",
+        agent: secondAgent,
+      });
+
+      class FlowWithSharedCrews extends Flow<{ result?: string }> {
+        async firstCrew() {
+          firstCrew = new Crew({ agents: [firstAgent], tasks: [firstTask], shareCrew: true });
+          return await firstCrew.kickoff();
+        }
+
+        async secondCrew(firstResult: unknown) {
+          secondCrew = new Crew({ agents: [secondAgent], tasks: [secondTask], shareCrew: true });
+          const secondResult = await secondCrew.kickoff();
+          this.state.result = `${String((firstResult as { raw?: unknown }).raw ?? firstResult)} + ${secondResult.raw}`;
+          return this.state.result;
+        }
+      }
+
+      const firstInitializer = decorateMethod(FlowWithSharedCrews, "firstCrew", start() as unknown as Decorator);
+      const secondInitializer = decorateMethod(FlowWithSharedCrews, "secondCrew", listen("firstCrew") as unknown as Decorator);
+      const flow = new FlowWithSharedCrews();
+      firstInitializer.call(flow);
+      secondInitializer.call(flow);
+
+      await crewaiEventBus.scoped_handlers(async () => {
+        const listener = new EventListener(crewaiEventBus);
+        listener._telemetry = telemetry;
+        await flow.akickoff();
+      });
+
+      const firstSpan = (firstCrew as unknown as { _execution_span?: { ended?: boolean } })._execution_span;
+      const secondSpan = (secondCrew as unknown as { _execution_span?: { ended?: boolean } })._execution_span;
+      expect(firstSpan).toBeTruthy();
+      expect(secondSpan).toBeTruthy();
+      expect(firstSpan?.ended).toBe(true);
+      expect(secondSpan?.ended).toBe(true);
+      expect(firstSpan).not.toBe(secondSpan);
+      expect(telemetry.getSpans().filter((span) => span.name === "Crew Execution")).toHaveLength(2);
+      expect(flow.state.result).toContain("first span result + second span result");
+    } finally {
+      console.log = originalLog;
+      if (previousDisableTelemetry === undefined) {
+        delete process.env.CREWAI_DISABLE_TELEMETRY;
+      } else {
+        process.env.CREWAI_DISABLE_TELEMETRY = previousDisableTelemetry;
+      }
+      if (previousOtelDisabled === undefined) {
+        delete process.env.OTEL_SDK_DISABLED;
+      } else {
+        process.env.OTEL_SDK_DISABLED = previousOtelDisabled;
+      }
+      (Telemetry as unknown as { instance: Telemetry | null; _instance: Telemetry | null }).instance = null;
+      (Telemetry as unknown as { instance: Telemetry | null; _instance: Telemetry | null })._instance = null;
+    }
+  });
+
   it("records upstream triggered_by event ids for flow router paths", async () => {
     resetEmissionSequence();
     setTriggeringEventId(null);
