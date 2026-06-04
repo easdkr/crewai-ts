@@ -1,4 +1,4 @@
-import { generateKeyPairSync, sign, type KeyObject } from "node:crypto";
+import { generateKeyPairSync, sign, verify, type KeyObject } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -342,6 +342,7 @@ import {
   SQLiteFlowPersistence,
   SimpleTokenAuth,
   SecretStr,
+  sign_agent_card,
   SkillActivatedEvent,
   StorageBackend,
   _duplicate_separator_pattern,
@@ -559,6 +560,7 @@ import {
   tool,
   validate_context_window_sizes,
   validate_model_in_constants,
+  verify_agent_card_signature,
   validate_structured_output,
   type AgentStep,
   type CrewAIEvent,
@@ -1044,6 +1046,15 @@ type Decorator = (
   value: never,
   context: never,
 ) => unknown;
+
+function verifyDetachedJws(publicKey: KeyObject, protectedHeader: string, payload: string, signature: string): boolean {
+  return verify(
+    "RSA-SHA256",
+    Buffer.from(`${protectedHeader}.${Buffer.from(payload).toString("base64url")}`),
+    publicKey,
+    Buffer.from(signature, "base64url"),
+  );
+}
 
 beforeEach(() => {
   crewaiEventBus.clear();
@@ -7108,6 +7119,57 @@ describe("a2a utilities", () => {
     } finally {
       rmSync(keyDir, { recursive: true, force: true });
     }
+  });
+
+  it("signs A2A agent cards with detached JWS payloads like upstream", () => {
+    const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+    const card = {
+      name: "Signed Agent",
+      url: "https://agent.example.com/a2a",
+      version: "1.0.0",
+      capabilities: { streaming: true },
+      signatures: [{ protected: "old", signature: "old" }],
+    };
+
+    const signature = sign_agent_card(card, privateKey, "kid-1", "RS256");
+    const protectedHeader = JSON.parse(Buffer.from(signature.protected, "base64url").toString("utf8")) as Record<string, unknown>;
+    const canonicalPayload = JSON.stringify({
+      capabilities: { streaming: true },
+      name: "Signed Agent",
+      url: "https://agent.example.com/a2a",
+      version: "1.0.0",
+    });
+
+    expect(signature.header).toEqual({ kid: "kid-1" });
+    expect(protectedHeader).toMatchObject({ alg: "RS256", typ: "JWS", kid: "kid-1" });
+    expect(sign("RSA-SHA256", Buffer.from(`${signature.protected}.${Buffer.from(canonicalPayload).toString("base64url")}`), privateKey).toString("base64url"))
+      .toBe(signature.signature);
+    expect(verifyDetachedJws(publicKey, signature.protected, canonicalPayload, signature.signature)).toBe(true);
+    expect(verify_agent_card_signature(card, signature, publicKey, ["RS256"])).toBe(true);
+    expect(verify_agent_card_signature({ ...card, name: "Tampered Agent" }, signature, publicKey, ["RS256"])).toBe(false);
+  });
+
+  it("attaches signing_config signatures to generated A2A agent cards", () => {
+    const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+    const privateKeyPem = privateKey.export({ type: "pkcs8", format: "pem" });
+    const agent = {
+      role: "Signed Agent",
+      goal: "Publish signed cards",
+      backstory: "A2A-ready",
+      a2a: new A2AServerConfig({
+        signing_config: new AgentCardSigningConfig({
+          private_key_pem: privateKeyPem,
+          key_id: "generated-key",
+        }),
+      }),
+    };
+
+    const card = agent_to_agent_card(agent, "https://agent.example.com/a2a") as Record<string, unknown> & {
+      signatures: Array<{ protected: string; signature: string }>;
+    };
+
+    expect(card.signatures).toHaveLength(1);
+    expect(verify_agent_card_signature(card, card.signatures[0], publicKey, ["RS256"])).toBe(true);
   });
 
   it("authenticates A2A simple server tokens", async () => {

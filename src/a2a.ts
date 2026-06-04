@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from "node:crypto";
+import { constants, createHash, createPrivateKey, createPublicKey, createSign, createVerify, randomBytes, type KeyObject } from "node:crypto";
 import { readFileSync } from "node:fs";
 
 import { validateJwtToken } from "./auth.js";
@@ -2296,16 +2296,19 @@ export class MTLSServerAuth extends ServerAuthScheme {
 
 export function sign_agent_card(
   agent_card: Record<string, unknown>,
-  _private_key: string | Uint8Array,
+  private_key: string | Uint8Array | KeyObject,
   key_id: string | null = null,
   algorithm: JWTAlgorithm = "RS256",
 ): { protected: string; signature: string; header: Record<string, string> | null } {
-  void _private_key;
   const protectedHeader = base64UrlEncode(JSON.stringify({ typ: "JWS", alg: algorithm, ...(key_id ? { kid: key_id } : {}) }));
-  const payload = base64UrlEncode(JSON.stringify(serializeAgentCardForSigning(agent_card)));
+  const payload = base64UrlEncode(serializeAgentCardForSigning(agent_card));
+  const signingInput = `${protectedHeader}.${payload}`;
+  const signer = createSign(hashAlgorithmForJWT(algorithm));
+  signer.update(signingInput);
+  signer.end();
   return {
     protected: protectedHeader,
-    signature: base64UrlEncode(`${protectedHeader}.${payload}`),
+    signature: base64UrlEncode(signer.sign(signKeyOptions(private_key, algorithm))),
     header: key_id ? { kid: key_id } : null,
   };
 }
@@ -2313,13 +2316,23 @@ export function sign_agent_card(
 export function verify_agent_card_signature(
   agent_card: Record<string, unknown>,
   signature: { protected: string; signature: string },
-  _public_key: string | Uint8Array,
-  _algorithms: readonly string[] | null = null,
+  public_key: string | Uint8Array | KeyObject,
+  algorithms: readonly string[] | null = null,
 ): boolean {
-  void _public_key;
-  void _algorithms;
-  const payload = base64UrlEncode(JSON.stringify(serializeAgentCardForSigning(agent_card)));
-  return signature.signature === base64UrlEncode(`${signature.protected}.${payload}`);
+  const header = parseProtectedHeader(signature.protected);
+  const algorithm = stringFromA2A(header?.alg, "RS256") as JWTAlgorithm;
+  if (algorithms && !algorithms.includes(algorithm)) {
+    return false;
+  }
+  const payload = base64UrlEncode(serializeAgentCardForSigning(agent_card));
+  const verifier = createVerify(hashAlgorithmForJWT(algorithm));
+  verifier.update(`${signature.protected}.${payload}`);
+  verifier.end();
+  try {
+    return verifier.verify(verifyKeyOptions(public_key, algorithm), Buffer.from(signature.signature, "base64url"));
+  } catch {
+    return false;
+  }
 }
 
 export function get_key_id_from_signature(signature: { protected: string; header?: Record<string, unknown> | null }): string | null {
@@ -4687,13 +4700,55 @@ export function agent_to_agent_card(agent: unknown, url: string): Record<string,
     security_schemes: serverConfig.security_schemes,
     supports_authenticated_extended_card: serverConfig.supports_authenticated_extended_card,
   };
-  if (serverConfig.signatures) {
+  const signingConfig = agentCardSigningConfigOrNull(serverConfig.signing_config);
+  if (signingConfig) {
+    card.signatures = [sign_agent_card(
+      card,
+      signingConfig.getPrivateKey(),
+      signingConfig.keyId,
+      signingConfig.algorithm,
+    )];
+  } else if (serverConfig.signatures) {
     card.signatures = serverConfig.signatures;
   }
   return attachAgentCardDumpMethods(card);
 }
 
 export const _agent_to_agent_card = agent_to_agent_card;
+
+function agentCardSigningConfigOrNull(value: unknown): {
+  getPrivateKey: () => string | Uint8Array | KeyObject;
+  keyId: string | null;
+  algorithm: JWTAlgorithm;
+} | null {
+  const record = recordOrNullA2A(value);
+  if (!record) {
+    return null;
+  }
+  let getPrivateKey: (() => string | Uint8Array | KeyObject) | null = null;
+  if (typeof record.getPrivateKey === "function") {
+    getPrivateKey = () => callAgentCardPrivateKeyGetter(record.getPrivateKey, value);
+  } else if (typeof record.get_private_key === "function") {
+    getPrivateKey = () => callAgentCardPrivateKeyGetter(record.get_private_key, value);
+  }
+  if (!getPrivateKey) {
+    return null;
+  }
+  const keyId = typeof record.keyId === "string" && record.keyId.length > 0
+    ? record.keyId
+    : typeof record.key_id === "string" && record.key_id.length > 0
+      ? record.key_id
+      : null;
+  return {
+    getPrivateKey,
+    keyId,
+    algorithm: stringFromA2A(record.algorithm, "RS256") as JWTAlgorithm,
+  };
+}
+
+function callAgentCardPrivateKeyGetter(fn: unknown, receiver: unknown): string | Uint8Array | KeyObject {
+  return (fn as (this: unknown) => string | Uint8Array | KeyObject).call(receiver);
+}
 
 type AgentCardDumpOptions = {
   exclude_none?: boolean;
@@ -5618,23 +5673,80 @@ function jsonReplacer(_key: string, value: unknown): unknown {
   return value;
 }
 
-function serializeAgentCardForSigning(agentCard: Record<string, unknown>): Record<string, unknown> {
+function serializeAgentCardForSigning(agentCard: Record<string, unknown>): string {
   const { signatures: _signatures, ...rest } = agentCard;
   void _signatures;
-  return sortObjectKeys(rest);
+  return JSON.stringify(sortObjectKeys(dumpAgentCardValue(rest, true, false)), jsonReplacer);
 }
 
-function sortObjectKeys(value: Record<string, unknown>): Record<string, unknown> {
-  return Object.fromEntries(Object.keys(value).sort().map((key) => {
-    const entry = value[key];
-    if (entry && typeof entry === "object" && !Array.isArray(entry)) {
-      return [key, sortObjectKeys(entry as Record<string, unknown>)];
-    }
-    return [key, entry];
+function sortObjectKeys(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map((entry) => sortObjectKeys(entry));
+  }
+  if (!value || typeof value !== "object") {
+    return value;
+  }
+  const record = value as Record<string, unknown>;
+  return Object.fromEntries(Object.keys(record).sort().map((key) => {
+    return [key, sortObjectKeys(record[key])];
   }));
 }
 
-function base64UrlEncode(value: string): string {
+function parseProtectedHeader(value: string): Record<string, unknown> | null {
+  try {
+    return recordOrNullA2A(JSON.parse(Buffer.from(value, "base64url").toString("utf8")));
+  } catch {
+    return null;
+  }
+}
+
+function hashAlgorithmForJWT(algorithm: JWTAlgorithm): string {
+  if (algorithm.endsWith("384")) {
+    return "sha384";
+  }
+  if (algorithm.endsWith("512")) {
+    return "sha512";
+  }
+  return "sha256";
+}
+
+function signKeyOptions(key: string | Uint8Array | KeyObject, algorithm: JWTAlgorithm): Parameters<ReturnType<typeof createSign>["sign"]>[0] {
+  const normalizedKey = normalizePrivateKeyInput(key);
+  if (algorithm.startsWith("PS")) {
+    return { key: normalizedKey, padding: constants.RSA_PKCS1_PSS_PADDING };
+  }
+  if (algorithm.startsWith("ES")) {
+    return { key: normalizedKey, dsaEncoding: "ieee-p1363" };
+  }
+  return normalizedKey;
+}
+
+function verifyKeyOptions(key: string | Uint8Array | KeyObject, algorithm: JWTAlgorithm): Parameters<ReturnType<typeof createVerify>["verify"]>[0] {
+  const normalizedKey = normalizePublicKeyInput(key);
+  if (algorithm.startsWith("PS")) {
+    return { key: normalizedKey, padding: constants.RSA_PKCS1_PSS_PADDING };
+  }
+  if (algorithm.startsWith("ES")) {
+    return { key: normalizedKey, dsaEncoding: "ieee-p1363" };
+  }
+  return normalizedKey;
+}
+
+function normalizePrivateKeyInput(key: string | Uint8Array | KeyObject): KeyObject {
+  if (typeof key === "string") {
+    return createPrivateKey(key);
+  }
+  return key instanceof Uint8Array ? createPrivateKey(Buffer.from(key)) : key;
+}
+
+function normalizePublicKeyInput(key: string | Uint8Array | KeyObject): KeyObject {
+  if (typeof key === "string") {
+    return createPublicKey(key);
+  }
+  return key instanceof Uint8Array ? createPublicKey(Buffer.from(key)) : key;
+}
+
+function base64UrlEncode(value: string | Uint8Array): string {
   return Buffer.from(value).toString("base64url");
 }
 
