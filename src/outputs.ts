@@ -81,6 +81,29 @@ export class TaskOutput {
     return this.toDict();
   }
 
+  modelDump(): Record<string, unknown> {
+    return {
+      description: this.description,
+      raw: this.raw,
+      pydantic: this.pydantic,
+      json_dict: this.jsonDict,
+      agent: this.agent,
+      summary: this.summary,
+      name: this.name ?? this.description,
+      expected_output: this.expectedOutput,
+      output_format: this.outputFormat,
+      messages: [...this.messages],
+    };
+  }
+
+  model_dump(): Record<string, unknown> {
+    return this.modelDump();
+  }
+
+  toJSON(): Record<string, unknown> {
+    return this.modelDump();
+  }
+
   toString(): string {
     if (this.pydantic !== null && this.pydantic !== undefined) {
       return stringifyOutput(this.pydantic);

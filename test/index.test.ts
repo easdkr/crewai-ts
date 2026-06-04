@@ -28013,6 +28013,40 @@ describe("LLM providers", () => {
     }));
   });
 
+  it("serializes callback task outputs with upstream model_dump fields", async () => {
+    const callback = vi.fn();
+    const agentInstance = new Agent({
+      role: "Callback Researcher",
+      goal: "Return callback output",
+      backstory: "Careful analyst",
+      llm: () => "exported_ok",
+    });
+    const taskInstance = new Task({
+      description: "Give me a list of 5 interesting ideas to explore",
+      expectedOutput: "Bullet point list of 5 interesting ideas.",
+      agent: agentInstance,
+      callback,
+    });
+
+    await taskInstance.execute();
+
+    expect(callback).toHaveBeenCalledOnce();
+    const callbackOutput = callback.mock.calls[0]?.[0] as TaskOutput;
+    expect(callbackOutput.model_dump()).toEqual({
+      description: taskInstance.description,
+      raw: "exported_ok",
+      pydantic: null,
+      json_dict: null,
+      agent: "Callback Researcher",
+      summary: "Give me a list of 5 interesting ideas to explore...",
+      name: taskInstance.description,
+      expected_output: "Bullet point list of 5 interesting ideas.",
+      output_format: OutputFormat.RAW,
+      messages: callbackOutput.messages,
+    });
+    expect(JSON.parse(JSON.stringify(callbackOutput))).toEqual(callbackOutput.model_dump());
+  });
+
   it("sets task end_time when aexecute_sync fails", async () => {
     const agentInstance = new Agent({
       role: "Async Error Agent",
