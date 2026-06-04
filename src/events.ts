@@ -21,8 +21,15 @@ import {
   setLastEventId,
 } from "./context.js";
 import type { LiteAgentOutput } from "./lite-agent-output.js";
+import {
+  getAfterLlmCallHooks,
+  getAfterToolCallHooks,
+  getBeforeLlmCallHooks,
+  getBeforeToolCallHooks,
+} from "./hooks.js";
 import type { CrewOutput, TaskOutput } from "./outputs.js";
 import { RuntimeState } from "./state.js";
+import { Telemetry } from "./telemetry.js";
 import {
   markFirstExecutionCompleted,
   promptUserForTraceViewing,
@@ -4727,6 +4734,7 @@ setEventRuntimeStateProvider(() => crewaiEventBus.runtimeState);
 
 export class EventListener extends BaseEventListener {
   private static instance: EventListener | null = null;
+  _telemetry = Telemetry.getInstance();
   formatter = new ConsoleFormatter({ verbose: true });
   executionSpans = new Map<unknown, unknown>();
   execution_spans = this.executionSpans;
@@ -4753,6 +4761,14 @@ export class EventListener extends BaseEventListener {
 
     onEvent("crew_kickoff_started", (source, event) => {
       this.formatter.handle_crew_started(getEventString(event, "crew_name", "crewName") ?? "Crew", getSourceId(source));
+      if (
+        getBeforeLlmCallHooks().length > 0
+        || getAfterLlmCallHooks().length > 0
+        || getBeforeToolCallHooks().length > 0
+        || getAfterToolCallHooks().length > 0
+      ) {
+        this._telemetry.feature_usage_span("hooks:registered");
+      }
     });
     onEvent("crew_kickoff_completed", (source, event) => {
       const output = getEventRecord(event, "output");
@@ -4878,6 +4894,7 @@ export class EventListener extends BaseEventListener {
     });
     onEvent("llm_guardrail_completed", (_source, event) => {
       this.formatter.handle_guardrail_completed(Boolean(getEventValue(event, "success")), getEventString(event, "error"), getEventNumber(event, "retry_count", "retryCount") ?? 0);
+      this._telemetry.feature_usage_span("guardrail:execution");
     });
     onEvent("knowledge_search_query_started", () => {
       if (!this.knowledgeQueryInProgress) {
@@ -4909,6 +4926,7 @@ export class EventListener extends BaseEventListener {
       this.knowledgeRetrievalInProgress = false;
       this.knowledge_retrieval_in_progress = false;
       this.formatter.handle_memory_retrieval_completed(getEventString(event, "memory_content", "memoryContent") ?? "", getEventNumber(event, "retrieval_time_ms", "retrievalTimeMs") ?? 0);
+      this._telemetry.feature_usage_span("memory:retrieval");
     });
     onEvent("memory_query_failed", (_source, event) => {
       this.formatter.handle_memory_query_failed(getEventString(event, "error") ?? "", getEventString(event, "source_type", "sourceType") ?? "");
@@ -4918,6 +4936,7 @@ export class EventListener extends BaseEventListener {
     });
     onEvent("memory_save_completed", (_source, event) => {
       this.formatter.handle_memory_save_completed(getEventNumber(event, "save_time_ms", "saveTimeMs") ?? 0, getEventString(event, "source_type", "sourceType") ?? "");
+      this._telemetry.feature_usage_span("memory:save");
     });
     onEvent("memory_save_failed", (_source, event) => {
       this.formatter.handle_memory_save_failed(getEventString(event, "error") ?? "", getEventString(event, "source_type", "sourceType") ?? "");
@@ -4927,6 +4946,7 @@ export class EventListener extends BaseEventListener {
     });
     onEvent("agent_reasoning_completed", (_source, event) => {
       this.formatter.handle_reasoning_completed(getEventString(event, "plan") ?? "", Boolean(getEventValue(event, "ready")));
+      this._telemetry.feature_usage_span("planning:creation");
     });
     onEvent("agent_reasoning_failed", (_source, event) => {
       this.formatter.handle_reasoning_failed(getEventString(event, "error") ?? "");
@@ -4953,9 +4973,23 @@ export class EventListener extends BaseEventListener {
     });
     onEvent("plan_replan_triggered", (_source, event) => {
       this.formatter.handle_plan_replan(getEventString(event, "replan_reason", "replanReason") ?? "", getEventNumber(event, "replan_count", "replanCount") ?? 0, getEventNumber(event, "completed_steps_preserved", "completedStepsPreserved") ?? 0);
+      this._telemetry.feature_usage_span("planning:replan");
     });
     onEvent("goal_achieved_early", (_source, event) => {
       this.formatter.handle_goal_achieved_early(getEventNumber(event, "steps_completed", "stepsCompleted") ?? 0, getEventNumber(event, "steps_remaining", "stepsRemaining") ?? 0);
+      this._telemetry.feature_usage_span("planning:goal_achieved_early");
+    });
+    onEvent("skill_discovery_completed", () => {
+      this._telemetry.feature_usage_span("skill:discovery");
+    });
+    onEvent("skill_loaded", () => {
+      this._telemetry.feature_usage_span("skill:loaded");
+    });
+    onEvent("skill_load_failed", () => {
+      this._telemetry.feature_usage_span("skill:load_failed");
+    });
+    onEvent("skill_activated", () => {
+      this._telemetry.feature_usage_span("skill:activated");
     });
     onEvent("agent_logs_started", (_source, event) => {
       this.formatter.handle_agent_logs_started(getEventString(event, "agent_role", "agentRole") ?? "", getEventString(event, "task_description", "taskDescription"), Boolean(getEventValue(event, "verbose")));
@@ -4968,6 +5002,7 @@ export class EventListener extends BaseEventListener {
     });
     onEvent("a2a_delegation_completed", (_source, event) => {
       this.formatter.handle_a2a_delegation_completed(getEventString(event, "status") ?? "", getEventString(event, "result"), getEventString(event, "error"), Boolean(getEventValue(event, "is_multiturn", "isMultiturn")));
+      this._telemetry.feature_usage_span("a2a:delegation");
     });
     onEvent("a2a_conversation_started", (_source, event) => {
       this.formatter.handle_a2a_conversation_started(getEventString(event, "agent_id", "agentId") ?? "", getEventString(event, "endpoint") ?? "");
@@ -4980,6 +5015,7 @@ export class EventListener extends BaseEventListener {
     });
     onEvent("a2a_conversation_completed", (_source, event) => {
       this.formatter.handle_a2a_conversation_completed(getEventString(event, "status") ?? "", getEventString(event, "final_result", "finalResult"), getEventString(event, "error"), getEventNumber(event, "total_turns", "totalTurns") ?? 0);
+      this._telemetry.feature_usage_span("a2a:conversation");
     });
     onEvent("a2a_polling_started", (_source, event) => {
       this.formatter.handle_a2a_polling_started(getEventString(event, "task_id", "taskId") ?? "", getEventNumber(event, "polling_interval", "pollingInterval") ?? 0, getEventString(event, "endpoint") ?? "");
@@ -4992,18 +5028,28 @@ export class EventListener extends BaseEventListener {
     });
     onEvent("mcp_connection_completed", (_source, event) => {
       this.formatter.handle_mcp_connection_completed(getEventString(event, "server_name", "serverName") ?? "", getEventString(event, "server_url", "serverUrl"), getEventString(event, "transport_type", "transportType"), getEventNumber(event, "connection_duration_ms", "connectionDurationMs"), Boolean(getEventValue(event, "is_reconnect", "isReconnect")));
+      this._telemetry.feature_usage_span("mcp:connection");
     });
     onEvent("mcp_connection_failed", (_source, event) => {
       this.formatter.handle_mcp_connection_failed(getEventString(event, "server_name", "serverName") ?? "", getEventString(event, "server_url", "serverUrl"), getEventString(event, "transport_type", "transportType"), getEventString(event, "error") ?? "", getEventString(event, "error_type", "errorType"));
+      this._telemetry.feature_usage_span("mcp:connection_failed");
     });
     onEvent("mcp_config_fetch_failed", (_source, event) => {
       this.formatter.handle_mcp_config_fetch_failed(getEventString(event, "slug") ?? "", getEventString(event, "error") ?? "", getEventString(event, "error_type", "errorType"));
+      this._telemetry.feature_usage_span("mcp:config_fetch_failed");
     });
     onEvent("mcp_tool_execution_started", (_source, event) => {
       this.formatter.handle_mcp_tool_execution_started(getEventString(event, "server_name", "serverName") ?? "", getEventString(event, "tool_name", "toolName") ?? "", getEventRecord(event, "tool_args", "toolArgs"));
     });
     onEvent("mcp_tool_execution_failed", (_source, event) => {
       this.formatter.handle_mcp_tool_execution_failed(getEventString(event, "server_name", "serverName") ?? "", getEventString(event, "tool_name", "toolName") ?? "", getEventRecord(event, "tool_args", "toolArgs"), getEventString(event, "error") ?? "", getEventString(event, "error_type", "errorType"));
+      this._telemetry.feature_usage_span("mcp:tool_execution_failed");
+    });
+    onEvent("mcp_tool_execution_completed", () => {
+      this._telemetry.feature_usage_span("mcp:tool_execution");
+    });
+    onEvent("memory_query_completed", () => {
+      this._telemetry.feature_usage_span("memory:query");
     });
   }
 

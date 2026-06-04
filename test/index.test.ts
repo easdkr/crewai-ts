@@ -32343,6 +32343,95 @@ describe("events", () => {
     expect(typeof formatter.handle_a2a_polling_status).toBe("function");
   });
 
+  it("records upstream feature usage telemetry spans from event listener hooks", () => {
+    const previousDisableTelemetry = process.env.CREWAI_DISABLE_TELEMETRY;
+    const previousOtelDisabled = process.env.OTEL_SDK_DISABLED;
+    (Telemetry as unknown as { instance: Telemetry | null; _instance: Telemetry | null }).instance = null;
+    (Telemetry as unknown as { instance: Telemetry | null; _instance: Telemetry | null })._instance = null;
+    delete process.env.CREWAI_DISABLE_TELEMETRY;
+    delete process.env.OTEL_SDK_DISABLED;
+    clearAllGlobalHooks();
+
+    const originalLog = console.log;
+    console.log = () => {};
+    try {
+      const telemetry = new Telemetry();
+      telemetry.clearSpans();
+      const eventBus = new EventBus();
+      new EventListener(eventBus);
+      const emitFeatureEvent = (
+        type: ConstructorParameters<typeof BaseEvent>[0]["type"],
+        fields: Record<string, unknown> = {},
+      ) => {
+        eventBus.emit({}, Object.assign(new BaseEvent({ type }), fields));
+      };
+
+      registerBeforeLlmCallHook(() => true);
+      emitFeatureEvent("crew_kickoff_started", { crew_name: "Crew" });
+      clearAllGlobalHooks();
+
+      emitFeatureEvent("llm_guardrail_completed", { success: true, result: "ok", retry_count: 0 });
+      emitFeatureEvent("agent_reasoning_completed", { plan: "plan", ready: true });
+      emitFeatureEvent("plan_replan_triggered", { replan_reason: "blocked", replan_count: 1, completed_steps_preserved: 0 });
+      emitFeatureEvent("goal_achieved_early", { steps_completed: 1, steps_remaining: 2 });
+      emitFeatureEvent("skill_discovery_completed");
+      emitFeatureEvent("skill_loaded");
+      emitFeatureEvent("skill_load_failed");
+      emitFeatureEvent("skill_activated");
+      emitFeatureEvent("a2a_delegation_completed", { status: "completed", result: "ok" });
+      emitFeatureEvent("a2a_conversation_completed", { status: "completed", total_turns: 1 });
+      emitFeatureEvent("mcp_connection_completed", { server_name: "server" });
+      emitFeatureEvent("mcp_connection_failed", { server_name: "server", error: "down" });
+      emitFeatureEvent("mcp_config_fetch_failed", { slug: "server", error: "down" });
+      emitFeatureEvent("mcp_tool_execution_completed", { server_name: "server", tool_name: "search" });
+      emitFeatureEvent("mcp_tool_execution_failed", { server_name: "server", tool_name: "search", error: "down" });
+      emitFeatureEvent("memory_save_completed", { value: "saved", save_time_ms: 1 });
+      emitFeatureEvent("memory_query_completed", { query: "q", results: [], limit: 1, query_time_ms: 1 });
+      emitFeatureEvent("memory_retrieval_completed", { memory_content: "memory", retrieval_time_ms: 1 });
+
+      const features = telemetry.getSpans()
+        .filter((span) => span.name === "Feature Usage")
+        .map((span) => span.attributes.feature)
+        .sort();
+      expect(features).toEqual([
+        "a2a:conversation",
+        "a2a:delegation",
+        "guardrail:execution",
+        "hooks:registered",
+        "mcp:config_fetch_failed",
+        "mcp:connection",
+        "mcp:connection_failed",
+        "mcp:tool_execution",
+        "mcp:tool_execution_failed",
+        "memory:query",
+        "memory:retrieval",
+        "memory:save",
+        "planning:creation",
+        "planning:goal_achieved_early",
+        "planning:replan",
+        "skill:activated",
+        "skill:discovery",
+        "skill:load_failed",
+        "skill:loaded",
+      ]);
+    } finally {
+      console.log = originalLog;
+      clearAllGlobalHooks();
+      if (previousDisableTelemetry === undefined) {
+        delete process.env.CREWAI_DISABLE_TELEMETRY;
+      } else {
+        process.env.CREWAI_DISABLE_TELEMETRY = previousDisableTelemetry;
+      }
+      if (previousOtelDisabled === undefined) {
+        delete process.env.OTEL_SDK_DISABLED;
+      } else {
+        process.env.OTEL_SDK_DISABLED = previousOtelDisabled;
+      }
+      (Telemetry as unknown as { instance: Telemetry | null; _instance: Telemetry | null }).instance = null;
+      (Telemetry as unknown as { instance: Telemetry | null; _instance: Telemetry | null })._instance = null;
+    }
+  });
+
   it("pauses active ConsoleFormatter stream sessions and creates a new session after resume", () => {
     type FormatterWithStream = ConsoleFormatter & {
       _streaming_live: { start: ReturnType<typeof vi.fn>; stop: ReturnType<typeof vi.fn> } | null;

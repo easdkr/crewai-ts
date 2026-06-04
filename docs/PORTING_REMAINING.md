@@ -709,6 +709,7 @@ When more goal budget is available, continue from the behavioral parity audits b
    - Goal-alignment and semantic-quality evaluator placeholders have been replaced with LLM-backed evaluators.
    - Evaluation trace callback now records event-bus-driven agent/lite-agent traces, tool uses, tool errors, validation errors, LLM calls, and final output.
    - Telemetry span methods now record deterministic local `RecordedSpan` objects for task/tool/test/crew/flow/environment/human-feedback/feature/template telemetry, including `share_crew` platform/fingerprint payload details, without external OTLP side effects.
+   - Event listener feature telemetry is release-gated for upstream event-to-feature mapping: guardrail execution, planning creation/replan/early-goal, skill discovery/load/activation/failure, A2A delegation/conversation, MCP connection/config/tool events, memory save/query/retrieval, and registered global hooks all emit deterministic local `Feature Usage` spans.
    - Remaining: deeper OpenTelemetry exporter integration can stay outside the default gate unless the project decides to carry SDK-backed telemetry coverage.
 
 ## Suggested Next Order
