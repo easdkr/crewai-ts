@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 1087 passing tests.
+- Test suite: 1088 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -29,6 +29,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
 - The latest-upstream native-provider fallback audit is now release-gated deterministically for non-native provider prefixes: `groq/...` and `together/...` keep the original model string and route through the LiteLLM-compatible `ConfiguredLLM` path instead of pretending to use a native SDK.
 - The latest-upstream non-streaming tool-call response audit is now release-gated deterministically: sync and async non-streaming handlers preserve raw `tool_calls` for executor-managed execution even when the assistant message also contains text and no `available_functions` map is provided.
 - The latest-upstream ChromaDB utility audit is now release-gated deterministically: collection-name sanitization covers long, short, special-character, IPv4, empty, null, and whitespace-only names; document preparation preserves list-metadata semantics and generated 64-character content hashes; and batch slicing returns `null` metadata only when every sliced metadata object is empty.
+- The latest-upstream ChromaDB collection payload audit is now release-gated deterministically: sync and async `create_collection` / `get_or_create_collection` preserve upstream all-params payloads, default `hnsw:space` metadata is added only when metadata is omitted, and caller-provided metadata is no longer merged with the default metric.
 - The latest-upstream ChromaDB search audit is now release-gated deterministically: sync optional search params and async search calls use upstream query payload shapes (`query_texts`, `n_results`, `where`, `where_document`, ordered `include`) and score-threshold filtering preserves only matching converted results.
 - The latest-upstream ChromaDB batch-add audit is now release-gated deterministically: default and explicit batch sizes split sync and async `add_documents` / `aadd_documents` upserts into upstream-shaped `ids`, `documents`, and `metadatas` payloads without live ChromaDB clients.
 - The latest-upstream Qdrant batch-add audit is now release-gated deterministically: default and explicit batch sizes split sync and async `add_documents` / `aadd_documents` upserts into upstream-shaped `collection_name` and flattened point payloads with generated vectors and metadata.

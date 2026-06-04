@@ -2718,7 +2718,7 @@ export function _is_ipv4_pattern(name: string): boolean {
 }
 
 function normalizeChromaMetadata(metadata: Record<string, unknown> | undefined): Record<string, unknown> {
-  return { "hnsw:space": "cosine", ...(metadata ?? {}) };
+  return metadata ?? { "hnsw:space": "cosine" };
 }
 
 export function _prepare_documents_for_chromadb(documents: readonly BaseRecord[]): PreparedDocuments {

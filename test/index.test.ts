@@ -12107,7 +12107,7 @@ describe("RAG configuration and factories", () => {
     expect(createCollection).toHaveBeenCalledWith({
       name: "docs",
       configuration: undefined,
-      metadata: { owner: "crew", "hnsw:space": "cosine" },
+      metadata: { owner: "crew" },
       embedding_function: client.embedding_function,
       data_loader: undefined,
       get_or_create: true,
@@ -12121,6 +12121,59 @@ describe("RAG configuration and factories", () => {
       embedding_function: client.embedding_function,
       data_loader: undefined,
     });
+  });
+
+  it("uses upstream ChromaDB async collection create and get payload shapes", async () => {
+    const collection = new FakeChromaCollection();
+    const createCalls: unknown[] = [];
+    const getOrCreateCalls: unknown[] = [];
+    class AsyncPayloadChromaClient {
+      async create_collection(options: Record<string, unknown>): Promise<void> {
+        await Promise.resolve();
+        createCalls.push(options);
+      }
+
+      async get_or_create_collection(options: Record<string, unknown>): Promise<FakeChromaCollection> {
+        await Promise.resolve();
+        getOrCreateCalls.push(options);
+        return collection;
+      }
+    }
+    const embeddingFunction = (texts: readonly string[]) => texts.map((text) => [text.length]);
+    const dataLoader = vi.fn();
+    const client = new ChromaDBClient(new AsyncPayloadChromaClient(), embeddingFunction);
+
+    await client.acreate_collection({
+      collection_name: "async docs",
+      configuration: { hnsw: { space: "ip" } },
+      metadata: { owner: "crew" },
+      embedding_function: embeddingFunction,
+      data_loader: dataLoader,
+      get_or_create: true,
+    });
+    expect(createCalls).toEqual([{
+      name: "async_docs",
+      configuration: { hnsw: { space: "ip" } },
+      metadata: { owner: "crew" },
+      embedding_function: embeddingFunction,
+      data_loader: dataLoader,
+      get_or_create: true,
+    }]);
+
+    await expect(client.aget_or_create_collection({
+      collection_name: "async docs",
+      configuration: { hnsw: { space: "cosine" } },
+      metadata: { owner: "crew" },
+      embedding_function: embeddingFunction,
+      data_loader: dataLoader,
+    })).resolves.toBe(collection);
+    expect(getOrCreateCalls).toEqual([{
+      name: "async_docs",
+      configuration: { hnsw: { space: "cosine" } },
+      metadata: { owner: "crew" },
+      embedding_function: embeddingFunction,
+      data_loader: dataLoader,
+    }]);
   });
 
   it("uses upstream ChromaDB delete collection payload shape", async () => {
