@@ -12233,6 +12233,75 @@ describe("RAG configuration and factories", () => {
     });
   });
 
+  it("uses upstream ChromaDB optional and async search payload shapes", async () => {
+    const optionalCollection = {
+      metadata: { "hnsw:space": "cosine" },
+      query: vi.fn(() => ({
+        ids: [["doc-1", "doc-2", "doc-3"]],
+        documents: [["Document 1", "Document 2", "Document 3"]],
+        metadatas: [[{ source: "test1" }, { source: "test2" }, { source: "test3" }]],
+        distances: [[0.1, 0.3, 1.5]],
+      })),
+    };
+    const client = new ChromaDBClient({
+      get_or_create_collection: vi.fn(() => optionalCollection),
+    }, (texts: readonly string[]) => texts.map((text) => [text.length]));
+
+    expect(client.search({
+      collection_name: "test_collection",
+      query: "test query",
+      limit: 5,
+      metadata_filter: { source: "test" },
+      score_threshold: 0.7,
+    })).toEqual([
+      { id: "doc-1", content: "Document 1", metadata: { source: "test1" }, score: 0.95 },
+      { id: "doc-2", content: "Document 2", metadata: { source: "test2" }, score: 0.85 },
+    ]);
+    expect(optionalCollection.query).toHaveBeenCalledWith({
+      query_texts: ["test query"],
+      n_results: 5,
+      where: { source: "test" },
+      where_document: null,
+      include: ["metadatas", "documents", "distances"],
+    });
+
+    const asyncCollection = {
+      metadata: { "hnsw:space": "cosine" },
+      query: vi.fn(async () => await Promise.resolve({
+        ids: [["doc-1", "doc-2"]],
+        documents: [["Document 1", "Document 2"]],
+        metadatas: [[{ source: "test1" }, { source: "test2" }]],
+        distances: [[0.1, 0.3]],
+      })),
+    };
+    const asyncGetOrCreateCollection = vi.fn(async () => await Promise.resolve(asyncCollection));
+    const asyncClient = new ChromaDBClient({
+      get_or_create_collection: asyncGetOrCreateCollection,
+      reset: async () => {
+        await Promise.resolve();
+      },
+    }, (texts: readonly string[]) => texts.map((text) => [text.length]));
+
+    await expect(asyncClient.asearch({
+      collection_name: "test_collection",
+      query: "test query",
+    })).resolves.toEqual([
+      { id: "doc-1", content: "Document 1", metadata: { source: "test1" }, score: 0.95 },
+      { id: "doc-2", content: "Document 2", metadata: { source: "test2" }, score: 0.85 },
+    ]);
+    expect(asyncGetOrCreateCollection).toHaveBeenCalledWith({
+      name: "test_collection",
+      embedding_function: asyncClient.embedding_function,
+    });
+    expect(asyncCollection.query).toHaveBeenCalledWith({
+      query_texts: ["test query"],
+      n_results: 5,
+      where: null,
+      where_document: null,
+      include: ["metadatas", "documents", "distances"],
+    });
+  });
+
   it("wraps Qdrant clients with collection lifecycle, upsert/search filters, and async aliases", async () => {
     const fake = new FakeQdrantClient();
     const client = new QdrantClient(fake, (text: string) => [text.length], 2, 0.5, 1);
