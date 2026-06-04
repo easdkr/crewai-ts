@@ -1484,6 +1484,38 @@ export class Flow<TState extends object = Record<string, unknown>> {
     this._discardOrListener(listenerName);
   }
 
+  _rearmOrListenersForTrigger(trigger: FlowConditionInput, rearmable: Set<string> | null = null): void {
+    if (this.firedOrListeners.size === 0) {
+      return;
+    }
+
+    const triggerName = typeof trigger === "string" ? trigger : typeof trigger === "function" ? trigger.name : "";
+    const candidates = rearmable === null
+      ? [...this.firedOrListeners]
+      : [...this.firedOrListeners].filter((listenerName) => rearmable.has(listenerName));
+
+    for (const listenerName of candidates) {
+      const entry = getFlowMetadata(this).find((item) => String(item.name) === listenerName);
+      if (!entry?.condition) {
+        continue;
+      }
+
+      const includesTrigger = typeof entry.condition === "string"
+        ? entry.condition === triggerName
+        : conditionIncludesTrigger(entry.condition, triggerName);
+      if (!includesTrigger) {
+        continue;
+      }
+
+      this.firedOrListeners.delete(listenerName);
+      rearmable?.delete(listenerName);
+    }
+  }
+
+  _rearm_or_listeners_for_trigger(trigger: FlowConditionInput, rearmable: Set<string> | null = null): void {
+    this._rearmOrListenersForTrigger(trigger, rearmable);
+  }
+
   _buildRacingGroups(): Map<ReadonlySet<string>, string> {
     const entries = getFlowMetadata(this);
     const methodToListeners = new Map<string, Set<string>>();

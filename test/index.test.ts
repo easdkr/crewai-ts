@@ -20035,6 +20035,13 @@ describe("flow runtime", () => {
     flow._clear_or_listeners();
     expect(flow._mark_or_listener_fired("handler")).toBe(true);
 
+    expect(flow._mark_or_listener_fired("afterC")).toBe(true);
+    const rearmable = new Set(["handler", "afterC"]);
+    flow._rearm_or_listeners_for_trigger("b", rearmable);
+    expect(flow._mark_or_listener_fired("handler")).toBe(true);
+    expect(flow._mark_or_listener_fired("afterC")).toBe(false);
+    expect([...rearmable].sort()).toEqual(["afterC"]);
+
     const groups = flow._build_racing_groups();
     const entries = [...groups.entries()].map(([members, listener]) => [[...members].sort(), listener]);
     expect(entries).toEqual([[["a", "b"], "handler"]]);

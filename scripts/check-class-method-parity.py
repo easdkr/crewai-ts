@@ -18,13 +18,13 @@ UPSTREAM = Path(
 )
 
 TARGETS = [
-    ("Crew", UPSTREAM / "crew.py", ROOT / "src" / "crew.ts"),
-    ("Agent", UPSTREAM / "agent" / "core.py", ROOT / "src" / "agent.ts"),
-    ("Task", UPSTREAM / "task.py", ROOT / "src" / "task.ts"),
-    ("LiteAgent", UPSTREAM / "lite_agent.py", ROOT / "src" / "lite-agent.ts"),
-    ("Memory", UPSTREAM / "memory" / "unified_memory.py", ROOT / "src" / "memory.ts"),
-    ("Flow", UPSTREAM / "flow" / "flow.py", ROOT / "src" / "flow.ts"),
-    ("SkillFrontmatter", UPSTREAM / "skills" / "models.py", ROOT / "src" / "skills.ts"),
+    ("Crew", [UPSTREAM / "crew.py"], ROOT / "src" / "crew.ts"),
+    ("Agent", [UPSTREAM / "agent" / "core.py"], ROOT / "src" / "agent.ts"),
+    ("Task", [UPSTREAM / "task.py"], ROOT / "src" / "task.ts"),
+    ("LiteAgent", [UPSTREAM / "lite_agent.py"], ROOT / "src" / "lite-agent.ts"),
+    ("Memory", [UPSTREAM / "memory" / "unified_memory.py"], ROOT / "src" / "memory.ts"),
+    ("Flow", [UPSTREAM / "flow" / "runtime.py", UPSTREAM / "flow" / "flow.py"], ROOT / "src" / "flow.ts"),
+    ("SkillFrontmatter", [UPSTREAM / "skills" / "models.py"], ROOT / "src" / "skills.ts"),
 ]
 
 IGNORED_UPSTREAM_METHODS = {
@@ -45,6 +45,19 @@ def python_class_methods(path: Path, class_name: str) -> list[str]:
                 if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef))
             ]
     raise SystemExit(f"Class {class_name} not found in {path}")
+
+
+def upstream_class_methods(paths: list[Path], class_name: str) -> list[str]:
+    checked: list[str] = []
+    for path in paths:
+        if not path.exists():
+            checked.append(str(path))
+            continue
+        try:
+            return python_class_methods(path, class_name)
+        except SystemExit:
+            checked.append(str(path))
+    raise SystemExit(f"Class {class_name} not found in any candidate path: {', '.join(checked)}")
 
 
 def typescript_class_members(path: Path) -> set[str]:
@@ -92,8 +105,8 @@ def main() -> int:
         raise SystemExit(f"Upstream source tree not found: {UPSTREAM}")
 
     total_missing = 0
-    for class_name, upstream_path, local_path in TARGETS:
-        upstream_methods = python_class_methods(upstream_path, class_name)
+    for class_name, upstream_paths, local_path in TARGETS:
+        upstream_methods = upstream_class_methods(upstream_paths, class_name)
         local_members = typescript_class_members(local_path)
         missing = [
             name

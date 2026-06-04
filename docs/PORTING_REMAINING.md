@@ -20,6 +20,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
 - Core public class method parity script: `total_missing=0`.
 - Subpath export parity: `total_missing=0`, `total_mismatched=0`.
 - During the 2026-06-04 run, a fresh latest upstream checkout showed new post-baseline export surfaces (`flow/conversation`, `experimental/conversational`, `experimental/conversational_mixin`, `flow/dsl`, `flow/flow_definition`, `flow/runtime`, `llms/providers/snowflake`, `llms/providers/snowflake/completion`, and `flow_context.current_flow_name`). These now have deterministic TS coverage or package subpath coverage, and latest-upstream root/subpath export parity reports `total_missing=0`. These remaining surfaces are not part of the current release baseline commit above; audit them by behavior before advancing the parity baseline.
+- A later 2026-06-04 latest-upstream audit found the upstream `Flow` class moved from `flow/flow.py` to `flow/runtime.py`; `scripts/check-class-method-parity.py` now accepts both locations. That audit also found and closed the latest-upstream `Flow._rearm_or_listeners_for_trigger` method gap with deterministic OR-listener rearm helper coverage. Latest-upstream class method parity reports `total_missing=0`.
 
 ## Release Readiness Policy
 
@@ -201,6 +202,7 @@ High-value behavior audits still worth running:
    - Snowflake Cortex completion is covered as a deterministic provider shim: token/account URL normalization, Claude-family message guards, capability flags, and request-parameter shaping are release-gated without live Snowflake credentials.
    - Latest NVIDIA Nemotron docs are covered as deterministic provider metadata: the documented `nvidia_nim/nvidia/nvidia-nemotron-3-ultra-550b-a55b` model string is in the NIM model list, and hosted NIM accepts both `NVIDIA_NIM_API_KEY` and the documented `NVIDIA_API_KEY` env alias.
    - Flow DSL definition extraction is covered with a deterministic `buildFlowDefinition` / `build_flow_definition` shim over TS decorator metadata, including nested conditions, state/config snapshots, and human-feedback routing metadata.
+   - Flow runtime OR-listener rearming is covered for latest upstream: `_rearm_or_listeners_for_trigger` clears only fired OR listeners whose condition includes the router-emitted trigger and mutates the optional `rearmable` set like upstream.
    - Before changing the release baseline, classify each new behavior surface by deterministic local workflow, provider/network shim, or intentionally unsupported optional integration.
 
 3. **Experimental `AgentExecutor` plan-and-execute behavior**
