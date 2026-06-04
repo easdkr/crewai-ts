@@ -30620,12 +30620,10 @@ describe("crew planning", () => {
       agent: researcher,
       tools: [tool],
     });
-    const planner = new CrewPlanner({
-      tasks: [taskInstance],
-      planning_agent_llm: plannerLlm,
-    });
+    const planner = new CrewPlanner([taskInstance], plannerLlm);
 
     expect(CrewPlanner._get_agent_knowledge(taskInstance)).toEqual(["CrewAI planning knowledge"]);
+    expect(planner.planning_agent_llm).toBe(plannerLlm);
     expect(planner._create_planning_agent().goal).toContain("extremely detailed");
     expect(planner._create_tasks_summary()).toContain('"agent_knowledge": "[\\"CrewAI planning knowledge\\"]"');
 

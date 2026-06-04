@@ -60,11 +60,24 @@ export type CrewPlannerOptions = {
 export class CrewPlanner {
   readonly tasks: readonly Task[];
   readonly planningAgentLlm: LLM | string | null;
+  readonly planning_agent_llm: LLM | string | null;
   private planningAgent: Agent | null = null;
 
-  constructor(options: CrewPlannerOptions) {
-    this.tasks = options.tasks;
-    this.planningAgentLlm = options.planningAgentLlm ?? options.planning_agent_llm ?? "gpt-4o-mini";
+  constructor(options: CrewPlannerOptions);
+  constructor(tasks: readonly Task[], planningAgentLlm?: LLM | string | null);
+  constructor(
+    optionsOrTasks: CrewPlannerOptions | readonly Task[],
+    planningAgentLlm?: LLM | string | null,
+  ) {
+    if (isTaskList(optionsOrTasks)) {
+      this.tasks = optionsOrTasks;
+      this.planningAgentLlm = planningAgentLlm ?? "gpt-4o-mini";
+      this.planning_agent_llm = this.planningAgentLlm;
+      return;
+    }
+    this.tasks = optionsOrTasks.tasks;
+    this.planningAgentLlm = optionsOrTasks.planningAgentLlm ?? optionsOrTasks.planning_agent_llm ?? "gpt-4o-mini";
+    this.planning_agent_llm = this.planningAgentLlm;
   }
 
   async handleCrewPlanning(): Promise<PlannerTaskOutput> {
@@ -139,6 +152,10 @@ export class CrewPlanner {
       ...renderAgentKnowledge(CrewPlanner._get_agent_knowledge(task)),
     ].join("\n")).join("\n\n");
   }
+}
+
+function isTaskList(value: CrewPlannerOptions | readonly Task[]): value is readonly Task[] {
+  return Array.isArray(value);
 }
 
 export function parsePlannerTaskOutput(raw: string): PlannerTaskOutput {
