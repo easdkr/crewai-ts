@@ -19371,6 +19371,32 @@ describe("flow runtime", () => {
     ]);
   });
 
+  it("warns instead of erroring for orphaned static FlowDefinition router triggers", () => {
+    const definition = FlowDefinition.from_dict({
+      schema: "crewai.flow/v1",
+      name: "OrphanedContractFlow",
+      methods: {
+        begin: { start: true },
+        decide: { listen: "begin", router: true, emit: ["option_a", "option_b"] },
+        handleA: { listen: "option_a" },
+        handleOrphan: { listen: "option_c" },
+      },
+    });
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    try {
+      buildFlowStructure(definition);
+
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("Static visualization could not match listener triggers"));
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("option_c"));
+      expect(errorSpy).not.toHaveBeenCalled();
+    } finally {
+      warnSpy.mockRestore();
+      errorSpy.mockRestore();
+    }
+  });
+
   it("parses flow visualization CSS and JS extension tags like upstream", () => {
     const cssParser = {
       stream: [{ lineno: 7 }],

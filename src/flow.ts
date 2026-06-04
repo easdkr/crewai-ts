@@ -3455,7 +3455,7 @@ export function buildFlowStructure(instanceOrConstructor: object | FlowMetadataT
     edges.push(...createVisualizationEdgesFromCondition(entry.condition, String(entry.name), nodes));
   }
 
-  emitFlowVisualizationDiagnostics(entries, nodes, routerMethods);
+  emitFlowVisualizationDiagnostics(entries, nodes, routerMethods, Boolean(loadedDefinition));
 
   for (const routerName of routerMethods) {
     const routerPaths = nodes[routerName]?.router_paths ?? [];
@@ -4018,6 +4018,7 @@ function emitFlowVisualizationDiagnostics(
   entries: readonly FlowMethodEntry[],
   nodes: Record<string, FlowNodeMetadata>,
   routerMethods: readonly string[],
+  staticContract = false,
 ): void {
   const nodeNames = new Set(Object.keys(nodes));
   const allStringTriggers = new Set<string>();
@@ -4050,6 +4051,13 @@ function emitFlowVisualizationDiagnostics(
 
   const orphanedTriggers = [...allStringTriggers].filter((trigger) => !allRouterOutputs.has(trigger));
   if (orphanedTriggers.length > 0) {
+    if (staticContract) {
+      console.warn(
+        `Static visualization could not match listener triggers ${formatSetLike(orphanedTriggers)} `
+        + "to explicit router events. Dynamic router values may still trigger these listeners at runtime.",
+      );
+      return;
+    }
     console.error(
       `Found listeners waiting for triggers ${formatSetLike(orphanedTriggers)} `
       + "but no router outputs these values explicitly. "
