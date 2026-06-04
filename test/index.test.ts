@@ -21841,6 +21841,34 @@ describe("flow runtime", () => {
     expect(typoContract.diagnostics).toEqual([]);
   });
 
+  it("reports upstream router diagnostics when loaded FlowDefinition start is explicitly false", () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const definition = FlowDefinition.from_dict({
+        schema: "crewai.flow/v1",
+        name: "LoadedFlow",
+        methods: {
+          decision: {
+            router: true,
+            start: false,
+            emit: ["continue"],
+          },
+        },
+      });
+
+      expect(definition.methods.decision?.is_start).toBe(false);
+      expect(definition.diagnostics).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          code: "router_without_trigger",
+          path: "methods.decision",
+        }),
+      ]));
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("router_without_trigger"));
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
   it("validates upstream Flow DSL condition dictionaries strictly", () => {
     expect(isFlowConditionDict({
       type: "OR",
