@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 981 passing tests.
+- Test suite: 982 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -320,6 +320,7 @@ When more goal budget is available, continue from the behavioral parity audits b
 - Tool dictionary resolution now preserves upstream snake_case usage counters: `_resolve_tool_dict` carries `max_usage_count` and `current_usage_count` into the structured tool instead of dropping them during conversion.
 - Structured tool function inference now mirrors upstream default-value behavior for deterministic JS literals: `from_function` marks parameters with defaults as optional, preserves string/null/number/boolean literal defaults, and still executes when only required parameters are provided.
 - `ToolUsageStartedEvent` now accepts upstream snake_case construction payloads (`tool_name`, `tool_args`, `tool_class`) while preserving camelCase aliases for deterministic TS consumers.
+- `HumanFeedbackRequestedEvent` and `HumanFeedbackReceivedEvent` now accept upstream flow-event snake_case construction payloads (`flow_name`, `method_name`, `request_id`) while preserving camelCase aliases.
 - `ToolUsage.use` now has default-gate coverage for upstream failing-tool event behavior: failed tool runs emit started/error events without emitting a finished event.
 - `PickleHandler.load` now mirrors upstream corrupted persistence behavior for the JSON-backed TS shim: missing or empty files still load as `{}`, while malformed saved data raises `pickle data was truncated` instead of being silently discarded.
 - `MCPToolResolver._resolve_native` now mirrors upstream deterministic native MCP resolver behavior for fake clients: when discovery yields no usable tools it logs a warning and returns `[[], []]`, and unexpected discovery failures are wrapped as native MCP tool discovery errors while still disconnecting the discovery client.

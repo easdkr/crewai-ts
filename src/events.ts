@@ -917,59 +917,91 @@ export class AgentReasoningFailedEvent extends BaseEvent {
 
 export class HumanFeedbackRequestedEvent extends BaseEvent {
   readonly taskName: string | null;
+  readonly task_name: string | null;
   readonly taskDescription: string | null;
+  readonly task_description: string | null;
   readonly output: unknown;
   readonly flowName: string | null;
+  readonly flow_name: string | null;
   readonly methodName: string | null;
+  readonly method_name: string | null;
   readonly message: string | null;
   readonly emit: readonly string[] | null;
+  readonly request_id: string | null;
 
   constructor(options: {
     taskName?: string | null;
+    task_name?: string | null;
     taskDescription?: string | null;
+    task_description?: string | null;
     output: unknown;
     flowName?: string | null;
+    flow_name?: string | null;
     methodName?: string | null;
+    method_name?: string | null;
     message?: string | null;
     emit?: readonly string[] | null;
+    request_id?: string | null;
   }) {
-    super({ type: "human_feedback_requested", sourceType: options.flowName ? "flow" : "task" });
-    this.taskName = options.taskName ?? null;
-    this.taskDescription = options.taskDescription ?? null;
+    const flowName = options.flowName ?? options.flow_name ?? null;
+    super({ type: "human_feedback_requested", sourceType: flowName ? "flow" : "task" });
+    this.taskName = options.taskName ?? options.task_name ?? null;
+    this.task_name = this.taskName;
+    this.taskDescription = options.taskDescription ?? options.task_description ?? null;
+    this.task_description = this.taskDescription;
     this.output = options.output;
-    this.flowName = options.flowName ?? null;
-    this.methodName = options.methodName ?? null;
+    this.flowName = flowName;
+    this.flow_name = this.flowName;
+    this.methodName = options.methodName ?? options.method_name ?? null;
+    this.method_name = this.methodName;
     this.message = options.message ?? null;
     this.emit = options.emit ?? null;
+    this.request_id = options.request_id ?? null;
   }
 }
 
 export class HumanFeedbackReceivedEvent extends BaseEvent {
   readonly taskName: string | null;
+  readonly task_name: string | null;
   readonly taskDescription: string | null;
+  readonly task_description: string | null;
   readonly feedback: string;
   readonly accepted: boolean;
   readonly flowName: string | null;
+  readonly flow_name: string | null;
   readonly methodName: string | null;
+  readonly method_name: string | null;
   readonly outcome: string | null;
+  readonly request_id: string | null;
 
   constructor(options: {
     taskName?: string | null;
+    task_name?: string | null;
     taskDescription?: string | null;
+    task_description?: string | null;
     feedback: string;
     accepted?: boolean;
     flowName?: string | null;
+    flow_name?: string | null;
     methodName?: string | null;
+    method_name?: string | null;
     outcome?: string | null;
+    request_id?: string | null;
   }) {
-    super({ type: "human_feedback_received", sourceType: options.flowName ? "flow" : "task" });
-    this.taskName = options.taskName ?? null;
-    this.taskDescription = options.taskDescription ?? null;
+    const flowName = options.flowName ?? options.flow_name ?? null;
+    super({ type: "human_feedback_received", sourceType: flowName ? "flow" : "task" });
+    this.taskName = options.taskName ?? options.task_name ?? null;
+    this.task_name = this.taskName;
+    this.taskDescription = options.taskDescription ?? options.task_description ?? null;
+    this.task_description = this.taskDescription;
     this.feedback = options.feedback;
     this.accepted = options.accepted ?? true;
-    this.flowName = options.flowName ?? null;
-    this.methodName = options.methodName ?? null;
+    this.flowName = flowName;
+    this.flow_name = this.flowName;
+    this.methodName = options.methodName ?? options.method_name ?? null;
+    this.method_name = this.methodName;
     this.outcome = options.outcome ?? null;
+    this.request_id = options.request_id ?? null;
   }
 }
 

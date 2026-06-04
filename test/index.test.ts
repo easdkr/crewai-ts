@@ -184,6 +184,8 @@ import {
   GRPCServerConfig,
   HTTPBasicAuth,
   HTTPDigestAuth,
+  HumanFeedbackReceivedEvent,
+  HumanFeedbackRequestedEvent,
   HumanFeedbackPending,
   PendingFeedbackContext,
   SyncHumanInputProvider,
@@ -20890,6 +20892,48 @@ describe("flow runtime", () => {
       message: "Review direct output",
       output: "draft",
       emit: ["approved"],
+    });
+  });
+
+  it("accepts upstream snake_case payloads for human feedback events", () => {
+    const requested = new HumanFeedbackRequestedEvent({
+      flow_name: "ReviewFlow",
+      method_name: "review",
+      output: "draft",
+      message: "Review draft",
+      emit: ["approved"],
+      request_id: "req-1",
+    });
+    const received = new HumanFeedbackReceivedEvent({
+      flow_name: "ReviewFlow",
+      method_name: "review",
+      feedback: "ship it",
+      outcome: "approved",
+      request_id: "req-1",
+    });
+
+    expect(requested).toMatchObject({
+      type: "human_feedback_requested",
+      sourceType: "flow",
+      flowName: "ReviewFlow",
+      flow_name: "ReviewFlow",
+      methodName: "review",
+      method_name: "review",
+      output: "draft",
+      message: "Review draft",
+      emit: ["approved"],
+      request_id: "req-1",
+    });
+    expect(received).toMatchObject({
+      type: "human_feedback_received",
+      sourceType: "flow",
+      flowName: "ReviewFlow",
+      flow_name: "ReviewFlow",
+      methodName: "review",
+      method_name: "review",
+      feedback: "ship it",
+      outcome: "approved",
+      request_id: "req-1",
     });
   });
 
