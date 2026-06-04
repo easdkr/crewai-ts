@@ -13519,6 +13519,61 @@ describe("core crew runtime", () => {
     expect(result.tool_calls_made).toEqual([]);
   });
 
+  it("emits tool usage events during StepExecutor text-parsed tool execution", async () => {
+    const events: Array<Record<string, unknown>> = [];
+    const offStarted = crewaiEventBus.on("tool_usage_started", (_source, event) => {
+      events.push({ type: "started", ...(event as unknown as Record<string, unknown>) });
+    });
+    const offFinished = crewaiEventBus.on("tool_usage_finished", (_source, event) => {
+      events.push({ type: "finished", ...(event as unknown as Record<string, unknown>) });
+    });
+    const searchTool = new StructuredTool({
+      name: "Search Tool",
+      description: "Search",
+      func: (args) => `searched:${(args as { query?: string }).query ?? ""}`,
+    });
+    const llmResponses = [
+      "Thought: use search\nAction: Search Tool\nAction Input: {\"query\":\"CrewAI\"}",
+      "Thought: done\nFinal Answer: complete",
+    ];
+    const executor = new StepExecutor({
+      agent: new Agent({
+        role: "Researcher",
+        goal: "Find facts",
+        backstory: "Careful analyst",
+        llm: () => llmResponses.shift() ?? "Final Answer: fallback",
+      }),
+      tools: [searchTool],
+    });
+
+    try {
+      await expect(executor.execute(
+        new TodoItem({ step_number: 1, description: "Search docs", tool_to_use: "Search Tool" }),
+        new StepExecutionContext({ taskDescription: "Research CrewAI", taskGoal: "Use sources" }),
+      )).resolves.toMatchObject({
+        success: true,
+        result: "complete",
+        tool_calls_made: ["Search Tool"],
+      });
+    } finally {
+      offStarted();
+      offFinished();
+    }
+
+    expect(events).toEqual([
+      expect.objectContaining({
+        type: "tool_usage_started",
+        tool_name: "search_tool",
+        tool_args: { query: "CrewAI" },
+      }),
+      expect.objectContaining({
+        type: "tool_usage_finished",
+        tool_name: "search_tool",
+        output: "searched:CrewAI",
+      }),
+    ]);
+  });
+
   it("exposes upstream StepExecutor parsing and observation helpers", () => {
     const searchTool = new StructuredTool({
       name: "Search Tool",
