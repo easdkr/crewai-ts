@@ -34907,6 +34907,25 @@ describe("lite agent", () => {
     expect((events[1] as LiteAgentExecutionCompletedEvent).output.raw).toBe("done");
   });
 
+  it("suppresses LiteAgent printer output when verbose is false", async () => {
+    const printSpy = vi.spyOn(PRINTER, "print").mockImplementation(() => undefined);
+    const agent = new LiteAgent({
+      role: "Quiet Agent",
+      goal: "Stay quiet",
+      backstory: "No verbose output",
+      llm: () => "quiet final",
+      verbose: false,
+    });
+
+    try {
+      const output = await agent.kickoff("Run quietly");
+      expect(output.raw).toBe("quiet final");
+      expect(printSpy).not.toHaveBeenCalled();
+    } finally {
+      printSpy.mockRestore();
+    }
+  });
+
   it("emits lite agent error events", async () => {
     const events: CrewAIEvent[] = [];
     crewaiEventBus.on("lite_agent_execution_error", (_source, event) => {
