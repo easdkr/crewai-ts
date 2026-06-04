@@ -20283,6 +20283,27 @@ describe("agent planning", () => {
     expect(agentInstance.getUsageMetrics().successfulRequests).toBe(2);
   });
 
+  it("preserves explicit Agent planning_config custom prompts", () => {
+    const customSystemPrompt = "You are a specialized planner.";
+    const customPlanPrompt = "Plan this task: {description}";
+    const agentInstance = new Agent({
+      role: "Planner",
+      goal: "Plan carefully",
+      backstory: "Keeps planner configuration",
+      planning_config: new PlanningConfig({
+        system_prompt: customSystemPrompt,
+        plan_prompt: customPlanPrompt,
+        max_steps: 10,
+      }),
+    });
+
+    expect(agentInstance.planning_config).toBeInstanceOf(PlanningConfig);
+    expect(agentInstance.planning_config?.system_prompt).toBe(customSystemPrompt);
+    expect(agentInstance.planning_config?.plan_prompt).toBe(customPlanPrompt);
+    expect(agentInstance.planning_config?.max_steps).toBe(10);
+    expect(agentInstance.planning_enabled).toBe(true);
+  });
+
   it("returns structured direct Agent kickoff output when response_format is requested", async () => {
     const responseFormat = { type: "object", properties: { answer: { type: "number" } } };
     const seenOptions: LLMCallOptions[] = [];
