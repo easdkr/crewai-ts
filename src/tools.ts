@@ -2466,6 +2466,7 @@ function parseToolInputDictionary(toolInput: string): Record<string, unknown> | 
     toolInput,
     toolInput.trim().replaceAll("'", "\""),
     normalizePythonLiteralObject(toolInput),
+    normalizeJson5LikeObject(toolInput),
   ].filter((candidate): candidate is string => typeof candidate === "string");
   for (const candidate of candidates) {
     try {
@@ -2490,6 +2491,103 @@ function normalizePythonLiteralObject(value: string): string | null {
     .replaceAll(/\bFalse\b/g, "false")
     .replaceAll(/\bNone\b/g, "null")
     .replaceAll(/'([^'\\]*(?:\\.[^'\\]*)*)'/g, (_match, content: string) => JSON.stringify(content.replaceAll("\\'", "'")));
+}
+
+function normalizeJson5LikeObject(value: string): string | null {
+  const pythonLike = normalizePythonLiteralObject(value);
+  if (!pythonLike) {
+    return null;
+  }
+  return stripTrailingCommas(quoteUnquotedObjectKeys(pythonLike));
+}
+
+function stripTrailingCommas(value: string): string {
+  let output = "";
+  let inString = false;
+  let escaped = false;
+  for (let index = 0; index < value.length; index += 1) {
+    const char = value[index] ?? "";
+    if (inString) {
+      output += char;
+      if (escaped) {
+        escaped = false;
+      } else if (char === "\\") {
+        escaped = true;
+      } else if (char === "\"") {
+        inString = false;
+      }
+      continue;
+    }
+    if (char === "\"") {
+      inString = true;
+      output += char;
+      continue;
+    }
+    if (char === ",") {
+      let nextIndex = index + 1;
+      while (/\s/.test(value[nextIndex] ?? "")) {
+        nextIndex += 1;
+      }
+      if (value[nextIndex] === "}" || value[nextIndex] === "]") {
+        continue;
+      }
+    }
+    output += char;
+  }
+  return output;
+}
+
+function quoteUnquotedObjectKeys(value: string): string {
+  let output = "";
+  let inString = false;
+  let escaped = false;
+  for (let index = 0; index < value.length; index += 1) {
+    const char = value[index] ?? "";
+    if (inString) {
+      output += char;
+      if (escaped) {
+        escaped = false;
+      } else if (char === "\\") {
+        escaped = true;
+      } else if (char === "\"") {
+        inString = false;
+      }
+      continue;
+    }
+    if (char === "\"") {
+      inString = true;
+      output += char;
+      continue;
+    }
+    if (char === "{" || char === ",") {
+      output += char;
+      let cursor = index + 1;
+      while (/\s/.test(value[cursor] ?? "")) {
+        output += value[cursor] ?? "";
+        cursor += 1;
+      }
+      const keyStart = cursor;
+      if (/[A-Za-z_$]/.test(value[cursor] ?? "")) {
+        cursor += 1;
+        while (/[A-Za-z0-9_$]/.test(value[cursor] ?? "")) {
+          cursor += 1;
+        }
+        let colonCursor = cursor;
+        while (/\s/.test(value[colonCursor] ?? "")) {
+          colonCursor += 1;
+        }
+        if (value[colonCursor] === ":") {
+          output += JSON.stringify(value.slice(keyStart, cursor));
+          index = cursor - 1;
+          continue;
+        }
+      }
+      index = keyStart - 1;
+      continue;
+    }
+    output += char;
+  }
+  return output;
 }
 
 function stringifyToolError(error: unknown): string {

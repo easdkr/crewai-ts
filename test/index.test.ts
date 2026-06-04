@@ -27242,6 +27242,15 @@ describe("tools", () => {
 
     expect(usage._select_tool("search_tool")).toBe(search);
     expect(usage._validate_tool_input("{'query': 'CrewAI', 'fresh': True}")).toEqual({ query: "CrewAI", fresh: true });
+    expect(usage._validate_tool_input("{query: 'CrewAI', count: 2, fresh: true}")).toEqual({
+      query: "CrewAI",
+      count: 2,
+      fresh: true,
+    });
+    expect(usage._validate_tool_input("{\"query\": \"CrewAI\", \"items\": [1, 2, 3,],}")).toEqual({
+      query: "CrewAI",
+      items: [1, 2, 3],
+    });
     expect(usage._original_tool_calling("", true)).toMatchObject({
       toolName: "search_tool",
       arguments: { query: "CrewAI", fresh: true },
