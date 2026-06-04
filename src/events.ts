@@ -4727,6 +4727,16 @@ function isLLMSource(source: unknown): boolean {
   return getEntityType(source) === "llm" || getSourceString(source, "sourceType", "source_type") === "llm";
 }
 
+function setSourceExecutionSpan(source: unknown, span: unknown): void {
+  if (source && typeof source === "object") {
+    (source as { _execution_span?: unknown })._execution_span = span;
+  }
+}
+
+function sourceCrew(source: unknown): unknown {
+  return getEventValue(source, "crew") ?? getEventValue(getEventValue(source, "agent"), "crew") ?? null;
+}
+
 export const crewaiEventBus = new EventBus();
 export const crewai_event_bus = crewaiEventBus;
 export const CrewAIEventsBus = EventBus;
@@ -4759,8 +4769,21 @@ export class EventListener extends BaseEventListener {
       });
     };
 
+    onEvent("cc_env", (_source, event) => {
+      this._telemetry.env_context_span(event.type as string);
+    });
+    onEvent("codex_env", (_source, event) => {
+      this._telemetry.env_context_span(event.type as string);
+    });
+    onEvent("cursor_env", (_source, event) => {
+      this._telemetry.env_context_span(event.type as string);
+    });
+    onEvent("default_env", (_source, event) => {
+      this._telemetry.env_context_span(event.type as string);
+    });
     onEvent("crew_kickoff_started", (source, event) => {
       this.formatter.handle_crew_started(getEventString(event, "crew_name", "crewName") ?? "Crew", getSourceId(source));
+      setSourceExecutionSpan(source, this._telemetry.crew_execution_span(source, getEventRecord(event, "inputs")));
       if (
         getBeforeLlmCallHooks().length > 0
         || getAfterLlmCallHooks().length > 0
@@ -4773,6 +4796,7 @@ export class EventListener extends BaseEventListener {
     onEvent("crew_kickoff_completed", (source, event) => {
       const output = getEventRecord(event, "output");
       const finalOutput = getEventString(output, "raw") ?? "";
+      this._telemetry.end_crew(source, finalOutput);
       this.formatter.handle_crew_status(getEventString(event, "crew_name", "crewName") ?? "Crew", getSourceId(source), "completed", finalOutput);
     });
     onEvent("crew_kickoff_failed", (source, event) => {
@@ -4788,6 +4812,7 @@ export class EventListener extends BaseEventListener {
       this.formatter.handle_crew_train_failed(getEventString(event, "crew_name", "crewName") ?? "Crew");
     });
     onEvent("crew_test_started", (source, event) => {
+      this._telemetry.test_execution_span(source, getEventNumber(event, "n_iterations", "nIterations") ?? 0, getEventRecord(event, "inputs"), getEventString(event, "eval_llm", "evalLlm") ?? "");
       this.formatter.handle_crew_test_started(getEventString(event, "crew_name", "crewName") ?? "Crew", getSourceId(source), getEventNumber(event, "n_iterations", "nIterations") ?? 0);
     });
     onEvent("crew_test_completed", (_source, event) => {
@@ -4796,16 +4821,32 @@ export class EventListener extends BaseEventListener {
     onEvent("crew_test_failed", (_source, event) => {
       this.formatter.handle_crew_test_failed(getEventString(event, "crew_name", "crewName") ?? "Crew");
     });
+    onEvent("crew_test_result", (source, event) => {
+      this._telemetry.individual_test_result_span(
+        getEventValue(source, "crew") ?? source,
+        getEventNumber(event, "quality") ?? 0,
+        getEventNumber(event, "execution_duration", "executionDuration") ?? 0,
+        getEventString(event, "model") ?? "",
+      );
+    });
     onEvent("task_started", (source) => {
-      this.executionSpans.set(source, true);
+      this.executionSpans.set(source, this._telemetry.task_started(sourceCrew(source), source));
       this.formatter.handle_task_started(getSourceId(source), getTaskName(source));
     });
     onEvent("task_completed", (source) => {
+      const span = this.executionSpans.get(source);
       this.executionSpans.delete(source);
+      if (span) {
+        this._telemetry.task_ended(span, source, sourceCrew(source));
+      }
       this.formatter.handle_task_status(getSourceId(source), getAgentRole(source), "completed", getTaskName(source));
     });
     onEvent("task_failed", (source) => {
+      const span = this.executionSpans.get(source);
       this.executionSpans.delete(source);
+      if (span) {
+        this._telemetry.task_ended(span, source, sourceCrew(source));
+      }
       this.formatter.handle_task_status(getSourceId(source), getAgentRole(source), "failed", getTaskName(source));
     });
     onEvent("lite_agent_execution_started", (_source, event) => {
@@ -4821,11 +4862,14 @@ export class EventListener extends BaseEventListener {
       this.formatter.handle_lite_agent_execution(getEventString(agentInfo, "role") ?? "", "failed", getEventValue(event, "error"), agentInfo);
     });
     onEvent("flow_created", (_source, event) => {
+      this._telemetry.flow_creation_span(getEventString(event, "flow_name", "flowName") ?? "Flow");
       this.formatter.handle_flow_created(getEventString(event, "flow_name", "flowName") ?? "Flow", getEventString(event, "flow_id", "flowId") ?? "");
     });
     onEvent("flow_started", (source, event) => {
       const flowId = getEventString(event, "flow_id", "flowId") ?? getSourceString(source, "flow_id", "flowId") ?? "";
       const flowName = getEventString(event, "flow_name", "flowName") ?? "Flow";
+      const methods = getEventValue(source, "_methods");
+      this._telemetry.flow_execution_span(flowName, methods && typeof methods === "object" ? Object.keys(methods) : []);
       this.formatter.handle_flow_created(flowName, flowId);
       this.formatter.handle_flow_started(flowName, flowId);
     });
@@ -4846,6 +4890,15 @@ export class EventListener extends BaseEventListener {
     });
     onEvent("method_execution_paused", (_source, event) => {
       this.formatter.handle_method_status(getEventString(event, "method_name", "methodName") ?? "", "paused");
+    });
+    onEvent("human_feedback_requested", (_source, event) => {
+      const emit = getEventValue(event, "emit");
+      const outcomes = Array.isArray(emit) ? emit : [];
+      this._telemetry.human_feedback_span("requested", outcomes.length > 0, outcomes.length);
+    });
+    onEvent("human_feedback_received", (_source, event) => {
+      const feedback = getEventString(event, "feedback") ?? "";
+      this._telemetry.human_feedback_span("received", getEventValue(event, "outcome") !== null, 0, feedback.trim().length > 0, getEventString(event, "outcome"));
     });
     onEvent("tool_usage_started", (source, event) => {
       if (isLLMSource(source)) {

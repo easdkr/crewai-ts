@@ -32432,6 +32432,90 @@ describe("events", () => {
     }
   });
 
+  it("records upstream lifecycle telemetry spans from event listener hooks", () => {
+    const previousDisableTelemetry = process.env.CREWAI_DISABLE_TELEMETRY;
+    const previousOtelDisabled = process.env.OTEL_SDK_DISABLED;
+    (Telemetry as unknown as { instance: Telemetry | null; _instance: Telemetry | null }).instance = null;
+    (Telemetry as unknown as { instance: Telemetry | null; _instance: Telemetry | null })._instance = null;
+    delete process.env.CREWAI_DISABLE_TELEMETRY;
+    delete process.env.OTEL_SDK_DISABLED;
+
+    const originalLog = console.log;
+    console.log = () => {};
+    try {
+      const telemetry = new Telemetry();
+      telemetry.clearSpans();
+      const eventBus = new EventBus();
+      new EventListener(eventBus);
+      const crewSource = {
+        id: "crew-1",
+        key: "crew-key",
+        share_crew: true,
+        agents: [{ id: "agent-1", role: "Researcher" }],
+        tasks: [{ id: "task-1", description: "Research", output: { raw: "done" } }],
+      };
+      const taskSource = {
+        id: "task-1",
+        key: "task-key",
+        name: "Task",
+        description: "Research",
+        agent: { role: "Researcher", crew: crewSource },
+      };
+      const flowSource = {
+        flow_id: "flow-1",
+        _methods: { begin: () => "begin", finish: () => "finish" },
+      };
+
+      eventBus.emit({}, new BaseEvent({ type: "codex_env" }));
+      eventBus.emit(crewSource, new CrewKickoffStartedEvent({ crewName: "Crew", inputs: { topic: "CrewAI" } }));
+      eventBus.emit(crewSource, Object.assign(new BaseEvent({ type: "crew_kickoff_completed" }), { crew_name: "Crew", output: { raw: "final" } }));
+      eventBus.emit(crewSource, new CrewTestStartedEvent({ crewName: "Crew", n_iterations: 2, eval_llm: "gpt-test", inputs: { topic: "CrewAI" } }));
+      eventBus.emit({ crew: crewSource }, new CrewTestResultEvent({ quality: 8, execution_duration: 12, model: "gpt-test" }));
+      eventBus.emit(taskSource, new TaskStartedEvent({ taskDescription: "Research" }));
+      eventBus.emit(taskSource, Object.assign(new BaseEvent({ type: "task_completed" }), { taskDescription: "Research", output: { raw: "done" } }));
+      eventBus.emit(flowSource, new FlowCreatedEvent({ flowName: "ResearchFlow" }));
+      eventBus.emit(flowSource, new FlowStartedEvent({ flowName: "ResearchFlow" }));
+      eventBus.emit({}, new HumanFeedbackRequestedEvent({ output: "draft", emit: ["approved", "retry"] }));
+      eventBus.emit({}, new HumanFeedbackReceivedEvent({ feedback: " approved ", outcome: "approved" }));
+
+      const spans = telemetry.getSpans();
+      expect(spans.map((span) => span.name)).toEqual(expect.arrayContaining([
+        "Environment Context",
+        "Crew Created",
+        "Crew Execution",
+        "Crew Test Execution",
+        "Crew Individual Test Result",
+        "Task Created",
+        "Task Execution",
+        "Flow Creation",
+        "Flow Execution",
+        "Human Feedback",
+      ]));
+      expect(spans.find((span) => span.name === "Environment Context")?.attributes.tool).toBe("codex_env");
+      expect(spans.find((span) => span.name === "Crew Execution")?.attributes.crew_inputs).toBe(JSON.stringify({ topic: "CrewAI" }));
+      expect(spans.find((span) => span.name === "Crew Execution")?.attributes.crew_output).toBe("final");
+      expect(spans.find((span) => span.name === "Crew Test Execution")?.attributes.iterations).toBe("2");
+      expect(spans.find((span) => span.name === "Crew Individual Test Result")?.attributes.quality).toBe("8");
+      expect(spans.find((span) => span.name === "Task Execution")?.ended).toBe(true);
+      expect(spans.find((span) => span.name === "Flow Execution")?.attributes.node_names).toBe(JSON.stringify(["begin", "finish"]));
+      expect(spans.filter((span) => span.name === "Human Feedback").map((span) => span.attributes.event_type)).toEqual(["requested", "received"]);
+    } finally {
+      console.log = originalLog;
+      if (previousDisableTelemetry === undefined) {
+        delete process.env.CREWAI_DISABLE_TELEMETRY;
+      } else {
+        process.env.CREWAI_DISABLE_TELEMETRY = previousDisableTelemetry;
+      }
+      if (previousOtelDisabled === undefined) {
+        delete process.env.OTEL_SDK_DISABLED;
+      } else {
+        process.env.OTEL_SDK_DISABLED = previousOtelDisabled;
+      }
+      (Telemetry as unknown as { instance: Telemetry | null; _instance: Telemetry | null }).instance = null;
+      (Telemetry as unknown as { instance: Telemetry | null; _instance: Telemetry | null })._instance = null;
+    }
+  });
+
   it("pauses active ConsoleFormatter stream sessions and creates a new session after resume", () => {
     type FormatterWithStream = ConsoleFormatter & {
       _streaming_live: { start: ReturnType<typeof vi.fn>; stop: ReturnType<typeof vi.fn> } | null;
