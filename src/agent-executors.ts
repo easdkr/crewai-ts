@@ -1428,6 +1428,19 @@ export class AgentExecutor extends BaseAgentExecutor {
     this.state.messages.push(formatMessageForLLM(text, role));
   }
 
+  _is_training_mode(): boolean {
+    const crew = this.crew as { _train?: unknown } | null;
+    return Boolean(crew?._train);
+  }
+
+  _handle_crew_training_output(result: unknown, humanFeedback: string | null = null): void {
+    const crew = this.crew as { trainingOutputs?: unknown[]; training_outputs?: unknown[] } | null;
+    const outputs = crew?.trainingOutputs ?? crew?.training_outputs;
+    if (Array.isArray(outputs)) {
+      outputs.push({ result: result instanceof AgentFinish ? result.output : result, human_feedback: humanFeedback });
+    }
+  }
+
   _show_start_logs(): void {
     if (!this.agent) {
       throw new Error("Agent cannot be None");

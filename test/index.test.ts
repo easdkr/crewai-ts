@@ -27701,6 +27701,29 @@ describe("human input", () => {
     expect(context.ask_for_human_input).toBe(false);
   });
 
+  it("routes SyncHumanInputProvider training feedback through AgentExecutor context", () => {
+    const trainingOutputs: unknown[] = [];
+    const executor = new AgentExecutor({
+      crew: { _train: true, training_outputs: trainingOutputs } as unknown as Crew,
+    });
+    const answer = new AgentFinish({ thought: "done", output: "draft", text: "draft" });
+    const improved = new AgentFinish({ thought: "done", output: "revised", text: "revised" });
+    Object.assign(executor, {
+      _invoke_loop: vi.fn(() => improved),
+    });
+
+    expect(executor._is_training_mode()).toBe(true);
+    expect(SyncHumanInputProvider._handle_training_feedback(answer, "Add citations", executor))
+      .toBe(improved);
+    expect(trainingOutputs).toEqual([
+      { result: "draft", human_feedback: "Add citations" },
+      { result: "revised", human_feedback: null },
+    ]);
+    expect(executor.messages).toContainEqual(
+      expect.objectContaining({ role: "user" }),
+    );
+  });
+
   it("routes SyncHumanInputProvider async feedback through async executor loops", async () => {
     class TestHumanInputProvider extends SyncHumanInputProvider {
       private readonly feedback = ["Add async approvals", ""];

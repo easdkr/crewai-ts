@@ -303,7 +303,7 @@ function isTrainingMode(context: ExecutorContext): boolean {
 
 function handleTrainingOutput(context: ExecutorContext, result: unknown, feedback: string | null): void {
   const handler = context._handleCrewTrainingOutput ?? context._handle_crew_training_output;
-  handler?.(result, feedback);
+  handler?.call(context, result, feedback);
 }
 
 function setAskForHumanInput(context: ExecutorContext, value: boolean): void {
