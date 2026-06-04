@@ -12876,6 +12876,48 @@ describe("core crew runtime", () => {
     expect(executor.lastParserError).toBeNull();
   });
 
+  it("recovers AgentExecutor context length errors by summarizing messages", async () => {
+    const calls: LLMMessage[][] = [];
+    const executor = new AgentExecutor({
+      agent: { verbose: false, respect_context_window: true } as unknown as Agent,
+      llm: {
+        get_context_window_size: () => 1000,
+        call(messages: readonly LLMMessage[]) {
+          calls.push([...messages]);
+          return "<summary>compressed history</summary>";
+        },
+      },
+      messages: [
+        { role: "system", content: "Follow the system prompt" },
+        { role: "user", content: "First long message" },
+        { role: "assistant", content: "First long answer" },
+        { role: "user", content: "Second long message" },
+      ],
+    });
+    executor.lastContextError = new Error("context window exceeded");
+    executor.state.iterations = 4;
+
+    await expect(executor.recover_from_context_length()).resolves.toBe("initialized");
+    expect(calls).toHaveLength(1);
+    expect(executor.state.iterations).toBe(5);
+    expect(executor.state.messages).toHaveLength(2);
+    expect(executor.state.messages[0]).toEqual({ role: "system", content: "Follow the system prompt" });
+    expect(executor.state.messages[1]?.content).toContain("compressed history");
+    expect(executor.lastContextError).toBeNull();
+  });
+
+  it("raises AgentExecutor context length errors when context-window recovery is disabled", () => {
+    const executor = new AgentExecutor({
+      agent: { verbose: false, respect_context_window: false } as unknown as Agent,
+      messages: [{ role: "user", content: "Too much context" }],
+    });
+    executor.lastContextError = new Error("context window exceeded");
+
+    expect(() => executor.recover_from_context_length()).toThrow("Context length exceeded and user opted not to summarize");
+    expect(executor.state.iterations).toBe(0);
+    expect(executor.lastContextError).not.toBeNull();
+  });
+
   it("reads AgentExecutor reasoning effort from upstream planning_config", () => {
     const executor = new AgentExecutor({
       agent: { planning_config: { reasoning_effort: "low" } } as unknown as Agent,

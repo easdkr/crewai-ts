@@ -10,11 +10,13 @@ import {
   extractToolCallInfo,
   formatMessageForLLM,
   handleAgentActionCore,
+  handleContextLength,
   handleOutputParserException,
   _executor_stop_words,
   isContextLengthExceeded,
   isToolCallList,
   processLlmResponse,
+  summarizeMessages,
 } from "./agent-utils.js";
 import { Converter } from "./converter.js";
 import { PlanReplanTriggeredEvent, crewaiEventBus } from "./events.js";
@@ -332,6 +334,8 @@ export type BaseAgentExecutorOptions = {
   callbacks?: readonly unknown[];
   responseModel?: unknown;
   response_model?: unknown;
+  respectContextWindow?: boolean;
+  respect_context_window?: boolean;
 };
 
 export class BaseAgentExecutor {
@@ -352,6 +356,8 @@ export class BaseAgentExecutor {
   readonly callbacks: readonly unknown[];
   responseModel: unknown;
   response_model: unknown;
+  readonly respectContextWindow: boolean;
+  readonly respect_context_window: boolean;
   readonly maxIter: number;
   readonly max_iter: number;
   iterations = 0;
@@ -375,6 +381,12 @@ export class BaseAgentExecutor {
     this.callbacks = options.callbacks ?? [];
     this.responseModel = options.responseModel ?? options.response_model ?? null;
     this.response_model = this.responseModel;
+    this.respectContextWindow = options.respectContextWindow
+      ?? options.respect_context_window
+      ?? this.agent?.respectContextWindow
+      ?? this.agent?.respect_context_window
+      ?? true;
+    this.respect_context_window = this.respectContextWindow;
     this.maxIter = options.maxIter ?? options.max_iter ?? this.agent?.maxIter ?? 25;
     this.max_iter = this.maxIter;
     this.messages = [...(options.messages ?? [])];
@@ -1115,13 +1127,32 @@ export class AgentExecutor extends BaseAgentExecutor {
     return this.recoverFromParserError();
   }
 
-  recoverFromContextLength(): "initialized" {
-    this.lastContextError = null;
-    this.state.iterations += 1;
-    return "initialized";
+  recoverFromContextLength(): MaybePromise<"initialized"> {
+    if (!this.respectContextWindow) {
+      throw new Error("Context length exceeded and user opted not to summarize. Consider using smaller text or RAG tools from crewai_tools.");
+    }
+
+    const result = summarizeMessages(
+      this.state.messages,
+      this.llm as Parameters<typeof summarizeMessages>[1],
+      this.callbacks,
+      Boolean(this.agent?.verbose),
+    );
+    const finish = (summaryResult?: { content: unknown }): "initialized" => {
+      if (summaryResult) {
+        const summary = typeof summaryResult.content === "string"
+          ? summaryResult.content
+          : JSON.stringify(summaryResult.content ?? "");
+        this.state.messages.splice(0, this.state.messages.length, ...handleContextLength(this.state.messages, summary));
+      }
+      this.lastContextError = null;
+      this.state.iterations += 1;
+      return "initialized";
+    };
+    return isPromiseLike(result) ? result.then(() => finish()) : finish(result);
   }
 
-  recover_from_context_length(): "initialized" {
+  recover_from_context_length(): MaybePromise<"initialized"> {
     return this.recoverFromContextLength();
   }
 
