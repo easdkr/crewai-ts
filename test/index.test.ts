@@ -28231,6 +28231,28 @@ describe("task output files", () => {
     await expect(execution.result()).resolves.toMatchObject({ raw: "async done" });
   });
 
+  it("propagates upstream Task execute_async failures through result", async () => {
+    const agentInstance = new Agent({
+      role: "Failing Future Agent",
+      goal: "Reject future",
+      backstory: "Runs async compatibility helper",
+      llm: () => {
+        throw new Error("boom!");
+      },
+    });
+    const taskInstance = new Task({
+      description: "Run async failure",
+      expectedOutput: "Done",
+      async_execution: true,
+      agent: agentInstance,
+    });
+
+    const execution = taskInstance.execute_async(agentInstance);
+
+    await expect(execution.result()).rejects.toThrow("boom!");
+    await expect(execution.exception()).resolves.toBeInstanceOf(Error);
+  });
+
   it("rejects upstream-compatible task async futures when core execution fails", async () => {
     const agentInstance = new Agent({
       role: "Future Agent",
