@@ -1248,18 +1248,22 @@ export function createLLM(
     ?? stringProperty(llmValue, "model_name")
     ?? stringProperty(llmValue, "deployment_name")
     ?? stringifyLLMValue(llmValue);
+  const spec = resolveLLMModelSpec(model, stringProperty(llmValue, "provider"));
+  const usesProviderFactory = registeredProviderFactories.has(spec.provider);
+  const apiKey = stringProperty(llmValue, "api_key");
+  const baseUrl = stringProperty(llmValue, "base_url");
+  const apiBase = stringProperty(llmValue, "api_base");
+  const usesOpenAICompatibleEndpoint = spec.provider === "openai" && (baseUrl !== undefined || apiBase !== undefined);
   const options: ConstructorParameters<typeof ConfiguredLLM>[0] = {
-    model,
-    provider: resolveLLMModelSpec(model, stringProperty(llmValue, "provider")).provider,
+    model: usesProviderFactory || usesOpenAICompatibleEndpoint ? spec.model : model,
+    provider: spec.provider,
+    is_litellm: !spec.useNative && !usesProviderFactory && !usesOpenAICompatibleEndpoint,
     temperature: numberProperty(llmValue, "temperature"),
     max_tokens: numberProperty(llmValue, "max_tokens"),
     max_completion_tokens: numberProperty(llmValue, "max_completion_tokens"),
     logprobs: numberProperty(llmValue, "logprobs"),
     timeout: numberProperty(llmValue, "timeout"),
   };
-  const apiKey = stringProperty(llmValue, "api_key");
-  const baseUrl = stringProperty(llmValue, "base_url");
-  const apiBase = stringProperty(llmValue, "api_base");
   if (apiKey !== undefined) {
     options.api_key = apiKey;
   }

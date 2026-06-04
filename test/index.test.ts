@@ -31630,6 +31630,20 @@ describe("LLM providers", () => {
       expect((ollama as OpenAICompatibleCompletion).provider).toBe("ollama");
       expect((ollama as OpenAICompatibleCompletion).model).toBe("llama3");
 
+      const openAiCompatibleOllama = create_llm({
+        model: "openai/llama3",
+        base_url: "http://localhost:11434/v1",
+        api_key: "ollama",
+      });
+      expect(openAiCompatibleOllama).toBeInstanceOf(ConfiguredLLM);
+      expect((openAiCompatibleOllama as ConfiguredLLM).to_config_dict()).toMatchObject({
+        provider: "openai",
+        model: "llama3",
+        base_url: "http://localhost:11434/v1",
+        api_key: "ollama",
+        is_litellm: false,
+      });
+
       const openrouter = create_llm("openrouter/anthropic/claude-3-opus");
       expect(openrouter).toBeInstanceOf(OpenAICompatibleCompletion);
       expect((openrouter as OpenAICompatibleCompletion).provider).toBe("openrouter");
