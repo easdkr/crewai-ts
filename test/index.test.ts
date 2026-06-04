@@ -18558,6 +18558,39 @@ describe("core crew runtime", () => {
     ]));
   });
 
+  it("keeps coding-agent CodeInterpreterTool unavailable during crew tool preparation", () => {
+    const warningSpy = vi.spyOn(process, "emitWarning").mockImplementation(() => undefined);
+    try {
+      const baseTool = new StructuredTool({
+        name: "base tool",
+        description: "Base tool",
+        func: () => "base",
+      });
+      const codingAgent = new Agent({
+        role: "Python Data Analyst",
+        goal: "Analyze data and provide insights using Python",
+        backstory: "Experienced data analyst",
+        allow_code_execution: true,
+      });
+      const task = new Task({
+        description: "Analyze the given dataset and calculate the average age of participants.",
+        expectedOutput: "The average age calculated from the dataset",
+        agent: codingAgent,
+      });
+      const crewInstance = new Crew({ agents: [codingAgent], tasks: [task] });
+
+      const tools = crewInstance._prepare_tools(codingAgent, task, [baseTool]);
+
+      expect(tools.map((toolInstance) => toolInstance.name)).toEqual(["base_tool"]);
+      expect(warningSpy).toHaveBeenCalledWith(
+        "CodeInterpreterTool is no longer available. Use dedicated sandbox services like E2B or Modal.",
+        "DeprecationWarning",
+      );
+    } finally {
+      warningSpy.mockRestore();
+    }
+  });
+
   it("adds AddImageTool to multimodal agents during kickoff when the LLM lacks vision support", async () => {
     const usedTools: Array<readonly unknown[]> = [];
     const multimodalAgent = new Agent({
