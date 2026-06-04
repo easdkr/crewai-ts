@@ -85,6 +85,23 @@ export class PlanStep {
     this.dependsOn = options.dependsOn ?? options.depends_on ?? [];
     this.depends_on = this.dependsOn;
   }
+
+  modelDump(): AgentPlanStep {
+    return {
+      step_number: this.step_number,
+      description: this.description,
+      tool_to_use: this.tool_to_use,
+      depends_on: [...this.depends_on],
+    };
+  }
+
+  model_dump(): AgentPlanStep {
+    return this.modelDump();
+  }
+
+  toJSON(): AgentPlanStep {
+    return this.modelDump();
+  }
 }
 
 export class TodoItem extends PlanStep {
@@ -97,6 +114,23 @@ export class TodoItem extends PlanStep {
     this.id = options.id ?? crypto.randomUUID();
     this.status = options.status ?? TodoStatus.PENDING;
     this.result = options.result ?? null;
+  }
+
+  modelDump(): AgentPlanStep & { id: string; status: TodoStatus; result: string | null } {
+    return {
+      id: this.id,
+      ...super.modelDump(),
+      status: this.status,
+      result: this.result,
+    };
+  }
+
+  model_dump(): AgentPlanStep & { id: string; status: TodoStatus; result: string | null } {
+    return this.modelDump();
+  }
+
+  toJSON(): AgentPlanStep & { id: string; status: TodoStatus; result: string | null } {
+    return this.modelDump();
   }
 }
 
@@ -255,6 +289,18 @@ export class TodoList {
 
   _dependencies_satisfied(item: TodoItem): boolean {
     return this.dependenciesSatisfied(item);
+  }
+
+  modelDump(): { items: Array<ReturnType<TodoItem["modelDump"]>> } {
+    return { items: this.items.map((item) => item.modelDump()) };
+  }
+
+  model_dump(): { items: Array<ReturnType<TodoItem["modelDump"]>> } {
+    return this.modelDump();
+  }
+
+  toJSON(): { items: Array<ReturnType<TodoItem["modelDump"]>> } {
+    return this.modelDump();
   }
 }
 

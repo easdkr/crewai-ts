@@ -17631,6 +17631,42 @@ describe("agent planning", () => {
     expect(todos.get_by_step_number(3)?.result).toBe("existing result");
   });
 
+  it("dumps planning models with upstream field names", () => {
+    const step = new PlanStep({
+      step_number: 1,
+      description: "Search for information",
+      tool_to_use: "search_tool",
+      depends_on: [0],
+    });
+    const todo = new TodoItem({
+      id: "todo-1",
+      step_number: 2,
+      description: "Summarize findings",
+      tool_to_use: "summary_tool",
+      status: TodoStatus.RUNNING,
+      depends_on: [1],
+      result: "draft",
+    });
+    const todos = new TodoList({ items: [todo] });
+
+    expect(step.model_dump()).toEqual({
+      step_number: 1,
+      description: "Search for information",
+      tool_to_use: "search_tool",
+      depends_on: [0],
+    });
+    expect(todo.model_dump()).toEqual({
+      id: "todo-1",
+      step_number: 2,
+      description: "Summarize findings",
+      tool_to_use: "summary_tool",
+      status: "running",
+      depends_on: [1],
+      result: "draft",
+    });
+    expect(todos.model_dump()).toEqual({ items: [todo.model_dump()] });
+  });
+
   it("exposes upstream StepObservation refinement coercion helper", () => {
     const single = { step_number: 3, new_description: "Pick the best option" };
 

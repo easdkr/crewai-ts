@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 973 passing tests.
+- Test suite: 974 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -176,6 +176,7 @@ This register is the source of truth for continuing porting work while parity sc
 - AgentExecutor plan-step conversion is release-gated for upstream planning semantics: `_create_todos_from_plan` converts structured plan steps into pending todos while preserving step numbers, descriptions, suggested tools, and dependencies.
 - AgentExecutor replan failure handling is release-gated for upstream recovery semantics: failed replanning keeps existing todos intact, records `Replan failed: ...`, and logs the planning error through the agent logger when available.
 - PlanningConfig construction is release-gated for upstream default and custom planning fields, including `llm=null` by default and string LLM identifiers preserved on explicit configs.
+- Planning model serialization is release-gated for upstream Pydantic-style dump behavior: `PlanStep`, `TodoItem`, and `TodoList` expose `model_dump` / `modelDump` / JSON serialization with upstream snake_case field names.
 - AgentExecutor reasoning initialization is release-gated for upstream start-log semantics: `initialize_reasoning` emits `agent_logs_started` with agent role, task description, and agent/crew verbose state before entering the reasoning loop.
 - AgentExecutor finalization logging is release-gated for upstream execution-log semantics: successful `finalize` emits `agent_logs_execution` with the final answer and agent/crew verbose state when an agent is attached.
 - AgentExecutor native-tool initialization is release-gated for upstream first-iteration semantics: `initialize_reasoning` enables native tool mode only when the LLM reports function-calling support and original tools exist, and prepares OpenAI tool schemas plus available function mappings.
