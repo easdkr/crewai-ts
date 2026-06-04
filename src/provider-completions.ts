@@ -771,6 +771,9 @@ export class BedrockCompletion extends ConfiguredLLM {
   readonly interceptor: unknown;
 
   constructor(options: BedrockCompletionOptions = { model: "anthropic.claude-3-5-sonnet-20241022-v2:0" }) {
+    if (options.interceptor !== null && options.interceptor !== undefined) {
+      throw new Error("Bedrock provider does not support interceptor transport.");
+    }
     const model = options.model;
     super(stripUndefined({
       model,
@@ -807,7 +810,7 @@ export class BedrockCompletion extends ConfiguredLLM {
     this.additional_model_request_fields = this.additionalModelRequestFields;
     this.additionalModelResponseFieldPaths = options.additionalModelResponseFieldPaths ?? options.additional_model_response_field_paths ?? null;
     this.additional_model_response_field_paths = this.additionalModelResponseFieldPaths;
-    this.interceptor = options.interceptor ?? null;
+    this.interceptor = null;
   }
 
   override call(messages: readonly LLMMessage[], options?: LLMCallOptions): Promise<LLMResponse> {
@@ -1419,6 +1422,9 @@ export class GeminiCompletion extends ConfiguredLLM {
   tools: readonly Tool[] | null;
 
   constructor(options: GeminiCompletionOptions = { model: "gemini-2.5-flash" }) {
+    if (options.interceptor !== null && options.interceptor !== undefined) {
+      throw new Error("Gemini provider does not support interceptor transport.");
+    }
     const model = options.model;
     super(stripUndefined({
       model,
@@ -1453,7 +1459,7 @@ export class GeminiCompletion extends ConfiguredLLM {
     this.stream = options.stream ?? false;
     this.clientParams = options.clientParams ?? options.client_params ?? null;
     this.client_params = this.clientParams;
-    this.interceptor = options.interceptor ?? null;
+    this.interceptor = null;
     this.supportsTools = geminiVersion(model) >= 1.5;
     this.supports_tools = this.supportsTools;
     this.isGemini20 = geminiVersion(model) >= 2.0;
@@ -2481,6 +2487,9 @@ export class AzureCompletion extends ConfiguredLLM {
   private reasoningChainItems: unknown[] | null;
 
   constructor(options: AzureCompletionOptions = { model: "gpt-4o-mini" }) {
+    if (options.interceptor !== null && options.interceptor !== undefined) {
+      throw new Error("Azure provider does not support interceptor transport.");
+    }
     const endpoint = options.endpoint ?? process.env.AZURE_ENDPOINT ?? process.env.AZURE_OPENAI_ENDPOINT ?? process.env.AZURE_API_BASE ?? null;
     super(stripUndefined({
       model: options.model,
@@ -2513,7 +2522,7 @@ export class AzureCompletion extends ConfiguredLLM {
     this.maxTokens = options.maxTokens ?? options.max_tokens ?? null;
     this.max_tokens = this.maxTokens;
     this.stream = options.stream ?? false;
-    this.interceptor = options.interceptor ?? null;
+    this.interceptor = null;
     this.responseFormat = options.responseFormat ?? options.response_format ?? null;
     this.response_format = this.responseFormat;
     this.isAzureOpenAIEndpoint = isAzureOpenAIEndpoint(endpoint);

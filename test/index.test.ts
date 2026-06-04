@@ -23613,6 +23613,31 @@ describe("LLM providers", () => {
     await expect(gemini.acall([{ role: "user", content: "hello" }])).rejects.toThrow("No LLM provider registered");
   });
 
+  it("rejects interceptors on provider shims that do not support interceptor transport", () => {
+    class TestInterceptor extends BaseInterceptor {
+      on_outbound(message: unknown): unknown {
+        return message;
+      }
+
+      on_inbound(message: unknown): unknown {
+        return message;
+      }
+    }
+    const interceptor = new TestInterceptor();
+
+    expect(() => new AzureCompletion({ model: "gpt-4o", interceptor }))
+      .toThrow(/azure.*interceptor/i);
+    expect(() => new BedrockCompletion({ model: "anthropic.claude-3-sonnet", interceptor }))
+      .toThrow(/bedrock.*interceptor/i);
+    expect(() => new GeminiCompletion({ model: "gemini-2.5-pro", interceptor }))
+      .toThrow(/gemini.*interceptor/i);
+
+    expect(new AnthropicCompletion({ model: "claude-3-5-sonnet-20241022", interceptor }).interceptor).toBe(interceptor);
+    expect(new AzureCompletion({ model: "gpt-4o" }).interceptor).toBeNull();
+    expect(new BedrockCompletion({ model: "anthropic.claude-3-sonnet" }).interceptor).toBeNull();
+    expect(new GeminiCompletion({ model: "gemini-2.5-pro" }).interceptor).toBeNull();
+  });
+
   it("formats Bedrock multimodal files into Converse image and document blocks", () => {
     const bedrock = new BedrockCompletion({ model: "anthropic.claude-3-sonnet" });
     const claude2 = new BedrockCompletion({ model: "anthropic.claude-v2" });
