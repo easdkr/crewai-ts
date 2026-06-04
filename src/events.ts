@@ -4134,6 +4134,47 @@ export class TraceEvent extends BaseEvent {
   }
 }
 
+function normalizeTraceBatchInitialization(
+  userContextOrOptions: Record<string, string> | {
+    userContext?: Record<string, string>;
+    user_context?: Record<string, string>;
+    executionMetadata?: Record<string, unknown>;
+    execution_metadata?: Record<string, unknown>;
+    useEphemeral?: boolean;
+    use_ephemeral?: boolean;
+  },
+  executionMetadata: Record<string, unknown>,
+  useEphemeral: boolean,
+): { userContext: Record<string, string>; executionMetadata: Record<string, unknown>; useEphemeral: boolean } {
+  const record = userContextOrOptions as Record<string, unknown>;
+  const hasOptionsShape = "userContext" in record
+    || "user_context" in record
+    || "executionMetadata" in record
+    || "execution_metadata" in record
+    || "useEphemeral" in record
+    || "use_ephemeral" in record;
+  if (!hasOptionsShape) {
+    return {
+      userContext: userContextOrOptions as Record<string, string>,
+      executionMetadata,
+      useEphemeral,
+    };
+  }
+  const options = userContextOrOptions as {
+    userContext?: Record<string, string>;
+    user_context?: Record<string, string>;
+    executionMetadata?: Record<string, unknown>;
+    execution_metadata?: Record<string, unknown>;
+    useEphemeral?: boolean;
+    use_ephemeral?: boolean;
+  };
+  return {
+    userContext: options.userContext ?? options.user_context ?? {},
+    executionMetadata: options.executionMetadata ?? options.execution_metadata ?? {},
+    useEphemeral: options.useEphemeral ?? options.use_ephemeral ?? useEphemeral,
+  };
+}
+
 export class TraceBatchManager {
   isCurrentBatchEphemeral = false;
   is_current_batch_ephemeral = false;
@@ -4161,19 +4202,30 @@ export class TraceBatchManager {
   private pendingEventsCount = 0;
 
   initializeBatch(
-    userContext: Record<string, string>,
-    executionMetadata: Record<string, unknown>,
+    userContext: Record<string, string> | {
+      userContext?: Record<string, string>;
+      user_context?: Record<string, string>;
+      executionMetadata?: Record<string, unknown>;
+      execution_metadata?: Record<string, unknown>;
+      useEphemeral?: boolean;
+      use_ephemeral?: boolean;
+    },
+    executionMetadata: Record<string, unknown> = {},
     useEphemeral = false,
   ): TraceBatch {
+    const normalized = normalizeTraceBatchInitialization(userContext, executionMetadata, useEphemeral);
     if (this.currentBatch) {
-      Object.assign(this.currentBatch.executionMetadata, executionMetadata);
+      Object.assign(this.currentBatch.executionMetadata, normalized.executionMetadata);
       return this.currentBatch;
     }
-    const batch = new TraceBatch({ userContext, executionMetadata });
+    const batch = new TraceBatch({
+      userContext: normalized.userContext,
+      executionMetadata: normalized.executionMetadata,
+    });
     this.currentBatch = batch;
     this.current_batch = batch;
-    this.isCurrentBatchEphemeral = useEphemeral;
-    this.is_current_batch_ephemeral = useEphemeral;
+    this.isCurrentBatchEphemeral = normalized.useEphemeral;
+    this.is_current_batch_ephemeral = normalized.useEphemeral;
     this.setBatchFinalized(false);
     this.traceBatchId = batch.batchId;
     this.trace_batch_id = batch.batchId;
@@ -4181,7 +4233,11 @@ export class TraceBatchManager {
     return batch;
   }
 
-  initialize_batch(userContext: Record<string, string>, executionMetadata: Record<string, unknown>, useEphemeral = false): TraceBatch {
+  initialize_batch(
+    userContext: Parameters<TraceBatchManager["initializeBatch"]>[0],
+    executionMetadata: Record<string, unknown> = {},
+    useEphemeral = false,
+  ): TraceBatch {
     return this.initializeBatch(userContext, executionMetadata, useEphemeral);
   }
 

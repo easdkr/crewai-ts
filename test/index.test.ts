@@ -9640,6 +9640,34 @@ describe("telemetry compatibility", () => {
     expect(batchManager.current_batch?.execution_metadata).toMatchObject({ flow_name: "NextFlow" });
   });
 
+  it("merges duplicate TraceBatchManager initialization from upstream-style option objects", () => {
+    const batchManager = new TraceBatchManager();
+    const first = batchManager.initialize_batch({
+      user_context: { trace_id: "trace-1", privacy_level: "standard" },
+      execution_metadata: {
+        crew_name: "Unknown Crew",
+        crewai_version: "9.9.9",
+      },
+    });
+    const second = batchManager.initialize_batch({
+      user_context: { trace_id: "trace-1", privacy_level: "standard" },
+      execution_metadata: {
+        flow_name: "ResearchFlow",
+        execution_type: "flow",
+        crewai_version: "9.9.9",
+        execution_start: "2026-01-01T00:00:00+00:00",
+      },
+    });
+
+    expect(second.batch_id).toBe(first.batch_id);
+    expect(batchManager.current_batch?.execution_metadata).toMatchObject({
+      crew_name: "Unknown Crew",
+      flow_name: "ResearchFlow",
+      execution_type: "flow",
+      execution_start: "2026-01-01T00:00:00+00:00",
+    });
+  });
+
   it("records task, tool, flow, and feature spans without network exporters", () => {
     const telemetry = new Telemetry();
     telemetry.clearSpans();
