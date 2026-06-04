@@ -22167,6 +22167,84 @@ describe("flow runtime", () => {
     expect(routerEmit).toEqual({ decide: ["done"] });
   });
 
+  it("covers upstream start/listen condition sugar in FlowDefinition fragments", () => {
+    class ConditionSugarFragmentFlow extends Flow {
+      begin() {
+        return "begin";
+      }
+
+      restart() {
+        return "restart";
+      }
+
+      byCallable() {
+        return "callable";
+      }
+
+      byString() {
+        return "string";
+      }
+
+      byAnd() {
+        return "and";
+      }
+
+      nested() {
+        return "nested";
+      }
+    }
+
+    const beginRef = Object.getOwnPropertyDescriptor(ConditionSugarFragmentFlow.prototype, "begin")?.value as () => unknown;
+    const byStringRef = Object.getOwnPropertyDescriptor(ConditionSugarFragmentFlow.prototype, "byString")?.value as () => unknown;
+    const initializers = [
+      decorateMethod(ConditionSugarFragmentFlow, "begin", start() as unknown as Decorator),
+      decorateMethod(ConditionSugarFragmentFlow, "restart", start("restart_event") as unknown as Decorator),
+      decorateMethod(ConditionSugarFragmentFlow, "byCallable", listen(beginRef) as unknown as Decorator),
+      decorateMethod(ConditionSugarFragmentFlow, "byString", listen("manual_event") as unknown as Decorator),
+      decorateMethod(ConditionSugarFragmentFlow, "byAnd", listen(and_(beginRef, "byCallable")) as unknown as Decorator),
+      decorateMethod(
+        ConditionSugarFragmentFlow,
+        "nested",
+        listen(or_(and_("manual_event", byStringRef), "fallback_event")) as unknown as Decorator,
+      ),
+    ];
+    initializers.forEach((initializer) => {
+      initializer.call(new ConditionSugarFragmentFlow());
+    });
+
+    const prototype = ConditionSugarFragmentFlow.prototype as Record<string, unknown>;
+    const [startMethods, listeners] = extract_flow_definition({
+      begin: prototype.begin,
+      restart: prototype.restart,
+      byCallable: prototype.byCallable,
+      byString: prototype.byString,
+      byAnd: prototype.byAnd,
+      nested: prototype.nested,
+    });
+    const definition = ConditionSugarFragmentFlow.flow_definition();
+
+    expect(startMethods).toEqual(["begin", "restart"]);
+    expect(listeners).toEqual({
+      restart: ["OR", ["restart_event"]],
+      byCallable: ["OR", ["begin"]],
+      byString: ["OR", ["manual_event"]],
+      byAnd: { type: "AND", conditions: ["begin", "byCallable"] },
+      nested: {
+        type: "OR",
+        conditions: [{ type: "AND", conditions: ["manual_event", "byString"] }, "fallback_event"],
+      },
+    });
+    expect(definition.methods.begin.start).toBe(true);
+    expect(definition.methods.restart.start).toBe("restart_event");
+    expect(definition.methods.byCallable.listen).toBe("begin");
+    expect(definition.methods.byString.listen).toBe("manual_event");
+    expect(definition.methods.byAnd.listen).toEqual({ and: ["begin", "byCallable"] });
+    expect(definition.methods.nested.listen).toEqual({
+      or: [{ and: ["manual_event", "byString"] }, "fallback_event"],
+    });
+    expect(definition.diagnostics).toEqual([]);
+  });
+
   it("falls back to upstream legacy DSL metadata when static fragments are absent", () => {
     class LegacyFragmentFlow extends Flow {
       begin() {
