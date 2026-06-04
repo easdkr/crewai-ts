@@ -29574,6 +29574,30 @@ describe("LLM providers", () => {
     }).toThrow("Context window for tiny");
   });
 
+  it("omits API stop params for GPT-5 while preserving client-side stop words", () => {
+    class StopParamLLM extends BaseLLM {
+      call(): string {
+        return "Paris\nObservation: hidden";
+      }
+    }
+    const gpt5 = new StopParamLLM({
+      model: "openai/gpt-5.2",
+      stop: ["Observation:"],
+      is_litellm: true,
+    });
+    const gpt4o = new StopParamLLM({
+      model: "gpt-4o",
+      stop: ["Observation:"],
+      is_litellm: true,
+    });
+
+    expect(gpt5._prepare_completion_params([{ role: "user", content: "Hello" }])).not.toHaveProperty("stop");
+    expect(gpt5._apply_stop_words("Paris\nObservation: hidden")).toBe("Paris");
+    expect(gpt4o._prepare_completion_params([{ role: "user", content: "Hello" }])).toMatchObject({
+      stop: ["Observation:"],
+    });
+  });
+
   it("keeps direct stop assignments synchronized with stop_sequences", () => {
     const bedrock = new BedrockCompletion({ model: "anthropic.claude-3-5-sonnet-20241022-v2:0" });
 
