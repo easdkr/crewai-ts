@@ -1555,6 +1555,30 @@ export class Flow<TState extends object = Record<string, unknown>> {
     return this.routeTurn(context);
   }
 
+  routeConversation(): string {
+    const state = this.state as Record<string, unknown>;
+    const context = this.buildRouterContext();
+    const configuredRoute = this.routeTurn(context);
+    if (configuredRoute) {
+      setConversationStateField(this.state, "last_intent", configuredRoute);
+      return configuredRoute;
+    }
+    const lastIntent = state.last_intent ?? state.lastIntent;
+    if (typeof lastIntent === "string" && lastIntent.length > 0) {
+      return lastIntent;
+    }
+    if (this.canAnswerFromHistory(context)) {
+      setConversationStateField(this.state, "last_intent", "answer_from_history");
+      return "answer_from_history";
+    }
+    setConversationStateField(this.state, "last_intent", "converse");
+    return "converse";
+  }
+
+  route_conversation(): string {
+    return this.routeConversation();
+  }
+
   _routeWithConfig(routerConfig: RouterConfig, context: Record<string, unknown>): string | null {
     const routerLlm = this.defaultRouterLlm(routerConfig);
     if (!routerLlm) {
@@ -1602,6 +1626,25 @@ export class Flow<TState extends object = Record<string, unknown>> {
 
   converse_turn(): string {
     return this.converseTurn();
+  }
+
+  answerFromHistoryTurn(): string | null {
+    const config = getConversationalStaticConfig(this.constructor);
+    const llm = config?.answer_from_history_llm ?? config?.answerFromHistoryLlm ?? null;
+    if (!llm) {
+      return null;
+    }
+    const messages: LLMMessage[] = [
+      { role: "system", content: this.resolveAnswerFromHistoryPrompt() },
+      ...this.buildAgentContext("answer_from_history"),
+    ];
+    const content = stringifyFlowHelperValue(callConversationLlm(llm, messages));
+    this.appendAssistantMessage(content);
+    return content;
+  }
+
+  answer_from_history_turn(): string | null {
+    return this.answerFromHistoryTurn();
   }
 
   endConversation(): string {
@@ -1717,6 +1760,14 @@ export class Flow<TState extends object = Record<string, unknown>> {
     return typeof prompt === "string" ? prompt : null;
   }
 
+  private resolveAnswerFromHistoryPrompt(): string {
+    const config = getConversationalStaticConfig(this.constructor);
+    const prompt = config?.answer_from_history_prompt ?? config?.answerFromHistoryPrompt;
+    return typeof prompt === "string" && prompt.length > 0
+      ? prompt
+      : "Answer directly from prior conversation history without invoking tools, agents, or custom routes.";
+  }
+
   private routerResponseFormat(routerConfig: RouterConfig): Record<string, unknown> {
     return {
       name: "ConversationRoute",
@@ -1735,6 +1786,23 @@ export class Flow<TState extends object = Record<string, unknown>> {
       return false;
     }
     return config.defer_trace_finalization === true || config.deferTraceFinalization === true;
+  }
+
+  private canAnswerFromHistory(context: Record<string, unknown>): boolean {
+    const config = getConversationalStaticConfig(this.constructor);
+    const llm = config?.answer_from_history_llm ?? config?.answerFromHistoryLlm ?? null;
+    if (!llm || this.conversationMessages.length < 2) {
+      return false;
+    }
+    const feedback = [
+      this.resolveAnswerFromHistoryPrompt(),
+      "",
+      `Current user message: ${stringifyFlowHelperValue(context.current_user_message ?? "")}`,
+      "",
+      `Message history:\n${formatConversationMessages(this.conversationMessages)}`,
+    ].join("\n");
+    const outcome = this._collapse_to_outcome(feedback, ["answer_from_history", "route_to_flow"]);
+    return outcome === "answer_from_history";
   }
 
   async handleTurn(
@@ -5760,6 +5828,12 @@ function setConversationStateField(state: object, key: string, value: unknown): 
   } else if (key === "last_user_message") {
     record.lastUserMessage = value;
   }
+}
+
+function formatConversationMessages(messages: readonly LLMMessage[]): string {
+  return messages
+    .map((message) => `${message.role}: ${stringifyFlowHelperValue(message.content)}`)
+    .join("\n");
 }
 
 function cloneFlowState<TState extends object>(state: TState): TState {

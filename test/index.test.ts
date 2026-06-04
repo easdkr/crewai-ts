@@ -19758,6 +19758,66 @@ describe("flow runtime", () => {
     });
   });
 
+  it("answers experimental conversational turns from history with configured LLM", async () => {
+    const historyCalls: LLMMessage[][] = [];
+    const historyLlm = {
+      call(messages: LLMMessage[]) {
+        historyCalls.push(messages);
+        return "summary from history";
+      },
+    };
+
+    class HistoryFlow extends Flow<ConversationState> {
+      static conversational = true;
+      static conversational_config = new ConversationConfig({
+        answer_from_history_llm: historyLlm,
+        answer_from_history_prompt: "Answer only from history.",
+      });
+
+      begin() {
+        return "ready";
+      }
+
+      route() {
+        return this.route_conversation();
+      }
+
+      answerFromHistory() {
+        return this.answer_from_history_turn();
+      }
+    }
+
+    const initializers = [
+      decorateMethod(HistoryFlow, "begin", start() as unknown as Decorator),
+      decorateMethod(HistoryFlow, "route", router("begin") as unknown as Decorator),
+      decorateMethod(HistoryFlow, "answerFromHistory", listen("answer_from_history") as unknown as Decorator),
+    ];
+    const flow = new HistoryFlow();
+    flow.state.messages = [
+      new ConversationMessage({ role: "user", content: "research CrewAI" }),
+      new ConversationMessage({ role: "assistant", content: "prior findings" }),
+    ];
+    flow._collapse_to_outcome = () => "answer_from_history";
+    initializers.forEach((initializer) => {
+      initializer.call(flow);
+    });
+
+    await expect(flow.handle_turn("summarize this")).resolves.toBe("summary from history");
+
+    expect(flow.state.last_intent).toBe("answer_from_history");
+    expect(flow.state.messages.at(-1)).toMatchObject({
+      role: "assistant",
+      content: "summary from history",
+    });
+    expect(historyCalls).toHaveLength(1);
+    expect(historyCalls[0]?.[0]).toEqual({
+      role: "system",
+      content: "Answer only from history.",
+    });
+    expect(historyCalls[0]?.some((message) => message.content === "prior findings")).toBe(true);
+    expect(historyCalls[0]?.some((message) => message.content === "summarize this")).toBe(true);
+  });
+
   it("provides upstream experimental conversational data shapes", () => {
     const router = new RouterConfig({
       routes: ["converse", "handoff"],
