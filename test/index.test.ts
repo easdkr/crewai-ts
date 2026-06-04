@@ -74,6 +74,7 @@ import {
   PlannerObserver,
   StepExecutor,
   StepExecutionContext,
+  StepResult,
   BaseAgentAdapter,
   OpenAIAgentAdapter,
   OpenAIAgentToolAdapter,
@@ -13007,16 +13008,13 @@ describe("core crew runtime", () => {
   });
 
   it("executes AgentExecutor planning todos through isolated StepExecutor context", async () => {
-    const prompts: string[] = [];
+    const contexts: Array<{ todo: string; taskDescription: string; taskGoal: string; dependencyResults: Readonly<Record<number, string>> }> = [];
+    const stepOptions: Array<{ maxStepIterations: number; stepTimeout: number | null }> = [];
     const agentInstance = new Agent({
       role: "Researcher",
       goal: "Find facts",
       backstory: "Careful analyst",
-      planningConfig: new PlanningConfig({ max_step_iterations: 4, step_timeout: 2 }),
-      llm: (messages) => {
-        prompts.push(messages.map((message) => message.content).join("\n"));
-        return "isolated step result";
-      },
+      planningConfig: new PlanningConfig({ max_step_iterations: 4, step_timeout: 2.7 }),
     });
     const executor = new AgentExecutor({
       agent: agentInstance,
@@ -13039,14 +13037,37 @@ describe("core crew runtime", () => {
         dependsOn: [1],
       }),
     ];
+    Object.assign(executor, {
+      _ensureStepExecutor() {
+        return {
+          execute(todo: TodoItem, context: StepExecutionContext, maxStepIterations: number, stepTimeout: number | null) {
+            stepOptions.push({ maxStepIterations, stepTimeout });
+            contexts.push({
+              todo: todo.description,
+              taskDescription: context.taskDescription,
+              taskGoal: context.taskGoal,
+              dependencyResults: context.dependencyResults,
+            });
+            return new StepResult({
+              result: "isolated step result",
+              success: true,
+              toolCallsMade: [],
+              executionTime: 0,
+            });
+          },
+        };
+      },
+    });
 
     await expect(executor.execute_todo_sequential()).resolves.toBe("step_executed");
 
     expect(executor.state.todos.get_by_step_number(2)?.result).toBe("isolated step result");
-    expect(prompts[0]).toContain("Research CrewAI");
-    expect(prompts[0]).toContain("Concise brief");
-    expect(prompts[0]).toContain("Summarize docs");
-    expect(prompts[0]).toContain("Step 1: Docs found");
+    expect(contexts).toEqual([{
+      todo: "Summarize docs",
+      taskDescription: "Research CrewAI",
+      taskGoal: "Concise brief",
+      dependencyResults: { 1: "Docs found" },
+    }]);
     expect(executor.state.execution_log.at(-1)).toMatchObject({
       type: "step_execution",
       step_number: 2,
@@ -13054,6 +13075,7 @@ describe("core crew runtime", () => {
       result_preview: "isolated step result",
       tool_calls: [],
     });
+    expect(stepOptions).toEqual([{ maxStepIterations: 4, stepTimeout: 2 }]);
     expect(executor.state.todos.get_by_step_number(2)?.status).toBe(TodoStatus.RUNNING);
   });
 

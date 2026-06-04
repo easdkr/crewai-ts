@@ -1867,7 +1867,7 @@ export class AgentExecutor extends BaseAgentExecutor {
   private getStepTimeout(): number | null {
     const config = this.planningConfigRecord();
     const value = config?.stepTimeout ?? config?.step_timeout;
-    return typeof value === "number" && Number.isFinite(value) ? Math.max(0, value) : null;
+    return typeof value === "number" && Number.isFinite(value) ? Math.max(0, Math.trunc(value)) : null;
   }
 
   private executeNativeToolCall(name: string, args: Record<string, unknown>): unknown {
