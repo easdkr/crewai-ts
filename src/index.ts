@@ -1478,6 +1478,8 @@ export {
   count_outgoing_edges,
   dfsAncestors,
   dfs_ancestors,
+  extractFlowDefinition,
+  extract_flow_definition,
   extractMethodSignature,
   extract_method_signature,
   flow_config,

@@ -3303,6 +3303,102 @@ export function buildFlowDefinition(
 
 export const build_flow_definition = buildFlowDefinition;
 
+export type FlowRegistryListenerCondition = readonly [FlowCondition["type"], readonly string[]] | FlowCondition;
+
+export type ExtractedFlowDefinitionRegistries = [
+  startMethods: string[],
+  listeners: Record<string, FlowRegistryListenerCondition>,
+  routers: Set<string>,
+  routerEmit: Record<string, readonly string[]>,
+];
+
+export function extractFlowDefinition(namespace: Record<string, unknown>): ExtractedFlowDefinitionRegistries {
+  const startMethods: string[] = [];
+  const listeners: Record<string, FlowRegistryListenerCondition> = {};
+  const routers = new Set<string>();
+  const routerEmit: Record<string, readonly string[]> = {};
+
+  for (const [name, value] of Object.entries(namespace)) {
+    const staticDefinition = flowMethodDefinitionFromStaticMetadata(value);
+    if (staticDefinition) {
+      if (staticDefinition.isStart) {
+        startMethods.push(name);
+      }
+      const condition = staticFlowMethodDefinitionTriggerCondition(staticDefinition);
+      if (condition !== null) {
+        listeners[name] = runtimeListenerConditionFromDefinition(condition);
+      }
+      const isRouter = staticDefinition.router || staticBooleanProperty(value, "__is_router__");
+      if (isRouter) {
+        routers.add(name);
+        routerEmit[name] = staticDefinition.emit ?? stringArrayProperty(value, "__router_emit__") ?? [];
+      }
+      continue;
+    }
+
+    if (staticBooleanProperty(value, "__is_start_method__")) {
+      startMethods.push(name);
+    }
+    const triggerMethods = stringArrayProperty(value, "__trigger_methods__");
+    if (triggerMethods) {
+      const triggerCondition = isFlowConditionDict((value as Record<string, unknown>).__trigger_condition__)
+        ? (value as Record<string, unknown>).__trigger_condition__ as FlowCondition
+        : null;
+      listeners[name] = triggerCondition ?? [
+        staticConditionType(value, "__condition_type__"),
+        triggerMethods,
+      ];
+    }
+    if (staticBooleanProperty(value, "__is_router__")) {
+      routers.add(name);
+      routerEmit[name] = stringArrayProperty(value, "__router_emit__") ?? [];
+    }
+  }
+
+  return [startMethods, listeners, routers, routerEmit];
+}
+
+export const extract_flow_definition = extractFlowDefinition;
+
+function staticFlowMethodDefinitionTriggerCondition(method: FlowMethodDefinition): FlowDefinitionCondition | null {
+  if (method.listen !== null) {
+    return method.listen;
+  }
+  if (typeof method.start === "string" || isRecord(method.start)) {
+    return method.start;
+  }
+  return null;
+}
+
+function runtimeListenerConditionFromDefinition(condition: FlowDefinitionCondition): FlowRegistryListenerCondition {
+  if (typeof condition === "string") {
+    return ["OR", [condition]];
+  }
+  return flowDefinitionConditionToFlowCondition(condition);
+}
+
+function staticBooleanProperty(value: unknown, key: string): boolean {
+  return isRecord(value) && value[key] === true;
+}
+
+function staticConditionType(value: unknown, key: string): FlowCondition["type"] {
+  if (!isRecord(value)) {
+    return "OR";
+  }
+  return value[key] === "AND" ? "AND" : "OR";
+}
+
+function stringArrayProperty(value: unknown, key: string): readonly string[] | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+  const raw = value[key];
+  if (!Array.isArray(raw)) {
+    return null;
+  }
+  return raw.map((item) => String(item));
+}
+
 function getStaticFlowMethodDefinitions(
   instanceOrConstructor: object | FlowMetadataTarget,
   namespace: Record<string, unknown> | null = null,

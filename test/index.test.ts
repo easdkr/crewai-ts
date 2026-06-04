@@ -475,6 +475,7 @@ import {
   cache_handler,
   build_flow_definition,
   buildFlowDefinition,
+  extract_flow_definition,
   countOutgoingEdges,
   crew,
   CrewBase,
@@ -18994,6 +18995,40 @@ describe("flow runtime", () => {
       },
     });
     expect(definition.diagnostics).toEqual([]);
+  });
+
+  it("extracts upstream flow registries from static DSL metadata fragments", () => {
+    const begin = Object.assign(() => "begin", {
+      __flow_method_definition__: new FlowMethodDefinition({ start: true }),
+    });
+    const handle = Object.assign(() => "handle", {
+      __trigger_methods__: ["wrong"],
+      __condition_type__: "OR",
+      __flow_method_definition__: new FlowMethodDefinition({ listen: "begin" }),
+    });
+    const decide = Object.assign(() => "done", {
+      __is_router__: true,
+      __router_emit__: ["legacy"],
+      __flow_method_definition__: new FlowMethodDefinition({
+        listen: "handle",
+        router: true,
+        emit: ["done"],
+      }),
+    });
+
+    const [startMethods, listeners, routers, routerEmit] = extract_flow_definition({
+      begin,
+      handle,
+      decide,
+    });
+
+    expect(startMethods).toEqual(["begin"]);
+    expect(listeners).toEqual({
+      handle: ["OR", ["begin"]],
+      decide: ["OR", ["handle"]],
+    });
+    expect(routers).toEqual(new Set(["decide"]));
+    expect(routerEmit).toEqual({ decide: ["done"] });
   });
 
   it("builds FlowDefinition config from upstream static class config fields", () => {
