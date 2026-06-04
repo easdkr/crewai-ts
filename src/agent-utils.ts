@@ -550,8 +550,22 @@ function runToolForAgentAction(action: AgentAction, tools: readonly Tool[]): Too
 
 export const handle_agent_action_core = handleAgentActionCore;
 
-export function handleUnknownError(error: unknown): string {
-  return error instanceof Error ? error.message : safeJsonStringify(error);
+export function handleUnknownError(error: unknown): string;
+export function handleUnknownError(printer: Printer, exception: unknown, verbose?: boolean): void;
+export function handleUnknownError(errorOrPrinter: unknown, exception?: unknown, verbose = true): string | void {
+  if (errorOrPrinter instanceof Printer) {
+    if (!verbose) {
+      return;
+    }
+    const errorMessage = exception instanceof Error ? exception.message : safeJsonStringify(exception);
+    if (errorMessage.toLowerCase().includes("litellm")) {
+      return;
+    }
+    errorOrPrinter.print("An unknown error occurred. Please check the details below.", "red");
+    errorOrPrinter.print(`Error details: ${errorMessage}`, "red");
+    return;
+  }
+  return errorOrPrinter instanceof Error ? errorOrPrinter.message : safeJsonStringify(errorOrPrinter);
 }
 
 export const handle_unknown_error = handleUnknownError;

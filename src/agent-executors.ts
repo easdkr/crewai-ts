@@ -12,6 +12,7 @@ import {
   handleAgentActionCore,
   handleContextLength,
   handleOutputParserException,
+  handleUnknownError,
   _executor_stop_words,
   isContextLengthExceeded,
   isToolCallList,
@@ -24,6 +25,7 @@ import { get_provider } from "./human-input.js";
 import { ToolCallHookContext, runAfterToolCallHooks, runBeforeToolCallHooks } from "./hooks.js";
 import { I18N_DEFAULT } from "./i18n.js";
 import { BaseLLM, callStopOverrideSync, UsageMetrics, type LLMResponse } from "./llm.js";
+import { PRINTER } from "./logger.js";
 import { sanitize_scope_name } from "./memory.js";
 import { StepExecutionContext, StepResult } from "./step-execution-context.js";
 import { sanitizeToolName } from "./tools.js";
@@ -823,6 +825,7 @@ export class AgentExecutor extends BaseAgentExecutor {
         this.lastContextError = error instanceof Error ? error : new Error(String(error));
         return "context_error";
       }
+      handleUnknownError(PRINTER, error, Boolean(this.agent?.verbose));
       throw error;
     }
   }
@@ -868,6 +871,7 @@ export class AgentExecutor extends BaseAgentExecutor {
         this.lastContextError = error instanceof Error ? error : new Error(String(error));
         return "context_error";
       }
+      handleUnknownError(PRINTER, error, Boolean(this.agent?.verbose));
       throw error;
     }
   }

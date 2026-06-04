@@ -920,6 +920,7 @@ import {
   get_crew_context,
   handleAgentActionCore,
   handleMaxIterationsExceeded,
+  handleUnknownError,
   hasReachedMaxIterations,
   processLlmResponse,
   showAgentLogs,
@@ -1974,6 +1975,18 @@ describe("environment, logging, and file store utilities", () => {
     expect(output).toContain("\"query\": \"CrewAI\"");
     expect(output).toContain("## Tool Output: \nfound docs");
     expect(output).toContain("## Final Answer: \nfinal answer");
+  });
+
+  it("prints upstream-style unknown error details only when verbose", () => {
+    const messages: string[] = [];
+    const printer = new Printer((message) => messages.push(message));
+
+    handleUnknownError(printer, new Error("provider exploded"), false);
+    expect(messages).toEqual([]);
+
+    handleUnknownError(printer, new Error("provider exploded"), true);
+    expect(messages.join("")).toContain("An unknown error occurred. Please check the details below.");
+    expect(messages.join("")).toContain("Error details: provider exploded");
   });
 
   it("provides upstream-compatible printer suppression and database error helpers", () => {
@@ -12916,6 +12929,28 @@ describe("core crew runtime", () => {
     expect(() => executor.recover_from_context_length()).toThrow("Context length exceeded and user opted not to summarize");
     expect(executor.state.iterations).toBe(0);
     expect(executor.lastContextError).not.toBeNull();
+  });
+
+  it("prints AgentExecutor unknown LLM errors before rethrowing", () => {
+    const stdoutSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    const executor = new AgentExecutor({
+      agent: { verbose: true } as unknown as Agent,
+      llm: {
+        call() {
+          throw new Error("provider exploded");
+        },
+      },
+      messages: [{ role: "user", content: "Run the task" }],
+    });
+
+    try {
+      expect(() => executor.call_llm_and_parse()).toThrow("provider exploded");
+      const output = stdoutSpy.mock.calls.map((call) => String(call[0])).join("");
+      expect(output).toContain("An unknown error occurred. Please check the details below.");
+      expect(output).toContain("Error details: provider exploded");
+    } finally {
+      stdoutSpy.mockRestore();
+    }
   });
 
   it("reads AgentExecutor reasoning effort from upstream planning_config", () => {
