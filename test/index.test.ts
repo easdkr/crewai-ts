@@ -19196,6 +19196,46 @@ describe("flow runtime", () => {
     expect((history[0]?.timestamp as Date).getTime()).toBeGreaterThanOrEqual(before.getTime());
   });
 
+  it("preserves ask response metadata when InputResponse text is null", async () => {
+    const events: FlowInputReceivedEvent[] = [];
+    crewaiEventBus.on("flow_input_received", (_source, event) => {
+      events.push(event);
+    });
+
+    class NoneTextFlow extends Flow {
+      gather() {
+        return this.ask("Optional?");
+      }
+    }
+
+    const flow = new NoneTextFlow({
+      inputProvider: {
+        requestInput: () => ({
+          text: null,
+          metadata: { reason: "user_declined" },
+        }) satisfies InputResponse,
+      },
+    });
+    decorateMethod(NoneTextFlow, "gather", start() as unknown as Decorator).call(flow);
+
+    await expect(flow.kickoff()).resolves.toBeNull();
+
+    expect(flow.inputHistory).toHaveLength(1);
+    expect(flow.inputHistory[0]).toMatchObject({
+      message: "Optional?",
+      response: null,
+      methodName: "gather",
+      metadata: null,
+      responseMetadata: { reason: "user_declined" },
+    });
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      message: "Optional?",
+      response: null,
+      responseMetadata: { reason: "user_declined" },
+    });
+  });
+
   it("uses global flowConfig input provider as fallback", async () => {
     class AskFlow extends Flow {
       gather() {
