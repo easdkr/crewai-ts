@@ -12315,6 +12315,25 @@ describe("core crew runtime", () => {
     expect(executor.state.pending_tool_calls).toEqual(toolCalls);
   });
 
+  it("routes upstream provider-shaped native tool calls from AgentExecutor LLM responses", () => {
+    const providerCalls = [
+      { toolUseId: "bedrock_1", name: "bedrock_lookup", input: { query: "Bedrock" } },
+      { functionCall: { name: "gemini_lookup", args: { query: "Gemini" } } },
+    ];
+    const executor = new AgentExecutor({
+      llm: {
+        call() {
+          return providerCalls;
+        },
+      },
+      messages: [{ role: "user", content: "Use provider-native tools" }],
+    });
+
+    expect(executor.call_llm_native_tools()).toBe("native_tool_calls");
+    expect(executor.state.pending_tool_calls).toEqual(providerCalls);
+    expect(executor.state.current_answer).toBeNull();
+  });
+
   it("preserves pending todo status when AgentExecutor handles early goal achievement", () => {
     const executor = new AgentExecutor();
     executor.state.todos.items = [
@@ -13158,6 +13177,42 @@ describe("core crew runtime", () => {
       content: "found:CrewAI",
       tool_call_id: "call_1",
     });
+  });
+
+  it("executes AgentExecutor Bedrock and Anthropic native tool payloads with input args", () => {
+    const seen: string[] = [];
+    const executor = new AgentExecutor();
+    Object.assign(executor, {
+      _available_functions: {
+        bedrock_lookup: (args: { query?: string }) => {
+          seen.push(`bedrock:${args.query ?? ""}`);
+          return "bedrock result";
+        },
+        anthropic_lookup: (args: { query?: string }) => {
+          seen.push(`anthropic:${args.query ?? ""}`);
+          return "anthropic result";
+        },
+      },
+    });
+    executor.state.pending_tool_calls = [
+      { toolUseId: "bedrock_1", name: "bedrock_lookup", input: { query: "Bedrock" } },
+      { id: "anthropic_1", type: "tool_use", name: "anthropic_lookup", input: { query: "Anthropic" } },
+    ];
+
+    expect(executor.execute_native_tool()).toBe("native_tool_completed");
+    expect(seen).toEqual(["bedrock:Bedrock", "anthropic:Anthropic"]);
+    expect(executor.state.messages[0]).toEqual({
+      role: "assistant",
+      content: null,
+      tool_calls: [
+        { id: "bedrock_1", type: "function", function: { name: "bedrock_lookup", arguments: "{\"query\":\"Bedrock\"}" } },
+        { id: "anthropic_1", type: "function", function: { name: "anthropic_lookup", arguments: "{\"query\":\"Anthropic\"}" } },
+      ],
+    });
+    expect(executor.state.messages.filter((message) => message.role === "tool")).toEqual([
+      { role: "tool", name: "bedrock_lookup", content: "bedrock result", tool_call_id: "bedrock_1" },
+      { role: "tool", name: "anthropic_lookup", content: "anthropic result", tool_call_id: "anthropic_1" },
+    ]);
   });
 
   it("records AgentExecutor native tool argument parse errors without executing the tool", () => {

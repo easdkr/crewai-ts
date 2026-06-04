@@ -984,23 +984,36 @@ export function extractToolCallInfo(value: unknown): { toolName: string; argumen
     return null;
   }
   const functionRecord = record.function && typeof record.function === "object" ? record.function as Record<string, unknown> : null;
-  const name = record.name ?? record.toolName ?? record.tool_name ?? functionRecord?.name;
+  const rawFunctionCall = record.functionCall ?? record.function_call;
+  const functionCallRecord = rawFunctionCall && typeof rawFunctionCall === "object" ? rawFunctionCall as Record<string, unknown> : null;
+  const name = record.name ?? record.toolName ?? record.tool_name ?? functionRecord?.name ?? functionCallRecord?.name;
   if (typeof name !== "string") {
     return null;
   }
-  const parsed = parseToolCallArgsForNative(record.arguments ?? functionRecord?.arguments);
+  const rawArguments = functionRecord && "arguments" in functionRecord
+    ? functionRecord.arguments
+    : functionCallRecord && "args" in functionCallRecord
+      ? functionCallRecord.args
+      : functionCallRecord && "arguments" in functionCallRecord
+        ? functionCallRecord.arguments
+        : record.arguments ?? record.input ?? record.args;
+  const parsed = parseToolCallArgsForNative(rawArguments);
   return {
     toolName: name,
     arguments: parsed.args,
     argumentParseError: parsed.error,
-    id: typeof record.id === "string" ? record.id : null,
+    id: typeof record.id === "string"
+      ? record.id
+      : typeof record.toolUseId === "string"
+        ? record.toolUseId
+        : null,
   };
 }
 
 export const extract_tool_call_info = extractToolCallInfo;
 
 export function isToolCallList(value: unknown): value is readonly unknown[] {
-  return Array.isArray(value) && value.every((item) => extractToolCallInfo(item) !== null);
+  return Array.isArray(value) && value.length > 0 && value.every((item) => extractToolCallInfo(item) !== null);
 }
 
 export const is_tool_call_list = isToolCallList;
