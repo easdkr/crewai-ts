@@ -471,6 +471,8 @@ import {
   canonical_llm_provider,
   cacheHandler,
   cache_handler,
+  build_flow_definition,
+  buildFlowDefinition,
   countOutgoingEdges,
   crew,
   CrewBase,
@@ -16686,6 +16688,83 @@ describe("flow runtime", () => {
     expect(new FlowConfigDefinition().max_method_calls).toBe(100);
     expect(new FlowPersistenceDefinition().enabled).toBe(false);
     expect(new FlowHumanFeedbackDefinition({ message: "Review" }).llm).toBe("gpt-4o-mini");
+  });
+
+  it("builds upstream FlowDefinition structures from decorated Flow metadata", () => {
+    class DefinitionFlow extends Flow<{ topic?: string }> {
+      constructor() {
+        super({ initialState: { topic: "CrewAI" }, maxMethodCalls: 7, stream: true });
+      }
+
+      begin() {
+        return "begin";
+      }
+
+      branch() {
+        return "approved";
+      }
+
+      review() {
+        return "reviewed";
+      }
+
+      publish() {
+        return "published";
+      }
+    }
+
+    const initializers = [
+      decorateMethod(DefinitionFlow, "begin", start() as unknown as Decorator),
+      decorateMethod(DefinitionFlow, "branch", router("begin") as unknown as Decorator),
+      decorateMethod(DefinitionFlow, "review", listen(and_("branch", or_("approved", "manual"))) as unknown as Decorator),
+      decorateMethod(DefinitionFlow, "publish", humanFeedback({
+        message: "Approve publish?",
+        emit: ["approved", "changes"],
+        llm: "review-llm",
+        default_outcome: "approved",
+        learn: true,
+        learn_source: "review",
+      }) as unknown as Decorator),
+      decorateMethod(DefinitionFlow, "publish", listen("review") as unknown as Decorator),
+    ];
+    const flow = new DefinitionFlow();
+    initializers.forEach((initializer) => {
+      initializer.call(flow);
+    });
+
+    const definition = buildFlowDefinition(flow);
+
+    expect(build_flow_definition(flow).to_dict()).toEqual(definition.to_dict());
+    expect(definition).toBeInstanceOf(FlowDefinition);
+    expect(definition.to_dict()).toMatchObject({
+      schema: "crewai.flow/v1",
+      name: "DefinitionFlow",
+      state: { type: "dict", default: { topic: "CrewAI" } },
+      config: { stream: true, suppress_flow_events: false, max_method_calls: 7 },
+      methods: {
+        begin: { start: true, router: false },
+        branch: { listen: "begin", router: true },
+        review: {
+          listen: { and: ["branch", { or: ["approved", "manual"] }] },
+          router: false,
+        },
+        publish: {
+          listen: "review",
+          router: true,
+          human_feedback: {
+            message: "Approve publish?",
+            emit: ["approved", "changes"],
+            llm: "review-llm",
+            default_outcome: "approved",
+            learn: true,
+            learn_source: "review",
+            learn_strict: false,
+          },
+        },
+      },
+    });
+    expect(definition.methods.publish.emit).toBeNull();
+    expect(definition.diagnostics).toEqual([]);
   });
 
   it("exposes upstream snake_case flow state properties", async () => {

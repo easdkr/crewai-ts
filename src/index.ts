@@ -1468,6 +1468,8 @@ export {
   build_parent_children_dict,
   buildFlowStructure,
   build_flow_structure,
+  buildFlowDefinition,
+  build_flow_definition,
   calculateExecutionPaths,
   calculateNodeLevels,
   calculate_execution_paths,

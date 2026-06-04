@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 859 passing tests.
+- Test suite: 860 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -125,6 +125,7 @@ High-value behavior audits still worth running:
 2. **Latest upstream baseline advancement**
    - Latest upstream post-baseline root/subpath export gaps are currently closed.
    - Snowflake Cortex completion is covered as a deterministic provider shim: token/account URL normalization, Claude-family message guards, capability flags, and request-parameter shaping are release-gated without live Snowflake credentials.
+   - Flow DSL definition extraction is covered with a deterministic `buildFlowDefinition` / `build_flow_definition` shim over TS decorator metadata, including nested conditions, state/config snapshots, and human-feedback routing metadata.
    - Before changing the release baseline, classify each new behavior surface by deterministic local workflow, provider/network shim, or intentionally unsupported optional integration.
 
 3. **Experimental `AgentExecutor` plan-and-execute behavior**

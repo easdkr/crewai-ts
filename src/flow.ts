@@ -39,6 +39,15 @@ import type { InputValues, MaybePromise } from "./types.js";
 import { _dotted_path_to_instance, _instance_to_dotted_path } from "./utilities.js";
 import { renderInteractive } from "./flow-visualization.js";
 import { Memory, MemoryScope, MemorySlice, sanitize_scope_name, type MemoryMatch, type MemoryRecord } from "./memory.js";
+import {
+  FlowConfigDefinition,
+  FlowDefinition,
+  FlowHumanFeedbackDefinition,
+  FlowMethodDefinition,
+  FlowPersistenceDefinition,
+  FlowStateDefinition,
+  type FlowDefinitionCondition,
+} from "./flow-definition.js";
 
 export const AND_CONDITION = "AND";
 export const OR_CONDITION = "OR";
@@ -934,6 +943,7 @@ export type HumanFeedbackConfig = {
   emit?: readonly string[] | null;
   llm?: string | Record<string, unknown> | LLM | null;
   defaultOutcome?: string | null;
+  default_outcome?: string | null;
   metadata?: Record<string, unknown> | null;
   provider?: HumanFeedbackProvider | null;
   learn?: boolean;
@@ -2706,7 +2716,7 @@ function normalizeHumanFeedbackConfig(config: HumanFeedbackConfig): HumanFeedbac
     message: config.message,
     emit: config.emit ? [...config.emit] : null,
     llm: serializeHumanFeedbackLlm(config.llm ?? "gpt-4o-mini"),
-    defaultOutcome: config.defaultOutcome ?? null,
+    defaultOutcome: config.defaultOutcome ?? config.default_outcome ?? null,
     metadata: config.metadata ? { ...config.metadata } : null,
     provider: config.provider ?? null,
     learn: config.learn ?? false,
@@ -3211,6 +3221,44 @@ export function getHumanFeedbackMetadata(instanceOrConstructor: object | FlowMet
   }
   return inherited;
 }
+
+export function buildFlowDefinition(instanceOrConstructor: object | FlowMetadataTarget): FlowDefinition {
+  const entries = getFlowMetadata(instanceOrConstructor);
+  const feedbackMetadata = getHumanFeedbackMetadata(instanceOrConstructor);
+  const methods: Record<string, FlowMethodDefinition> = {};
+  const methodNames = [...new Set(entries.map((entry) => String(entry.name)))];
+
+  for (const methodName of methodNames) {
+    const methodEntries = entries.filter((entry) => String(entry.name) === methodName);
+    const feedback = feedbackMetadata.get(methodName);
+    const humanFeedback = feedback ? flowHumanFeedbackDefinition(feedback) : null;
+    const definition = new FlowMethodDefinition({
+      start: flowDefinitionStart(methodEntries),
+      listen: flowDefinitionListen(methodEntries),
+      router: methodEntries.some((entry) => entry.kind === "router") || Boolean(humanFeedback?.emit),
+      humanFeedback,
+      emit: null,
+    });
+    methods[methodName] = definition;
+  }
+
+  const diagnostics: FlowDefinition["diagnostics"] = [];
+  const definition = new FlowDefinition({
+    name: typeof instanceOrConstructor === "function"
+      ? instanceOrConstructor.name
+      : instanceOrConstructor.constructor.name,
+    state: flowStateDefinition(instanceOrConstructor),
+    config: flowConfigDefinition(instanceOrConstructor),
+    persist: flowPersistenceDefinition(instanceOrConstructor),
+    methods,
+    diagnostics,
+  });
+  definition.diagnostics = definition.validateContract();
+  definition.logDiagnostics();
+  return definition;
+}
+
+export const build_flow_definition = buildFlowDefinition;
 
 export function getFlowStructure(instanceOrConstructor: object | FlowMetadataTarget): FlowStructure {
   const entries = getFlowMetadata(instanceOrConstructor);
@@ -4199,6 +4247,160 @@ function normalizeConditionInput(condition: FlowConditionInput): string | FlowCo
     return condition.name;
   }
   return condition;
+}
+
+function flowDefinitionStart(entries: readonly FlowMethodEntry[]): boolean | FlowDefinitionCondition | null {
+  const startEntry = entries.find((entry) => entry.kind === "start");
+  if (!startEntry) {
+    return null;
+  }
+  return startEntry.condition ? flowDefinitionCondition(startEntry.condition) : true;
+}
+
+function flowDefinitionListen(entries: readonly FlowMethodEntry[]): FlowDefinitionCondition | null {
+  const listener = entries.find((entry) => entry.kind === "listen" || entry.kind === "router");
+  return listener?.condition ? flowDefinitionCondition(listener.condition) : null;
+}
+
+function flowDefinitionCondition(condition: FlowConditionInput): FlowDefinitionCondition {
+  if (typeof condition === "string") {
+    return condition;
+  }
+  if (typeof condition === "function") {
+    return condition.name;
+  }
+  const values = condition.conditions.map(flowDefinitionCondition);
+  if (condition.type === "AND") {
+    return { and: values };
+  }
+  return values.length === 1 ? values[0] ?? "" : { or: values };
+}
+
+function flowHumanFeedbackDefinition(config: HumanFeedbackConfig): FlowHumanFeedbackDefinition {
+  return new FlowHumanFeedbackDefinition({
+    message: config.message,
+    emit: config.emit ? [...config.emit] : null,
+    llm: serializeFlowDefinitionStaticValue(config.llm ?? null),
+    defaultOutcome: config.defaultOutcome ?? config.default_outcome ?? null,
+    metadata: isRecord(config.metadata) ? { ...config.metadata } : null,
+    provider: serializeFlowDefinitionStaticValue(config.provider ?? null),
+    learn: config.learn ?? false,
+    learnSource: config.learnSource ?? config.learn_source ?? "hitl",
+    learnStrict: config.learnStrict ?? config.learn_strict ?? false,
+  });
+}
+
+function flowStateDefinition(instanceOrConstructor: object | FlowMetadataTarget): FlowStateDefinition | null {
+  if (typeof instanceOrConstructor === "function") {
+    const initialState = (instanceOrConstructor as { initialState?: unknown; initial_state?: unknown }).initialState
+      ?? (instanceOrConstructor as { initial_state?: unknown }).initial_state;
+    if (initialState === undefined || initialState === null) {
+      return null;
+    }
+    return new FlowStateDefinition({
+      type: isRecord(initialState) ? "dict" : "unknown",
+      default: serializeFlowDefinitionStaticValue(initialState),
+    });
+  }
+  const state = (instanceOrConstructor as { state?: unknown }).state;
+  if (state === undefined || state === null) {
+    return null;
+  }
+  return new FlowStateDefinition({
+    type: isRecord(state) ? "dict" : "unknown",
+    default: serializeFlowDefinitionStaticValue(state),
+  });
+}
+
+function flowConfigDefinition(instanceOrConstructor: object | FlowMetadataTarget): FlowConfigDefinition {
+  if (typeof instanceOrConstructor === "function") {
+    return new FlowConfigDefinition();
+  }
+  const flow = instanceOrConstructor as {
+    stream?: unknown;
+    maxMethodCalls?: unknown;
+    max_method_calls?: unknown;
+    memory?: unknown;
+    inputProvider?: unknown;
+    input_provider?: unknown;
+  };
+  return new FlowConfigDefinition({
+    stream: flow.stream === true,
+    maxMethodCalls: typeof flow.maxMethodCalls === "number"
+      ? flow.maxMethodCalls
+      : typeof flow.max_method_calls === "number"
+        ? flow.max_method_calls
+        : 100,
+    memory: serializeFlowDefinitionStaticValue(flow.memory ?? null),
+    inputProvider: serializeFlowDefinitionStaticValue(flow.inputProvider ?? flow.input_provider ?? null),
+  });
+}
+
+function flowPersistenceDefinition(instanceOrConstructor: object | FlowMetadataTarget): FlowPersistenceDefinition | null {
+  if (typeof instanceOrConstructor === "function") {
+    return null;
+  }
+  const persistence = (instanceOrConstructor as { persistence?: unknown }).persistence;
+  if (persistence === null || persistence === undefined) {
+    return null;
+  }
+  return new FlowPersistenceDefinition({
+    enabled: true,
+    verbose: false,
+    persistence: serializeFlowDefinitionStaticValue(persistence),
+  });
+}
+
+function serializeFlowDefinitionStaticValue(value: unknown): unknown {
+  if (value === null || value === undefined || typeof value !== "object") {
+    return value ?? null;
+  }
+  if (Array.isArray(value)) {
+    return value.map(serializeFlowDefinitionStaticValue);
+  }
+  if (isPlainRecord(value) && isJsonSerializable(value)) {
+    return { ...value };
+  }
+  if (isFlowPersistence(value)) {
+    return _serialize_persistence(value);
+  }
+  const configProvider = value as { toConfigDict?: () => unknown; to_config_dict?: () => unknown };
+  const config = typeof configProvider.toConfigDict === "function"
+    ? configProvider.toConfigDict()
+    : typeof configProvider.to_config_dict === "function"
+      ? configProvider.to_config_dict()
+      : null;
+  if (config !== null && isJsonSerializable(config)) {
+    return config;
+  }
+  return { ref: objectRef(value) };
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  if (!isRecord(value)) {
+    return false;
+  }
+  const prototype = Object.getPrototypeOf(value) as unknown;
+  return prototype === Object.prototype || prototype === null;
+}
+
+function isJsonSerializable(value: unknown): boolean {
+  try {
+    JSON.stringify(value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function objectRef(value: unknown): string {
+  if (value === null || value === undefined) {
+    return String(value);
+  }
+  if (typeof value === "function") {
+    return value.name || "Function";
+  }
+  return typeName(value);
 }
 
 function conditionSatisfied(
