@@ -4,7 +4,7 @@ import { dirname } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 
 import { Agent } from "./agent.js";
-import type { ExecutionContext } from "./context.js";
+import { FlowTrackable, type ExecutionContext } from "./context.js";
 import {
   CrewKickoffCompletedEvent,
   CrewKickoffFailedEvent,
@@ -202,7 +202,7 @@ export type CrewOptions = {
   task_output_storage_handler?: TaskOutputStorageHandler | null;
 };
 
-export class Crew {
+export class Crew extends FlowTrackable {
   readonly entityType = "crew";
   readonly entity_type = "crew";
   readonly id: string;
@@ -265,6 +265,7 @@ export class Crew {
   readonly task_output_storage_handler: TaskOutputStorageHandler | null;
 
   constructor(options: CrewOptions = {}) {
+    super();
     this.id = Crew.denyUserSetId(options.id, {
       fromCheckpoint: options.fromCheckpoint ?? options.from_checkpoint ?? false,
     }) ?? randomUUID();

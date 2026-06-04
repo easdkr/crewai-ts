@@ -22248,6 +22248,89 @@ describe("flow runtime", () => {
     expect(getCurrentFlowMethodName()).toBe("unknown");
   });
 
+  it("sets flow context on CrewBase crews created inside a flow", async () => {
+    class TestCrewClass {
+      agents: Agent[] = [];
+      tasks: Task[] = [];
+
+      researcher() {
+        return new Agent({
+          role: "Researcher",
+          goal: "Research things",
+          backstory: "Expert researcher",
+        });
+      }
+
+      writer() {
+        return new Agent({
+          role: "Writer",
+          goal: "Write things",
+          backstory: "Expert writer",
+        });
+      }
+
+      researchTask() {
+        return new Task({
+          description: "Test task for researcher",
+          expectedOutput: "output",
+          agent: this.researcher(),
+        });
+      }
+
+      writeTask() {
+        return new Task({
+          description: "Test task for writer",
+          expectedOutput: "output",
+          agent: this.writer(),
+        });
+      }
+
+      crew() {
+        return new Crew({
+          agents: this.agents,
+          tasks: this.tasks,
+          process: Process.sequential,
+        });
+      }
+    }
+
+    const DecoratedTestCrew = decorateClass(TestCrewClass, CrewBase as unknown as Decorator);
+    const crewInitializers = [
+      decorateMethod(TestCrewClass, "researcher", agent),
+      decorateMethod(TestCrewClass, "writer", agent),
+      decorateMethod(TestCrewClass, "researchTask", task),
+      decorateMethod(TestCrewClass, "writeTask", task),
+      decorateMethod(TestCrewClass, "crew", crew),
+    ];
+    let capturedCrew: Crew | null = null;
+
+    class CrewContextFlow extends Flow<{ id: string }> {
+      constructor() {
+        super({ initialState: { id: "crew-context-flow" } });
+      }
+
+      begin() {
+        const instance = new DecoratedTestCrew();
+        crewInitializers.forEach((initializer) => {
+          initializer.call(instance);
+        });
+        capturedCrew = instance.crew();
+        return capturedCrew;
+      }
+    }
+
+    decorateMethod(CrewContextFlow, "begin", start() as unknown as Decorator).call(CrewContextFlow.prototype);
+
+    const flow = new CrewContextFlow();
+    const result = await flow.kickoff();
+
+    expect(result).toBe(capturedCrew);
+    expect(capturedCrew?._flow_id).toBe("crew-context-flow");
+    expect(capturedCrew?._request_id).toEqual(expect.any(String));
+    expect(capturedCrew?._flow_id).toBe(capturedCrew?._flowId);
+    expect(capturedCrew?._request_id).toBe(capturedCrew?._requestId);
+  });
+
   it("updates current flow context for listener and router method execution", async () => {
     class ContextRoutingFlow extends Flow<{ id: string; seen: Record<string, unknown>[] }> {
       constructor() {
