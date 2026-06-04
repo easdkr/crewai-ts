@@ -29247,6 +29247,37 @@ describe("task execution tracking", () => {
     expect(taskInstance.output?.messages).toEqual(output.messages);
   });
 
+  it("includes execution messages for each sequential crew task output", async () => {
+    const agent = new Agent({
+      role: "Researcher",
+      goal: "Track crew messages",
+      backstory: "Careful analyst",
+      llm: (messages) => messages.at(-1)?.content.includes("Summarize")
+        ? "summary output"
+        : "ideas output",
+    });
+    const first = new Task({
+      description: "List three AI ideas",
+      expectedOutput: "Ideas",
+      agent,
+    });
+    const second = new Task({
+      description: "Summarize the ideas",
+      expectedOutput: "Summary",
+      agent,
+    });
+
+    const output = await new Crew({ agents: [agent], tasks: [first, second] }).kickoff();
+
+    expect(output.tasksOutput).toHaveLength(2);
+    expect(output.tasksOutput[0]?.messages.length).toBeGreaterThan(0);
+    expect(output.tasksOutput[1]?.messages.length).toBeGreaterThan(0);
+    expect(String((output.tasksOutput[0]?.messages.at(-1) as { content?: unknown } | undefined)?.content))
+      .toContain("List three AI ideas");
+    expect(String((output.tasksOutput[1]?.messages.at(-1) as { content?: unknown } | undefined)?.content))
+      .toContain("Summarize the ideas");
+  });
+
   it("tracks prompt context, processed agents, and used tools", async () => {
     const search = new StructuredTool({
       name: "search",
