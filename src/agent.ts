@@ -2166,10 +2166,15 @@ export class Agent {
     iteration = 0,
   ): Promise<Awaited<ReturnType<typeof callLLM>>> {
     await this.rpmController?.waitForSlot();
-    this.lastMessagesValue = messages.map((message) => ({ ...message }));
+    const messagesForCall = this.messagesWithInputFilesForClient(
+      messages,
+      llmClient,
+      options.inputFiles ?? options.input_files,
+    );
+    this.lastMessagesValue = messagesForCall.map((message) => ({ ...message }));
     const beforeUsage = getLLMUsageMetrics(llmClient);
     const model = this.modelNameForClient(llmClient);
-    const result = await callLLM(llmClient, messages, {
+    const result = await callLLM(llmClient, messagesForCall, {
       tools,
       ...(options.responseModel === undefined ? {} : { responseModel: options.responseModel }),
       metadata: {
@@ -2183,10 +2188,38 @@ export class Agent {
     this.usageMetrics = addUsageMetrics(
       this.usageMetrics,
       !hasLLMUsageMetrics(llmClient) || isEmptyUsageMetrics(usageDelta)
-        ? estimateUsageMetrics(messages, result)
+        ? estimateUsageMetrics(messagesForCall, result)
         : usageDelta,
     );
     return result;
+  }
+
+  private messagesWithInputFilesForClient(
+    messages: readonly LLMMessage[],
+    llmClient: LLMClient,
+    inputFiles?: InputFiles,
+  ): readonly LLMMessage[] {
+    if (!inputFiles || Object.keys(inputFiles).length === 0 || !this.clientSupportsMultimodal(llmClient)) {
+      return messages;
+    }
+    const lastUserIndex = messages.findLastIndex((message) => message.role === "user");
+    if (lastUserIndex === -1) {
+      return messages;
+    }
+    return messages.map((message, index) => index === lastUserIndex
+      ? { ...message, files: { ...inputFiles, ...(message.files ?? {}) } }
+      : message);
+  }
+
+  private clientSupportsMultimodal(llmClient: LLMClient): boolean {
+    const candidate = llmClient as LLMClient & {
+      supportsMultimodal?: () => boolean;
+      supports_multimodal?: () => boolean;
+    };
+    if (typeof candidate.supportsMultimodal === "function" && candidate.supportsMultimodal()) {
+      return true;
+    }
+    return typeof candidate.supports_multimodal === "function" && candidate.supports_multimodal();
   }
 
   private modelNameForClient(llmClient: LLMClient): string | null {

@@ -32259,6 +32259,55 @@ describe("task input files", () => {
     expect(prompts[1]).not.toContain("crew file content");
   });
 
+  it("passes crew kickoff input files to multimodal LLM messages", async () => {
+    class CapturingMultimodalLLM extends BaseLLM {
+      capturedMessages: readonly LLMMessage[] = [];
+      capturedToolNames: readonly string[] = [];
+
+      constructor() {
+        super({ model: "gemini/gemini-2.0-flash", provider: "gemini" });
+      }
+
+      override supportsMultimodal(): boolean {
+        return true;
+      }
+
+      override call(messages: readonly LLMMessage[], options?: LLMCallOptions): LLMResponse {
+        this.capturedMessages = messages.map((message) => ({
+          ...message,
+          files: message.files ? { ...message.files } : undefined,
+        }));
+        this.capturedToolNames = options?.tools?.map((toolInstance) => toolInstance.name) ?? [];
+        return "multimodal done";
+      }
+    }
+
+    const llmInstance = new CapturingMultimodalLLM();
+    const agentInstance = new Agent({
+      role: "Multimodal Reader",
+      goal: "Read files",
+      backstory: "Careful reader",
+      llm: llmInstance,
+    });
+    const taskInstance = new Task({
+      description: "Summarize kickoff files",
+      expectedOutput: "Summary",
+      agent: agentInstance,
+    });
+    const chart = new ImageFile({ source: Buffer.from([0x89, 0x50, 0x4e, 0x47]) });
+    const notes = new TextFile({ source: Buffer.from("Kickoff notes") });
+
+    await new Crew({ agents: [agentInstance], tasks: [taskInstance] }).kickoff({
+      input_files: { chart, notes },
+    });
+
+    const userMessage = llmInstance.capturedMessages.findLast((message) => message.role === "user");
+    expect(userMessage?.files).toEqual({ chart, notes });
+    expect(userMessage?.content).toContain("Input files (content already loaded in conversation):");
+    expect(userMessage?.content).toContain('"notes"');
+    expect(llmInstance.capturedToolNames).toContain("read_file");
+  });
+
   it("extracts structured input files from crew kickoff inputs", async () => {
     const prompts: string[] = [];
     const agentInstance = new Agent({
