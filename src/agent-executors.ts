@@ -1663,8 +1663,10 @@ export class AgentExecutor extends BaseAgentExecutor {
   _ensureStepExecutor(): StepExecutor {
     this.stepExecutor ??= new StepExecutor({
       agent: this.agent,
+      task: this.task,
       tools: this.tools,
       availableFunctions: this.availableNativeFunctions(),
+      callbacks: this.callbacks,
     });
     return this.stepExecutor;
   }
@@ -2490,9 +2492,11 @@ export class CrewAgentExecutor extends BaseAgentExecutor {
 
 export type StepExecutorOptions = {
   agent?: Agent | null;
+  task?: unknown;
   tools?: readonly Tool[];
   availableFunctions?: Record<string, unknown>;
   available_functions?: Record<string, unknown>;
+  callbacks?: readonly unknown[];
 };
 
 function parseNativeCrewArgs(value: string): Record<string, unknown> {
@@ -2525,15 +2529,19 @@ function stringifyCrewExecutorValue(value: unknown): string {
 
 export class StepExecutor {
   readonly agent: Agent | null;
+  readonly task: unknown;
   readonly tools: readonly Tool[];
   readonly availableFunctions: Record<string, unknown>;
   readonly available_functions: Record<string, unknown>;
+  readonly callbacks: readonly unknown[];
 
   constructor(options: StepExecutorOptions = {}) {
     this.agent = options.agent ?? null;
+    this.task = options.task ?? null;
     this.tools = options.tools ?? this.agent?.tools ?? [];
     this.availableFunctions = options.availableFunctions ?? options.available_functions ?? {};
     this.available_functions = this.availableFunctions;
+    this.callbacks = options.callbacks ?? [];
   }
 
   _parse_tool_args(toolInput: unknown): Record<string, unknown> {
@@ -2680,7 +2688,7 @@ export class StepExecutor {
       if (stepTimeout !== null && startTime !== null && Date.now() - startTime >= stepTimeout * 1000) {
         return lastToolResult || `Step timed out after ${String(stepTimeout)}s`;
       }
-      const answer = await this.callStepLlm(messages);
+      const answer = await this.callStepLlm(messages, this.buildStepLlmOptions());
       if (!answer) {
         throw new Error("Empty response from LLM");
       }
@@ -2893,11 +2901,31 @@ export class StepExecutor {
   }
 
   private buildNativeStepLlmOptions(): LLMCallOptions | undefined {
+    const options = this.buildStepLlmOptions() ?? {};
     if (this.tools.length === 0) {
-      return undefined;
+      return Object.keys(options).length > 0 ? options : undefined;
     }
     const [tools] = setupNativeTools(this.tools);
-    return tools.length > 0 ? { tools } : undefined;
+    if (tools.length > 0) {
+      options.tools = tools;
+    }
+    return Object.keys(options).length > 0 ? options : undefined;
+  }
+
+  private buildStepLlmOptions(): LLMCallOptions | undefined {
+    const options: LLMCallOptions = {};
+    if (this.callbacks.length > 0) {
+      options.callbacks = this.callbacks;
+    }
+    if (this.task !== null && this.task !== undefined) {
+      options.fromTask = this.task;
+      options.from_task = this.task;
+    }
+    if (this.agent) {
+      options.fromAgent = this.agent;
+      options.from_agent = this.agent;
+    }
+    return Object.keys(options).length > 0 ? options : undefined;
   }
 
   private async runToolByName(name: string, args: unknown): Promise<unknown> {

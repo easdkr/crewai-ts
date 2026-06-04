@@ -14845,6 +14845,57 @@ describe("core crew runtime", () => {
     expect(serializedNativeTools).toContain("\"type\":\"function\"");
     expect(serializedNativeTools).toContain("\"name\":\"lookup_tool\"");
     expect(serializedNativeTools).toContain("\"description\":\"Lookup facts\"");
+
+    const taskContext = { description: "Research task" };
+    const stepCallbacks = [() => undefined];
+    const textStepOptions: Array<LLMCallOptions | undefined> = [];
+    const textMetadataAgent = new Agent({
+      role: "Text",
+      goal: "Expose metadata",
+      backstory: "Executor",
+      llm: (_messages, options): LLMResponse => {
+        textStepOptions.push(options);
+        return "metadata received";
+      },
+    });
+    const textMetadataExecutor = new StepExecutor({
+      agent: textMetadataAgent,
+      task: taskContext,
+      callbacks: stepCallbacks,
+    });
+    await expect(textMetadataExecutor._execute_text_parsed([], [])).resolves.toBe("metadata received");
+    expect(textStepOptions[0]).toMatchObject({
+      callbacks: stepCallbacks,
+      fromTask: taskContext,
+      from_task: taskContext,
+      fromAgent: textMetadataAgent,
+      from_agent: textMetadataAgent,
+    });
+
+    const nativeStepOptions: Array<LLMCallOptions | undefined> = [];
+    const nativeMetadataAgent = new Agent({
+      role: "Native",
+      goal: "Expose metadata",
+      backstory: "Executor",
+      llm: (_messages, options): LLMResponse => {
+        nativeStepOptions.push(options);
+        return "native metadata received";
+      },
+    });
+    const nativeMetadataExecutor = new StepExecutor({
+      agent: nativeMetadataAgent,
+      task: taskContext,
+      callbacks: stepCallbacks,
+      available_functions: { lookup: () => "unused" },
+    });
+    await expect(nativeMetadataExecutor._execute_native([], [])).resolves.toBe("native metadata received");
+    expect(nativeStepOptions[0]).toMatchObject({
+      callbacks: stepCallbacks,
+      fromTask: taskContext,
+      from_task: taskContext,
+      fromAgent: nativeMetadataAgent,
+      from_agent: nativeMetadataAgent,
+    });
   });
 
   it("exposes upstream Agent and BaseAgent compatibility methods", async () => {

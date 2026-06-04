@@ -31,8 +31,13 @@ export type LLMToolOption = Tool | ({ readonly name?: string } & Record<string, 
 
 export type LLMCallOptions = {
   tools?: readonly LLMToolOption[];
+  callbacks?: readonly unknown[];
   availableFunctions?: Record<string, unknown>;
   available_functions?: Record<string, unknown>;
+  fromTask?: unknown;
+  from_task?: unknown;
+  fromAgent?: unknown;
+  from_agent?: unknown;
   responseModel?: unknown;
   signal?: AbortSignal;
   metadata?: Record<string, unknown>;
