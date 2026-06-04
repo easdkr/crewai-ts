@@ -601,6 +601,8 @@ import {
   ChatInputField,
   ChatInputs,
   CODEX_ENV_VARS,
+  CodexEnvEvent,
+  CursorEnvEvent,
   DatabaseError,
   DatabaseOperationError,
   DIVIDERS,
@@ -608,6 +610,8 @@ import {
   DEFAULT_FILE_STORE_TTL,
   DEFAULT_INPUT_DESCRIPTION,
   DefaultEnvEvent,
+  ENV_CONTEXT_EVENT_TYPES,
+  env_context_event_adapter,
   AgentEvaluationResult,
   AgentEvaluator,
   CrewEvaluator,
@@ -2021,6 +2025,26 @@ describe("environment, logging, and file store utilities", () => {
     expect(_is_cursor_env({ CURSOR_TRACE_ID: "trace" })).toBe(true);
     await expect(_run_sync(Promise.resolve("file-store-result"))).resolves.toBe("file-store-result");
     await expect(_run_sync(() => Promise.resolve("callback-result"))).resolves.toBe("callback-result");
+  });
+
+  it("parses upstream environment context event adapter payloads", () => {
+    expect(ENV_CONTEXT_EVENT_TYPES).toEqual([
+      CCEnvEvent,
+      CodexEnvEvent,
+      CursorEnvEvent,
+      DefaultEnvEvent,
+    ]);
+
+    expect(env_context_event_adapter.validate_python({ type: "cc_env" })).toBeInstanceOf(CCEnvEvent);
+    expect(env_context_event_adapter.validate_python({ type: "codex_env" })).toBeInstanceOf(CodexEnvEvent);
+    expect(env_context_event_adapter.validate_python({ type: "cursor_env" })).toBeInstanceOf(CursorEnvEvent);
+    expect(env_context_event_adapter.validate_python({ type: "default_env" })).toBeInstanceOf(DefaultEnvEvent);
+    expect(env_context_event_adapter.validatePython({ type: "codex_env" })).toMatchObject({
+      type: "codex_env",
+      sourceType: "environment",
+    });
+    expect(() => env_context_event_adapter.validate_python({ type: "unknown_env" }))
+      .toThrow("Unsupported environment context event type");
   });
 
   it("logs only in verbose mode with colored timestamped output", async () => {

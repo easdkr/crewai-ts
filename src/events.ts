@@ -3628,7 +3628,30 @@ export class DefaultEnvEvent extends BaseEvent {
 export type EnvContextEvent = CCEnvEvent | CodexEnvEvent | CursorEnvEvent | DefaultEnvEvent;
 export const EnvContextEvent = Object.freeze({ kind: "EnvContextEvent" });
 export const ENV_CONTEXT_EVENT_TYPES = Object.freeze([CCEnvEvent, CodexEnvEvent, CursorEnvEvent, DefaultEnvEvent] as const);
-export const env_context_event_adapter = Object.freeze({ kind: "env_context_event_adapter" });
+
+function validateEnvContextEventPayload(data: unknown): EnvContextEvent {
+  if (!data || typeof data !== "object" || Array.isArray(data)) {
+    throw new Error("Environment context event payload must be an object.");
+  }
+  const payload = data as Record<string, unknown>;
+  switch (payload.type) {
+    case "cc_env":
+      return new CCEnvEvent();
+    case "codex_env":
+      return new CodexEnvEvent();
+    case "cursor_env":
+      return new CursorEnvEvent();
+    case "default_env":
+      return new DefaultEnvEvent();
+    default:
+      throw new Error(`Unsupported environment context event type: ${String(payload.type)}`);
+  }
+}
+
+export const env_context_event_adapter = Object.freeze({
+  validatePython: validateEnvContextEventPayload,
+  validate_python: validateEnvContextEventPayload,
+});
 
 export type CrewAIEvent =
   | CCEnvEvent
