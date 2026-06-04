@@ -21929,6 +21929,53 @@ describe("flow runtime", () => {
     expect(flow.inputFiles).toEqual({});
   });
 
+  it("passes flow input files through kickoff_async", async () => {
+    class AsyncCrewFlow extends Flow<{ sawInputFiles?: boolean }> {
+      analyze() {
+        this.state.sawInputFiles = "notes" in this.inputFiles;
+        const agentInstance = new Agent({
+          role: "Async Reader",
+          goal: "Read files",
+          backstory: "Careful reader",
+          llm: (messages, options) => {
+            if (!messages.some((message) => message.role === "tool")) {
+              expect(options?.tools?.map((toolInstance) => toolInstance.name)).toContain("read_file");
+              return { toolName: "read_file", arguments: { file_name: "notes" } };
+            }
+            return messages.at(-1)?.content ?? "";
+          },
+        });
+        const taskInstance = new Task({
+          description: "Read async flow file",
+          expectedOutput: "File content",
+          agent: agentInstance,
+        });
+        return this.kickoffCrew(new Crew({ agents: [agentInstance], tasks: [taskInstance] }));
+      }
+    }
+
+    const initializers = [
+      decorateMethod(AsyncCrewFlow, "analyze", start() as unknown as Decorator),
+    ];
+    const flow = new AsyncCrewFlow();
+    initializers.forEach((initializer) => {
+      initializer.call(flow);
+    });
+
+    const output = await flow.kickoff_async({
+      input_files: {
+        notes: {
+          filename: "notes.txt",
+          content: "Async flow notes",
+        },
+      },
+    }) as CrewOutput;
+
+    expect(output.raw).toBe("read_file result:\nAsync flow notes");
+    expect(flow.state.sawInputFiles).toBe(true);
+    expect(flow.inputFiles).toEqual({});
+  });
+
   it("extracts structured input files from flow inputs", async () => {
     class ExtractFlow extends Flow<{ topic?: string; sawFile?: boolean }> {
       begin(inputs: Record<string, unknown>) {

@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 1031 passing tests.
+- Test suite: 1032 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -113,7 +113,7 @@ This register is the source of truth for continuing porting work while parity sc
 - JSON checkpoint storage is release-gated as a deterministic local filesystem shim: sync `checkpoint`, `prune`, and `from_checkpoint` calls now complete synchronously like upstream, including branch-local prune, zero-keep removal, and no-op over-retention behavior, while async wrappers remain available for async callers.
 - SQLite checkpoint storage is release-gated as a deterministic local database shim: checkpoint payloads are validated and returned as canonical JSON like upstream's `jsonb(?)` / `json(data)` path, while branch, parent, branch-local prune including zero-keep removal, and async wrapper behavior remain in the default gate.
 - Checkpoint config resolution is release-gated for upstream inheritance and opt-out behavior across crews, agents, tasks, flows, event trigger filters, and unknown event sources.
-- Flow multimodal `input_files` handoff is release-gated for upstream multi-step workflows: files passed to `Flow.kickoff` remain available to crews kicked off from both start methods and downstream listeners, and are cleared after kickoff completes.
+- Flow multimodal `input_files` handoff is release-gated for upstream multi-step workflows: files passed to `Flow.kickoff` / `kickoff_async` remain available to crews kicked off from both start methods and downstream listeners, and are cleared after kickoff completes.
 - Runtime checkpoint lineage is release-gated for serialization, restore defaults, checkpoint-id chaining, fork branch behavior, and checkpoint listener opt-out during event replay or checkpoint event handling.
 - `PickleHandler` remains a deterministic JSON-backed `.pkl` shim in the TypeScript runtime, but mirrors upstream corrupted-load behavior by surfacing a `pickle data was truncated` error instead of silently resetting damaged persistence files.
 - Import utility behavior is release-gated for upstream optional-dependency edge cases: nested module attribute resolution, empty malformed import paths, missing module package-name extraction, missing attribute messages, and chained import-error causes are covered with deterministic Node module fixtures.
