@@ -23,7 +23,13 @@ import {
   MethodExecutionStartedEvent,
   crewaiEventBus,
 } from "./events.js";
-import { SQLiteFlowPersistence, type FlowPersistence } from "./flow-persistence.js";
+import {
+  SQLiteFlowPersistence,
+  getMethodPersistDecoratorMetadata,
+  getPersistDecoratorMetadata,
+  type FlowPersistence,
+  type PersistDecoratorMetadata,
+} from "./flow-persistence.js";
 import { extractInputFilesFromInputs, type InputFiles } from "./input-files.js";
 import {
   ConsoleInputProvider,
@@ -3260,6 +3266,7 @@ export function buildFlowDefinition(instanceOrConstructor: object | FlowMetadata
       router: methodEntries.some((entry) => entry.kind === "router") || Boolean(humanFeedback?.emit),
       humanFeedback,
       emit: flowDefinitionEmit(methodEntries),
+      persist: flowMethodPersistenceDefinition(instanceOrConstructor, methodName),
     });
     methods[methodName] = definition;
   }
@@ -4514,6 +4521,12 @@ function flowConfigDefinition(instanceOrConstructor: object | FlowMetadataTarget
 }
 
 function flowPersistenceDefinition(instanceOrConstructor: object | FlowMetadataTarget): FlowPersistenceDefinition | null {
+  const constructorMetadata = typeof instanceOrConstructor === "function"
+    ? getPersistDecoratorMetadata(instanceOrConstructor)
+    : getPersistDecoratorMetadata(instanceOrConstructor.constructor);
+  if (constructorMetadata) {
+    return flowPersistenceDefinitionFromMetadata(constructorMetadata);
+  }
   if (typeof instanceOrConstructor === "function") {
     return null;
   }
@@ -4525,6 +4538,23 @@ function flowPersistenceDefinition(instanceOrConstructor: object | FlowMetadataT
     enabled: true,
     verbose: false,
     persistence: serializeFlowDefinitionStaticValue(persistence),
+  });
+}
+
+function flowMethodPersistenceDefinition(
+  instanceOrConstructor: object | FlowMetadataTarget,
+  methodName: string,
+): FlowPersistenceDefinition | null {
+  const methodValue = getMethodValue(instanceOrConstructor, methodName);
+  const metadata = getMethodPersistDecoratorMetadata(methodValue);
+  return metadata ? flowPersistenceDefinitionFromMetadata(metadata) : null;
+}
+
+function flowPersistenceDefinitionFromMetadata(metadata: PersistDecoratorMetadata): FlowPersistenceDefinition {
+  return new FlowPersistenceDefinition({
+    enabled: metadata.enabled,
+    verbose: metadata.verbose,
+    persistence: serializeFlowDefinitionStaticValue(metadata.persistence),
   });
 }
 

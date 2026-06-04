@@ -18950,6 +18950,40 @@ describe("flow runtime", () => {
     expect(() => definition.to_json()).not.toThrow();
   });
 
+  it("detects FlowDefinition persist metadata from class and method decorators", () => {
+    class PersistedDefinitionFlow extends Flow<{ id: string }> {
+      constructor() {
+        super({ initialState: { id: "persisted-definition-flow" } });
+      }
+
+      begin() {
+        return "started";
+      }
+
+      checkpoint() {
+        return "saved";
+      }
+    }
+
+    const DecoratedFlow = decorateClass(PersistedDefinitionFlow, persist({ verbose: true }) as unknown as Decorator);
+    const persistInitializers = applyMethodDecorator(DecoratedFlow, "checkpoint", persist({ verbose: false }) as unknown as Decorator);
+    const initializers = [
+      decorateMethod(DecoratedFlow, "begin", start() as unknown as Decorator),
+      decorateMethod(DecoratedFlow, "checkpoint", listen("begin") as unknown as Decorator),
+      ...persistInitializers,
+    ];
+    const flow = new DecoratedFlow();
+    initializers.forEach((initializer) => {
+      initializer.call(flow);
+    });
+
+    const definition = DecoratedFlow.flow_definition();
+
+    expect(definition.persist).toMatchObject({ enabled: true, verbose: true });
+    expect(definition.methods.begin.persist).toBeNull();
+    expect(definition.methods.checkpoint.persist).toMatchObject({ enabled: true, verbose: false });
+  });
+
   it("exposes upstream snake_case flow state properties", async () => {
     class PropertyAliasFlow extends Flow<{ id: string; events: string[] }> {
       constructor() {

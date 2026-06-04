@@ -74,6 +74,15 @@ type MethodDecoratorFactory = <
   context: ClassMethodDecoratorContext<This, (this: This, ...args: Args) => Return>,
 ) => ((this: This, ...args: Args) => Return) | undefined;
 
+export type PersistDecoratorMetadata = {
+  enabled: true;
+  verbose: boolean;
+  persistence: FlowPersistence | null;
+};
+
+const classPersistMetadata = new WeakMap<object, PersistDecoratorMetadata>();
+const methodPersistMetadata = new WeakMap<(...args: never[]) => unknown, PersistDecoratorMetadata>();
+
 export class JsonFlowPersistence implements FlowPersistence {
   readonly persistenceType = "JsonFlowPersistence";
   readonly persistence_type = "JsonFlowPersistence";
@@ -403,12 +412,17 @@ export function persist(
     && "verbose" in persistenceOrOptions
     ? persistenceOrOptions.verbose
     : verbose;
+  const metadata = (actualPersistence: FlowPersistence): PersistDecoratorMetadata => ({
+    enabled: true,
+    verbose: shouldLog,
+    persistence: actualPersistence,
+  });
 
   function decorateClass<TClass extends FlowClass>(
     value: TClass,
   ): TClass {
     const actualPersistence = persistence ?? new SQLiteFlowPersistence();
-    return class extends value {
+    const decorated = class extends value {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       constructor(...args: any[]) {
         super(...injectPersistenceOption(args, actualPersistence));
@@ -416,6 +430,10 @@ export function persist(
         instance.persistence ??= actualPersistence;
       }
     };
+    const persistMetadata = metadata(actualPersistence);
+    classPersistMetadata.set(value, persistMetadata);
+    classPersistMetadata.set(decorated, persistMetadata);
+    return decorated;
   }
 
   function decorateMethod<This extends PersistableFlowInstance, Args extends unknown[], Return>(
@@ -428,6 +446,7 @@ export function persist(
       await persistState(this, String(context.name), actualPersistence, shouldLog);
       return result;
     };
+    methodPersistMetadata.set(wrapped, metadata(actualPersistence));
     return wrapped as (this: This, ...args: Args) => Return;
   }
 
@@ -445,6 +464,16 @@ export function persist(
 export const PersistenceDecorator = { persistState };
 export const PersistDecorator = PersistenceDecorator;
 export const persist_state = persistState;
+
+export function getPersistDecoratorMetadata(value: object): PersistDecoratorMetadata | null {
+  return classPersistMetadata.get(value) ?? null;
+}
+
+export function getMethodPersistDecoratorMetadata(value: unknown): PersistDecoratorMetadata | null {
+  return typeof value === "function"
+    ? methodPersistMetadata.get(value as (...args: never[]) => unknown) ?? null
+    : null;
+}
 
 export const SQLiteFlowPersistenceAlias = SQLiteFlowPersistence;
 export const SqliteFlowPersistence = SQLiteFlowPersistence;
