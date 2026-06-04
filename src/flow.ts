@@ -1586,7 +1586,7 @@ export class Flow<TState extends object = Record<string, unknown>> {
     }
     try {
       const response = callConversationLlm(routerLlm, this._buildRouterMessages(routerConfig, context), {
-        response_format: routerConfig.response_format ?? routerConfig.responseFormat ?? this.routerResponseFormat(routerConfig),
+        response_format: this._routerResponseFormat(routerConfig),
       });
       const intent = extractRouterIntent(response, routerConfig.intent_field);
       if (!intent) {
@@ -1604,6 +1604,14 @@ export class Flow<TState extends object = Record<string, unknown>> {
 
   _route_with_config(routerConfig: RouterConfig, context: Record<string, unknown>): string | null {
     return this._routeWithConfig(routerConfig, context);
+  }
+
+  _routerResponseFormat(routerConfig: RouterConfig): unknown {
+    return routerConfig.response_format ?? routerConfig.responseFormat ?? this.routerResponseFormat(routerConfig);
+  }
+
+  _router_response_format(routerConfig: RouterConfig): unknown {
+    return this._routerResponseFormat(routerConfig);
   }
 
   converseTurn(): string {

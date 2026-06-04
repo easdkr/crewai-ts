@@ -19818,6 +19818,36 @@ describe("flow runtime", () => {
     expect(historyCalls[0]?.some((message) => message.content === "summarize this")).toBe(true);
   });
 
+  it("builds experimental conversational router response formats from effective routes", () => {
+    const explicitFormat = { name: "ResearchRoute" };
+    const explicitRouter = new RouterConfig({
+      response_format: explicitFormat,
+      routes: ["research"],
+    });
+
+    class DefaultRouterFlow extends Flow<ConversationState> {
+      static conversational = true;
+      static conversational_config = new ConversationConfig({
+        router: new RouterConfig({ routes: ["research"] }),
+      });
+
+      research() {
+        return "researched";
+      }
+    }
+
+    const initializer = decorateMethod(DefaultRouterFlow, "research", listen("research") as unknown as Decorator);
+    const flow = new DefaultRouterFlow();
+    initializer.call(flow);
+
+    expect(flow._router_response_format(explicitRouter)).toBe(explicitFormat);
+    expect(flow._router_response_format(DefaultRouterFlow.conversational_config.router as RouterConfig)).toEqual({
+      name: "ConversationRoute",
+      intent_field: "intent",
+      routes: ["research", "converse", "end"],
+    });
+  });
+
   it("provides upstream experimental conversational data shapes", () => {
     const router = new RouterConfig({
       routes: ["converse", "handoff"],
