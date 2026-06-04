@@ -1156,6 +1156,22 @@ const flowMetadata = new WeakMap<FlowMetadataTarget, FlowMethodEntry[]>();
 const humanFeedbackMetadata = new WeakMap<FlowMetadataTarget, Map<string, HumanFeedbackConfig>>();
 
 export class Flow<TState extends object = Record<string, unknown>> {
+  static _flow_definition?: FlowDefinition | null;
+
+  static flowDefinition(this: FlowMetadataTarget & { _flow_definition?: FlowDefinition | null }): FlowDefinition {
+    if (!Object.prototype.hasOwnProperty.call(this, "_flow_definition") || !this._flow_definition) {
+      this._flow_definition = buildFlowDefinition(this);
+    }
+    return this._flow_definition;
+  }
+
+  static flow_definition(this: FlowMetadataTarget & { _flow_definition?: FlowDefinition | null }): FlowDefinition {
+    if (!Object.prototype.hasOwnProperty.call(this, "_flow_definition") || !this._flow_definition) {
+      this._flow_definition = buildFlowDefinition(this);
+    }
+    return this._flow_definition;
+  }
+
   readonly entityType = "flow";
   readonly entity_type = "flow";
   readonly name: string | null;

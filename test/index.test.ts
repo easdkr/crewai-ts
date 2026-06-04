@@ -18979,6 +18979,33 @@ describe("flow runtime", () => {
     });
   });
 
+  it("builds Flow.flow_definition caches per subclass like upstream", () => {
+    class ParentFlow extends Flow {
+      begin() {
+        return "begin";
+      }
+    }
+    decorateMethod(ParentFlow, "begin", start() as unknown as Decorator).call(new ParentFlow());
+
+    const parentDefinition = ParentFlow.flow_definition();
+
+    class ChildFlow extends ParentFlow {
+      childStep() {
+        return "child";
+      }
+    }
+    decorateMethod(ChildFlow, "childStep", listen("begin") as unknown as Decorator).call(new ChildFlow());
+
+    const childDefinition = ChildFlow.flow_definition();
+
+    expect(ParentFlow.flowDefinition()).toBe(parentDefinition);
+    expect(ChildFlow.flowDefinition()).toBe(childDefinition);
+    expect(parentDefinition.name).toBe("ParentFlow");
+    expect(childDefinition.name).toBe("ChildFlow");
+    expect(childDefinition).not.toBe(parentDefinition);
+    expect(Object.keys(childDefinition.methods).sort()).toEqual(["begin", "childStep"]);
+  });
+
   it("exposes upstream Flow OR listener and racing group helpers", () => {
     class RacingFlow extends Flow<{ events: string[] }> {
       constructor() {
