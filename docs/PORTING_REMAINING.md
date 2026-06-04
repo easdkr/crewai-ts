@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 1017 passing tests.
+- Test suite: 1018 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -733,7 +733,7 @@ When more goal budget is available, continue from the behavioral parity audits b
    - Goal-alignment and semantic-quality evaluator placeholders have been replaced with LLM-backed evaluators.
    - Evaluation trace callback now records event-bus-driven agent/lite-agent traces, tool uses, tool errors, validation errors, LLM calls, and final output.
    - Telemetry span methods now record deterministic local `RecordedSpan` objects for task/tool/test/crew/flow/environment/human-feedback/feature/template telemetry, including `share_crew` platform/fingerprint payload details, without external OTLP side effects.
-   - Event listener lifecycle telemetry is release-gated for upstream local span creation: environment context, crew kickoff/execution completion, crew test/test-result, task start/end, flow creation/execution, and human-feedback request/receive events all record deterministic local spans through the listener path.
+   - Event listener lifecycle telemetry is release-gated for upstream local span creation and assignment: environment context, crew kickoff/execution completion, `_execution_span` assignment/closure when `share_crew=true`, no retained execution span when `share_crew=false`, crew test/test-result, task start/end, flow creation/execution, and human-feedback request/receive events all record deterministic local spans through the listener path.
    - Event listener feature telemetry is release-gated for upstream event-to-feature mapping: guardrail execution, planning creation/replan/early-goal, skill discovery/load/activation/failure, A2A delegation/conversation, MCP connection/config/tool events, memory save/query/retrieval, and registered global hooks all emit deterministic local `Feature Usage` spans.
    - Remaining: deeper OpenTelemetry exporter integration can stay outside the default gate unless the project decides to carry SDK-backed telemetry coverage.
 

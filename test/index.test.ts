@@ -33837,7 +33837,11 @@ describe("events", () => {
 
       eventBus.emit({}, new BaseEvent({ type: "codex_env" }));
       eventBus.emit(crewSource, new CrewKickoffStartedEvent({ crewName: "Crew", inputs: { topic: "CrewAI" } }));
+      const assignedExecutionSpan = (crewSource as { _execution_span?: { ended?: boolean } })._execution_span;
+      expect(assignedExecutionSpan).toBeTruthy();
+      expect(assignedExecutionSpan?.ended).toBe(false);
       eventBus.emit(crewSource, Object.assign(new BaseEvent({ type: "crew_kickoff_completed" }), { crew_name: "Crew", output: { raw: "final" } }));
+      expect(assignedExecutionSpan?.ended).toBe(true);
       eventBus.emit(crewSource, new CrewTestStartedEvent({ crewName: "Crew", n_iterations: 2, eval_llm: "gpt-test", inputs: { topic: "CrewAI" } }));
       eventBus.emit({ crew: crewSource }, new CrewTestResultEvent({ quality: 8, execution_duration: 12, model: "gpt-test" }));
       eventBus.emit(taskSource, new TaskStartedEvent({ taskDescription: "Research" }));
@@ -33868,6 +33872,51 @@ describe("events", () => {
       expect(spans.find((span) => span.name === "Task Execution")?.ended).toBe(true);
       expect(spans.find((span) => span.name === "Flow Execution")?.attributes.node_names).toBe(JSON.stringify(["begin", "finish"]));
       expect(spans.filter((span) => span.name === "Human Feedback").map((span) => span.attributes.event_type)).toEqual(["requested", "received"]);
+    } finally {
+      console.log = originalLog;
+      if (previousDisableTelemetry === undefined) {
+        delete process.env.CREWAI_DISABLE_TELEMETRY;
+      } else {
+        process.env.CREWAI_DISABLE_TELEMETRY = previousDisableTelemetry;
+      }
+      if (previousOtelDisabled === undefined) {
+        delete process.env.OTEL_SDK_DISABLED;
+      } else {
+        process.env.OTEL_SDK_DISABLED = previousOtelDisabled;
+      }
+      (Telemetry as unknown as { instance: Telemetry | null; _instance: Telemetry | null }).instance = null;
+      (Telemetry as unknown as { instance: Telemetry | null; _instance: Telemetry | null })._instance = null;
+    }
+  });
+
+  it("does not retain crew execution spans from event listener hooks when share_crew is false", () => {
+    const previousDisableTelemetry = process.env.CREWAI_DISABLE_TELEMETRY;
+    const previousOtelDisabled = process.env.OTEL_SDK_DISABLED;
+    (Telemetry as unknown as { instance: Telemetry | null; _instance: Telemetry | null }).instance = null;
+    (Telemetry as unknown as { instance: Telemetry | null; _instance: Telemetry | null })._instance = null;
+    delete process.env.CREWAI_DISABLE_TELEMETRY;
+    delete process.env.OTEL_SDK_DISABLED;
+
+    const originalLog = console.log;
+    console.log = () => {};
+    try {
+      const telemetry = new Telemetry();
+      telemetry.clearSpans();
+      const eventBus = new EventBus();
+      new EventListener(eventBus);
+      const crewSource = {
+        id: "crew-private",
+        key: "crew-key",
+        share_crew: false,
+        agents: [{ id: "agent-1", role: "Researcher" }],
+        tasks: [{ id: "task-1", description: "Research", output: { raw: "done" } }],
+      };
+
+      eventBus.emit(crewSource, new CrewKickoffStartedEvent({ crewName: "Crew", inputs: { topic: "CrewAI" } }));
+
+      expect((crewSource as { _execution_span?: unknown })._execution_span).toBeNull();
+      expect(telemetry.getSpans().map((span) => span.name)).toContain("Crew Created");
+      expect(telemetry.getSpans().map((span) => span.name)).not.toContain("Crew Execution");
     } finally {
       console.log = originalLog;
       if (previousDisableTelemetry === undefined) {
