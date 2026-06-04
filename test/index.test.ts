@@ -19698,6 +19698,21 @@ describe("flow runtime", () => {
     }
   });
 
+  it("resolves experimental conversational trace deferral from ConversationConfig", () => {
+    class DeferOn extends Flow<ConversationState> {
+      static conversational = true;
+      static conversational_config = new ConversationConfig({ defer_trace_finalization: true });
+    }
+
+    class DeferOff extends Flow<ConversationState> {
+      static conversational = true;
+      static conversational_config = new ConversationConfig({ defer_trace_finalization: false });
+    }
+
+    expect(new DeferOn()._should_defer_trace_finalization()).toBe(true);
+    expect(new DeferOff()._should_defer_trace_finalization()).toBe(false);
+  });
+
   it("provides upstream experimental conversational data shapes", () => {
     const router = new RouterConfig({
       routes: ["converse", "handoff"],

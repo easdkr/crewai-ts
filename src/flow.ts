@@ -1617,6 +1617,14 @@ export class Flow<TState extends object = Record<string, unknown>> {
     this.finalizeSessionTraces();
   }
 
+  _shouldDeferTraceFinalization(): boolean {
+    return this.shouldDeferConversationalTraceFinalization();
+  }
+
+  _should_defer_trace_finalization(): boolean {
+    return this._shouldDeferTraceFinalization();
+  }
+
   _effectiveRoutes(routerConfig: RouterConfig | null = null): string[] {
     const builtinRoutes = getStaticStringArray(this.constructor, "builtin_routes")
       ?? getStaticStringArray(this.constructor, "builtinRoutes")
