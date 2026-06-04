@@ -27477,6 +27477,61 @@ describe("tools", () => {
     expect(llmInstance.capturedToolNames).toContain("read_file");
   });
 
+  it("formats direct Agent OpenAI Responses PDF input files", async () => {
+    class CapturingOpenAIResponsesLLM extends OpenAICompletion {
+      formattedMessages: readonly LLMMessage[] = [];
+
+      constructor() {
+        super({ model: "gpt-4o-mini", api: "responses" });
+      }
+
+      override call(messages: readonly LLMMessage[]): LLMResponse {
+        this.formattedMessages = this.formatMessages(messages);
+        return "responses pdf done";
+      }
+    }
+
+    const llmInstance = new CapturingOpenAIResponsesLLM();
+    const agent = new Agent({
+      role: "PDF Analyst",
+      goal: "Analyze PDF files",
+      backstory: "Expert at reading documents",
+      llm: llmInstance,
+    });
+    const pdfBytes = Buffer.from("%PDF-1.4 direct agent responses pdf");
+    const document = new PDFFile({
+      source: new FileBytes({ data: pdfBytes, filename: "brief.pdf" }),
+    });
+
+    await expect(agent.kickoff([
+      {
+        role: "user",
+        content: "What type of document is this?",
+      },
+    ], {
+      input_files: {
+        document,
+      },
+    })).resolves.toBe("responses pdf done");
+
+    const userMessage = llmInstance.formattedMessages.findLast((message) => message.role === "user");
+    expect(userMessage?.files).toBeUndefined();
+    const contentBlocks: unknown = userMessage?.content;
+    expect(Array.isArray(contentBlocks)).toBe(true);
+    if (!Array.isArray(contentBlocks)) {
+      throw new Error("Expected OpenAI Responses content blocks");
+    }
+    expect(contentBlocks).toHaveLength(2);
+    const textBlock = contentBlocks[0] as { type?: unknown; text?: unknown };
+    expect(textBlock.type).toBe("input_text");
+    expect(String(textBlock.text)).toContain("What type of document is this?");
+    expect(contentBlocks[1]).toEqual({
+      type: "input_file",
+      filename: "brief.pdf",
+      file_data: `data:application/pdf;base64,${pdfBytes.toString("base64")}`,
+    });
+  });
+
   it("uses functionCallingLlm for tool selection and the main LLM for the final answer", async () => {
     const functionCalls: LLMMessage[][] = [];
     const mainCalls: LLMMessage[][] = [];
