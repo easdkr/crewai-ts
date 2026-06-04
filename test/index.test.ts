@@ -12462,6 +12462,93 @@ describe("RAG configuration and factories", () => {
     expect(point.payload).not.toHaveProperty("metadata");
   });
 
+  it("splits Qdrant add_documents batches like upstream sync and async clients", async () => {
+    const syncUpsert = vi.fn();
+    const syncClient = new QdrantClient({
+      collection_exists: vi.fn(() => true),
+      upsert: syncUpsert,
+      query_points: vi.fn(() => ({ points: [] })),
+    }, (text: string) => [text.length], 5, 0.6, 2);
+
+    expect(syncClient.default_batch_size).toBe(2);
+    syncClient.add_documents({
+      collection_name: "test_collection",
+      documents: [
+        { doc_id: "id1", content: "Document 1", metadata: { source: "test1" } },
+        { doc_id: "id2", content: "Document 2", metadata: { source: "test2" } },
+        { doc_id: "id3", content: "Document 3", metadata: { source: "test3" } },
+      ],
+    });
+
+    expect(syncUpsert).toHaveBeenCalledTimes(2);
+    expect(syncUpsert).toHaveBeenNthCalledWith(1, {
+      collection_name: "test_collection",
+      points: [
+        { id: "id1", vector: [10], payload: { content: "Document 1", source: "test1" } },
+        { id: "id2", vector: [10], payload: { content: "Document 2", source: "test2" } },
+      ],
+    });
+    expect(syncUpsert).toHaveBeenNthCalledWith(2, {
+      collection_name: "test_collection",
+      points: [
+        { id: "id3", vector: [10], payload: { content: "Document 3", source: "test3" } },
+      ],
+    });
+
+    const explicitUpsert = vi.fn();
+    const explicitClient = new QdrantClient({
+      collection_exists: vi.fn(() => true),
+      upsert: explicitUpsert,
+      query_points: vi.fn(() => ({ points: [] })),
+    }, (text: string) => [text.length]);
+    explicitClient.add_documents({
+      collection_name: "test_collection",
+      batch_size: 1,
+      documents: [
+        { doc_id: "id1", content: "Document 1" },
+        { doc_id: "id2", content: "Document 2" },
+      ],
+    });
+    expect(explicitUpsert).toHaveBeenCalledTimes(2);
+    expect((explicitUpsert.mock.calls[0]?.[0] as { points: Array<{ id: string }> }).points.map((point) => point.id))
+      .toEqual(["id1"]);
+    expect((explicitUpsert.mock.calls[1]?.[0] as { points: Array<{ id: string }> }).points.map((point) => point.id))
+      .toEqual(["id2"]);
+
+    const asyncUpsert = vi.fn(async () => {
+      await Promise.resolve();
+    });
+    const asyncClient = new QdrantClient({
+      aquery_points: async () => await Promise.resolve({ points: [] }),
+      collection_exists: async () => await Promise.resolve(true),
+      upsert: asyncUpsert,
+    }, async (text: string) => await Promise.resolve([text.length]), 5, 0.6, 2);
+
+    await asyncClient.aadd_documents({
+      collection_name: "test_collection",
+      documents: [
+        { doc_id: "id1", content: "Document 1", metadata: { source: "test1" } },
+        { doc_id: "id2", content: "Document 2", metadata: { source: "test2" } },
+        { doc_id: "id3", content: "Document 3", metadata: { source: "test3" } },
+      ],
+    });
+
+    expect(asyncUpsert).toHaveBeenCalledTimes(2);
+    expect(asyncUpsert).toHaveBeenNthCalledWith(1, {
+      collection_name: "test_collection",
+      points: [
+        { id: "id1", vector: [10], payload: { content: "Document 1", source: "test1" } },
+        { id: "id2", vector: [10], payload: { content: "Document 2", source: "test2" } },
+      ],
+    });
+    expect(asyncUpsert).toHaveBeenNthCalledWith(2, {
+      collection_name: "test_collection",
+      points: [
+        { id: "id3", vector: [10], payload: { content: "Document 3", source: "test3" } },
+      ],
+    });
+  });
+
   it("uses upstream Qdrant collection create payload shape", () => {
     const createCollection = vi.fn();
     const getCollection = vi.fn(() => ({ name: "docs" }));
