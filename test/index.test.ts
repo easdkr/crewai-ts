@@ -19609,6 +19609,31 @@ describe("agent planning", () => {
     expect(agentInstance.getUsageMetrics().successfulRequests).toBe(2);
   });
 
+  it("returns structured direct Agent kickoff output when response_format is requested", async () => {
+    const responseFormat = { type: "object", properties: { answer: { type: "number" } } };
+    const seenOptions: LLMCallOptions[] = [];
+    const agentInstance = new Agent({
+      role: "Math Assistant",
+      goal: "Solve math problems",
+      backstory: "Returns structured results",
+      llm: (_messages, options) => {
+        if (options) {
+          seenOptions.push(options);
+        }
+        return "{\"answer\":42,\"explanation\":\"15 + 27 = 42\"}";
+      },
+    });
+
+    const output = await agentInstance.kickoff("What is 15 + 27?", {
+      response_format: responseFormat,
+    });
+
+    expect(output).toBeInstanceOf(LiteAgentOutput);
+    expect((output as LiteAgentOutput).raw).toBe("{\"answer\":42,\"explanation\":\"15 + 27 = 42\"}");
+    expect((output as LiteAgentOutput).pydantic).toEqual({ answer: 42, explanation: "15 + 27 = 42" });
+    expect(seenOptions[0]?.responseModel).toBe(responseFormat);
+  });
+
   it("injects direct agent kickoff input files into the prompt", async () => {
     const prompts: string[] = [];
     const agentInstance = new Agent({

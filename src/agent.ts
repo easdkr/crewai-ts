@@ -200,6 +200,8 @@ export type AgentOptions = {
 
 export type AgentExecutionOptions = {
   responseModel?: unknown;
+  responseFormat?: unknown;
+  response_format?: unknown;
   stepCallbacks?: readonly AgentStepCallback[];
   functionCallingLlm?: LLM | string | null;
   memory?: Memory | MemoryScope | null;
@@ -1560,23 +1562,35 @@ export class Agent {
     return output;
   }
 
-  async kickoff(input: AgentKickoffInput, options: Omit<AgentExecutionOptions, "responseModel"> = {}): Promise<string> {
+  async kickoff(input: AgentKickoffInput, options: AgentExecutionOptions = {}): Promise<string | LiteAgentOutput> {
     const formatted = formatKickoffInput(input, options.inputFiles ?? options.input_files);
-    return await this.executeTask(formatted.prompt, {}, [], {
+    const responseModel = responseModelFromOptions(options);
+    const raw = await this.executeTask(formatted.prompt, {}, [], {
       ...options,
+      ...(responseModel === undefined ? {} : { responseModel }),
       inputFiles: formatted.inputFiles,
+    });
+    if (responseModel === undefined) {
+      return raw;
+    }
+    return new LiteAgentOutput({
+      raw,
+      pydantic: parseAgentKickoffStructuredOutput(raw, responseModel),
+      agentRole: this.role,
+      usageMetrics: this.getUsageMetrics(),
+      messages: this.lastMessagesValue.map((message) => ({ ...message })),
     });
   }
 
-  async kickoffAsync(input: AgentKickoffInput, options: Omit<AgentExecutionOptions, "responseModel"> = {}): Promise<string> {
+  async kickoffAsync(input: AgentKickoffInput, options: AgentExecutionOptions = {}): Promise<string | LiteAgentOutput> {
     return await this.kickoff(input, options);
   }
 
-  async kickoff_async(input: AgentKickoffInput, options: Omit<AgentExecutionOptions, "responseModel"> = {}): Promise<string> {
+  async kickoff_async(input: AgentKickoffInput, options: AgentExecutionOptions = {}): Promise<string | LiteAgentOutput> {
     return await this.kickoffAsync(input, options);
   }
 
-  async akickoff(input: AgentKickoffInput, options: Omit<AgentExecutionOptions, "responseModel"> = {}): Promise<string> {
+  async akickoff(input: AgentKickoffInput, options: AgentExecutionOptions = {}): Promise<string | LiteAgentOutput> {
     return await this.kickoffAsync(input, options);
   }
 
@@ -2174,9 +2188,10 @@ export class Agent {
     this.lastMessagesValue = messagesForCall.map((message) => ({ ...message }));
     const beforeUsage = getLLMUsageMetrics(llmClient);
     const model = this.modelNameForClient(llmClient);
+    const responseModel = responseModelFromOptions(options);
     const result = await callLLM(llmClient, messagesForCall, {
       tools,
-      ...(options.responseModel === undefined ? {} : { responseModel: options.responseModel }),
+      ...(responseModel === undefined ? {} : { responseModel }),
       metadata: {
         agent: this,
         ...(options.task === undefined ? {} : { task: options.task }),
@@ -2453,6 +2468,10 @@ function parseAgentKickoffStructuredOutput(raw: string, responseFormat: unknown)
   } catch {
     return null;
   }
+}
+
+function responseModelFromOptions(options: AgentExecutionOptions): unknown {
+  return options.responseModel ?? options.responseFormat ?? options.response_format;
 }
 
 function normalizeExecutorResult(result: unknown): Record<string, unknown> {
