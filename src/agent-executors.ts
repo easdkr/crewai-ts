@@ -566,8 +566,7 @@ export class AgentExecutor extends BaseAgentExecutor {
   }
 
   generate_plan(): void {
-    const planningEnabled = Boolean(this.agent && "planningEnabled" in this.agent && this.agent.planningEnabled);
-    if (!planningEnabled) {
+    if (!this.isPlanningEnabled()) {
       return;
     }
     const description = typeof this.task === "object" && this.task !== null && "description" in this.task
@@ -710,8 +709,7 @@ export class AgentExecutor extends BaseAgentExecutor {
   }
 
   checkTodosAvailable(): "has_todos" | "no_todos" | "planning_disabled" {
-    const planningEnabled = Boolean(this.agent && "planningEnabled" in this.agent && this.agent.planningEnabled);
-    if (!planningEnabled) {
+    if (!this.isPlanningEnabled()) {
       return "planning_disabled";
     }
     return this.state.todos.items.length > 0 ? "has_todos" : "no_todos";

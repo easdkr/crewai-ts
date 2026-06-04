@@ -12510,6 +12510,14 @@ describe("core crew runtime", () => {
     expect(executor.handle_step_observed_medium()).toBe("continue_plan");
     expect(executor.handle_continue_plan()).toBe("all_todos_complete");
 
+    const snakePlanningExecutor = new AgentExecutor({
+      agent: { planning_enabled: true } as unknown as Agent,
+      task: { description: "Plan with snake case" },
+    });
+    snakePlanningExecutor.generate_plan();
+    expect(snakePlanningExecutor.state.plan_ready).toBe(true);
+    expect(snakePlanningExecutor.check_todos_available()).toBe("has_todos");
+
     executor.state.current_answer = new AgentFinish({
       thought: "done",
       output: "final",
