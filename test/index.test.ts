@@ -6491,7 +6491,7 @@ describe("a2a utilities", () => {
     expect(dumped).toMatchObject({
       name: "Test Agent",
       description: "Test goal Test backstory",
-      url: "http://localhost:8000",
+      url: "http://localhost:8000/",
       version: "1.0.0",
       defaultInputModes: ["text/plain", "application/json"],
       defaultOutputModes: ["text/plain", "application/json"],
@@ -6510,6 +6510,24 @@ describe("a2a utilities", () => {
     expect(card.model_dump({ exclude_none: true })).not.toHaveProperty("provider");
     expect(card.model_dump({ exclude_none: true })).not.toHaveProperty("documentationUrl");
     expect(card.model_dump({ exclude_none: true })).not.toHaveProperty("iconUrl");
+  });
+
+  it("normalizes configured A2A agent-card origin URLs like upstream", () => {
+    const agent = new Agent({
+      role: "Configured URL Agent",
+      goal: "Advertise a configured URL",
+      backstory: "A2A-ready",
+      a2a: new A2AServerConfig({ url: "http://configured-url.com" }),
+    }) as Agent & {
+      to_agent_card: (url: string) => Record<string, unknown> & {
+        model_dump: () => Record<string, unknown>;
+      };
+    };
+
+    const card = agent.to_agent_card("http://fallback-url.com");
+
+    expect(card.url).toBe("http://configured-url.com/");
+    expect(card.model_dump().url).toBe("http://configured-url.com/");
   });
 
   it("advertises A2A server extensions in generated agent cards", () => {

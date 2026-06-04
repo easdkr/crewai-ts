@@ -4671,7 +4671,7 @@ export function agent_to_agent_card(agent: unknown, url: string): Record<string,
   const card: Record<string, unknown> = {
     name: serverConfig.name ?? role,
     description,
-    url: serverConfig.url ?? url,
+    url: normalizeAgentCardUrl(serverConfig.url ?? url),
     version: serverConfig.version,
     capabilities,
     default_input_modes: serverConfig.default_input_modes,
@@ -4766,6 +4766,14 @@ function agentCardJsonKey(key: string): string {
     supports_authenticated_extended_card: "supportsAuthenticatedExtendedCard",
   };
   return aliases[key] ?? key;
+}
+
+function normalizeAgentCardUrl(url: string): string {
+  try {
+    return new URL(url).toString();
+  } catch {
+    return url;
+  }
 }
 
 function getA2AServerConfig(value: unknown): A2AServerConfig | null {
