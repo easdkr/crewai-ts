@@ -2894,6 +2894,7 @@ describe("training utilities", () => {
     expect(calls).toHaveLength(3);
     expect(converter._process_field_value("[\"a\",\"b\"]", "list")).toEqual(["a", "b"]);
     expect(TrainingConverter._parse_float("none")).toBe(0);
+    expect(TrainingConverter._parse_float("score delta is -2.5")).toBe(-2.5);
     expect(TrainingConverter._strip_bullet("* Item")).toBe("Item");
   });
 

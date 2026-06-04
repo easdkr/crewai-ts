@@ -18,7 +18,7 @@ export type TrainingConverterOptions = {
   instructions?: string;
 };
 
-const floatPattern = /(\d+(?:\.\d+)?)/;
+const floatPattern = /(-?\d+(?:\.\d+)?)/;
 
 export class TrainingConverter {
   readonly llm: TrainingConverterLLM;

@@ -322,6 +322,7 @@ When more goal budget is available, continue from the behavioral parity audits b
 - `ToolUsage.use` now has default-gate coverage for upstream failing-tool event behavior: failed tool runs emit started/error events without emitting a finished event.
 - `PickleHandler.load` now mirrors upstream corrupted persistence behavior for the JSON-backed TS shim: missing or empty files still load as `{}`, while malformed saved data raises `pickle data was truncated` instead of being silently discarded.
 - `MCPToolResolver._resolve_native` now mirrors upstream deterministic native MCP resolver behavior for fake clients: when discovery yields no usable tools it logs a warning and returns `[[], []]`, and unexpected discovery failures are wrapped as native MCP tool discovery errors while still disconnecting the discovery client.
+- `TrainingConverter` numeric field parsing now preserves negative float values while retaining upstream fallback-to-zero behavior for non-numeric responses.
 
 ## Completed In Current AgentExecutor Behavior Pass
 
