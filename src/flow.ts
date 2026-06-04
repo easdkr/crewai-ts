@@ -3265,7 +3265,7 @@ export function buildFlowDefinition(instanceOrConstructor: object | FlowMetadata
       listen: flowDefinitionListen(methodEntries),
       router: methodEntries.some((entry) => entry.kind === "router") || Boolean(humanFeedback?.emit),
       humanFeedback,
-      emit: flowDefinitionEmit(methodEntries),
+      emit: humanFeedback?.emit ? null : flowDefinitionEmit(methodEntries),
       persist: flowMethodPersistenceDefinition(instanceOrConstructor, methodName),
     });
     methods[methodName] = definition;

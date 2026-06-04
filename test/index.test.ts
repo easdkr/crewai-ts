@@ -19009,6 +19009,43 @@ describe("flow runtime", () => {
     expect(chatMethods.converse_turn).toBeDefined();
   });
 
+  it("lets human feedback emit override inner router emit in FlowDefinition metadata", () => {
+    class FeedbackOverRouterFlow extends Flow {
+      begin() {
+        return "data";
+      }
+
+      route() {
+        return "approved";
+      }
+
+      proceed() {
+        return "ok";
+      }
+    }
+
+    const initializers = [
+      decorateMethod(FeedbackOverRouterFlow, "begin", start() as unknown as Decorator),
+      decorateMethod(FeedbackOverRouterFlow, "route", router("begin", { emit: ["x", "y"] }) as unknown as Decorator),
+      decorateMethod(FeedbackOverRouterFlow, "route", humanFeedback({
+        message: "Review:",
+        emit: ["approved", "rejected"],
+        llm: "gpt-4o-mini",
+      }) as unknown as Decorator),
+      decorateMethod(FeedbackOverRouterFlow, "proceed", listen("approved") as unknown as Decorator),
+    ];
+    const flow = new FeedbackOverRouterFlow();
+    initializers.forEach((initializer) => {
+      initializer.call(flow);
+    });
+
+    const route = FeedbackOverRouterFlow.flow_definition().methods.route;
+
+    expect(route.router).toBe(true);
+    expect(route.human_feedback?.emit).toEqual(["approved", "rejected"]);
+    expect(route.emit).toBeNull();
+  });
+
   it("exposes upstream snake_case flow state properties", async () => {
     class PropertyAliasFlow extends Flow<{ id: string; events: string[] }> {
       constructor() {
