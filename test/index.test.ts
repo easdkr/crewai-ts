@@ -651,6 +651,7 @@ import {
   ChromaDBConfig,
   ClientMethodMismatchError,
   MissingChromaDBConfig,
+  PreparedDocuments,
   _MissingProvider,
   _convert_chromadb_results_to_search_results,
   _convert_distance_to_score,
@@ -11830,20 +11831,60 @@ describe("RAG configuration and factories", () => {
     expect(_sanitize_collection_name("192.168.0.1")).toBe("ip_192_168_0_1");
     expect(_sanitize_collection_name("-bad name!")).toBe("a-bad_namez");
     expect(_sanitize_collection_name("")).toBe("default_collection");
+    expect(_sanitize_collection_name(null)).toBe("default_collection");
+    expect(_sanitize_collection_name("   ")).toBe("a__z");
+    for (const candidate of [
+      "A".repeat(100),
+      "_start_with_underscore",
+      "end_with_underscore_",
+      "contains@special#characters",
+      "a",
+    ]) {
+      const sanitized = _sanitize_collection_name(candidate);
+      expect(sanitized.length).toBeGreaterThanOrEqual(3);
+      expect(sanitized.length).toBeLessThanOrEqual(63);
+      expect(sanitized).toMatch(/^[a-zA-Z0-9]/);
+      expect(sanitized).toMatch(/[a-zA-Z0-9]$/);
+      expect(sanitized).toMatch(/^[a-zA-Z0-9_-]+$/);
+    }
     expect(_is_ipv4_pattern("192.168.0.1")).toBe(true);
+    expect(_is_ipv4_pattern("not.an.ip.address")).toBe(false);
 
     const prepared = _prepare_documents_for_chromadb([
       { content: "same", metadata: { topic: "old", doc_id: "doc-1" } },
       { content: "same updated", metadata: { topic: "new", doc_id: "doc-1" } },
       { content: "no metadata" },
+      { content: "list metadata", metadata: [{ first: "item" }, { second: "item" }] },
+      { content: "empty list metadata", metadata: [] },
     ]);
-    expect(prepared.ids).toHaveLength(2);
+    expect(prepared.ids).toHaveLength(4);
     expect(prepared.texts[0]).toBe("same updated");
     expect(prepared.metadatas[0]).toEqual({ topic: "new", doc_id: "doc-1" });
+    expect(prepared.ids[1]).toHaveLength(64);
+    expect(prepared.metadatas[2]).toEqual({ first: "item" });
+    expect(prepared.metadatas[3]).toEqual({});
     expect(_create_batch_slice(prepared, 0, 1)).toEqual([
       ["doc-1"],
       ["same updated"],
       [{ topic: "new", doc_id: "doc-1" }],
+    ]);
+    expect(_create_batch_slice(new PreparedDocuments(
+      ["id1", "id2", "id3"],
+      ["doc1", "doc2", "doc3"],
+      [{}, {}, {}],
+    ), 0, 3)).toEqual([
+      ["id1", "id2", "id3"],
+      ["doc1", "doc2", "doc3"],
+      null,
+    ]);
+    expect(_create_batch_slice(new PreparedDocuments(
+      ["id1", "id2", "id3"],
+      ["doc1", "doc2", "doc3"],
+      [{ a: 1 }, {}, { c: 3 }],
+    ), 0, 3)).toEqual([
+      ["id1", "id2", "id3"],
+      ["doc1", "doc2", "doc3"],
+      [{ a: 1 }, {}, { c: 3 }],
     ]);
 
     const params = _extract_search_params({
