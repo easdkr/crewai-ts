@@ -10315,6 +10315,46 @@ describe("converter utilities", () => {
     ]);
   });
 
+  it("defers sync-only Converter function-calling JSON work on the async path", async () => {
+    const order: string[] = [];
+
+    class AsyncJsonConverter extends Converter<typeof summaryModel> {
+      override _create_instructor(): InternalInstructor {
+        order.push("create_instructor");
+        return {
+          toJson() {
+            order.push("to_json");
+            return JSON.stringify({ summary: "async converted" });
+          },
+        } as InternalInstructor;
+      }
+    }
+
+    const converter = new AsyncJsonConverter({
+      text: "summarize",
+      model: summaryModel,
+      instructions: "Return JSON",
+      llm: {
+        supports_function_calling: () => true,
+        call() {
+          throw new Error("call must not be used by the async JSON path");
+        },
+      },
+    });
+
+    const result = converter.ato_json().then((value) => {
+      order.push("resolved");
+      return value;
+    });
+    order.push("after_call");
+
+    await Promise.resolve();
+    expect(order).toEqual(["after_call"]);
+
+    await expect(result).resolves.toBe(JSON.stringify({ summary: "async converted" }));
+    expect(order).toEqual(["after_call", "create_instructor", "to_json", "resolved"]);
+  });
+
   it("creates converters through upstream agent and converter class behavior", () => {
     const llm = { call: () => "{\"summary\":\"converted\"}" };
     const options = {

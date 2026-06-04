@@ -158,7 +158,7 @@ export class Converter<T = unknown> {
   async atoJson(currentAttempt = 1): Promise<string | ConverterError> {
     try {
       if (supportsFunctionCalling(this.llm)) {
-        return await Promise.resolve().then(() => this._create_instructor().toJson());
+        return await runSyncAfterAsyncTurn(() => this._create_instructor().toJson());
       }
       return JSON.stringify(await callLlmAsync(this.llm, this.buildMessages()));
     } catch (error) {
@@ -180,6 +180,24 @@ export class Converter<T = unknown> {
   _create_instructor(): InternalInstructor {
     return new InternalInstructor(this.text, this.model, null, this.llm);
   }
+}
+
+function runSyncAfterAsyncTurn<T>(operation: () => T): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const run = (): void => {
+      try {
+        resolve(operation());
+      } catch (error) {
+        reject(error instanceof Error ? error : new Error(String(error)));
+      }
+    };
+
+    if (typeof setImmediate === "function") {
+      setImmediate(run);
+      return;
+    }
+    setTimeout(run, 0);
+  });
 }
 
 export function validateModel<T>(
