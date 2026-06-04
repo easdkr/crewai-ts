@@ -794,12 +794,47 @@ export class AgentExecutor extends BaseAgentExecutor {
           tool_calls: result.toolCallsMade,
           execution_time: result.executionTime,
         });
+        return { todo, result };
       } catch (error) {
         const errorMessage = `Error: ${executorErrorMessage(error)}`;
         todo.result = errorMessage;
         this.state.todos.markFailed(todo.stepNumber, errorMessage);
+        return null;
       }
-    })).then(() => "parallel_todos_complete");
+    })).then((stepResults) => {
+      const effort = this._getReasoningEffort();
+      for (const item of stepResults) {
+        if (!item) {
+          continue;
+        }
+        const { todo, result } = item;
+        const observation = this._observeCompletedStep({
+          completedStep: todo,
+          result: todo.result ?? "",
+          allCompleted: this.state.todos.getCompletedTodos(),
+          remainingTodos: this.state.todos.getPendingTodos(),
+          stepSuccess: result.success,
+        });
+        this.state.observations[todo.stepNumber] = observation;
+        this.state.execution_log.push({
+          type: "observation",
+          step_number: todo.stepNumber,
+          step_completed_successfully: observation.stepCompletedSuccessfully,
+          key_information_learned: observation.keyInformationLearned,
+          remaining_plan_still_valid: observation.remainingPlanStillValid,
+          needs_full_replan: observation.needsFullReplan,
+          goal_already_achieved: observation.goalAlreadyAchieved,
+          reasoning_effort: effort,
+          llm_observation: this._shouldObserveSteps(),
+        });
+        if (observation.stepCompletedSuccessfully) {
+          this.state.todos.markCompleted(todo.stepNumber, todo.result);
+        } else {
+          this.state.todos.markFailed(todo.stepNumber, todo.result);
+        }
+      }
+      return "parallel_todos_complete";
+    });
   }
 
   execute_todos_parallel(): Promise<"parallel_todos_complete"> {

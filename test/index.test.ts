@@ -13030,8 +13030,8 @@ describe("core crew runtime", () => {
     expect(prompts[1]).toContain("Summarize docs");
     expect(executor.state.todos.get_by_step_number(1)?.result).toBe("docs result");
     expect(executor.state.todos.get_by_step_number(2)?.result).toBe("summary result");
-    expect(executor.state.todos.get_by_step_number(1)?.status).toBe(TodoStatus.RUNNING);
-    expect(executor.state.todos.get_by_step_number(2)?.status).toBe(TodoStatus.RUNNING);
+    expect(executor.state.todos.get_by_step_number(1)?.status).toBe(TodoStatus.COMPLETED);
+    expect(executor.state.todos.get_by_step_number(2)?.status).toBe(TodoStatus.COMPLETED);
     expect(executor.state.execution_log.filter((entry) => entry.type === "step_execution")).toEqual([
       expect.objectContaining({
         step_number: 1,
@@ -13042,6 +13042,18 @@ describe("core crew runtime", () => {
         step_number: 2,
         success: true,
         result_preview: "summary result",
+      }),
+    ]);
+    expect(executor.state.execution_log.filter((entry) => entry.type === "observation")).toEqual([
+      expect.objectContaining({
+        step_number: 1,
+        step_completed_successfully: true,
+        reasoning_effort: "medium",
+      }),
+      expect.objectContaining({
+        step_number: 2,
+        step_completed_successfully: true,
+        reasoning_effort: "medium",
       }),
     ]);
   });
