@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 1003 passing tests.
+- Test suite: 1004 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -215,6 +215,7 @@ High-value behavior audits still worth running:
    - Experimental conversational Flow state defaults are release-gated for upstream opt-in semantics: `class C extends Flow { static conversational = true }` now starts with a `ConversationState`, and `_create_initial_state` preserves that state shape while assigning an id.
    - Experimental conversational router catalogs are release-gated for deterministic local router prompts: `_build_route_catalog` / `_buildRouteCatalog` merge explicit router routes with built-in `converse` / `end`, honor `route_descriptions` overrides before built-ins and handler `route_description` metadata, fall back to empty descriptions, and `_build_router_messages` includes the catalog plus sorted `available_routes` context.
    - Experimental conversational router decisions are release-gated for deterministic local LLM routing: `build_router_context` carries the previous `last_intent`, `route_turn` invokes router LLMs with route response-format metadata, validates returned intents against effective routes, persists the selected intent, and `converse_turn` appends chat LLM responses through canonical history.
+   - Experimental conversational trace finalization deferral is release-gated for local session lifecycle: conversational turns with `defer_trace_finalization` / `deferTraceFinalization` keep per-turn `flow_finished` suppressed and `finalize_session_traces` / `finalizeSessionTraces` emits one final `FlowFinishedEvent` for the latest turn.
    - Before changing the release baseline, classify each new behavior surface by deterministic local workflow, provider/network shim, or intentionally unsupported optional integration.
 
 3. **Experimental `AgentExecutor` plan-and-execute behavior**

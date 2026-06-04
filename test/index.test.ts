@@ -19604,6 +19604,54 @@ describe("flow runtime", () => {
     expect(String(routerCalls[1]?.[1]?.content)).toContain("\"last_intent\":\"research\"");
   });
 
+  it("defers experimental conversational Flow finish events until session finalization", async () => {
+    class DeferredFlow extends Flow<ConversationState> {
+      static conversational = true;
+      static conversational_config = new ConversationConfig();
+
+      begin() {
+        return "ready";
+      }
+
+      route() {
+        return "work";
+      }
+
+      doWork() {
+        this.append_assistant_message("worked");
+        return "worked";
+      }
+    }
+
+    const initializers = [
+      decorateMethod(DeferredFlow, "begin", start() as unknown as Decorator),
+      decorateMethod(DeferredFlow, "route", router("begin") as unknown as Decorator),
+      decorateMethod(DeferredFlow, "doWork", listen("work") as unknown as Decorator),
+    ];
+    const flow = new DeferredFlow();
+    initializers.forEach((initializer) => {
+      initializer.call(flow);
+    });
+
+    const finishedEvents: FlowFinishedEvent[] = [];
+    const off = crewaiEventBus.on("flow_finished", (_source, event) => {
+      finishedEvents.push(event);
+    });
+    try {
+      await flow.handle_turn("turn 1");
+      await flow.handle_turn("turn 2");
+      expect(finishedEvents).toEqual([]);
+
+      flow.finalize_session_traces();
+
+      expect(finishedEvents).toHaveLength(1);
+      expect(finishedEvents[0]?.result).toBe("worked");
+      expect(finishedEvents[0]?.flow_name).toBe("DeferredFlow");
+    } finally {
+      off();
+    }
+  });
+
   it("provides upstream experimental conversational data shapes", () => {
     const router = new RouterConfig({
       routes: ["converse", "handoff"],

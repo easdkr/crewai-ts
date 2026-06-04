@@ -1248,6 +1248,7 @@ export class Flow<TState extends object = Record<string, unknown>> {
   private readonly firedOrListeners = new Set<string>();
   private racingGroupsCache: Map<ReadonlySet<string>, string> | null = null;
   private readonly autoMemoryDisabled: boolean;
+  private deferredFlowFinished: { flowName: string; result: unknown; state: unknown } | null = null;
 
   constructor(options: FlowOptions<TState> = {}) {
     this.name = options.name ?? null;
@@ -1603,6 +1604,19 @@ export class Flow<TState extends object = Record<string, unknown>> {
     return this.converseTurn();
   }
 
+  finalizeSessionTraces(): void {
+    if (!this.deferredFlowFinished) {
+      return;
+    }
+    const payload = this.deferredFlowFinished;
+    this.deferredFlowFinished = null;
+    crewaiEventBus.emit(this, new FlowFinishedEvent(payload));
+  }
+
+  finalize_session_traces(): void {
+    this.finalizeSessionTraces();
+  }
+
   _effectiveRoutes(routerConfig: RouterConfig | null = null): string[] {
     const builtinRoutes = getStaticStringArray(this.constructor, "builtin_routes")
       ?? getStaticStringArray(this.constructor, "builtinRoutes")
@@ -1690,6 +1704,18 @@ export class Flow<TState extends object = Record<string, unknown>> {
       intent_field: routerConfig.intent_field,
       routes: this._effectiveRoutes(routerConfig),
     };
+  }
+
+  private shouldDeferConversationalTraceFinalization(): boolean {
+    const record = this as unknown as Record<string, unknown>;
+    if (record.defer_trace_finalization === true || record.deferTraceFinalization === true) {
+      return true;
+    }
+    const config = getConversationalStaticConfig(this.constructor);
+    if (!config) {
+      return false;
+    }
+    return config.defer_trace_finalization === true || config.deferTraceFinalization === true;
   }
 
   async handleTurn(
@@ -2253,11 +2279,16 @@ export class Flow<TState extends object = Record<string, unknown>> {
         }
       }
 
-      crewaiEventBus.emit(this, new FlowFinishedEvent({
+      const finishedPayload = {
         flowName,
         result: lastOutput,
         state: this.stateSnapshot(),
-      }));
+      };
+      if (isConversationalTurn && this.shouldDeferConversationalTraceFinalization()) {
+        this.deferredFlowFinished = finishedPayload;
+      } else {
+        crewaiEventBus.emit(this, new FlowFinishedEvent(finishedPayload));
+      }
       return lastOutput;
     } catch (error) {
       if (isHumanFeedbackPending(error)) {
