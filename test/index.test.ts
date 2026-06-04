@@ -2953,12 +2953,16 @@ describe("training utilities", () => {
 
       handler.append(0, "agent1", { score: 1 });
       handler.append(1, "agent1", { score: 2 });
+      handler.append(1, "agent2", { score: 3 });
       expect(handler.load()).toEqual({
         agent1: {
           "0": { score: 1 },
           "1": { score: 2 },
           param1: 1,
           param2: 2,
+        },
+        agent2: {
+          "1": { score: 3 },
         },
       });
 
