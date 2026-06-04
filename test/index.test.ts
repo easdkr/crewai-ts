@@ -1442,6 +1442,24 @@ describe("serialization and project utilities", () => {
     });
   });
 
+  it("uses upstream-style repr output when serialization reaches the max depth", () => {
+    const createNested = (depth: number): unknown => (
+      depth === 0 ? "value" : { next: createNested(depth - 1) }
+    );
+
+    expect(toSerializable(createNested(10))).toEqual({
+      next: {
+        next: {
+          next: {
+            next: {
+              next: "{'next': {'next': {'next': {'next': {'next': 'value'}}}}}",
+            },
+          },
+        },
+      },
+    });
+  });
+
   it("supports Python-compatible task and crew output field aliases", () => {
     const output = new TaskOutput({
       description: "Summarize field alias compatibility for CrewAI task output",
@@ -31601,11 +31619,11 @@ describe("events", () => {
 
     expect(encoder._handle_pydantic_model(pydanticLike)).toEqual({
       summary: "CrewAI",
-      nested: "[object Object]",
+      nested: "{'model_dump': () => ({ nested: true })}",
     });
     expect(encoder.default(pydanticLike)).toEqual({
       summary: "CrewAI",
-      nested: "[object Object]",
+      nested: "{'model_dump': () => ({ nested: true })}",
     });
 
     const handler = new FileHandler(true);

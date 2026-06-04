@@ -1063,7 +1063,26 @@ function repr(value: unknown): string {
   if (value === null || value === undefined) {
     return String(value);
   }
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => reprValue(item)).join(", ")}]`;
+  }
+  if (value instanceof Set) {
+    return `{${[...value].map((item) => reprValue(item)).join(", ")}}`;
+  }
+  if (value instanceof Map) {
+    return `{${[...value.entries()].map(([key, item]) => `${reprValue(key)}: ${reprValue(item)}`).join(", ")}}`;
+  }
+  if (typeof value === "object" && isPlainObject(value)) {
+    return `{${Object.entries(value as Record<string, unknown>).map(([key, item]) => `${reprValue(key)}: ${reprValue(item)}`).join(", ")}}`;
+  }
   return `[object ${constructorName(value)}]`;
+}
+
+function reprValue(value: unknown): string {
+  if (typeof value === "string") {
+    return `'${value.replaceAll("\\", "\\\\").replaceAll("'", "\\'")}'`;
+  }
+  return repr(value);
 }
 
 function constructorName(value: unknown): string {
