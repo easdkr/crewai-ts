@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 1021 passing tests.
+- Test suite: 1022 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -145,6 +145,7 @@ This register is the source of truth for continuing porting work while parity sc
 - Flow ask lifecycle events are release-gated for upstream interactive flows: `FlowStartedEvent` and `FlowFinishedEvent` still fire in order when a start method returns an `ask()` result, and the finished event carries that result.
 - Flow ask and human feedback coexistence is release-gated for upstream interactive flows: a flow can gather input with `ask()`, pass the result into a listener, collect human feedback on that listener output, and preserve both input history and `lastHumanFeedback`.
 - Flow ask input metadata is release-gated for upstream nullable response semantics: `InputResponse` values with `text=null` return `null` while preserving response metadata in input history and received events.
+- Flow ask sibling-listener metadata isolation is release-gated for upstream concurrent interactive flows: two listeners triggered from the same start method preserve separate request metadata, response text, and response metadata in `_input_history`.
 - Flow ask checkpoint recovery is release-gated for upstream multi-question flows: each `ask()` writes an `_ask_checkpoint` before waiting for input, and later ask checkpoints include state changes made from earlier answers.
 - Event bus replay is release-gated with deterministic local dispatch: replayed events preserve upstream event ids, parent ids, and emission sequences, expose replay context inside handlers, and do not re-record replayed events into runtime state.
 - StepExecutor text-parsed tool execution is release-gated for upstream tool usage event semantics: executing a parsed tool action emits `tool_usage_started` and `tool_usage_finished` events with sanitized tool names, parsed tool args, and final output while preserving isolated step execution results.

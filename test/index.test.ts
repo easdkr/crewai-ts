@@ -21831,6 +21831,59 @@ describe("flow runtime", () => {
     });
   });
 
+  it("keeps ask metadata isolated across sibling listeners", async () => {
+    const callLog: Array<{ message: string; metadata: Record<string, unknown> | null | undefined }> = [];
+
+    class ConcurrentAskFlow extends Flow {
+      trigger() {
+        return "go";
+      }
+
+      async listenerA() {
+        return await this.ask("Question A?", { metadata: { user: "alice" } });
+      }
+
+      async listenerB() {
+        return await this.ask("Question B?", { metadata: { user: "bob" } });
+      }
+    }
+
+    const flow = new ConcurrentAskFlow({
+      inputProvider: {
+        requestInput: async (message, _flow, metadata) => {
+          await new Promise((resolve) => setTimeout(resolve, metadata?.user === "alice" ? 5 : 0));
+          callLog.push({ message, metadata });
+          const rawUser = metadata?.user;
+          const user = typeof rawUser === "string" ? rawUser : "unknown";
+          return {
+            text: `answer from ${user}`,
+            metadata: { responded_by: user },
+          } satisfies InputResponse;
+        },
+      },
+    });
+    decorateMethod(ConcurrentAskFlow, "trigger", start() as unknown as Decorator).call(flow);
+    decorateMethod(ConcurrentAskFlow, "listenerA", listen("trigger") as unknown as Decorator).call(flow);
+    decorateMethod(ConcurrentAskFlow, "listenerB", listen("trigger") as unknown as Decorator).call(flow);
+
+    await flow.kickoff();
+
+    expect(callLog).toHaveLength(2);
+    expect(flow.inputHistory).toHaveLength(2);
+    const aliceEntry = flow.inputHistory.find((entry) => entry.metadata?.user === "alice");
+    const bobEntry = flow.inputHistory.find((entry) => entry.metadata?.user === "bob");
+    expect(aliceEntry).toMatchObject({
+      message: "Question A?",
+      response: "answer from alice",
+      responseMetadata: { responded_by: "alice" },
+    });
+    expect(bobEntry).toMatchObject({
+      message: "Question B?",
+      response: "answer from bob",
+      responseMetadata: { responded_by: "bob" },
+    });
+  });
+
   it("routes ask results through upstream start-to-listen flow chains", async () => {
     const executionLog: string[] = [];
 
