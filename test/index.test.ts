@@ -13186,6 +13186,40 @@ describe("core crew runtime", () => {
     });
   });
 
+  it("continues AgentExecutor tool actions after tool execution errors", () => {
+    const task = {
+      toolsErrors: 0,
+      tools_errors: 0,
+      increment_tools_errors() {
+        this.toolsErrors += 1;
+        this.tools_errors = this.toolsErrors;
+      },
+    };
+    const failingTool = new StructuredTool({
+      name: "Failing Tool",
+      description: "Fails",
+      func: () => {
+        throw new Error("tool failed");
+      },
+    });
+    const executor = new AgentExecutor({ task, tools: [failingTool] });
+    executor.state.current_answer = new AgentAction({
+      thought: "try tool",
+      tool: "Failing Tool",
+      toolInput: "{}",
+      text: "Thought: try tool\nAction: Failing Tool\nAction Input: {}",
+    });
+
+    expect(executor.execute_tool_action()).toBe("tool_completed");
+    expect(task.tools_errors).toBe(1);
+    expect(executor.state.current_answer).toBeInstanceOf(AgentAction);
+    expect(executor.state.messages.at(-2)?.content).toContain("Observation: Error executing tool: tool failed");
+    expect(executor.state.messages.at(-1)).toEqual({
+      role: "user",
+      content: I18N_DEFAULT.slice("post_tool_reasoning"),
+    });
+  });
+
   it("requires AgentExecutor tool actions to match the current todo expected tool", () => {
     const executor = new AgentExecutor();
     executor.state.todos.items = [

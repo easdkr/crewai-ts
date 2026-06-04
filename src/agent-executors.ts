@@ -898,8 +898,24 @@ export class AgentExecutor extends BaseAgentExecutor {
       this.messages.push({ role: "assistant", content: "" });
       return "tool_completed";
     }
-    const toolResult = handleAgentActionCore(answer, this.tools);
-    const result = handleAgentActionCore(answer, toolResult) as AgentAction | AgentFinish;
+    let result: AgentAction | AgentFinish;
+    try {
+      const toolResult = handleAgentActionCore(answer, this.tools);
+      result = handleAgentActionCore(answer, toolResult) as AgentAction | AgentFinish;
+    } catch (error) {
+      if (this.agent?.verbose) {
+        PRINTER.print(`Error in tool execution: ${executorErrorMessage(error)}`, "red");
+      }
+      this.incrementTaskToolErrors();
+      const errorText = `${answer.text}\nObservation: Error executing tool: ${executorErrorMessage(error)}`;
+      result = new AgentAction({
+        thought: answer.thought,
+        tool: answer.tool,
+        toolInput: answer.toolInput,
+        text: errorText,
+        result: executorErrorMessage(error),
+      });
+    }
     if (result instanceof AgentFinish) {
       this.state.current_answer = result;
       this.invokeStepCallback(result);

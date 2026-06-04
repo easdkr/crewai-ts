@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 869 passing tests.
+- Test suite: 870 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -116,6 +116,7 @@ This register is the source of truth for continuing porting work while parity sc
 - AgentExecutor unknown LLM errors are release-gated for upstream diagnostics: non-context, non-parser failures print the upstream unknown-error guidance and details when verbose mode is enabled before rethrowing the original error.
 - AgentExecutor object-style invoke error diagnostics are release-gated for upstream behavior: sync and async kickoff failures print the same verbose unknown-error guidance before rethrowing and still clear the executor reentrancy guard.
 - AgentExecutor native tool failures are release-gated for upstream task accounting: failed native tool calls append an error tool message and increment the task tool-error counter before continuing the reasoning loop.
+- AgentExecutor text-parsed tool failures are release-gated for upstream retry behavior: failed regular tool actions increment the task tool-error counter, append an error observation, and continue with the post-tool reasoning prompt instead of throwing out of the execution loop.
 
 ## Known Remaining Porting Areas
 
