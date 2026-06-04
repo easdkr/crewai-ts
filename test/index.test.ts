@@ -13336,6 +13336,42 @@ describe("RAG configuration and factories", () => {
     fetchMock.mockRestore();
   });
 
+  it("resolves upstream Google Vertex memory embedder configs through the factory", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ embeddings: [{ values: [0.21, 0.22, 0.23] }] }),
+    } as Response);
+
+    const embed = buildEmbedderFromDict({
+      provider: "google-vertex",
+      config: {
+        project_id: "gen-lang-client-0393486657",
+        location: "us-central1",
+        model_name: "gemini-embedding-001",
+        task_type: "RETRIEVAL_DOCUMENT",
+        output_dimensionality: 768,
+        api_key: "vertex-test",
+      },
+    });
+
+    await expect(embed(["CrewAI memory"])).resolves.toEqual([[0.21, 0.22, 0.23]]);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:batchEmbedContents?key=vertex-test",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          requests: [{
+            model: "models/gemini-embedding-001",
+            content: { parts: [{ text: "CrewAI memory" }] },
+            taskType: "RETRIEVAL_DOCUMENT",
+            outputDimensionality: 768,
+          }],
+        }),
+      }),
+    );
+    fetchMock.mockRestore();
+  });
+
   it("exposes upstream embedding provider config fields and defaults", () => {
     const openai = new OpenAIProvider({
       api_key: "sk-test",

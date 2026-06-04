@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 1086 passing tests.
+- Test suite: 1087 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -37,6 +37,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
 - The latest-upstream RAG factory and optional-provider audit is now release-gated deterministically: missing optional providers surface upstream-shaped provider names including `__missing__`, registered factories receive normalized config objects, and unsupported providers raise `Unsupported provider: ...` before any client lookup.
 - The latest-upstream embedding factory error audit is now release-gated deterministically: custom embedders still require `embedding_callable`, unknown providers raise an upstream-shaped `Unknown provider: ...` error, and missing provider keys fail before any provider construction.
 - The latest-upstream Azure embedding backward-compatibility audit is now release-gated deterministically: `build_embedder` / `buildEmbedderFromDict` preserve legacy `model` keys for Azure provider configs, so factory-built Azure embedding requests use the configured model instead of falling back to `text-embedding-ada-002`.
+- The latest-upstream Google Vertex memory embedder audit is now release-gated deterministically: factory-built `google-vertex` embedders preserve documented Memory integration config (`project_id`, `location`, `model_name`, `task_type`, and `output_dimensionality`) through to the local GenAI request payload without live GCP credentials.
 - During the 2026-06-04 run, a fresh latest upstream checkout showed new post-baseline export surfaces (`flow/conversation`, `experimental/conversational`, `experimental/conversational_mixin`, `flow/dsl`, `flow/flow_definition`, `flow/runtime`, `llms/providers/snowflake`, `llms/providers/snowflake/completion`, and `flow_context.current_flow_name`). These now have deterministic TS coverage or package subpath coverage, and latest-upstream root/subpath export parity reports `total_missing=0`. These remaining surfaces are not part of the current release baseline commit above; audit them by behavior before advancing the parity baseline.
 - A later 2026-06-04 latest-upstream audit found the upstream `Flow` class moved from `flow/flow.py` to `flow/runtime.py`; `scripts/check-class-method-parity.py` now accepts both locations. That audit also found and closed the latest-upstream `Flow._rearm_or_listeners_for_trigger` method gap with deterministic OR-listener rearm helper coverage. Latest-upstream class method parity reports `total_missing=0`.
 
