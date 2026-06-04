@@ -1246,16 +1246,30 @@ export class AgentExecutor extends BaseAgentExecutor {
     }
     this.finalizeCalled = true;
     if (this.state.current_answer === null) {
-      const completed = this.state.todos.getCompletedTodos().filter((todo) => todo.result);
-      const directFinal = this.canUseLastTodoResultAsFinalAnswer(completed);
-      const output = directFinal?.result
-        ?? (completed.length > 0
-          ? completed.map((todo) => `Step ${String(todo.stepNumber)}: ${todo.result ?? ""}`).join("\n\n")
-          : "Agent completed execution but produced no final output.");
-      const thought = directFinal
-        ? "Final answer returned directly from last completed todo"
-        : "";
-      this.state.current_answer = new AgentFinish({ thought, output, text: output });
+      const todosWithResults = this.state.todos.items.filter((todo) => todo.result);
+      const directFinal = this.canUseLastTodoResultAsFinalAnswer(todosWithResults);
+      if (directFinal) {
+        const output = directFinal.result ?? "";
+        this.state.current_answer = new AgentFinish({
+          thought: "Final answer returned directly from last completed todo",
+          output,
+          text: output,
+        });
+      } else if (todosWithResults.length > 0) {
+        const output = todosWithResults.map((todo) => `Step ${String(todo.stepNumber)}: ${todo.result ?? ""}`).join("\n\n");
+        this.state.current_answer = new AgentFinish({ thought: "", output, text: output });
+      }
+    }
+    if (this.state.current_answer === null) {
+      const completed = this.state.todos.getCompletedTodos();
+      const output = completed.length > 0
+        ? completed.map((todo) => `Step ${String(todo.stepNumber)}: ${todo.result ?? "(no result)"}`).join("\n\n")
+        : "Agent completed execution but produced no final output.";
+      this.state.current_answer = new AgentFinish({
+        thought: "Finalize fallback — no explicit answer was set",
+        output,
+        text: output,
+      });
     }
     if (!(this.state.current_answer instanceof AgentFinish)) {
       return "skipped";

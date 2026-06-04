@@ -287,9 +287,9 @@ When more goal budget is available, continue from the behavioral parity audits b
 ## Completed In Current AgentExecutor Behavior Pass
 
 - `AgentExecutor.finalize` now mirrors upstream plan-and-execute finalization for strong final todo answers:
-  - uses the last completed todo result directly when it is a sufficiently complete prose answer and not tied to a required tool
+  - uses the last todo result directly when it is a sufficiently complete prose answer and not tied to a required tool, including early-goal paths where the result is present before the todo is marked completed
   - avoids the direct-answer shortcut when structured output is requested through `response_model` / `responseModel`
-  - preserves the deterministic fallback step-summary behavior when the shortcut is not applicable
+  - preserves the deterministic fallback step-summary behavior when the shortcut is not applicable, including completed steps with no captured result
 - `AgentExecutor` dynamic replanning now mirrors upstream deterministic routing triggers:
   - multiple failed todos include the upstream failure-count reason
   - multiple `Error:` todo results trigger replanning even when todos are marked completed

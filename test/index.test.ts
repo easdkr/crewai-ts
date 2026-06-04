@@ -12588,6 +12588,40 @@ describe("core crew runtime", () => {
     expect((executor.state.current_answer as AgentFinish).thought).toBe(
       "Final answer returned directly from last completed todo",
     );
+
+    const earlyGoalExecutor = new AgentExecutor();
+    earlyGoalExecutor.state.todos.items = [
+      new TodoItem({
+        stepNumber: 1,
+        description: "Gather source details",
+        status: TodoStatus.COMPLETED,
+        result: "Source A and Source B identified.",
+      }),
+      new TodoItem({
+        stepNumber: 2,
+        description: "Write final response",
+        status: TodoStatus.RUNNING,
+        result: finalResult,
+      }),
+    ];
+
+    expect(earlyGoalExecutor.finalize()).toBe("completed");
+    expect((earlyGoalExecutor.state.current_answer as AgentFinish).output).toBe(finalResult);
+
+    const fallbackExecutor = new AgentExecutor();
+    fallbackExecutor.state.todos.items = [
+      new TodoItem({
+        stepNumber: 1,
+        description: "Completed without a captured result",
+        status: TodoStatus.COMPLETED,
+      }),
+    ];
+
+    expect(fallbackExecutor.finalize()).toBe("completed");
+    expect((fallbackExecutor.state.current_answer as AgentFinish).output).toBe("Step 1: (no result)");
+    expect((fallbackExecutor.state.current_answer as AgentFinish).thought).toBe(
+      "Finalize fallback — no explicit answer was set",
+    );
   });
 
   it("emits AgentExecutor execution log events during finalize", () => {
