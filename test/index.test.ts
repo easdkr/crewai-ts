@@ -13213,6 +13213,34 @@ describe("core crew runtime", () => {
       from_task: task,
       from_agent: agent,
     });
+
+    const loggerCalls: Array<[string, string]> = [];
+    const failingAgent = {
+      role: "Planner",
+      goal: "Recover the plan",
+      backstory: "Uses previous attempts",
+      planning_config: { max_replans: 3 },
+      _logger: { log: (level: string, message: string) => loggerCalls.push([level, message]) },
+      llm: {
+        call() {
+          throw new Error("planner unavailable");
+        },
+      },
+    } as unknown as Agent;
+    const failingExecutor = new AgentExecutor({ agent: failingAgent, task: { description: "Research CrewAI" } });
+    failingExecutor.state.last_replan_reason = "Need a fallback plan";
+    failingExecutor.state.todos.items = [
+      new TodoItem({ stepNumber: 1, description: "Keep completed", status: TodoStatus.COMPLETED, result: "done" }),
+      new TodoItem({ stepNumber: 2, description: "Keep pending", status: TodoStatus.PENDING }),
+    ];
+
+    expect(failingExecutor.handle_replan()).toBe("has_todos");
+    expect(failingExecutor.state.last_replan_reason).toBe("Replan failed: planner unavailable");
+    expect(failingExecutor.state.todos.items.map((todo) => [todo.stepNumber, todo.description, todo.status])).toEqual([
+      [1, "Keep completed", TodoStatus.COMPLETED],
+      [2, "Keep pending", TodoStatus.PENDING],
+    ]);
+    expect(loggerCalls).toEqual([["error", "Error during replanning: planner unavailable"]]);
   });
 
   it("keeps AgentExecutor iterations and messages backed by state", () => {

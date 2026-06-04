@@ -1985,7 +1985,10 @@ export class AgentExecutor extends BaseAgentExecutor {
       }
       this.applyReplanOutput(output);
     } catch (error) {
-      this.state.last_replan_reason = `Replan failed: ${error instanceof Error ? error.message : String(error)}`;
+      const message = error instanceof Error ? error.message : String(error);
+      const agentRecord = this.agent as unknown as { _logger?: { log?: (level: string, message: string) => void } };
+      agentRecord._logger?.log?.("error", `Error during replanning: ${message}`);
+      this.state.last_replan_reason = `Replan failed: ${message}`;
     }
   }
 
