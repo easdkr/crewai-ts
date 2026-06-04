@@ -3270,6 +3270,7 @@ export function buildFlowDefinition(instanceOrConstructor: object | FlowMetadata
     });
     methods[methodName] = definition;
   }
+  addConversationalFlowDefinitionMethods(instanceOrConstructor, methods);
 
   const definition = new FlowDefinition({
     name: typeof instanceOrConstructor === "function"
@@ -3287,6 +3288,38 @@ export function buildFlowDefinition(instanceOrConstructor: object | FlowMetadata
 }
 
 export const build_flow_definition = buildFlowDefinition;
+
+function addConversationalFlowDefinitionMethods(
+  instanceOrConstructor: object | FlowMetadataTarget,
+  methods: Record<string, FlowMethodDefinition>,
+): void {
+  const ctor = typeof instanceOrConstructor === "function"
+    ? instanceOrConstructor as FlowMetadataTarget & { conversational?: unknown }
+    : instanceOrConstructor.constructor as FlowMetadataTarget & { conversational?: unknown };
+  if (ctor.conversational !== true) {
+    return;
+  }
+
+  if (!Object.prototype.hasOwnProperty.call(methods, "conversation_start")) {
+    methods.conversation_start = new FlowMethodDefinition({ start: true });
+  }
+  if (!Object.prototype.hasOwnProperty.call(methods, "route_conversation")) {
+    methods.route_conversation = new FlowMethodDefinition({
+      listen: "conversation_start",
+      router: true,
+      emit: ["converse", "end", "answer_from_history"],
+    });
+  }
+  if (!Object.prototype.hasOwnProperty.call(methods, "converse_turn")) {
+    methods.converse_turn = new FlowMethodDefinition({ listen: "converse" });
+  }
+  if (!Object.prototype.hasOwnProperty.call(methods, "end_conversation")) {
+    methods.end_conversation = new FlowMethodDefinition({ listen: "end" });
+  }
+  if (!Object.prototype.hasOwnProperty.call(methods, "answer_from_history_turn")) {
+    methods.answer_from_history_turn = new FlowMethodDefinition({ listen: "answer_from_history" });
+  }
+}
 
 export function getFlowStructure(instanceOrConstructor: object | FlowMetadataTarget): FlowStructure {
   const loadedDefinition = getLoadedFlowDefinition(instanceOrConstructor);

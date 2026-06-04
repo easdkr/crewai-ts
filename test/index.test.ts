@@ -18984,6 +18984,31 @@ describe("flow runtime", () => {
     expect(definition.methods.checkpoint.persist).toMatchObject({ enabled: true, verbose: false });
   });
 
+  it("includes FlowDefinition conversational builtins only when enabled", () => {
+    class RegularDefinitionFlow extends Flow {
+      begin() {
+        return "begin";
+      }
+    }
+
+    const regularInitializer = decorateMethod(RegularDefinitionFlow, "begin", start() as unknown as Decorator);
+    const regularFlow = new RegularDefinitionFlow();
+    regularInitializer.call(regularFlow);
+
+    class ChatDefinitionFlow extends Flow {
+      static conversational = true;
+    }
+
+    const regularMethods = RegularDefinitionFlow.flow_definition().methods;
+    const chatMethods = ChatDefinitionFlow.flow_definition().methods;
+
+    expect(Object.keys(regularMethods)).toEqual(["begin"]);
+    expect(regularMethods.conversation_start).toBeUndefined();
+    expect(chatMethods.conversation_start?.start).toBe(true);
+    expect(chatMethods.route_conversation).toBeDefined();
+    expect(chatMethods.converse_turn).toBeDefined();
+  });
+
   it("exposes upstream snake_case flow state properties", async () => {
     class PropertyAliasFlow extends Flow<{ id: string; events: string[] }> {
       constructor() {
