@@ -24423,6 +24423,27 @@ describe("tools", () => {
     await expect(addTool.arun({ a: 2, b: 3 })).resolves.toBe(5);
   });
 
+  it("preserves upstream result_as_answer decorator defaults and aliases", () => {
+    const finalAnswerTool = createFunctionTool("final answer", {
+      description: "Return the final answer",
+      result_as_answer: true,
+    })(function finalAnswer(question: unknown): string {
+      return `answer:${String(question)}`;
+    });
+    const defaultTool = createFunctionTool("default answer", {
+      description: "Use default finality",
+    })(function defaultAnswer(question: unknown): string {
+      return `default:${String(question)}`;
+    });
+
+    expect(finalAnswerTool.resultAsAnswer).toBe(true);
+    expect(finalAnswerTool.result_as_answer).toBe(true);
+    expect(finalAnswerTool.to_structured_tool().result_as_answer).toBe(true);
+    expect(defaultTool.resultAsAnswer).toBe(false);
+    expect(defaultTool.result_as_answer).toBe(false);
+    expect(defaultTool.to_structured_tool().result_as_answer).toBe(false);
+  });
+
   it("validates structured tool args and enforces usage limits", async () => {
     const add = new StructuredTool({
       name: "add numbers",
