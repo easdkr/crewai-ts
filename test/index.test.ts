@@ -11127,10 +11127,10 @@ describe("RAG configuration and factories", () => {
     expect(() => {
       storage.save(["mismatched embedding document"]);
     }).toThrow(
-      "Embedding dimension mismatch. Make sure you're using the same embedding model across all operations with this collection.",
+      "Embedding dimension mismatch. Make sure you're using the same embedding model across all operations with this collection. Try resetting the collection using `crewai reset-memories -a`",
     );
     await expect(storage.asave(["mismatched embedding document"])).rejects.toThrow(
-      "Embedding dimension mismatch. Make sure you're using the same embedding model across all operations with this collection.",
+      "Embedding dimension mismatch. Make sure you're using the same embedding model across all operations with this collection. Try resetting the collection using `crewai reset-memories -a`",
     );
   });
 

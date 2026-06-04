@@ -1188,7 +1188,7 @@ function normalizeKnowledgeStorageSaveError(error: unknown): Error {
   if (message.toLowerCase().includes("dimension mismatch")) {
     return new Error(
       "Embedding dimension mismatch. Make sure you're using the same embedding model across all operations with this collection."
-      + "Try resetting the collection using `crewai reset-memories -a`",
+      + " Try resetting the collection using `crewai reset-memories -a`",
     );
   }
   return error instanceof Error ? error : new Error(message);
