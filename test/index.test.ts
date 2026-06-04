@@ -13305,6 +13305,37 @@ describe("RAG configuration and factories", () => {
     fetchMock.mockRestore();
   });
 
+  it("resolves upstream Azure embedding factory configs with legacy model keys", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ data: [{ embedding: [0.7, 0.8, 0.9] }] }),
+    } as Response);
+
+    const embed = buildEmbedderFromDict({
+      provider: "azure",
+      config: {
+        api_key: "azure-test",
+        api_base: "https://azure.example",
+        deployment_id: "embed-deploy",
+        model: "text-embedding-3-large",
+        api_version: "2024-02-01",
+      },
+    });
+
+    await expect(embed(["CrewAI"])).resolves.toEqual([[0.7, 0.8, 0.9]]);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://azure.example/openai/deployments/embed-deploy/embeddings?api-version=2024-02-01",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          input: ["CrewAI"],
+          model: "text-embedding-3-large",
+        }),
+      }),
+    );
+    fetchMock.mockRestore();
+  });
+
   it("exposes upstream embedding provider config fields and defaults", () => {
     const openai = new OpenAIProvider({
       api_key: "sk-test",

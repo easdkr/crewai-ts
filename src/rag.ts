@@ -3362,7 +3362,7 @@ function toAzureProviderConfig(config: Record<string, unknown>): AzureProviderCo
   assignOptionalString(options, "api_base", config.api_base);
   assignOptionalString(options, "api_type", config.api_type);
   assignOptionalString(options, "api_version", config.api_version);
-  assignOptionalString(options, "model_name", config.model_name);
+  assignOptionalString(options, "model_name", config.model_name ?? config.model);
   assignOptionalString(options, "organization_id", config.organization_id);
   if (isRecord(config.default_headers)) {
     options.default_headers = config.default_headers;
