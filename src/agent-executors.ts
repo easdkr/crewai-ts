@@ -341,6 +341,8 @@ export type BaseAgentExecutorOptions = {
   requestWithinRpmLimit?: (() => boolean | Promise<boolean>) | null;
   request_within_rpm_limit?: (() => boolean | Promise<boolean>) | null;
   callbacks?: readonly unknown[];
+  stepCallback?: ((value: AgentAction | AgentFinish) => unknown) | null;
+  step_callback?: ((value: AgentAction | AgentFinish) => unknown) | null;
   responseModel?: unknown;
   response_model?: unknown;
   respectContextWindow?: boolean;
@@ -363,6 +365,8 @@ export class BaseAgentExecutor {
   readonly requestWithinRpmLimit: (() => boolean | Promise<boolean>) | null;
   readonly request_within_rpm_limit: (() => boolean | Promise<boolean>) | null;
   readonly callbacks: readonly unknown[];
+  readonly stepCallback: ((value: AgentAction | AgentFinish) => unknown) | null;
+  readonly step_callback: ((value: AgentAction | AgentFinish) => unknown) | null;
   responseModel: unknown;
   response_model: unknown;
   readonly respectContextWindow: boolean;
@@ -388,6 +392,8 @@ export class BaseAgentExecutor {
     this.requestWithinRpmLimit = options.requestWithinRpmLimit ?? options.request_within_rpm_limit ?? null;
     this.request_within_rpm_limit = this.requestWithinRpmLimit;
     this.callbacks = options.callbacks ?? [];
+    this.stepCallback = options.stepCallback ?? options.step_callback ?? null;
+    this.step_callback = this.stepCallback;
     this.responseModel = options.responseModel ?? options.response_model ?? null;
     this.response_model = this.responseModel;
     this.respectContextWindow = options.respectContextWindow
@@ -1403,7 +1409,7 @@ export class AgentExecutor extends BaseAgentExecutor {
   }
 
   private invokeStepCallback(answer: AgentAction | AgentFinish): void {
-    const callback = (this.agent?.stepCallback ?? this.agent?.step_callback ?? null) as ((value: AgentAction | AgentFinish) => unknown) | null;
+    const callback = (this.stepCallback ?? this.step_callback ?? this.agent?.stepCallback ?? this.agent?.step_callback ?? null) as ((value: AgentAction | AgentFinish) => unknown) | null;
     const result = callback?.(answer);
     if (isPromiseLike(result)) {
       void result;
@@ -2321,7 +2327,7 @@ export class CrewAgentExecutor extends BaseAgentExecutor {
   }
 
   _invoke_step_callback(formattedAnswer: AgentAction | AgentFinish): void {
-    const callback = (this.agent?.stepCallback ?? this.agent?.step_callback ?? null) as ((value: AgentAction | AgentFinish) => unknown) | null;
+    const callback = (this.stepCallback ?? this.step_callback ?? this.agent?.stepCallback ?? this.agent?.step_callback ?? null) as ((value: AgentAction | AgentFinish) => unknown) | null;
     const result = callback?.(formattedAnswer);
     if (result && typeof result === "object" && "then" in result) {
       void result;
@@ -2329,7 +2335,7 @@ export class CrewAgentExecutor extends BaseAgentExecutor {
   }
 
   async _ainvoke_step_callback(formattedAnswer: AgentAction | AgentFinish): Promise<void> {
-    const callback = (this.agent?.stepCallback ?? this.agent?.step_callback ?? null) as ((value: AgentAction | AgentFinish) => unknown) | null;
+    const callback = (this.stepCallback ?? this.step_callback ?? this.agent?.stepCallback ?? this.agent?.step_callback ?? null) as ((value: AgentAction | AgentFinish) => unknown) | null;
     const result = callback?.(formattedAnswer);
     if (result && typeof result === "object" && "then" in result) {
       await (result as PromiseLike<unknown>);

@@ -12315,6 +12315,33 @@ describe("core crew runtime", () => {
     expect(executor.state.pending_tool_calls).toEqual(toolCalls);
   });
 
+  it("invokes executor-level AgentExecutor step callbacks during tool actions", () => {
+    const callbackValues: unknown[] = [];
+    const executor = new AgentExecutor({
+      step_callback: (value: unknown) => {
+        callbackValues.push(value);
+      },
+      tools: [
+        new StructuredTool({
+          name: "lookup",
+          description: "Lookup facts",
+          func: () => "found",
+        }),
+      ],
+    });
+    executor.state.current_answer = new AgentAction({
+      thought: "need data",
+      tool: "lookup",
+      toolInput: "{}",
+      text: "Action: lookup",
+    });
+
+    expect(executor.execute_tool_action()).toBe("tool_completed");
+    expect(callbackValues).toHaveLength(1);
+    expect(callbackValues[0]).toBeInstanceOf(AgentAction);
+    expect((callbackValues[0] as AgentAction).result).toBe("found");
+  });
+
   it("routes upstream provider-shaped native tool calls from AgentExecutor LLM responses", () => {
     const providerCalls = [
       { toolUseId: "bedrock_1", name: "bedrock_lookup", input: { query: "Bedrock" } },
