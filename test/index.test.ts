@@ -29810,6 +29810,12 @@ describe("task output files", () => {
       description: "Write",
       expectedOutput: "A report",
       agent: agentInstance,
+      output_file: "~/result.txt",
+    })).toThrow("Shell expansion characters are not allowed in output_file paths");
+    expect(() => new Task({
+      description: "Write",
+      expectedOutput: "A report",
+      agent: agentInstance,
       output_file: "result|bad.txt",
     })).toThrow("Shell special characters are not allowed in output_file paths");
     expect(() => new Task({
