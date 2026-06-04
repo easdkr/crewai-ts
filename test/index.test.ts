@@ -20431,7 +20431,7 @@ describe("flow runtime", () => {
 
     const initializers = [
       decorateMethod(VisualFlow, "begin", start() as unknown as Decorator),
-      decorateMethod(VisualFlow, "route", router("begin") as unknown as Decorator),
+      decorateMethod(VisualFlow, "route", router("begin", { emit: ["approved"] }) as unknown as Decorator),
       decorateMethod(VisualFlow, "publish", listen(or_("approved", "rejected")) as unknown as Decorator),
     ];
     const flow = new VisualFlow();
@@ -20667,9 +20667,9 @@ describe("flow runtime", () => {
 
     const chainedInitializers = [
       decorateMethod(ChainedRouterFlow, "entrance", start() as unknown as Decorator),
-      decorateMethod(ChainedRouterFlow, "sessionInCache", router("entrance") as unknown as Decorator),
-      decorateMethod(ChainedRouterFlow, "checkExp", router("exp") as unknown as Decorator),
-      decorateMethod(ChainedRouterFlow, "callAiAuth", router("auth") as unknown as Decorator),
+      decorateMethod(ChainedRouterFlow, "sessionInCache", router("entrance", { emit: ["exp"] }) as unknown as Decorator),
+      decorateMethod(ChainedRouterFlow, "checkExp", router("exp", { emit: ["auth"] }) as unknown as Decorator),
+      decorateMethod(ChainedRouterFlow, "callAiAuth", router("auth", { emit: ["action"] }) as unknown as Decorator),
       decorateMethod(ChainedRouterFlow, "forwardToAction", listen("action") as unknown as Decorator),
       decorateMethod(ChainedRouterFlow, "forwardToAuthenticate", listen("authenticate") as unknown as Decorator),
     ];
@@ -20735,8 +20735,8 @@ describe("flow runtime", () => {
 
     const sharedInitializers = [
       decorateMethod(SharedOutputRouterFlow, "startHere", start() as unknown as Decorator),
-      decorateMethod(SharedOutputRouterFlow, "routerA", router("startHere") as unknown as Decorator),
-      decorateMethod(SharedOutputRouterFlow, "routerB", router("auth") as unknown as Decorator),
+      decorateMethod(SharedOutputRouterFlow, "routerA", router("startHere", { emit: ["auth"] }) as unknown as Decorator),
+      decorateMethod(SharedOutputRouterFlow, "routerB", router("auth", { emit: ["done"] }) as unknown as Decorator),
       decorateMethod(SharedOutputRouterFlow, "finalize", listen("done") as unknown as Decorator),
       decorateMethod(SharedOutputRouterFlow, "handleSkip", listen("skip") as unknown as Decorator),
     ];
@@ -20814,7 +20814,7 @@ describe("flow runtime", () => {
     }
   });
 
-  it("infers router paths from possible string return constants", () => {
+  it("keeps unannotated visualization routers dynamic despite possible string return constants", () => {
     class InferredRouterFlow extends Flow {
       begin() {
         return "start";
@@ -20841,7 +20841,7 @@ describe("flow runtime", () => {
       const byStatus = { ok: "approved", no: "rejected" };
       return Math.random() > 0.5 ? byStatus.ok : fallback;
     })).toEqual(["approved", "rejected", "manual"]);
-    expect(buildFlowStructure(flow).nodes.route?.router_paths).toEqual(["approved", "rejected", "manual"]);
+    expect(buildFlowStructure(flow).nodes.route?.router_paths).toEqual([]);
   });
 
   it("calculates flow graph levels, outgoing edges, ancestors, and child ordering", () => {
@@ -20871,7 +20871,7 @@ describe("flow runtime", () => {
       decorateMethod(GraphFlow, "first", start() as unknown as Decorator),
       decorateMethod(GraphFlow, "second", start() as unknown as Decorator),
       decorateMethod(GraphFlow, "merge", listen(and_("first", "second")) as unknown as Decorator),
-      decorateMethod(GraphFlow, "route", router("merge") as unknown as Decorator),
+      decorateMethod(GraphFlow, "route", router("merge", { emit: ["approved"] }) as unknown as Decorator),
       decorateMethod(GraphFlow, "publish", listen("approved") as unknown as Decorator),
     ];
     const flow = new GraphFlow();
@@ -23728,7 +23728,7 @@ describe("flow runtime", () => {
 
     const initializers = [
       decorateMethod(SerializerFlow, "begin", start() as unknown as Decorator),
-      decorateMethod(SerializerFlow, "decide", router("begin") as unknown as Decorator),
+      decorateMethod(SerializerFlow, "decide", router("begin", { emit: ["approved"] }) as unknown as Decorator),
       decorateMethod(SerializerFlow, "publish", listen("approved") as unknown as Decorator),
     ];
     const flow = new SerializerFlow("flow-1");

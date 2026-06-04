@@ -3713,10 +3713,9 @@ export function buildFlowStructure(instanceOrConstructor: object | FlowMetadataT
       ...(typeof methodValue === "function" ? { source_code: Function.prototype.toString.call(methodValue) } : {}),
     };
     if (method.type === "router" || method.type === "start_router") {
-      const inferredPaths = getPossibleReturnConstants(methodValue);
       const routerPaths = loadedDefinition || method.hasHumanFeedback
         ? method.routerPaths
-        : inferredPaths ?? [];
+        : declaredRouterEmitFor(method.name, entries);
       metadata.is_router = true;
       metadata.router_paths = uniqueStrings(routerPaths);
       metadata.router_events = metadata.router_paths;
@@ -4623,6 +4622,11 @@ function routerPathsFor(methodName: string, entries: readonly FlowMethodEntry[])
         .flatMap((entry) => entry.condition ? extractDirectOrTriggers(entry.condition) : []),
     ),
   ];
+}
+
+function declaredRouterEmitFor(methodName: string, entries: readonly FlowMethodEntry[]): readonly string[] {
+  const routerEntry = entries.find((entry) => String(entry.name) === methodName && entry.kind === "router");
+  return routerEntry?.emit ? uniqueStrings(routerEntry.emit) : [];
 }
 
 function isRouterPath(trigger: string, methods: readonly FlowStructureMethod[]): boolean {
