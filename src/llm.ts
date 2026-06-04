@@ -2568,6 +2568,41 @@ export class ConfiguredLLM extends BaseLLM {
     return await provider.call(messages, options);
   }
 
+  override supportsMultimodal(): boolean {
+    const model = this.model.toLowerCase();
+    const textOnlyModels = ["o3-mini", "o1-mini", "o1-preview"];
+    if (textOnlyModels.some((name) => model.startsWith(name) || model.includes(`/${name}`))) {
+      return false;
+    }
+    return [
+      "gpt-4o",
+      "gpt-4-turbo",
+      "gpt-4-vision",
+      "gpt-4.1",
+      "gpt-5",
+      "o1",
+      "o3",
+      "o4-mini",
+      "o4",
+      "claude-3",
+      "claude-4",
+      "claude-sonnet-4",
+      "claude-opus-4",
+      "claude-haiku-4",
+      "gemini",
+      "grok",
+      "pixtral",
+      "llava",
+      "qwen-vl",
+      "qwen2-vl",
+      "qwen3-vl",
+    ].some((prefix) => model.startsWith(prefix) || model.includes(`/${prefix}`));
+  }
+
+  override supports_multimodal(): boolean {
+    return this.supportsMultimodal();
+  }
+
   override toConfigDict(): Record<string, unknown> {
     return {
       ...super.toConfigDict(),

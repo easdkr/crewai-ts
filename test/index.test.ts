@@ -25757,6 +25757,16 @@ describe("LLM providers", () => {
     }).not.toThrow();
   });
 
+  it("detects upstream-style multimodal support on configured LLM models", () => {
+    expect((create_llm("gpt-4o") as BaseLLM).supports_multimodal()).toBe(true);
+    expect((create_llm("openai/gpt-4.1-mini") as BaseLLM).supports_multimodal()).toBe(true);
+    expect((create_llm("anthropic/claude-3-sonnet-20240229") as BaseLLM).supports_multimodal()).toBe(true);
+    expect((create_llm("gemini/gemini-pro") as BaseLLM).supports_multimodal()).toBe(true);
+    expect((create_llm("gpt-3.5-turbo") as BaseLLM).supports_multimodal()).toBe(false);
+    expect((create_llm("openai/o1-preview") as BaseLLM).supports_multimodal()).toBe(false);
+    expect((create_llm("o3-mini") as BaseLLM).supports_multimodal()).toBe(false);
+  });
+
   it("handles upstream-style BaseLLM completion and response helpers", async () => {
     const llm = new ConfiguredLLM({
       model: "gpt-4o",
