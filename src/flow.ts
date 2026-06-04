@@ -3899,10 +3899,11 @@ function conversationalFlowMetadataEntries(
     return [];
   }
   const entries: FlowMethodEntry[] = [];
-  if (!existingEntries.some((entry) => entry.kind === "start" && entry.condition === null)) {
+  const hasUserRouter = existingEntries.some((entry) => entry.kind === "router");
+  if (!hasUserRouter && !existingEntries.some((entry) => entry.kind === "start" && String(entry.name) === "conversation_start")) {
     entries.push({ name: "conversation_start", kind: "start", condition: null });
   }
-  if (!existingEntries.some((entry) => entry.kind === "router")) {
+  if (!hasUserRouter) {
     entries.push({ name: "route_conversation", kind: "router", condition: or_("conversation_start"), emit: ["converse", "end", "answer_from_history"] });
   }
   if (!hasListenerForLabel(existingEntries, "converse")) {

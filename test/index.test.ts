@@ -19909,6 +19909,60 @@ describe("flow runtime", () => {
     expect(flow.state.last_intent).toBe("search");
   });
 
+  it("runs user start methods before experimental conversational builtin router", async () => {
+    const order: string[] = [];
+
+    class BootstrapFlow extends Flow<ConversationState> {
+      static conversational = true;
+      static conversational_config = new ConversationConfig({
+        router: { defaultIntent: "work", fallbackIntent: "work", routes: ["work"] },
+      });
+
+      loadProfile() {
+        if (!this.state.session_ready) {
+          order.push("load_profile");
+          this.state.session_ready = true;
+        }
+      }
+
+      attachBus() {
+        order.push("attach_bus");
+      }
+
+      routeTurn(context: Record<string, unknown>) {
+        order.push("route_turn");
+        return super.routeTurn(context);
+      }
+
+      doWork() {
+        order.push("do_work");
+        this.append_assistant_message("worked");
+        return "worked";
+      }
+    }
+
+    const initializers = [
+      decorateMethod(BootstrapFlow, "loadProfile", start() as unknown as Decorator),
+      decorateMethod(BootstrapFlow, "attachBus", start() as unknown as Decorator),
+      decorateMethod(BootstrapFlow, "doWork", listen("work") as unknown as Decorator),
+    ];
+    const flow = new BootstrapFlow();
+    initializers.forEach((initializer) => {
+      initializer.call(flow);
+    });
+
+    await expect(flow.handle_turn("turn 1")).resolves.toBe("worked");
+
+    expect(order.indexOf("load_profile")).toBeLessThan(order.indexOf("route_turn"));
+    expect(order.indexOf("attach_bus")).toBeLessThan(order.indexOf("route_turn"));
+    expect(order).toEqual(["load_profile", "attach_bus", "route_turn", "do_work"]);
+
+    order.length = 0;
+    await expect(flow.handle_turn("turn 2")).resolves.toBe("worked");
+
+    expect(order).toEqual(["attach_bus", "route_turn", "do_work"]);
+  });
+
   it("skips experimental conversational router auto-enable for default intents", async () => {
     const routerLlm = {
       call() {
