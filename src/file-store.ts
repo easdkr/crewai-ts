@@ -113,7 +113,7 @@ export const clear_task_files = clearTaskFiles;
 
 export function getAllFiles(crewId: FileStoreId, taskId?: FileStoreId | null): FileInputMap | null {
   const crewFiles = getFiles(crewId);
-  const taskFiles = taskId ? getTaskFiles(taskId) : null;
+  const taskFiles = taskId === null || taskId === undefined ? null : getTaskFiles(taskId);
   if (!crewFiles && !taskFiles) {
     return null;
   }

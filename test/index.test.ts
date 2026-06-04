@@ -1893,8 +1893,14 @@ describe("environment, logging, and file store utilities", () => {
       taskOnly: "task",
     });
 
+    storeFiles(0, { shared: "crew-zero" });
+    storeTaskFiles(0, { shared: "task-zero" });
+    expect(getAllFiles(0, 0)).toEqual({ shared: "task-zero" });
+
     clearFiles(crewId);
     clearTaskFiles(taskId);
+    clearFiles(0);
+    clearTaskFiles(0);
     expect(getAllFiles(crewId, taskId)).toBeNull();
     await expect(agetAllFiles(crewId, taskId)).resolves.toBeNull();
   });
