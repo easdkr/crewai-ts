@@ -20485,6 +20485,30 @@ describe("agent planning", () => {
     expect(reasoning.planning_config?.reasoning_effort).toBe("medium");
   });
 
+  it("does not inject planning text into execute_task descriptions when planning is disabled", async () => {
+    const prompts: string[] = [];
+    const agentInstance = new Agent({
+      role: "Math Assistant",
+      goal: "Help solve math problems",
+      backstory: "A helpful assistant",
+      llm: (messages) => {
+        prompts.push(messages.at(-1)?.content ?? "");
+        return "36";
+      },
+    });
+    const task = {
+      description: "What is 12 * 3?",
+      expected_output: "A number",
+    };
+
+    await expect(agentInstance.execute_task({ task })).resolves.toBe("36");
+
+    expect(agentInstance.planning_enabled).toBe(false);
+    expect(task.description).toBe("What is 12 * 3?");
+    expect(prompts.at(-1)).toContain("What is 12 * 3?");
+    expect(prompts.at(-1)).not.toContain("Planning:");
+  });
+
   it("runs reasoning before kickoff and refines until the plan is ready", async () => {
     const prompts: string[] = [];
     const events: CrewAIEvent[] = [];
