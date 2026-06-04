@@ -24815,6 +24815,28 @@ describe("tools", () => {
     expect(addTool.has_reached_max_usage_count()).toBe(false);
   });
 
+  it("infers upstream default values from function parameters", () => {
+    function summarize(requiredParam: unknown, optionalParam = "default", nullableParam = null): string {
+      return `${String(requiredParam)} ${optionalParam} ${String(nullableParam)}`;
+    }
+    const toolInstance = StructuredTool.from_function(summarize, {
+      name: "summary defaults",
+      description: "Summarize with defaults",
+    });
+
+    expect(toolInstance.argsSchema).toMatchObject({
+      requiredParam: { required: true },
+      optionalParam: { required: false, default: "default" },
+      nullableParam: { required: false, default: null },
+    });
+    expect(toolInstance.invoke({ requiredParam: "test" })).toBe("test default null");
+    expect(toolInstance.invoke({
+      requiredParam: "test",
+      optionalParam: "custom",
+      nullableParam: 42,
+    })).toBe("test custom 42");
+  });
+
   it("raises upstream structured-tool usage limit errors from invoke aliases", async () => {
     const limited = new StructuredTool({
       name: "limited lookup",

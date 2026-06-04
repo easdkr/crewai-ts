@@ -1971,10 +1971,7 @@ function createToolFromFunction<TArgs extends readonly unknown[]>(
     throw new Error("Tool function must have a name or explicit tool name.");
   }
   const parameterNames = inferFunctionParameterNames(func);
-  const argsSchema = options.argsSchema ?? options.args_schema ?? Object.fromEntries(parameterNames.map((name) => [
-    name,
-    { type: "unknown" as const, required: true },
-  ]));
+  const argsSchema = options.argsSchema ?? options.args_schema ?? inferFunctionArgsSchema(func);
   return new StructuredTool({
     name: inferredName,
     description: options.description ?? inferFunctionDescription(func, inferredName),
@@ -2544,6 +2541,19 @@ function levenshteinDistance(left: string, right: string): number {
 }
 
 function inferFunctionParameterNames(func: unknown): string[] {
+  return inferFunctionParameters(func).map((parameter) => parameter.name);
+}
+
+function inferFunctionArgsSchema(func: unknown): ToolArgsSchema {
+  return Object.fromEntries(inferFunctionParameters(func).map((parameter) => [
+    parameter.name,
+    parameter.hasDefault
+      ? { type: "unknown" as const, required: false, default: parameter.defaultValue }
+      : { type: "unknown" as const, required: true },
+  ]));
+}
+
+function inferFunctionParameters(func: unknown): Array<{ name: string; hasDefault: boolean; defaultValue?: unknown }> {
   const source = Function.prototype.toString.call(func);
   const parametersSource = source.match(/^[^(]*\(([^)]*)\)/)?.[1]
     ?? source.match(/^([^=()]+)=>/)?.[1]
@@ -2551,8 +2561,50 @@ function inferFunctionParameterNames(func: unknown): string[] {
   return parametersSource
     .split(",")
     .map((parameter) => parameter.trim())
-    .map((parameter) => parameter.replace(/=.*$/, "").trim())
-    .filter((parameter) => /^[A-Za-z_$][\w$]*$/.test(parameter));
+    .map(parseFunctionParameter)
+    .filter((parameter): parameter is { name: string; hasDefault: boolean; defaultValue?: unknown } =>
+      parameter !== null && /^[A-Za-z_$][\w$]*$/.test(parameter.name));
+}
+
+function parseFunctionParameter(parameter: string): { name: string; hasDefault: boolean; defaultValue?: unknown } | null {
+  const [rawName = "", ...defaultParts] = parameter.split("=");
+  const name = rawName.trim();
+  if (!name) {
+    return null;
+  }
+  if (defaultParts.length === 0) {
+    return { name, hasDefault: false };
+  }
+  return { name, hasDefault: true, defaultValue: parseFunctionDefaultValue(defaultParts.join("=").trim()) };
+}
+
+function parseFunctionDefaultValue(rawDefault: string): unknown {
+  if (rawDefault === "null") {
+    return null;
+  }
+  if (rawDefault === "undefined") {
+    return undefined;
+  }
+  if (rawDefault === "true") {
+    return true;
+  }
+  if (rawDefault === "false") {
+    return false;
+  }
+  if (/^-?\d+(?:\.\d+)?$/.test(rawDefault)) {
+    return Number(rawDefault);
+  }
+  if ((rawDefault.startsWith("\"") && rawDefault.endsWith("\""))
+    || (rawDefault.startsWith("'") && rawDefault.endsWith("'"))) {
+    try {
+      return JSON.parse(rawDefault.startsWith("'")
+        ? `"${rawDefault.slice(1, -1).replace(/\\/g, "\\\\").replace(/"/g, "\\\"")}"`
+        : rawDefault);
+    } catch {
+      return rawDefault.slice(1, -1);
+    }
+  }
+  return undefined;
 }
 
 function inferFunctionDescription(func: unknown, name: string): string {
