@@ -29109,6 +29109,8 @@ describe("LLM providers", () => {
     const previousOpenRouterKey = process.env.OPENROUTER_API_KEY;
     const previousCerebrasKey = process.env.CEREBRAS_API_KEY;
     const previousDashscopeKey = process.env.DASHSCOPE_API_KEY;
+    const previousSnowflakePat = process.env.SNOWFLAKE_PAT;
+    const previousSnowflakeAccountIdentifier = process.env.SNOWFLAKE_ACCOUNT_IDENTIFIER;
     try {
       process.env.DEEPSEEK_API_KEY = "deepseek-key";
       process.env.OPENROUTER_API_KEY = "openrouter-key";
@@ -29139,6 +29141,13 @@ describe("LLM providers", () => {
       expect(explicitProvider).toBeInstanceOf(OpenAICompatibleCompletion);
       expect((explicitProvider as OpenAICompatibleCompletion).model).toBe("deepseek-chat");
       expect((explicitProvider as OpenAICompatibleCompletion).provider).toBe("deepseek");
+
+      process.env.SNOWFLAKE_PAT = "pat/snowflake-key";
+      process.env.SNOWFLAKE_ACCOUNT_IDENTIFIER = "org-account";
+      const snowflake = create_llm("snowflake/claude-3-5-sonnet");
+      expect(snowflake).toBeInstanceOf(SnowflakeCompletion);
+      expect((snowflake as SnowflakeCompletion).model).toBe("claude-3-5-sonnet");
+      expect((snowflake as SnowflakeCompletion).provider).toBe("snowflake");
     } finally {
       if (previousDeepSeekKey === undefined) delete process.env.DEEPSEEK_API_KEY;
       else process.env.DEEPSEEK_API_KEY = previousDeepSeekKey;
@@ -29148,6 +29157,10 @@ describe("LLM providers", () => {
       else process.env.CEREBRAS_API_KEY = previousCerebrasKey;
       if (previousDashscopeKey === undefined) delete process.env.DASHSCOPE_API_KEY;
       else process.env.DASHSCOPE_API_KEY = previousDashscopeKey;
+      if (previousSnowflakePat === undefined) delete process.env.SNOWFLAKE_PAT;
+      else process.env.SNOWFLAKE_PAT = previousSnowflakePat;
+      if (previousSnowflakeAccountIdentifier === undefined) delete process.env.SNOWFLAKE_ACCOUNT_IDENTIFIER;
+      else process.env.SNOWFLAKE_ACCOUNT_IDENTIFIER = previousSnowflakeAccountIdentifier;
     }
 
     const fromObject = create_llm({
@@ -29252,6 +29265,7 @@ describe("LLM providers", () => {
     expect(validate_model_in_constants("claude-opus-4-0", "anthropic")).toBe(true);
     expect(validate_model_in_constants("gemini-2.5-pro", "gemini")).toBe(true);
     expect(validate_model_in_constants("gpt-future-6", "openai")).toBe(true);
+    expect(validate_model_in_constants("claude-3-5-sonnet", "snowflake")).toBe(true);
     expect(validate_model_in_constants("gemini-2.5-flash", "openai")).toBe(false);
     expect(matches_provider_pattern("qwen-plus", "dashscope")).toBe(true);
     expect(matches_provider_pattern("llama3.2", "ollama")).toBe(true);
@@ -29259,6 +29273,7 @@ describe("LLM providers", () => {
     expect(BaseLLM._validate_model_in_constants("claude-future-5", "claude")).toBe(true);
     expect(BaseLLM._infer_provider_from_model("claude-opus-4-0")).toBe("anthropic");
     expect(BaseLLM._get_native_provider("claude")).toBe("anthropic");
+    expect(BaseLLM._get_native_provider("snowflake")).toBe("snowflake");
     expect(BaseLLM._get_native_provider("openrouter")).toBe("openai_compatible");
     expect(BaseLLM._is_anthropic_model("anthropic/claude-sonnet-4")).toBe(true);
     expect(BaseLLM._validate_llm_fields({ model: "claude-3-haiku" })).toMatchObject({ is_anthropic: true });
@@ -29274,6 +29289,12 @@ describe("LLM providers", () => {
       provider: "openai",
       model: "gpt-future-6",
       originalModel: "openai/gpt-future-6",
+      useNative: true,
+    });
+    expect(resolve_llm_model_spec("snowflake/claude-3-5-sonnet")).toEqual({
+      provider: "snowflake",
+      model: "claude-3-5-sonnet",
+      originalModel: "snowflake/claude-3-5-sonnet",
       useNative: true,
     });
     expect(resolve_llm_model_spec("openai/gemini-2.5-flash")).toEqual({

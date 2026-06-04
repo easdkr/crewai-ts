@@ -1,4 +1,4 @@
-import { ConfiguredLLM, CONTEXT_WINDOW_USAGE_RATIO, LocalFileUploader, type BaseLLMOptions, type LLMAvailableFunction, type LLMCallOptions, type LLMMessageInput, type LLMResponse } from "./llm.js";
+import { ConfiguredLLM, CONTEXT_WINDOW_USAGE_RATIO, LocalFileUploader, registerLLMProviderFactory, type BaseLLMOptions, type LLMAvailableFunction, type LLMCallOptions, type LLMMessageInput, type LLMResponse } from "./llm.js";
 import { convertToolsToOpenAISchema } from "./agent-utils.js";
 import { OpenAICompletion, type OpenAICompletionOptions } from "./openai-completion.js";
 import type { LLMMessage, Tool } from "./types.js";
@@ -2405,6 +2405,8 @@ export class SnowflakeCompletion extends OpenAICompletion {
     return this.toConfigDict();
   }
 }
+
+registerLLMProviderFactory("snowflake", (options) => new SnowflakeCompletion(options as SnowflakeCompletionOptions));
 
 export const AzureCompletionParams = Object.freeze({ kind: "AzureCompletionParams" });
 export type AzureCompletionParams = {

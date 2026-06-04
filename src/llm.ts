@@ -280,6 +280,7 @@ export type NativeLLMProviderName =
   | "azure"
   | "bedrock"
   | "gemini"
+  | "snowflake"
   | "openai_compatible";
 
 export type CreateLLMValue = string | LLM | BaseLLMOptions | (Record<string, unknown> & {
@@ -402,7 +403,7 @@ export const LLM_ENV_VARS: Readonly<Record<string, readonly LLMEnvVarSpec[]>> = 
   ],
 };
 export const ENV_VARS = LLM_ENV_VARS;
-export const SUPPORTED_NATIVE_PROVIDERS = ["openai", "anthropic", "azure", "bedrock", "gemini"] as const;
+export const SUPPORTED_NATIVE_PROVIDERS = ["openai", "anthropic", "azure", "bedrock", "gemini", "snowflake"] as const;
 export const LLM_PROVIDER_ALIASES: Readonly<Record<string, string>> = {
   openai: "openai",
   anthropic: "anthropic",
@@ -2398,7 +2399,7 @@ export abstract class BaseLLM implements LLMClient {
 
   static getNativeProvider(provider: string): NativeLLMProviderName | null {
     const normalized = canonicalLLMProvider(provider);
-    if (normalized === "openai" || normalized === "anthropic" || normalized === "azure" || normalized === "bedrock" || normalized === "gemini") {
+    if (normalized === "openai" || normalized === "anthropic" || normalized === "azure" || normalized === "bedrock" || normalized === "gemini" || normalized === "snowflake") {
       return normalized;
     }
     if (["openrouter", "deepseek", "ollama", "ollama_chat", "hosted_vllm", "cerebras", "dashscope"].includes(normalized)) {
@@ -2884,6 +2885,9 @@ export function validateModelInConstants(model: string, provider: string): boole
     return true;
   }
   if (canonicalProvider === "azure") {
+    return true;
+  }
+  if (canonicalProvider === "snowflake") {
     return true;
   }
   return matchesProviderPattern(model, canonicalProvider);
