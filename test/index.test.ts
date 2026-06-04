@@ -18486,6 +18486,33 @@ describe("standard decorators", () => {
     expect(first.name).toBe("buildAsyncTask");
   });
 
+  it("memoizes directly awaited async agent decorator factories", async () => {
+    class AsyncAgentCrew {
+      calls = 0;
+
+      async buildAsyncAgent() {
+        await Promise.resolve();
+        this.calls += 1;
+        return new Agent({
+          role: "Async Agent",
+          goal: "Async Goal",
+          backstory: "Async Backstory",
+        });
+      }
+    }
+
+    const initializer = decorateMethod(AsyncAgentCrew, "buildAsyncAgent", agent);
+    const instance = new AsyncAgentCrew();
+    initializer.call(instance);
+
+    const first = await instance.buildAsyncAgent();
+    const second = await instance.buildAsyncAgent();
+
+    expect(first).toBe(second);
+    expect(instance.calls).toBe(1);
+    expect(first).toBeInstanceOf(Agent);
+  });
+
   it("emits CrewBase display names during prepare_kickoff", () => {
     const capturedNames: Array<string | null> = [];
     const off = crewaiEventBus.on("crew_kickoff_started", (_source, event) => {
