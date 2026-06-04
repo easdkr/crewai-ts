@@ -16016,6 +16016,34 @@ describe("core crew runtime", () => {
     }
   });
 
+  it("resets CrewAgentExecutor async messages and iterations between object invocations", async () => {
+    const executor = new CrewAgentExecutor({
+      prompt: { prompt: "Prompt {input}" },
+      messages: [{ role: "assistant", content: "leftover from task 1" }],
+    });
+    executor.iterations = 7;
+    const startLogs = vi.spyOn(executor, "_show_start_logs").mockImplementation(() => undefined);
+    const saveToMemory = vi.spyOn(executor, "_save_to_memory").mockImplementation(() => undefined);
+    const invokeLoop = vi.spyOn(executor, "_ainvoke_loop").mockResolvedValue(
+      new AgentFinish({ thought: "done", output: "ok", text: "ok" }),
+    );
+
+    try {
+      await expect(executor.ainvoke({ input: "task 2", tool_names: "", tools: "" }))
+        .resolves.toEqual({ output: "ok" });
+    } finally {
+      invokeLoop.mockRestore();
+      saveToMemory.mockRestore();
+      startLogs.mockRestore();
+    }
+
+    expect(executor.iterations).toBe(0);
+    expect(executor.messages.some((message) => (
+      typeof message.content === "string" && message.content.includes("leftover from task 1")
+    ))).toBe(false);
+    expect(executor.messages).toEqual([{ role: "user", content: "Prompt task 2" }]);
+  });
+
   it("surfaces async AgentExecutor step callback task errors without rejecting sync execution", async () => {
     const printSpy = vi.spyOn(PRINTER, "print").mockImplementation(() => undefined);
     try {
