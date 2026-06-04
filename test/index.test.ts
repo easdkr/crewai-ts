@@ -1828,6 +1828,9 @@ describe("serialization and project utilities", () => {
     await expect(importAndValidateDefinition("node:path.missingAttr")).rejects.toThrow(
       "Attribute 'missingAttr' not found in module 'node:path'",
     );
+    await expect(validateImportPath("some.nested.module.path.ClassName")).rejects.toThrow(
+      "Package 'some' could not be imported. Install it with: uv add some",
+    );
     await expect(requireModule("node:path", { purpose: "path tests", attr: "missingAttr" })).rejects.toBeInstanceOf(AttributeError);
     await expect(requireModule("definitely_missing_pkg", { purpose: "search tools" })).rejects.toBeInstanceOf(OptionalDependencyError);
     await expect(requireModule("definitely_missing_pkg", { purpose: "search tools" })).rejects.toThrow(
