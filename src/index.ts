@@ -1437,6 +1437,8 @@ export {
   FeedbackOutcome,
   FlowStructure,
   FlowStructureInfo,
+  FlowMethodDecorator,
+  FlowTrigger,
   InputHistoryEntry,
   StateWithId,
   InputProvider,

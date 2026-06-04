@@ -577,6 +577,34 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
+    "./flow/dsl/_conditions": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./flow/dsl/_human_feedback": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./flow/dsl/_listen": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./flow/dsl/_router": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./flow/dsl/_start": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./flow/dsl/_types": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./flow/dsl/_utils": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
     "./flow/async_feedback/providers": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"

@@ -521,9 +521,11 @@ import {
   FlowDefinition,
   FlowDefinitionDiagnostic,
   FlowHumanFeedbackDefinition,
+  FlowMethodDecorator,
   FlowMethodDefinition,
   FlowPersistenceDefinition,
   FlowStateDefinition,
+  FlowTrigger,
   get_conversation_messages,
   get_conversational_config,
   getBeforeLlmCallHooks,
@@ -1116,6 +1118,24 @@ describe("package entrypoint", () => {
     expect(version).toBe("1.14.6");
     expect(__version__).toBe("1.14.6");
     expect(get_crewai_version()).toBe("1.14.6");
+  });
+
+  it("exposes latest upstream Flow DSL typing helper compatibility paths", () => {
+    expect(FlowTrigger).toEqual({ kind: "FlowTrigger" });
+    expect(FlowMethodDecorator).toEqual({ kind: "FlowMethodDecorator" });
+
+    const packageJson = JSON.parse(readFileSync(join(process.cwd(), "package.json"), "utf8")) as {
+      exports: Record<string, unknown>;
+    };
+    expect(Object.keys(packageJson.exports)).toEqual(expect.arrayContaining([
+      "./flow/dsl/_conditions",
+      "./flow/dsl/_human_feedback",
+      "./flow/dsl/_listen",
+      "./flow/dsl/_router",
+      "./flow/dsl/_start",
+      "./flow/dsl/_types",
+      "./flow/dsl/_utils",
+    ]));
   });
 });
 

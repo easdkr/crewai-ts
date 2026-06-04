@@ -255,6 +255,8 @@ export function _deserialize_initial_state(value: unknown): unknown {
 }
 
 export type FlowConditionInput = string | FlowCondition | ((...args: never[]) => unknown);
+export type FlowTrigger = FlowConditionInput;
+export const FlowTrigger = Object.freeze({ kind: "FlowTrigger" });
 
 export type FlowMethodKind = "start" | "listen" | "router";
 
@@ -4724,10 +4726,12 @@ export function isFlowMethod(value: unknown): boolean {
 
 export const is_flow_method = isFlowMethod;
 
-type MethodDecoratorFactory = <This extends object>(
+export type FlowMethodDecorator = <This extends object>(
   value: AnyFlowMethod<This>,
   context: ClassMethodDecoratorContext<This, AnyFlowMethod<This>>,
 ) => AnyFlowMethod<This>;
+export const FlowMethodDecorator = Object.freeze({ kind: "FlowMethodDecorator" });
+type MethodDecoratorFactory = FlowMethodDecorator;
 
 function createStructureMethod(
   methodName: string,
