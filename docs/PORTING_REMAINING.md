@@ -119,6 +119,7 @@ This register is the source of truth for continuing porting work while parity sc
 - AgentExecutor text-parsed tool failures are release-gated for upstream retry behavior: failed regular tool actions increment the task tool-error counter, append an error observation, and continue with the post-tool reasoning prompt instead of throwing out of the execution loop.
 - StepExecutor isolated native tool failures are release-gated for upstream retry behavior: failed native tool calls are converted into deterministic error tool messages and preserve `tool_calls_made` instead of aborting isolated step execution.
 - StepExecutor isolated text-parsed tool failures are release-gated for upstream retry behavior: failed parsed tool actions are converted into deterministic error observations, preserve `tool_calls_made`, and allow the next LLM iteration to recover with a final answer.
+- StepExecutor isolated text-parsed available functions are release-gated for upstream tool compatibility: parsed tool actions can resolve `available_functions` by raw or sanitized name and append the function result as an observation before the next LLM iteration.
 
 ## Known Remaining Porting Areas
 

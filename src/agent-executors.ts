@@ -2561,7 +2561,12 @@ export class StepExecutor {
     const sanitized = sanitizeToolName(formatted.tool);
     const tool = this.tools.find((candidate) => sanitizeToolName(candidate.name) === sanitized);
     if (!tool) {
-      throw new Error(`Tool '${formatted.tool}' is not available`);
+      const fn = this.availableFunctions[formatted.tool] ?? this.availableFunctions[sanitized];
+      if (typeof fn !== "function") {
+        throw new Error(`Tool '${formatted.tool}' is not available`);
+      }
+      const result = await (fn as (input: unknown) => MaybePromise<unknown>)(args);
+      return stringifyStepResult(result);
     }
     const result = await tool.run(args);
     return stringifyStepResult(result);

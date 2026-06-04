@@ -13884,6 +13884,30 @@ describe("core crew runtime", () => {
       typeof message.content === "string" && message.content.includes("Observation: Error executing tool: text tool failed")
     ))).toBe(true);
 
+    const availableFunctionResponses = [
+      "Thought: use lookup\nAction: lookup\nAction Input: {\"query\":\"CrewAI\"}",
+      "Thought: done\nFinal Answer: function complete",
+    ];
+    const availableFunctionExecutor = new StepExecutor({
+      agent: new Agent({
+        role: "Researcher",
+        goal: "Use function",
+        backstory: "Careful analyst",
+        llm: () => availableFunctionResponses.shift() ?? "Final Answer: fallback",
+      }),
+      available_functions: { lookup: (args: { query?: string }) => `lookup:${args.query ?? ""}` },
+    });
+    const availableFunctionMessages: LLMMessage[] = [];
+    const availableFunctionCallsMade: string[] = [];
+    await expect(availableFunctionExecutor._execute_text_parsed(
+      availableFunctionMessages,
+      availableFunctionCallsMade,
+    )).resolves.toBe("function complete");
+    expect(availableFunctionCallsMade).toEqual(["lookup"]);
+    expect(availableFunctionMessages.some((message) => (
+      typeof message.content === "string" && message.content.includes("Observation: lookup:CrewAI")
+    ))).toBe(true);
+
     const nativeMessages: unknown[] = [];
     const nativeCallsMade: string[] = [];
     await expect(executor._execute_native_tool_calls([
