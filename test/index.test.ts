@@ -13171,6 +13171,68 @@ describe("core crew runtime", () => {
     expect(executor.state.last_replan_reason).toBe("Need a fresh source");
   });
 
+  it("emits PlannerObserver observation failure events before fallback observation", () => {
+    const observationEvents: Array<Record<string, unknown>> = [];
+    const task = { description: "Research CrewAI", expected_output: "Current answer" };
+    const agent = {
+      role: "Observer",
+      planning_config: new PlanningConfig({ reasoning_effort: "medium" }),
+      llm: {
+        call() {
+          throw new Error("observer unavailable");
+        },
+      },
+    } as unknown as Agent;
+    const executor = new AgentExecutor({ agent, task });
+    executor.state.todos.items = [
+      new TodoItem({
+        stepNumber: 1,
+        description: "Search docs",
+        status: TodoStatus.RUNNING,
+        result: "cached docs",
+      }),
+    ];
+    const offStarted = crewaiEventBus.on("step_observation_started", (_source, event) => {
+      observationEvents.push(event as unknown as Record<string, unknown>);
+    });
+    const offFailed = crewaiEventBus.on("step_observation_failed", (_source, event) => {
+      observationEvents.push(event as unknown as Record<string, unknown>);
+    });
+
+    try {
+      expect(executor.observe_step_result()).toBe("step_observed_medium");
+    } finally {
+      offStarted();
+      offFailed();
+    }
+
+    expect(executor.state.observations[1]).toMatchObject({
+      step_completed_successfully: true,
+      key_information_learned: "cached docs",
+      remaining_plan_still_valid: true,
+      needs_full_replan: false,
+    });
+    expect(observationEvents).toEqual([
+      expect.objectContaining({
+        type: "step_observation_started",
+        agent_role: "Observer",
+        step_number: 1,
+        step_description: "Search docs",
+        from_task: task,
+        from_agent: agent,
+      }),
+      expect.objectContaining({
+        type: "step_observation_failed",
+        agent_role: "Observer",
+        step_number: 1,
+        step_description: "Search docs",
+        error: "observer unavailable",
+        from_task: task,
+        from_agent: agent,
+      }),
+    ]);
+  });
+
   it("uses heuristic AgentExecutor step observation when observe_steps is disabled", () => {
     const executor = new AgentExecutor({
       agent: {
