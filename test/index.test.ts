@@ -16110,6 +16110,40 @@ describe("core crew runtime", () => {
     expect(maxConcurrent).toBeGreaterThan(1);
   });
 
+  it("returns a forced final answer when CrewAgentExecutor async ReAct loop reaches max iterations", async () => {
+    const executor = new CrewAgentExecutor({
+      llm: {
+        async acall() {
+          await Promise.resolve();
+          return "Thought: I need to think more\nAction: lookup\nAction Input: {}";
+        },
+        call() {
+          return "Thought: Max iterations\nFinal Answer: Forced answer";
+        },
+      },
+      prompt: { prompt: "Prompt {input}" },
+      maxIter: 2,
+      tools: [
+        new StructuredTool({
+          name: "lookup",
+          description: "Lookup facts",
+          func: () => "Tool result",
+        }),
+      ],
+    });
+    const showLogs = vi.spyOn(executor, "_show_logs").mockImplementation(() => undefined);
+
+    try {
+      await expect(executor.ainvoke({ input: "test", tool_names: "lookup", tools: "Lookup facts" }))
+        .resolves.toEqual({ output: "Forced answer" });
+    } finally {
+      showLogs.mockRestore();
+    }
+
+    expect(executor.iterations).toBe(2);
+    expect(executor.messages.at(-1)?.content).toContain("Now it's time you MUST give your absolute best final answer");
+  });
+
   it("surfaces async AgentExecutor step callback task errors without rejecting sync execution", async () => {
     const printSpy = vi.spyOn(PRINTER, "print").mockImplementation(() => undefined);
     try {

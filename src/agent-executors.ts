@@ -9,6 +9,7 @@ import {
   extractTaskSection,
   extractToolCallInfo,
   formatMessageForLLM,
+  agetLlmResponse,
   handleAgentActionCore,
   handleContextLength,
   handleOutputParserException,
@@ -44,7 +45,7 @@ import { BaseLLM, callStopOverrideSync, UsageMetrics, type LLMCallOptions, type 
 import { PRINTER } from "./logger.js";
 import { sanitize_scope_name } from "./memory.js";
 import { StepExecutionContext, StepResult } from "./step-execution-context.js";
-import { sanitizeToolName } from "./tools.js";
+import { aexecuteToolAndCheckFinality, sanitizeToolName } from "./tools.js";
 import type { InputValues, LLMMessage, MaybePromise, Tool } from "./types.js";
 
 export const ACTION_INPUT_REGEX = /Action\s*\d*\s*:\s*(.*?)\s*Action\s*\d*\s*Input\s*\d*\s*:\s*(.*)/s;
@@ -2450,8 +2451,60 @@ export class CrewAgentExecutor extends BaseAgentExecutor {
   }
 
   async _ainvoke_loop(): Promise<AgentFinish> {
-    const result = await this._invoke_loop();
-    return result;
+    const llm = this.llm as {
+      acall?: (messages: readonly LLMMessage[], options?: Record<string, unknown>) => MaybePromise<unknown>;
+      call?: (messages: readonly LLMMessage[], options?: Record<string, unknown>) => MaybePromise<unknown>;
+    } | null;
+    if (!llm || (typeof llm.acall !== "function" && typeof llm.call !== "function")) {
+      const result = await this._invoke_loop();
+      return result;
+    }
+
+    let formattedAnswer: AgentAction | AgentFinish | null = null;
+    while (this.iterations < this.maxIter) {
+      this.iterations += 1;
+      const response = await agetLlmResponse(llm, this.messages, {
+        callbacks: this.callbacks,
+        executorContext: this,
+        executor_context: this,
+      });
+      const parsed = processLlmResponse(response, this.use_stop_words);
+      if (parsed instanceof AgentFinish) {
+        this._show_logs(parsed);
+        return parsed;
+      }
+      if (parsed instanceof AgentAction) {
+        const toolResult = await aexecuteToolAndCheckFinality(parsed, this.tools, {
+          agent: this.agent,
+          task: this.task,
+          crew: this.crew,
+        });
+        formattedAnswer = this._handle_agent_action(parsed, toolResult);
+        this._invoke_step_callback(formattedAnswer);
+        if (formattedAnswer instanceof AgentFinish) {
+          this._show_logs(formattedAnswer);
+          return formattedAnswer;
+        }
+        continue;
+      }
+
+      const text = stringifyCrewExecutorValue(parsed);
+      return new AgentFinish({ thought: "", output: text, text });
+    }
+
+    const forced = handleMaxIterationsExceeded({
+      formattedAnswer,
+      messages: this.messages,
+      llm,
+      callbacks: this.callbacks,
+      verbose: Boolean(this.agent?.verbose),
+      printer: {
+        print: ({ content }) => {
+          PRINTER.print(content);
+        },
+      },
+    });
+    return await forced;
   }
 
   _invoke_loop_react(): AgentFinish {
