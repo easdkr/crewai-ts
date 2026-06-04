@@ -2580,9 +2580,14 @@ export class StepExecutor {
       }
       toolCallsMade.push(name);
       const fn = this.availableFunctions[name] ?? this.availableFunctions[sanitizeToolName(name)];
-      const result = typeof fn === "function"
-        ? await (fn as (input: unknown) => MaybePromise<unknown>)(args)
-        : await this.runToolByName(name, args);
+      let result: unknown;
+      try {
+        result = typeof fn === "function"
+          ? await (fn as (input: unknown) => MaybePromise<unknown>)(args)
+          : await this.runToolByName(name, args);
+      } catch (error) {
+        result = `Error executing tool: ${executorErrorMessage(error)}`;
+      }
       const text = stringifyStepResult(result);
       results.push(text);
       messages.push({

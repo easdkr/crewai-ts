@@ -117,6 +117,7 @@ This register is the source of truth for continuing porting work while parity sc
 - AgentExecutor object-style invoke error diagnostics are release-gated for upstream behavior: sync and async kickoff failures print the same verbose unknown-error guidance before rethrowing and still clear the executor reentrancy guard.
 - AgentExecutor native tool failures are release-gated for upstream task accounting: failed native tool calls append an error tool message and increment the task tool-error counter before continuing the reasoning loop.
 - AgentExecutor text-parsed tool failures are release-gated for upstream retry behavior: failed regular tool actions increment the task tool-error counter, append an error observation, and continue with the post-tool reasoning prompt instead of throwing out of the execution loop.
+- StepExecutor isolated native tool failures are release-gated for upstream retry behavior: failed native tool calls are converted into deterministic error tool messages and preserve `tool_calls_made` instead of aborting isolated step execution.
 
 ## Known Remaining Porting Areas
 

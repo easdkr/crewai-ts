@@ -13868,6 +13868,25 @@ describe("core crew runtime", () => {
       tool_call_id: "call-1",
     });
 
+    const failingNativeMessages: unknown[] = [];
+    const failingNativeCallsMade: string[] = [];
+    const failingNativeExecutor = new StepExecutor({
+      available_functions: {
+        failing_lookup: () => {
+          throw new Error("lookup failed");
+        },
+      },
+    });
+    await expect(failingNativeExecutor._execute_native_tool_calls([
+      { id: "call-fail", function: { name: "failing_lookup", arguments: "{}" } },
+    ], failingNativeMessages as LLMMessage[], failingNativeCallsMade)).resolves.toBe("Error executing tool: lookup failed");
+    expect(failingNativeCallsMade).toEqual(["failing_lookup"]);
+    expect(failingNativeMessages.at(-1)).toMatchObject({
+      role: "tool",
+      content: "Error executing tool: lookup failed",
+      tool_call_id: "call-fail",
+    });
+
     const nativeLoopResponses: unknown[] = [
       [{ id: "call-2", function: { name: "lookup", arguments: "{\"query\":\"Agents\"}" } }],
       "native final",
