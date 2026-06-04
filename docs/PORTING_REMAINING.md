@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 1053 passing tests.
+- Test suite: 1054 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -162,6 +162,7 @@ This register is the source of truth for continuing porting work while parity sc
 - CrewAgentExecutor async object-style reset is release-gated for upstream async executor lifecycle semantics: `ainvoke` clears stale messages and iteration counts before a fresh task while preserving the newly formatted prompt message.
 - CrewAgentExecutor async object-style error propagation is release-gated for upstream async executor semantics: `ainvoke` rethrows `_ainvoke_loop` failures after prompt setup and does not save failed outputs to memory.
 - CrewAgentExecutor concurrent async object invocations are release-gated for upstream async executor semantics: independent executor instances can run `ainvoke` concurrently and return their own outputs without serializing the loop.
+- CrewAgentExecutor async ReAct final-answer parsing is release-gated for upstream async loop semantics: `_ainvoke_loop` calls the async LLM path once for direct final-answer responses and returns the parsed `AgentFinish` output.
 - CrewAgentExecutor async ReAct max-iteration handling is release-gated for upstream async loop semantics: `_ainvoke_loop` iterates through async LLM/tool actions and returns a forced final answer through the upstream max-iteration prompt when the loop limit is reached.
 - CrewAgentExecutor async ReAct tool execution is release-gated for upstream async loop semantics: `_ainvoke_loop` parses async LLM tool actions, executes the matching tool, appends the tool observation, and continues to the final LLM answer.
 - Crew agent parser input handling is release-gated for upstream ReAct parsing edge cases: incomplete JSON object tool inputs close open strings and braces before normalization, unbalanced quoted non-JSON tool inputs are preserved without the stray leading quote, and literal bracketed, multiline, and escaped-character tool inputs pass through unchanged.

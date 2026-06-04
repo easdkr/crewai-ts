@@ -16110,6 +16110,30 @@ describe("core crew runtime", () => {
     expect(maxConcurrent).toBeGreaterThan(1);
   });
 
+  it("parses CrewAgentExecutor async ReAct final answers from LLM responses", async () => {
+    let calls = 0;
+    const executor = new CrewAgentExecutor({
+      llm: {
+        async acall() {
+          calls += 1;
+          await Promise.resolve();
+          return "Thought: I know the answer\nFinal Answer: Test result";
+        },
+      },
+      prompt: { prompt: "Prompt {input}" },
+    });
+    const showLogs = vi.spyOn(executor, "_show_logs").mockImplementation(() => undefined);
+
+    try {
+      await expect(executor.ainvoke({ input: "test", tool_names: "", tools: "" }))
+        .resolves.toEqual({ output: "Test result" });
+    } finally {
+      showLogs.mockRestore();
+    }
+
+    expect(calls).toBe(1);
+  });
+
   it("returns a forced final answer when CrewAgentExecutor async ReAct loop reaches max iterations", async () => {
     const executor = new CrewAgentExecutor({
       llm: {
