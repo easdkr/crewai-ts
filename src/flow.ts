@@ -3977,12 +3977,13 @@ export function isSimpleFlowCondition(value: unknown): value is [string, string[
 export const is_simple_flow_condition = isSimpleFlowCondition;
 
 export function isFlowMethod(value: unknown): boolean {
-  return isRecord(value)
+  return (typeof value === "function" || isRecord(value))
     && (
-      value.__is_flow_method__ === true
-      || value.__is_start_method__ === true
+      (value as Record<string, unknown>).__is_flow_method__ === true
+      || (value as Record<string, unknown>).__is_start_method__ === true
       || "__trigger_methods__" in value
-      || value.__is_router__ === true
+      || (value as Record<string, unknown>).__is_router__ === true
+      || FLOW_METHOD_DEFINITION_ATTR in value
     );
 }
 
@@ -4575,6 +4576,7 @@ function flowDecorator(
     value: AnyFlowMethod<This>,
     context: ClassMethodDecoratorContext<This, AnyFlowMethod<This>>,
   ): AnyFlowMethod<This> {
+    attachFlowMethodDefinition(value, kind, condition, emit);
     context.addInitializer(function init(this: This) {
       const ctor = this.constructor as FlowMetadataTarget;
       const entries = flowMetadata.get(ctor) ?? [];
@@ -4583,6 +4585,27 @@ function flowDecorator(
     });
     return value;
   };
+}
+
+function attachFlowMethodDefinition(
+  method: unknown,
+  kind: FlowMethodKind,
+  condition: FlowCondition | null,
+  emit: readonly string[] | null,
+): void {
+  if (typeof method !== "function" && !isRecord(method)) {
+    return;
+  }
+  (method as Record<string, unknown>)[FLOW_METHOD_DEFINITION_ATTR] = new FlowMethodDefinition({
+    start: kind === "start"
+      ? condition ? flowDefinitionCondition(condition) : true
+      : null,
+    listen: kind === "listen" || kind === "router"
+      ? condition ? flowDefinitionCondition(condition) : null
+      : null,
+    router: kind === "router",
+    emit: kind === "router" && emit ? uniqueStrings(emit) : null,
+  });
 }
 
 function normalizeFlowCondition(condition: FlowConditionInput | undefined): FlowCondition | null {
