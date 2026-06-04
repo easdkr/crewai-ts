@@ -33264,6 +33264,44 @@ describe("hierarchical process", () => {
     expect(managerCalls[0]).toContain("Research CrewAI");
   });
 
+  it("limits hierarchical manager delegation tools to the assigned task agent", () => {
+    const researcher = new Agent({
+      role: "Researcher",
+      goal: "Find facts",
+      backstory: "Careful analyst",
+    });
+    const writer = new Agent({
+      role: "Writer",
+      goal: "Write",
+      backstory: "Careful writer",
+    });
+    const assignedTask = new Task({
+      description: "Research assigned",
+      expectedOutput: "A concise brief",
+      agent: researcher,
+    });
+    const unassignedTask = new Task({
+      description: "Research unassigned",
+      expectedOutput: "A concise brief",
+    });
+    const crew = new Crew({
+      agents: [researcher, writer],
+      tasks: [assignedTask, unassignedTask],
+      process: Process.hierarchical,
+      managerLlm: () => "manager",
+    });
+    crew._create_manager_agent();
+
+    const assignedTools = crew._update_manager_tools(assignedTask, []);
+    const unassignedTools = crew._update_manager_tools(unassignedTask, []);
+
+    expect(assignedTools).toHaveLength(2);
+    expect(assignedTools.map((tool) => tool.description).join("\n")).toContain("Researcher");
+    expect(assignedTools.map((tool) => tool.description).join("\n")).not.toContain("Writer");
+    expect(unassignedTools.map((tool) => tool.description).join("\n")).toContain("Researcher");
+    expect(unassignedTools.map((tool) => tool.description).join("\n")).toContain("Writer");
+  });
+
   it("rejects manager agents that are included in regular agents", () => {
     const manager = new Agent({
       role: "Manager",
