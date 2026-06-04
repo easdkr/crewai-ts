@@ -2502,6 +2502,37 @@ describe("environment, logging, and file store utilities", () => {
     }]);
   });
 
+  it("formats Anthropic multimodal files as base64 source blocks", () => {
+    const pngBytes = Buffer.concat([
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      Buffer.from("anthropic-image"),
+    ]);
+    const pdfBytes = Buffer.from("%PDF-1.4 anthropic document");
+    const result = format_multimodal_content({
+      chart: new ImageFile({ source: pngBytes }),
+      doc: new PDFFile({ source: pdfBytes }),
+    }, "anthropic/claude-3-sonnet-20240229");
+
+    expect(result).toEqual([
+      {
+        type: "image",
+        source: {
+          type: "base64",
+          media_type: "image/png",
+          data: pngBytes.toString("base64"),
+        },
+      },
+      {
+        type: "document",
+        source: {
+          type: "base64",
+          media_type: "application/pdf",
+          data: pdfBytes.toString("base64"),
+        },
+      },
+    ]);
+  });
+
   it("skips unsupported OpenAI multimodal text files", () => {
     const files = {
       doc: new TextFile({ source: Buffer.from("hello world") }),

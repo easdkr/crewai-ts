@@ -1520,11 +1520,29 @@ export function formatMultimodalContent(
   const normalizedProvider = provider.toLowerCase();
   const result: Record<string, unknown>[] = [];
   for (const [name, file] of Object.entries(files)) {
-    if (!isOpenAIProvider(normalizedProvider) && !isGeminiProvider(normalizedProvider)) {
+    if (!isOpenAIProvider(normalizedProvider) && !isGeminiProvider(normalizedProvider) && !isAnthropicProvider(normalizedProvider)) {
       continue;
     }
     const encoded = Buffer.from(file.read()).toString("base64");
-    if (isGeminiProvider(normalizedProvider) && file instanceof ImageFile) {
+    if (isAnthropicProvider(normalizedProvider) && file instanceof ImageFile) {
+      result.push({
+        type: "image",
+        source: {
+          type: "base64",
+          media_type: file.contentType,
+          data: encoded,
+        },
+      });
+    } else if (isAnthropicProvider(normalizedProvider) && file instanceof PDFFile) {
+      result.push({
+        type: "document",
+        source: {
+          type: "base64",
+          media_type: file.contentType,
+          data: encoded,
+        },
+      });
+    } else if (isGeminiProvider(normalizedProvider) && file instanceof ImageFile) {
       result.push({
         inlineData: {
           mimeType: file.contentType,
@@ -1596,6 +1614,13 @@ function isGeminiProvider(provider: string): boolean {
     || provider === "google"
     || provider.startsWith("gemini/")
     || provider.startsWith("google/");
+}
+
+function isAnthropicProvider(provider: string): boolean {
+  return provider === "anthropic"
+    || provider === "claude"
+    || provider.startsWith("anthropic/")
+    || provider.startsWith("claude");
 }
 
 function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
