@@ -12171,6 +12171,92 @@ describe("RAG configuration and factories", () => {
     });
   });
 
+  it("splits ChromaDB add_documents batches like upstream sync and async clients", async () => {
+    const syncCollection = { upsert: vi.fn() };
+    const syncClient = new ChromaDBClient({
+      get_or_create_collection: vi.fn(() => syncCollection),
+    }, (texts: readonly string[]) => texts.map((text) => [text.length]), 5, 0.6, 2);
+
+    expect(syncClient.default_batch_size).toBe(2);
+    syncClient.add_documents({
+      collection_name: "test_collection",
+      documents: [
+        { doc_id: "id1", content: "Document 1", metadata: { source: "test1" } },
+        { doc_id: "id2", content: "Document 2", metadata: { source: "test2" } },
+        { doc_id: "id3", content: "Document 3", metadata: { source: "test3" } },
+        { doc_id: "id4", content: "Document 4", metadata: { source: "test4" } },
+        { doc_id: "id5", content: "Document 5", metadata: { source: "test5" } },
+      ],
+    });
+
+    expect(syncCollection.upsert).toHaveBeenCalledTimes(3);
+    expect(syncCollection.upsert).toHaveBeenNthCalledWith(1, {
+      ids: ["id1", "id2"],
+      documents: ["Document 1", "Document 2"],
+      metadatas: [{ source: "test1" }, { source: "test2" }],
+    });
+    expect(syncCollection.upsert).toHaveBeenNthCalledWith(2, {
+      ids: ["id3", "id4"],
+      documents: ["Document 3", "Document 4"],
+      metadatas: [{ source: "test3" }, { source: "test4" }],
+    });
+    expect(syncCollection.upsert).toHaveBeenNthCalledWith(3, {
+      ids: ["id5"],
+      documents: ["Document 5"],
+      metadatas: [{ source: "test5" }],
+    });
+
+    const explicitCollection = { upsert: vi.fn() };
+    const explicitClient = new ChromaDBClient({
+      get_or_create_collection: vi.fn(() => explicitCollection),
+    }, (texts: readonly string[]) => texts.map((text) => [text.length]));
+    explicitClient.add_documents({
+      collection_name: "test_collection",
+      batch_size: 1,
+      documents: [
+        { doc_id: "id1", content: "Document 1" },
+        { doc_id: "id2", content: "Document 2" },
+        { doc_id: "id3", content: "Document 3" },
+      ],
+    });
+    expect(explicitCollection.upsert).toHaveBeenCalledTimes(3);
+    for (const [index, call] of explicitCollection.upsert.mock.calls.entries()) {
+      expect((call[0] as { ids: string[] }).ids).toEqual([`id${String(index + 1)}`]);
+    }
+
+    const asyncCollection = {
+      upsert: vi.fn(async () => {
+        await Promise.resolve();
+      }),
+    };
+    const asyncClient = new ChromaDBClient({
+      get_or_create_collection: async () => await Promise.resolve(asyncCollection),
+      reset: async () => {
+        await Promise.resolve();
+      },
+    }, (texts: readonly string[]) => texts.map((text) => [text.length]), 5, 0.6, 2);
+    await asyncClient.aadd_documents({
+      collection_name: "test_collection",
+      documents: [
+        { doc_id: "id1", content: "Document 1", metadata: { source: "test1" } },
+        { doc_id: "id2", content: "Document 2", metadata: { source: "test2" } },
+        { doc_id: "id3", content: "Document 3", metadata: { source: "test3" } },
+      ],
+    });
+
+    expect(asyncCollection.upsert).toHaveBeenCalledTimes(2);
+    expect(asyncCollection.upsert).toHaveBeenNthCalledWith(1, {
+      ids: ["id1", "id2"],
+      documents: ["Document 1", "Document 2"],
+      metadatas: [{ source: "test1" }, { source: "test2" }],
+    });
+    expect(asyncCollection.upsert).toHaveBeenNthCalledWith(2, {
+      ids: ["id3"],
+      documents: ["Document 3"],
+      metadatas: [{ source: "test3" }],
+    });
+  });
+
   it("uses upstream ChromaDB document id hashing and duplicate deduplication in add paths", () => {
     const collection = { upsert: vi.fn() };
     const client = new ChromaDBClient({
