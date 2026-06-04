@@ -19868,6 +19868,16 @@ describe("agent planning", () => {
     expect(config.llm).toBe("gpt-4o-mini");
   });
 
+  it("validates upstream PlanningConfig reasoning effort levels", () => {
+    expect(new PlanningConfig().reasoning_effort).toBe("medium");
+    for (const level of ["low", "medium", "high"] as const) {
+      expect(new PlanningConfig({ reasoning_effort: level }).reasoning_effort).toBe(level);
+    }
+    expect(() => new PlanningConfig({ reasoning_effort: "ultra" as never })).toThrow(
+      "PlanningConfig reasoningEffort must be 'low', 'medium', or 'high'.",
+    );
+  });
+
   it("exposes upstream AgentReasoning prompt and parsing helpers", () => {
     const reasoning = new AgentReasoning({
       agent: {
