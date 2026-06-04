@@ -1017,7 +1017,10 @@ export class Task {
       ? this.context.map((contextTask: Task) => taskMapping[contextTask.key] ?? contextTask)
       : this.context;
     const clonedAgent = this.agent ? get_agent_by_role(agents, this.agent.role) ?? this.agent : null;
-    return new (this.constructor as new (options: TaskOptions) => Task)({
+    const conditionalOptions = "condition" in this
+      ? { condition: (this as unknown as { condition: ConditionalTaskCondition | null }).condition }
+      : {};
+    return new (this.constructor as new (options: TaskOptions & { condition?: ConditionalTaskCondition | null }) => Task)({
       name: this.name,
       description: this.description,
       expectedOutput: this.expectedOutput,
@@ -1055,6 +1058,7 @@ export class Task {
       checkpointOriginalExpectedOutput: this.checkpointOriginalExpectedOutput,
       checkpointOriginalOutputFile: this.checkpointOriginalOutputFile,
       securityConfig: this.securityConfig,
+      ...conditionalOptions,
     });
   }
 

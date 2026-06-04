@@ -30413,6 +30413,32 @@ describe("conditional tasks", () => {
     expect(skipped.output_format).toBe(OutputFormat.RAW);
   });
 
+  it("preserves conditional task type and condition when copied", async () => {
+    const researcher = new Agent({
+      role: "Researcher",
+      goal: "Find facts",
+      backstory: "Careful analyst",
+      llm: () => "done",
+    });
+    const condition = (output: TaskOutput) => output.raw === "ready";
+    const original = new ConditionalTask({
+      description: "conditional",
+      expectedOutput: "conditional",
+      agent: researcher,
+      condition,
+    });
+
+    const copied = original.copy([researcher], {});
+
+    expect(copied).toBeInstanceOf(ConditionalTask);
+    expect((copied as ConditionalTask).condition).toBe(condition);
+    await expect((copied as ConditionalTask).should_execute(new TaskOutput({
+      description: "Previous",
+      raw: "ready",
+      agent: "Researcher",
+    }))).resolves.toBe(true);
+  });
+
   it("flushes pending async outputs before evaluating a conditional task", async () => {
     const researcher = new Agent({
       role: "Researcher",
