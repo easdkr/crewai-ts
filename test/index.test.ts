@@ -20509,6 +20509,40 @@ describe("agent planning", () => {
     expect(prompts.at(-1)).not.toContain("Planning:");
   });
 
+  it("injects generated plans into execute_task prompts when planning is enabled", async () => {
+    const prompts: string[] = [];
+    let callCount = 0;
+    const agentInstance = new Agent({
+      role: "Math Tutor",
+      goal: "Solve math problems step by step",
+      backstory: "An expert tutor",
+      planning_config: new PlanningConfig({ max_attempts: 1 }),
+      llm: (messages) => {
+        const content = messages.at(-1)?.content ?? "";
+        prompts.push(content);
+        callCount += 1;
+        if (callCount === 1) {
+          return JSON.stringify({
+            plan: "Compute radius squared, then multiply by pi.",
+            ready: true,
+            steps: [],
+          });
+        }
+        return "78.5";
+      },
+    });
+    const task = {
+      description: "Calculate the area of a circle with radius 5 (use pi = 3.14)",
+      expected_output: "The area as a number",
+    };
+
+    await expect(agentInstance.execute_task({ task })).resolves.toBe("78.5");
+
+    expect(prompts).toHaveLength(2);
+    expect(prompts.at(-1)).toContain("Planning:\nCompute radius squared, then multiply by pi.");
+    expect(task.description).toBe("Calculate the area of a circle with radius 5 (use pi = 3.14)");
+  });
+
   it("runs reasoning before kickoff and refines until the plan is ready", async () => {
     const prompts: string[] = [];
     const events: CrewAIEvent[] = [];
