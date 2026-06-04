@@ -19159,6 +19159,55 @@ describe("flow runtime", () => {
     expect(routerEmit).toEqual({ route: ["approved", "rejected"] });
   });
 
+  it("builds FlowDefinition human feedback metadata from upstream static DSL method attrs", () => {
+    class StaticFeedbackDefinitionFlow extends Flow {
+      begin() {
+        return "begin";
+      }
+    }
+
+    const beginMethod = Object.getOwnPropertyDescriptor(StaticFeedbackDefinitionFlow.prototype, "begin")?.value as Record<string, unknown>;
+    beginMethod.__flow_method_definition__ = new FlowMethodDefinition({ start: true });
+
+    const feedbackHandler = Object.assign(() => "reviewed", {
+      __flow_method_definition__: new FlowMethodDefinition({ listen: "begin" }),
+      __human_feedback_config__: {
+        message: "Review static output.",
+        emit: ["approved", "rejected"],
+        llm: "gpt-4o-mini",
+        default_outcome: "approved",
+        metadata: { source: "static" },
+        learn: true,
+        learn_source: "static-review",
+        learn_strict: true,
+      },
+    });
+
+    const buildWithNamespace = buildFlowDefinition as (
+      flowClass: typeof StaticFeedbackDefinitionFlow,
+      namespace?: Record<string, unknown>,
+    ) => FlowDefinition;
+    const definition = buildWithNamespace(StaticFeedbackDefinitionFlow, {
+      feedbackHandler,
+    });
+    const method = definition.methods.feedbackHandler;
+
+    expect(method?.router).toBe(true);
+    expect(method?.emit).toBeNull();
+    expect(method?.listen).toBe("begin");
+    expect(method?.human_feedback).toMatchObject({
+      message: "Review static output.",
+      emit: ["approved", "rejected"],
+      llm: "gpt-4o-mini",
+      default_outcome: "approved",
+      metadata: { source: "static" },
+      learn: true,
+      learn_source: "static-review",
+      learn_strict: true,
+    });
+    expect(definition.diagnostics).toEqual([]);
+  });
+
   it("builds FlowDefinition config from upstream static class config fields", () => {
     class StaticConfigDefinitionFlow extends Flow {
       static stream = true;

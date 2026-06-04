@@ -3264,18 +3264,21 @@ export function buildFlowDefinition(
 ): FlowDefinition {
   const entries = getFlowMetadata(instanceOrConstructor);
   const staticDefinitions = getStaticFlowMethodDefinitions(instanceOrConstructor, namespace);
+  const staticMethodValues = getStaticFlowMethodValues(instanceOrConstructor, namespace);
   const feedbackMetadata = getHumanFeedbackMetadata(instanceOrConstructor);
   const methods: Record<string, FlowMethodDefinition> = {};
   const diagnostics: FlowDefinition["diagnostics"] = [];
   const methodNames = [...new Set([
     ...entries.map((entry) => String(entry.name)),
     ...staticDefinitions.keys(),
+    ...staticMethodValues.keys(),
   ])];
 
   for (const methodName of methodNames) {
     const methodEntries = entries.filter((entry) => String(entry.name) === methodName);
     const staticDefinition = staticDefinitions.get(methodName) ?? null;
-    const feedback = feedbackMetadata.get(methodName);
+    const feedback = feedbackMetadata.get(methodName)
+      ?? flowHumanFeedbackConfigFromStaticMetadata(staticMethodValues.get(methodName));
     const humanFeedback = feedback ? flowHumanFeedbackDefinition(feedback, methodName, diagnostics) : null;
     const definition = new FlowMethodDefinition({
       start: staticDefinition?.start ?? flowDefinitionStart(methodEntries),
@@ -3440,6 +3443,45 @@ function getStaticFlowMethodDefinitions(
   return definitions;
 }
 
+function getStaticFlowMethodValues(
+  instanceOrConstructor: object | FlowMetadataTarget,
+  namespace: Record<string, unknown> | null = null,
+): Map<string, unknown> {
+  const ctor = typeof instanceOrConstructor === "function"
+    ? instanceOrConstructor as FlowMetadataTarget
+    : instanceOrConstructor.constructor as FlowMetadataTarget;
+  const values = new Map<string, unknown>();
+  const prototypes: object[] = [];
+  let current: object | null = ctor.prototype as object | null;
+  while (current && current !== Object.prototype) {
+    prototypes.unshift(current);
+    current = Object.getPrototypeOf(current) as object | null;
+  }
+
+  const maybeSet = (name: string, value: unknown) => {
+    if (
+      flowMethodDefinitionFromStaticMetadata(value)
+      || flowHumanFeedbackConfigFromStaticMetadata(value)
+    ) {
+      values.set(name, value);
+    }
+  };
+
+  for (const prototype of prototypes) {
+    for (const name of Object.getOwnPropertyNames(prototype)) {
+      if (name === "constructor") {
+        continue;
+      }
+      const descriptor: PropertyDescriptor | undefined = Object.getOwnPropertyDescriptor(prototype, name);
+      maybeSet(name, descriptor ? descriptor.value as unknown : undefined);
+    }
+  }
+  for (const [name, value] of Object.entries(namespace ?? {})) {
+    maybeSet(name, value);
+  }
+  return values;
+}
+
 function flowMethodDefinitionFromStaticMetadata(method: unknown): FlowMethodDefinition | null {
   if (!method || (typeof method !== "function" && typeof method !== "object")) {
     return null;
@@ -3452,6 +3494,17 @@ function flowMethodDefinitionFromStaticMetadata(method: unknown): FlowMethodDefi
     return new FlowMethodDefinition(fragment);
   }
   return null;
+}
+
+function flowHumanFeedbackConfigFromStaticMetadata(method: unknown): HumanFeedbackConfig | null {
+  if (!method || (typeof method !== "function" && typeof method !== "object")) {
+    return null;
+  }
+  const config = (method as Record<string, unknown>).__human_feedback_config__;
+  if (!isRecord(config)) {
+    return null;
+  }
+  return normalizeHumanFeedbackConfig(config as HumanFeedbackConfig);
 }
 
 function addConversationalFlowDefinitionMethods(
