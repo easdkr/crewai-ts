@@ -1520,11 +1520,18 @@ export function formatMultimodalContent(
   const normalizedProvider = provider.toLowerCase();
   const result: Record<string, unknown>[] = [];
   for (const [name, file] of Object.entries(files)) {
-    if (!isOpenAIProvider(normalizedProvider)) {
+    if (!isOpenAIProvider(normalizedProvider) && !isGeminiProvider(normalizedProvider)) {
       continue;
     }
     const encoded = Buffer.from(file.read()).toString("base64");
-    if (file instanceof PDFFile && api === "responses") {
+    if (isGeminiProvider(normalizedProvider) && file instanceof ImageFile) {
+      result.push({
+        inlineData: {
+          mimeType: file.contentType,
+          data: encoded,
+        },
+      });
+    } else if (file instanceof PDFFile && api === "responses") {
       result.push({
         type: "input_file",
         filename: file.filename ?? `${name}.pdf`,
@@ -1582,6 +1589,13 @@ function isOpenAIProvider(provider: string): boolean {
     || provider.startsWith("o1")
     || provider.startsWith("o3")
     || provider.startsWith("o4");
+}
+
+function isGeminiProvider(provider: string): boolean {
+  return provider === "gemini"
+    || provider === "google"
+    || provider.startsWith("gemini/")
+    || provider.startsWith("google/");
 }
 
 function isPromiseLike(value: unknown): value is PromiseLike<unknown> {

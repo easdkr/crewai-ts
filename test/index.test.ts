@@ -2485,6 +2485,23 @@ describe("environment, logging, and file store utilities", () => {
     expect(Buffer.from(url.split(",")[1] ?? "", "base64")).toEqual(pngBytes);
   });
 
+  it("formats Gemini multimodal image files as inlineData blocks", () => {
+    const pngBytes = Buffer.concat([
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      Buffer.from("gemini-image"),
+    ]);
+    const result = format_multimodal_content({
+      chart: new ImageFile({ source: pngBytes }),
+    }, "gemini/gemini-pro");
+
+    expect(result).toEqual([{
+      inlineData: {
+        mimeType: "image/png",
+        data: pngBytes.toString("base64"),
+      },
+    }]);
+  });
+
   it("skips unsupported OpenAI multimodal text files", () => {
     const files = {
       doc: new TextFile({ source: Buffer.from("hello world") }),
