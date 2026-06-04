@@ -16044,6 +16044,26 @@ describe("core crew runtime", () => {
     expect(executor.messages).toEqual([{ role: "user", content: "Prompt task 2" }]);
   });
 
+  it("propagates CrewAgentExecutor async object invocation errors without saving memory", async () => {
+    const executor = new CrewAgentExecutor({
+      prompt: { prompt: "Prompt {input}" },
+    });
+    const startLogs = vi.spyOn(executor, "_show_start_logs").mockImplementation(() => undefined);
+    const saveToMemory = vi.spyOn(executor, "_save_to_memory").mockImplementation(() => undefined);
+    const invokeLoop = vi.spyOn(executor, "_ainvoke_loop").mockRejectedValue(new Error("Test error"));
+
+    try {
+      await expect(executor.ainvoke({ input: "test", tool_names: "", tools: "" }))
+        .rejects.toThrow("Test error");
+      expect(saveToMemory).not.toHaveBeenCalled();
+      expect(executor.messages).toEqual([{ role: "user", content: "Prompt test" }]);
+    } finally {
+      invokeLoop.mockRestore();
+      saveToMemory.mockRestore();
+      startLogs.mockRestore();
+    }
+  });
+
   it("surfaces async AgentExecutor step callback task errors without rejecting sync execution", async () => {
     const printSpy = vi.spyOn(PRINTER, "print").mockImplementation(() => undefined);
     try {
