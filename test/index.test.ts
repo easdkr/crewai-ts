@@ -19110,6 +19110,55 @@ describe("flow runtime", () => {
     expect(routerEmit).toEqual({ decide: ["done"] });
   });
 
+  it("preserves upstream DSL fragments through stacked human feedback decorators", () => {
+    class FeedbackFragmentFlow extends Flow {
+      route() {
+        return "draft";
+      }
+    }
+
+    type TestMethod = (this: FeedbackFragmentFlow, ...args: unknown[]) => unknown;
+    const original = Object.getOwnPropertyDescriptor(FeedbackFragmentFlow.prototype, "route")?.value as TestMethod;
+    const context = {
+      kind: "method",
+      name: "route",
+      static: false,
+      private: false,
+      access: {
+        has: (object: FeedbackFragmentFlow) => "route" in object,
+        get: (object: FeedbackFragmentFlow) => (object as unknown as Record<string, TestMethod>).route,
+      },
+      addInitializer: () => undefined,
+      metadata: undefined,
+    } satisfies ClassMethodDecoratorContext<FeedbackFragmentFlow, TestMethod>;
+    const routed = (router("begin", { emit: ["inner"] }) as unknown as (
+      value: TestMethod,
+      context: ClassMethodDecoratorContext<FeedbackFragmentFlow, TestMethod>,
+    ) => TestMethod)(original, context);
+    const wrapped = (humanFeedback({
+      message: "Review",
+      emit: ["approved", "rejected"],
+      llm: "gpt-4o-mini",
+    }) as unknown as (
+      value: TestMethod,
+      context: ClassMethodDecoratorContext<FeedbackFragmentFlow, TestMethod>,
+    ) => TestMethod)(routed, context);
+
+    const fragment = (wrapped as { __flow_method_definition__?: FlowMethodDefinition }).__flow_method_definition__;
+    const [startMethods, listeners, routers, routerEmit] = extract_flow_definition({ route: wrapped });
+
+    expect(fragment).toBeInstanceOf(FlowMethodDefinition);
+    expect(fragment).toMatchObject({
+      listen: "begin",
+      router: true,
+      emit: ["approved", "rejected"],
+    });
+    expect(startMethods).toEqual([]);
+    expect(listeners).toEqual({ route: ["OR", ["begin"]] });
+    expect(routers).toEqual(new Set(["route"]));
+    expect(routerEmit).toEqual({ route: ["approved", "rejected"] });
+  });
+
   it("builds FlowDefinition config from upstream static class config fields", () => {
     class StaticConfigDefinitionFlow extends Flow {
       static stream = true;

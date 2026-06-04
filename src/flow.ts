@@ -3169,20 +3169,24 @@ export function humanFeedback(configOrMessage: HumanFeedbackConfig | string): Me
     value: AnyFlowMethod<This>,
     context: ClassMethodDecoratorContext<This, AnyFlowMethod<This>>,
   ): AnyFlowMethod<This> {
+    const normalizedConfig = normalizeHumanFeedbackConfig(config);
     context.addInitializer(function init(this: This) {
       const ctor = this.constructor as FlowMetadataTarget;
       const entries = humanFeedbackMetadata.get(ctor) ?? new Map<string, HumanFeedbackConfig>();
-      entries.set(String(context.name), normalizeHumanFeedbackConfig(config));
+      entries.set(String(context.name), normalizedConfig);
       humanFeedbackMetadata.set(ctor, entries);
     });
 
-    return async function wrapped(this: This, ...args: unknown[]): Promise<unknown> {
+    const wrapped = async function wrapped(this: This, ...args: unknown[]): Promise<unknown> {
       const output = await value.call(this, ...args);
       if (!(this instanceof Flow)) {
         return output;
       }
-      return await this.requestHumanFeedback(String(context.name), output, normalizeHumanFeedbackConfig(config), { preserveMethodOutput: true });
+      return await this.requestHumanFeedback(String(context.name), output, normalizedConfig, { preserveMethodOutput: true });
     };
+    copyFlowMethodAttributes(value, wrapped);
+    attachHumanFeedbackAttributes(wrapped, normalizedConfig);
+    return wrapped;
   };
 }
 
@@ -4622,6 +4626,52 @@ function attachFlowMethodDefinition(
     router: kind === "router",
     emit: kind === "router" && emit ? uniqueStrings(emit) : null,
   });
+}
+
+function copyFlowMethodAttributes(source: unknown, target: unknown): void {
+  if ((typeof source !== "function" && !isRecord(source)) || (typeof target !== "function" && !isRecord(target))) {
+    return;
+  }
+  const sourceRecord = source as Record<string, unknown>;
+  const targetRecord = target as Record<string, unknown>;
+  for (const key of [
+    "__is_flow_method__",
+    "__is_start_method__",
+    "__trigger_methods__",
+    "__condition_type__",
+    "__trigger_condition__",
+    "__is_router__",
+    "__router_emit__",
+    FLOW_METHOD_DEFINITION_ATTR,
+  ]) {
+    if (key in sourceRecord) {
+      targetRecord[key] = sourceRecord[key];
+    }
+  }
+}
+
+function attachHumanFeedbackAttributes(method: unknown, config: HumanFeedbackConfig): void {
+  if (typeof method !== "function" && !isRecord(method)) {
+    return;
+  }
+  const methodRecord = method as Record<string, unknown>;
+  methodRecord.__human_feedback_config__ = config;
+  methodRecord.__is_flow_method__ = true;
+  if (config.emit && config.emit.length > 0) {
+    const emit = uniqueStrings(config.emit);
+    methodRecord.__is_router__ = true;
+    methodRecord.__router_emit__ = emit;
+    const fragment = methodRecord[FLOW_METHOD_DEFINITION_ATTR];
+    const base = fragment instanceof FlowMethodDefinition ? fragment : new FlowMethodDefinition();
+    methodRecord[FLOW_METHOD_DEFINITION_ATTR] = new FlowMethodDefinition({
+      start: base.start,
+      listen: base.listen,
+      router: true,
+      emit,
+      humanFeedback: base.humanFeedback,
+      persist: base.persist,
+    });
+  }
 }
 
 function normalizeFlowCondition(condition: FlowConditionInput | undefined): FlowCondition | null {
