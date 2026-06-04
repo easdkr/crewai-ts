@@ -1613,8 +1613,11 @@ function supportsUrlReferences(provider: FileProvider): boolean {
 
 function isOpenAIProvider(provider: string): boolean {
   return provider === "openai"
+    || provider === "azure"
     || provider.startsWith("openai/")
+    || provider.startsWith("azure/")
     || provider.startsWith("gpt-")
+    || provider.startsWith("gpt-35-")
     || provider.startsWith("o1")
     || provider.startsWith("o3")
     || provider.startsWith("o4");

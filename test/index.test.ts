@@ -2485,6 +2485,22 @@ describe("environment, logging, and file store utilities", () => {
     expect(Buffer.from(url.split(",")[1] ?? "", "base64")).toEqual(pngBytes);
   });
 
+  it("formats Azure OpenAI multimodal image files as image_url data URLs", () => {
+    const pngBytes = Buffer.concat([
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      Buffer.from("azure-image-body"),
+    ]);
+    const result = format_multimodal_content({
+      chart: new ImageFile({ source: pngBytes }),
+    }, "azure/gpt-4o");
+
+    expect(result).toHaveLength(1);
+    expect(result[0]?.type).toBe("image_url");
+    const url = (result[0]?.image_url as { url?: string } | undefined)?.url ?? "";
+    expect(url.startsWith("data:image/png;base64,")).toBe(true);
+    expect(Buffer.from(url.split(",")[1] ?? "", "base64")).toEqual(pngBytes);
+  });
+
   it("formats Gemini multimodal image files as inlineData blocks", () => {
     const pngBytes = Buffer.concat([
       Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
