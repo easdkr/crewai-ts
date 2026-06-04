@@ -20471,6 +20471,20 @@ describe("agent planning", () => {
     expect(reasoning.planningConfig?.maxAttempts).toBe(5);
   });
 
+  it("creates a PlanningConfig for legacy reasoning without max attempts", () => {
+    const reasoning = new Agent({
+      role: "Worker",
+      goal: "Work",
+      backstory: "Legacy reasoning",
+      reasoning: true,
+    });
+
+    expect(reasoning.planning_enabled).toBe(true);
+    expect(reasoning.planning_config).toBeInstanceOf(PlanningConfig);
+    expect(reasoning.planning_config?.max_attempts).toBeNull();
+    expect(reasoning.planning_config?.reasoning_effort).toBe("medium");
+  });
+
   it("runs reasoning before kickoff and refines until the plan is ready", async () => {
     const prompts: string[] = [];
     const events: CrewAIEvent[] = [];
