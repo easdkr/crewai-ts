@@ -27532,6 +27532,64 @@ describe("tools", () => {
     });
   });
 
+  it("formats direct Agent Anthropic PDF input files", async () => {
+    class CapturingAnthropicLLM extends AnthropicCompletion {
+      formattedMessages: readonly LLMMessage[] = [];
+
+      constructor() {
+        super({ model: "claude-3-5-sonnet-20241022" });
+      }
+
+      override call(messages: readonly LLMMessage[]): LLMResponse {
+        this.formattedMessages = this.formatMessages(messages);
+        return "anthropic pdf done";
+      }
+    }
+
+    const llmInstance = new CapturingAnthropicLLM();
+    const agent = new Agent({
+      role: "Anthropic PDF Analyst",
+      goal: "Analyze PDF files",
+      backstory: "Expert at reading documents",
+      llm: llmInstance,
+    });
+    const pdfBytes = Buffer.from("%PDF-1.4 direct agent anthropic pdf");
+    const document = new PDFFile({
+      source: new FileBytes({ data: pdfBytes, filename: "agents.pdf" }),
+    });
+
+    await expect(agent.kickoff([
+      {
+        role: "user",
+        content: "What type of document is this?",
+      },
+    ], {
+      input_files: {
+        document,
+      },
+    })).resolves.toBe("anthropic pdf done");
+
+    const userMessage = llmInstance.formattedMessages.findLast((message) => message.role === "user");
+    expect(userMessage?.files).toBeUndefined();
+    const contentBlocks: unknown = userMessage?.content;
+    expect(Array.isArray(contentBlocks)).toBe(true);
+    if (!Array.isArray(contentBlocks)) {
+      throw new Error("Expected Anthropic content blocks");
+    }
+    expect(contentBlocks).toHaveLength(2);
+    const textBlock = contentBlocks[0] as { type?: unknown; text?: unknown };
+    expect(textBlock.type).toBe("text");
+    expect(String(textBlock.text)).toContain("What type of document is this?");
+    expect(contentBlocks[1]).toEqual({
+      type: "document",
+      source: {
+        type: "base64",
+        media_type: "application/pdf",
+        data: pdfBytes.toString("base64"),
+      },
+    });
+  });
+
   it("uses functionCallingLlm for tool selection and the main LLM for the final answer", async () => {
     const functionCalls: LLMMessage[][] = [];
     const mainCalls: LLMMessage[][] = [];
