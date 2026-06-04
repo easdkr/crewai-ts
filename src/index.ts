@@ -1524,6 +1524,28 @@ export {
   type_to_openapi_schema,
 } from "./flow.js";
 export {
+  ChatState,
+  ConversationalConfig,
+  ConversationalInputs,
+  appendMessage,
+  append_message,
+  getConversationMessages,
+  get_conversation_messages,
+  getConversationalConfig,
+  get_conversational_config,
+  inputHistoryToMessages,
+  input_history_to_messages,
+  normalizeKickoffInputs,
+  normalize_kickoff_inputs,
+  prepareConversationalTurn,
+  prepare_conversational_turn,
+  receiveUserMessage,
+  receive_user_message,
+  setStateField,
+  set_state_field,
+  type ConversationalConfigOptions,
+} from "./flow-conversation.js";
+export {
   BG_CARD,
   BG_DARK,
   BORDER_SUBTLE,

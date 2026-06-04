@@ -561,6 +561,10 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
+    "./flow/conversation": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
     "./flow/async_feedback/providers": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"

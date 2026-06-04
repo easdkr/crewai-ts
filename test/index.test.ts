@@ -453,6 +453,7 @@ import {
   beforeLlmCall,
   beforeToolCall,
   _run_sync,
+  append_message,
   agent_to_agent_card,
   agent,
   agentOptionsFromConfig,
@@ -473,7 +474,9 @@ import {
   countOutgoingEdges,
   crew,
   CrewBase,
+  ChatState,
   crewaiEventBus,
+  ConversationalConfig,
   createReadFileTool,
   ReadFileTool,
   clearAllGlobalHooks,
@@ -485,6 +488,8 @@ import {
   extractInputFilesFromInputs,
   flow_structure,
   flowConfig,
+  get_conversation_messages,
+  get_conversational_config,
   getBeforeLlmCallHooks,
   getBeforeToolCallHooks,
   getCurrentFlowId,
@@ -492,7 +497,12 @@ import {
   getCurrentFlowRequestId,
   setCurrentFlowContext,
   getFlowMetadata,
+  input_history_to_messages,
   getPossibleReturnConstants,
+  normalize_kickoff_inputs,
+  prepare_conversational_turn,
+  receive_user_message,
+  set_state_field,
   getChildIndex,
   getFlowStructure,
   getHumanFeedbackMetadata,
@@ -16409,6 +16419,106 @@ describe("flow runtime", () => {
       topic: "CrewAI",
       events: ["begin:CrewAI"],
     });
+  });
+
+  it("provides upstream conversational flow turn helpers", () => {
+    class ChatFlow extends Flow<{
+      id: string;
+      messages: Array<Record<string, unknown>>;
+      last_user_message: string | null;
+      last_intent: string | null;
+    }> {
+      static conversational_config = new ConversationalConfig({
+        default_intents: ["answer", "handoff"],
+        intent_llm: "fake-intent-llm",
+      });
+
+      classified: Array<{ text: string; outcomes: readonly string[]; llm: unknown; context: readonly unknown[] }> = [];
+
+      constructor() {
+        super({
+          initialState: {
+            id: "chat-1",
+            messages: [],
+            last_user_message: null,
+            last_intent: "stale",
+          },
+        });
+      }
+
+      classify_intent(text: string, outcomes: readonly string[], options: { llm?: unknown; context?: readonly unknown[] } = {}) {
+        this.classified.push({ text, outcomes, llm: options.llm, context: options.context ?? [] });
+        return "handoff";
+      }
+    }
+
+    expect(normalize_kickoff_inputs(null)).toBeNull();
+    expect(normalize_kickoff_inputs({ topic: "CrewAI" }, {
+      user_message: { content: "Need help" },
+      session_id: "session-1",
+    })).toEqual({
+      topic: "CrewAI",
+      id: "session-1",
+      user_message: { content: "Need help" },
+    });
+
+    const chatState = new ChatState({ id: "state-1" });
+    expect(chatState.id).toBe("state-1");
+    expect(chatState.messages).toEqual([]);
+
+    const flow = new ChatFlow();
+    append_message(flow, "system", "You are concise.");
+    const intent = receive_user_message(flow, "Please route this", {
+      outcomes: ["answer", "handoff"],
+      llm: "fake-intent-llm",
+    });
+
+    expect(intent).toBe("handoff");
+    expect(flow.state.last_user_message).toBe("Please route this");
+    expect(flow.state.last_intent).toBe("handoff");
+    expect(flow.state.messages).toEqual([
+      { role: "system", content: "You are concise." },
+      { role: "user", content: "Please route this" },
+    ]);
+    expect(get_conversation_messages(flow)).toEqual(flow.state.messages);
+    expect(flow.classified[0]).toMatchObject({
+      text: "Please route this",
+      outcomes: ["answer", "handoff"],
+      llm: "fake-intent-llm",
+      context: [
+        { role: "system", content: "You are concise." },
+        { role: "user", content: "Please route this" },
+      ],
+    });
+
+    set_state_field(flow, "last_intent", "stale");
+    prepare_conversational_turn(flow, {
+      user_message: { content: "Next question" },
+      config: get_conversational_config(flow),
+    });
+
+    expect(flow.state.last_user_message).toBe("Next question");
+    expect(flow.state.last_intent).toBe("handoff");
+    expect(flow.classified.at(-1)).toMatchObject({
+      text: "Next question",
+      outcomes: ["answer", "handoff"],
+      llm: "fake-intent-llm",
+    });
+
+    const fallbackFlow = {} as unknown as Flow;
+    append_message(fallbackFlow, "assistant", "Fallback answer", { name: "assistant-tool" });
+    expect(get_conversation_messages(fallbackFlow)).toEqual([
+      { role: "assistant", content: "Fallback answer", name: "assistant-tool" },
+    ]);
+
+    expect(input_history_to_messages([
+      { message: "Question?", response: "Answer" },
+      { message: "", response: "Follow-up" },
+    ])).toEqual([
+      { role: "assistant", content: "Question?" },
+      { role: "user", content: "Answer" },
+      { role: "user", content: "Follow-up" },
+    ]);
   });
 
   it("exposes upstream snake_case flow state properties", async () => {
