@@ -19652,6 +19652,52 @@ describe("flow runtime", () => {
     }
   });
 
+  it("keeps experimental conversational session finalization a no-op when not deferred", async () => {
+    class PlainFlow extends Flow<ConversationState> {
+      static conversational = true;
+      static conversational_config = new ConversationConfig({ defer_trace_finalization: false });
+
+      begin() {
+        return "ready";
+      }
+
+      route() {
+        return "work";
+      }
+
+      doWork() {
+        this.append_assistant_message("worked");
+        return "worked";
+      }
+    }
+
+    const initializers = [
+      decorateMethod(PlainFlow, "begin", start() as unknown as Decorator),
+      decorateMethod(PlainFlow, "route", router("begin") as unknown as Decorator),
+      decorateMethod(PlainFlow, "doWork", listen("work") as unknown as Decorator),
+    ];
+    const flow = new PlainFlow();
+    initializers.forEach((initializer) => {
+      initializer.call(flow);
+    });
+
+    const finishedEvents: FlowFinishedEvent[] = [];
+    const off = crewaiEventBus.on("flow_finished", (_source, event) => {
+      finishedEvents.push(event);
+    });
+    try {
+      await flow.handle_turn("turn 1");
+      expect(finishedEvents).toHaveLength(1);
+
+      flow.finalize_session_traces();
+
+      expect(finishedEvents).toHaveLength(1);
+      expect(finishedEvents[0]?.result).toBe("worked");
+    } finally {
+      off();
+    }
+  });
+
   it("provides upstream experimental conversational data shapes", () => {
     const router = new RouterConfig({
       routes: ["converse", "handoff"],
