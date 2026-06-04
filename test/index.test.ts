@@ -19575,8 +19575,8 @@ describe("flow runtime", () => {
     expect(definition.diagnostics).toEqual([]);
   });
 
-  it("infers FlowDefinition router emit events from string return constants", () => {
-    class InferredEmitDefinitionFlow extends Flow {
+  it("does not infer FlowDefinition router emit events from unannotated string returns", () => {
+    class UnannotatedEmitDefinitionFlow extends Flow {
       begin() {
         return "started";
       }
@@ -19589,15 +19589,18 @@ describe("flow runtime", () => {
     }
 
     const initializers = [
-      decorateMethod(InferredEmitDefinitionFlow, "begin", start() as unknown as Decorator),
-      decorateMethod(InferredEmitDefinitionFlow, "decide", router("begin") as unknown as Decorator),
+      decorateMethod(UnannotatedEmitDefinitionFlow, "begin", start() as unknown as Decorator),
+      decorateMethod(UnannotatedEmitDefinitionFlow, "decide", router("begin") as unknown as Decorator),
     ];
-    const flow = new InferredEmitDefinitionFlow();
+    const flow = new UnannotatedEmitDefinitionFlow();
     initializers.forEach((initializer) => {
       initializer.call(flow);
     });
 
-    expect(InferredEmitDefinitionFlow.flow_definition().methods.decide.emit).toEqual(["approved", "rejected", "manual"]);
+    const definition = UnannotatedEmitDefinitionFlow.flow_definition();
+
+    expect(definition.methods.decide.emit).toBeNull();
+    expect(definition.diagnostics).toEqual([]);
   });
 
   it("builds FlowDefinition methods from upstream static DSL metadata fragments", () => {
