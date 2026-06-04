@@ -19021,6 +19021,26 @@ describe("flow runtime", () => {
     });
   });
 
+  it("builds FlowDefinition descriptions from upstream static class description metadata", () => {
+    class DescribedDefinitionFlow extends Flow {
+      static description = "A flow with a static TypeScript class description.";
+
+      begin() {
+        return "started";
+      }
+    }
+
+    const initializer = decorateMethod(DescribedDefinitionFlow, "begin", start() as unknown as Decorator);
+    initializer.call(new DescribedDefinitionFlow());
+
+    const definition = buildFlowDefinition(DescribedDefinitionFlow);
+
+    expect(definition.description).toBe("A flow with a static TypeScript class description.");
+    expect(definition.to_dict()).toMatchObject({
+      description: "A flow with a static TypeScript class description.",
+    });
+  });
+
   it("serializes non-json human feedback metadata as FlowDefinition refs", () => {
     const marker = () => "marker";
 

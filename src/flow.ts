@@ -3289,6 +3289,7 @@ export function buildFlowDefinition(
     name: typeof instanceOrConstructor === "function"
       ? instanceOrConstructor.name
       : instanceOrConstructor.constructor.name,
+    description: extractClassDescription(instanceOrConstructor),
     state: flowStateDefinition(instanceOrConstructor),
     config: flowConfigDefinition(instanceOrConstructor),
     persist: flowPersistenceDefinition(instanceOrConstructor),
