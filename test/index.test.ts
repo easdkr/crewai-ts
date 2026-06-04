@@ -29988,6 +29988,60 @@ describe("conditional tasks", () => {
     expect(calls).toHaveLength(1);
   });
 
+  it("uses each executed conditional task output for following conditional checks", async () => {
+    const conditionInputs: string[] = [];
+    const researcher = new Agent({
+      role: "Researcher",
+      goal: "Find facts",
+      backstory: "Careful analyst",
+      llm: (messages) => {
+        const content = messages.at(-1)?.content ?? "";
+        if (content.includes("initial")) {
+          return "success";
+        }
+        if (content.includes("first conditional")) {
+          return "proceed";
+        }
+        return "second conditional executed";
+      },
+    });
+    const initial = new Task({
+      description: "initial",
+      expectedOutput: "initial",
+      agent: researcher,
+    });
+    const firstConditional = new ConditionalTask({
+      description: "first conditional",
+      expectedOutput: "first",
+      agent: researcher,
+      condition: (output) => {
+        conditionInputs.push(output.raw);
+        return output.raw.includes("success");
+      },
+    });
+    const secondConditional = new ConditionalTask({
+      description: "second conditional",
+      expectedOutput: "second",
+      agent: researcher,
+      condition: (output) => {
+        conditionInputs.push(output.raw);
+        return output.raw.includes("proceed");
+      },
+    });
+
+    const output = await new Crew({
+      agents: [researcher],
+      tasks: [initial, firstConditional, secondConditional],
+    }).kickoff();
+
+    expect(conditionInputs).toEqual(["success", "proceed"]);
+    expect(output.tasksOutput.map((taskOutput) => taskOutput.raw)).toEqual([
+      "success",
+      "proceed",
+      "second conditional executed",
+    ]);
+  });
+
   it("supports Python-compatible conditional task method aliases", async () => {
     const researcher = new Agent({
       role: "Researcher",

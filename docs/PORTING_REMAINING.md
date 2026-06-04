@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 930 passing tests.
+- Test suite: 931 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -617,6 +617,7 @@ When more goal budget is available, continue from the behavioral parity audits b
   - `Task.aexecute_sync` now has default-gate coverage for multiple guardrails on the async path.
 - Added conditional task compatibility behavior:
   - Final conditional tasks now have default-gate coverage for upstream final raw output behavior: executed conditionals become the final output, while skipped final conditionals leave the previous non-empty task output as the crew result.
+  - Sequential conditional tasks now have default-gate coverage for upstream context chaining: each executed conditional task output becomes the condition input for the following conditional task.
 - Added skills compatibility behavior:
   - `SkillFrontmatter.parse_allowed_tools` now exposes the upstream frontmatter pre-parse helper for space-delimited allowed tool lists.
   - `SkillFrontmatter` now keeps `version` under `metadata.version` like the upstream agentskills spec and ignores top-level `version` during `SKILL.md` normalization.
