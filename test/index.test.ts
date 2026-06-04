@@ -12834,7 +12834,14 @@ describe("core crew runtime", () => {
   });
 
   it("preserves pending todo status when AgentExecutor handles early goal achievement", () => {
-    const executor = new AgentExecutor();
+    const goalEvents: Array<Record<string, unknown>> = [];
+    const agent = {
+      role: "Planner",
+      goal: "Finish early",
+      backstory: "Stops once enough evidence exists",
+    } as unknown as Agent;
+    const task = { description: "Find enough evidence" };
+    const executor = new AgentExecutor({ agent, task });
     executor.state.todos.items = [
       new TodoItem({
         stepNumber: 1,
@@ -12848,9 +12855,28 @@ describe("core crew runtime", () => {
         status: TodoStatus.PENDING,
       }),
     ];
+    const off = crewaiEventBus.on("goal_achieved_early", (_source, event) => {
+      goalEvents.push(event as unknown as Record<string, unknown>);
+    });
 
-    expect(executor.handle_goal_achieved()).toBe("all_todos_complete");
+    try {
+      expect(executor.handle_goal_achieved()).toBe("all_todos_complete");
+    } finally {
+      off();
+    }
     expect(executor.state.todos.get_by_step_number(2)?.status).toBe(TodoStatus.PENDING);
+    expect(goalEvents).toEqual([
+      expect.objectContaining({
+        type: "goal_achieved_early",
+        agent_role: "Planner",
+        step_number: 1,
+        step_description: "",
+        steps_completed: 1,
+        steps_remaining: 1,
+        from_task: task,
+        from_agent: agent,
+      }),
+    ]);
   });
 
   it("applies AgentExecutor observation refinements to pending todos before continuing", () => {

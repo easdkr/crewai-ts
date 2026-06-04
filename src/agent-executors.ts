@@ -27,6 +27,7 @@ import { Converter } from "./converter.js";
 import {
   AgentLogsExecutionEvent,
   AgentLogsStartedEvent,
+  GoalAchievedEarlyEvent,
   PlanRefinementEvent,
   PlanReplanTriggeredEvent,
   StepObservationCompletedEvent,
@@ -702,6 +703,17 @@ export class AgentExecutor extends BaseAgentExecutor {
   }
 
   handleGoalAchieved(): "all_todos_complete" {
+    const completed = this.state.todos.getCompletedTodos();
+    const remaining = this.state.todos.getPendingTodos();
+    crewaiEventBus.emit(this.agent ?? this, new GoalAchievedEarlyEvent({
+      agent_role: agentRoleLabel(this.agent),
+      step_number: completed.at(-1)?.stepNumber ?? 0,
+      step_description: "",
+      steps_completed: completed.length,
+      steps_remaining: remaining.length,
+      from_task: this.task,
+      from_agent: this.agent,
+    }));
     return "all_todos_complete";
   }
 
