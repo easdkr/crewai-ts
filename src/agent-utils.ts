@@ -1141,6 +1141,58 @@ export function parseToolCallArgs(value: unknown): Record<string, unknown> | nul
   return null;
 }
 
+export type ParsedToolCallArgs = [
+  args: Record<string, unknown> | null,
+  error: {
+    call_id: string;
+    func_name: string;
+    result: string;
+    from_cache: false;
+    original_tool: unknown;
+  } | null,
+];
+
+export function parse_tool_call_args(
+  value: unknown,
+  func_name = "",
+  call_id = "",
+  original_tool: unknown = null,
+): ParsedToolCallArgs {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    return [value as Record<string, unknown>, null];
+  }
+  if (typeof value === "string") {
+    try {
+      const parsed: unknown = JSON.parse(value);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        return [parsed as Record<string, unknown>, null];
+      }
+      return [null, {
+        call_id,
+        func_name,
+        result: `Failed to parse tool arguments as JSON for tool '${func_name}': tool arguments must be a JSON object`,
+        from_cache: false,
+        original_tool,
+      }];
+    } catch (error) {
+      return [null, {
+        call_id,
+        func_name,
+        result: `Failed to parse tool arguments as JSON for tool '${func_name}': ${errorMessage(error)}`,
+        from_cache: false,
+        original_tool,
+      }];
+    }
+  }
+  return [null, {
+    call_id,
+    func_name,
+    result: `Failed to parse tool arguments as JSON for tool '${func_name}': tool arguments must be a JSON object`,
+    from_cache: false,
+    original_tool,
+  }];
+}
+
 function parseToolCallArgsForNative(value: unknown): { args: Record<string, unknown> | null; error: string | null } {
   if (value && typeof value === "object" && !Array.isArray(value)) {
     return { args: value as Record<string, unknown>, error: null };
@@ -1158,8 +1210,6 @@ function parseToolCallArgsForNative(value: unknown): { args: Record<string, unkn
   }
   return { args: null, error: null };
 }
-
-export const parse_tool_call_args = parseToolCallArgs;
 
 function cleanToolDescription(description: string): string {
   const marker = "Tool Description:";

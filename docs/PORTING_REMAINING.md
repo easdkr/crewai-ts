@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 982 passing tests.
+- Test suite: 983 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -322,6 +322,7 @@ When more goal budget is available, continue from the behavioral parity audits b
 - `ToolUsageStartedEvent` now accepts upstream snake_case construction payloads (`tool_name`, `tool_args`, `tool_class`) while preserving camelCase aliases for deterministic TS consumers.
 - `HumanFeedbackRequestedEvent` and `HumanFeedbackReceivedEvent` now accept upstream flow-event snake_case construction payloads (`flow_name`, `method_name`, `request_id`) while preserving camelCase aliases.
 - Flow lifecycle/input/method execution events now accept upstream snake_case construction payloads such as `flow_name`, `method_name`, and `response_metadata` while preserving camelCase aliases.
+- `parse_tool_call_args` now mirrors upstream native-tool parsing by returning `[args, error]` tuples with `call_id`, `func_name`, `from_cache`, and `original_tool` error payloads, while the camelCase `parseToolCallArgs` loose helper remains unchanged.
 - `ToolUsage.use` now has default-gate coverage for upstream failing-tool event behavior: failed tool runs emit started/error events without emitting a finished event.
 - `PickleHandler.load` now mirrors upstream corrupted persistence behavior for the JSON-backed TS shim: missing or empty files still load as `{}`, while malformed saved data raises `pickle data was truncated` instead of being silently discarded.
 - `MCPToolResolver._resolve_native` now mirrors upstream deterministic native MCP resolver behavior for fake clients: when discovery yields no usable tools it logs a warning and returns `[[], []]`, and unexpected discovery failures are wrapped as native MCP tool discovery errors while still disconnecting the discovery client.

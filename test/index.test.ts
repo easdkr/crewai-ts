@@ -920,6 +920,7 @@ import {
   _executor_stop_words,
   _llm_stop_words_applied,
   _asummarize_chunks,
+  parse_tool_call_args,
   _prepare_llm_call,
   _validate_and_finalize_llm_response,
   isValidTool,
@@ -7873,6 +7874,26 @@ describe("agent utility helpers", () => {
     ], 3).map((chunk) => chunk.length)).toEqual([1, 2]);
     expect(_extract_summary_tags("before <summary>Important summary</summary> after")).toBe("Important summary");
     expect(_extract_summary_tags("No tags")).toBe("No tags");
+  });
+
+  it("parses native tool-call arguments with upstream error tuple shape", () => {
+    const originalTool = { name: "run_code" };
+
+    expect(parse_tool_call_args("{\"code\":\"print(1)\"}", "run_code", "call-1"))
+      .toEqual([{ code: "print(1)" }, null]);
+    expect(parse_tool_call_args({ code: "x = 42" }, "run_code", "call-2"))
+      .toEqual([{ code: "x = 42" }, null]);
+
+    const [args, error] = parse_tool_call_args("{bad json}", "run_code", "call-3", originalTool);
+    expect(args).toBeNull();
+    expect(error).toEqual({
+      call_id: "call-3",
+      func_name: "run_code",
+      result: expect.stringContaining("Failed to parse tool arguments as JSON") as unknown,
+      from_cache: false,
+      original_tool: originalTool,
+    });
+    expect(error?.result).toContain("run_code");
   });
 
   it("summarizes message chunks with upstream async helper", async () => {
