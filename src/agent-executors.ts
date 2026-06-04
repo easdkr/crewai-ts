@@ -1436,6 +1436,7 @@ export class AgentExecutor extends BaseAgentExecutor {
     this.state.current_answer = null;
     this.state.is_finished = false;
     this.state.ask_for_human_input = Boolean(inputs.ask_for_human_input);
+    this.state.use_native_tools = false;
     this.state.pending_tool_calls = [];
     this.state.plan = null;
     this.state.plan_ready = false;

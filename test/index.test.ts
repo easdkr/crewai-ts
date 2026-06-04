@@ -13218,8 +13218,12 @@ describe("core crew runtime", () => {
 
   it("requires AgentExecutor object-style invoke to reach an AgentFinish when kickoff is provided", () => {
     const success = new AgentExecutor();
+    success.state.use_native_tools = true;
+    success.state.pending_tool_calls = [{ id: "stale-call" }];
     Object.assign(success, {
       kickoff() {
+        expect(success.state.use_native_tools).toBe(false);
+        expect(success.state.pending_tool_calls).toEqual([]);
         success.state.current_answer = new AgentFinish({
           thought: "done",
           output: "Final result",
