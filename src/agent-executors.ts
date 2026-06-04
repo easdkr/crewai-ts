@@ -21,6 +21,7 @@ import {
 } from "./agent-utils.js";
 import { Converter } from "./converter.js";
 import {
+  AgentLogsExecutionEvent,
   AgentLogsStartedEvent,
   PlanRefinementEvent,
   PlanReplanTriggeredEvent,
@@ -1143,6 +1144,7 @@ export class AgentExecutor extends BaseAgentExecutor {
       return "skipped";
     }
     this.state.is_finished = true;
+    this._show_logs(this.state.current_answer);
     return "completed";
   }
 
@@ -1429,6 +1431,17 @@ export class AgentExecutor extends BaseAgentExecutor {
     crewaiEventBus.emit(this.agent, new AgentLogsStartedEvent({
       agent_role: this.agent.role,
       task_description: taskDescription,
+      verbose: Boolean(this.agent.verbose || this.crew?.verbose),
+    }));
+  }
+
+  _show_logs(formattedAnswer: AgentAction | AgentFinish): void {
+    if (!this.agent) {
+      return;
+    }
+    crewaiEventBus.emit(this.agent, new AgentLogsExecutionEvent({
+      agent_role: this.agent.role,
+      formatted_answer: formattedAnswer,
       verbose: Boolean(this.agent.verbose || this.crew?.verbose),
     }));
   }

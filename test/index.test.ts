@@ -12245,6 +12245,35 @@ describe("core crew runtime", () => {
     );
   });
 
+  it("emits AgentExecutor execution log events during finalize", () => {
+    const events: AgentLogsExecutionEvent[] = [];
+    const off = crewaiEventBus.on("agent_logs_execution", (_source, event) => {
+      events.push(event);
+    });
+    const agent = new Agent({
+      role: "Researcher",
+      goal: "Find facts",
+      backstory: "Careful analyst",
+    });
+    const answer = new AgentFinish({ thought: "done", output: "final", text: "final" });
+    const executor = new AgentExecutor({
+      agent,
+      crew: { verbose: true } as unknown as Crew,
+    });
+    executor.state.current_answer = answer;
+
+    try {
+      expect(executor.finalize()).toBe("completed");
+    } finally {
+      off();
+    }
+
+    expect(events).toHaveLength(1);
+    expect(events[0]?.agent_role).toBe("Researcher");
+    expect(events[0]?.formatted_answer).toBe(answer);
+    expect(events[0]?.verbose).toBe(true);
+  });
+
   it("keeps AgentExecutor synthesis fallback when structured output is requested", () => {
     const finalResult = [
       "The final recommendation is to adopt a phased rollout plan with weekly checkpoints.",
