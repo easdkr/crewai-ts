@@ -17498,6 +17498,8 @@ describe("agent planning", () => {
   });
 
   it("accepts upstream snake_case PlanningConfig fields directly", () => {
+    expect(new PlanningConfig().llm).toBeNull();
+
     const config = new PlanningConfig({
       reasoning_effort: "high",
       observe_steps: false,
@@ -17523,6 +17525,7 @@ describe("agent planning", () => {
     expect(config.max_replans).toBe(2);
     expect(config.max_step_iterations).toBe(9);
     expect(config.step_timeout).toBe(30);
+    expect(config.llm).toBe("gpt-4o-mini");
   });
 
   it("exposes upstream AgentReasoning prompt and parsing helpers", () => {
