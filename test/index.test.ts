@@ -22965,6 +22965,18 @@ describe("flow runtime", () => {
     ]);
   });
 
+  it("trims upstream console provider input responses", async () => {
+    class ReviewFlow extends Flow {}
+    const flow = new ReviewFlow();
+    const provider = new ConsoleProvider({
+      verbose: false,
+      input: () => "  spaced answer  ",
+    });
+
+    await expect(provider.request_input("Q?", flow)).resolves.toBe("spaced answer");
+    await expect(provider.requestInput("Q?", flow)).resolves.toBe("spaced answer");
+  });
+
   it("returns HumanFeedbackPending instead of failing when async feedback pauses a flow", async () => {
     const pausedEvents: Array<FlowPausedEvent | MethodExecutionPausedEvent> = [];
     crewaiEventBus.on("method_execution_paused", (_source, event) => {
