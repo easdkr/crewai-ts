@@ -520,17 +520,18 @@ export abstract class BaseTool implements Tool {
       toolName: this.name,
       toolArgs: args,
       toolClass: this.constructor.name,
+      ...toolEventContext(hookContext),
     }));
     const cacheInput = stableStringify(args);
     const cached = this.cache?.read(this.name, cacheInput);
     if (cached?.hit) {
-      this.emitToolFinished(args, startedAt, cached.value);
+      this.emitToolFinished(args, startedAt, cached.value, hookContext);
       return cached.value;
     }
     try {
       const usageLimitError = this.claimUsage();
       if (usageLimitError) {
-        this.emitToolFinished(args, startedAt, usageLimitError);
+        this.emitToolFinished(args, startedAt, usageLimitError, hookContext);
         return usageLimitError;
       }
       const result = this._run(args);
@@ -538,19 +539,19 @@ export abstract class BaseTool implements Tool {
         return result
           .then((output: unknown) => {
             this.writeCache(args, cacheInput, output);
-            this.emitToolFinished(args, startedAt, output);
+            this.emitToolFinished(args, startedAt, output, hookContext);
             return output;
           })
           .catch((error: unknown) => {
-            this.emitToolError(args, error);
+            this.emitToolError(args, error, hookContext);
             throw error;
           });
       }
       this.writeCache(args, cacheInput, result);
-      this.emitToolFinished(args, startedAt, result);
+      this.emitToolFinished(args, startedAt, result, hookContext);
       return result;
     } catch (error) {
-      this.emitToolError(args, error);
+      this.emitToolError(args, error, hookContext);
       throw error;
     }
   }
@@ -569,17 +570,18 @@ export abstract class BaseTool implements Tool {
       toolName: this.name,
       toolArgs: args,
       toolClass: this.constructor.name,
+      ...toolEventContext(hookContext),
     }));
     const cacheInput = stableStringify(args);
     const cached = this.cache?.read(this.name, cacheInput);
     if (cached?.hit) {
-      this.emitToolFinished(args, startedAt, cached.value);
+      this.emitToolFinished(args, startedAt, cached.value, hookContext);
       return cached.value;
     }
     try {
       const usageLimitError = this.claimUsage();
       if (usageLimitError) {
-        this.emitToolFinished(args, startedAt, usageLimitError);
+        this.emitToolFinished(args, startedAt, usageLimitError, hookContext);
         return usageLimitError;
       }
       const rawResult = await this._run(args);
@@ -593,10 +595,10 @@ export abstract class BaseTool implements Tool {
         toolResult: rawResult,
       }));
       this.writeCache(args, cacheInput, result);
-      this.emitToolFinished(args, startedAt, result);
+      this.emitToolFinished(args, startedAt, result, hookContext);
       return result;
     } catch (error) {
-      this.emitToolError(args, error);
+      this.emitToolError(args, error, hookContext);
       throw error;
     }
   }
@@ -746,24 +748,46 @@ export abstract class BaseTool implements Tool {
     }
   }
 
-  private emitToolFinished(args: Record<string, unknown>, startedAt: Date, output: unknown): void {
+  private emitToolFinished(args: Record<string, unknown>, startedAt: Date, output: unknown, hookContext: ToolHookContextOptions = {}): void {
     crewaiEventBus.emit(this, new ToolUsageFinishedEvent({
       toolName: this.name,
       toolArgs: args,
       toolClass: this.constructor.name,
       startedAt,
       output,
+      ...toolEventContext(hookContext),
     }));
   }
 
-  private emitToolError(args: Record<string, unknown>, error: unknown): void {
+  private emitToolError(args: Record<string, unknown>, error: unknown, hookContext: ToolHookContextOptions = {}): void {
     crewaiEventBus.emit(this, new ToolUsageErrorEvent({
       toolName: this.name,
       toolArgs: args,
       toolClass: this.constructor.name,
       error,
+      ...toolEventContext(hookContext),
     }));
   }
+}
+
+function toolEventContext(hookContext: ToolHookContextOptions): Record<string, unknown> {
+  const context: Record<string, unknown> = {};
+  if (hookContext.task !== undefined) {
+    context.from_task = hookContext.task;
+  }
+  if (hookContext.agent !== undefined) {
+    context.from_agent = hookContext.agent;
+    const agentRecord = hookContext.agent && typeof hookContext.agent === "object"
+      ? hookContext.agent as Record<string, unknown>
+      : {};
+    if (typeof agentRecord.key === "string") {
+      context.agent_key = agentRecord.key;
+    }
+    if (typeof agentRecord.role === "string") {
+      context.agent_role = agentRecord.role;
+    }
+  }
+  return context;
 }
 
 export function to_langchain(tool: BaseTool): StructuredTool;

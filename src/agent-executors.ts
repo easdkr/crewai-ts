@@ -2738,7 +2738,7 @@ export class StepExecutor {
       const result = await (fn as (input: unknown) => MaybePromise<unknown>)(args);
       return stringifyStepResult(result);
     }
-    const result = await tool.run(args);
+    const result = await tool.run(args, { agent: this.agent ?? undefined, task: this.task ?? undefined });
     return stringifyStepResult(result);
   }
 

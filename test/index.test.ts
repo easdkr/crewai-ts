@@ -14568,13 +14568,15 @@ describe("core crew runtime", () => {
       "Thought: use search\nAction: Search Tool\nAction Input: {\"query\":\"CrewAI\"}",
       "Thought: done\nFinal Answer: complete",
     ];
+    const stepAgent = new Agent({
+      role: "Researcher",
+      goal: "Find facts",
+      backstory: "Careful analyst",
+      llm: () => llmResponses.shift() ?? "Final Answer: fallback",
+    });
     const executor = new StepExecutor({
-      agent: new Agent({
-        role: "Researcher",
-        goal: "Find facts",
-        backstory: "Careful analyst",
-        llm: () => llmResponses.shift() ?? "Final Answer: fallback",
-      }),
+      agent: stepAgent,
+      task: { id: "task-1", description: "Research CrewAI" },
       tools: [searchTool],
     });
 
@@ -14592,18 +14594,23 @@ describe("core crew runtime", () => {
       offFinished();
     }
 
-    expect(events).toEqual([
-      expect.objectContaining({
-        type: "tool_usage_started",
-        tool_name: "search_tool",
-        tool_args: { query: "CrewAI" },
-      }),
-      expect.objectContaining({
-        type: "tool_usage_finished",
-        tool_name: "search_tool",
-        output: "searched:CrewAI",
-      }),
-    ]);
+    expect(events).toHaveLength(2);
+    expect(events[0]).toMatchObject({
+      type: "tool_usage_started",
+      tool_name: "search_tool",
+      tool_args: { query: "CrewAI" },
+      from_agent: stepAgent,
+      agent_key: stepAgent.key,
+    });
+    expect((events[0]?.from_task as { id?: string } | undefined)?.id).toBe("task-1");
+    expect(events[1]).toMatchObject({
+      type: "tool_usage_finished",
+      tool_name: "search_tool",
+      output: "searched:CrewAI",
+      from_agent: stepAgent,
+      agent_key: stepAgent.key,
+    });
+    expect((events[1]?.from_task as { id?: string } | undefined)?.id).toBe("task-1");
   });
 
   it("routes StepExecutor todo execution through native tool calls", async () => {

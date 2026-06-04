@@ -38,7 +38,10 @@ export type Tool = {
   name: string;
   description?: string;
   resultAsAnswer?: boolean;
-  run: (context?: ToolContext | Record<string, unknown> | string) => MaybePromise<unknown>;
+  run: (
+    context?: ToolContext | Record<string, unknown> | string,
+    hookContext?: { agent?: unknown; task?: unknown; crew?: unknown },
+  ) => MaybePromise<unknown>;
 };
 
 export const Tool = Object;
