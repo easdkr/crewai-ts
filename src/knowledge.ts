@@ -1150,6 +1150,14 @@ export class KnowledgeStorage extends BaseKnowledgeStorage {
     return this.client ?? getRagClient();
   }
 
+  get _client(): RagClient | null {
+    return this.client;
+  }
+
+  set _client(client: RagClient | null) {
+    this.client = client;
+  }
+
   ragCollectionName(): string {
     return this.collectionName ? `knowledge_${this.collectionName}` : "knowledge";
   }

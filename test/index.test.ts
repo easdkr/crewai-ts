@@ -12269,6 +12269,30 @@ describe("RAG configuration and factories", () => {
     expect(asyncFake.collections.has("knowledge_docs")).toBe(false);
   });
 
+  it("honors upstream KnowledgeStorage _client injection after construction", () => {
+    const calls: unknown[] = [];
+    const injectedClient = {
+      search: vi.fn((params: Record<string, unknown>) => {
+        calls.push(params);
+        return [{ content: "injected result", score: 0.9, metadata: { source: "test" } }];
+      }),
+    } as unknown as RagClient;
+    const storage = new KnowledgeStorage({ collectionName: "injected" });
+    (storage as unknown as { _client: RagClient })._client = injectedClient;
+
+    expect(storage._get_client()).toBe(injectedClient);
+    expect(storage.search(["test query"], 3, { category: "technical" }, 0.4)).toEqual([
+      { content: "injected result", score: 0.9, metadata: { source: "test" } },
+    ]);
+    expect(calls[0]).toEqual({
+      collection_name: "knowledge_injected",
+      query: "test query",
+      limit: 3,
+      metadata_filter: { category: "technical" },
+      score_threshold: 0.4,
+    });
+  });
+
   it("formats upstream SearchResult-like objects as knowledge context", () => {
     const searchResults = [
       { content: "Python is great for AI", score: 0.95, metadata: {} },

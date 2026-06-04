@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 1069 passing tests.
+- Test suite: 1070 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -89,7 +89,7 @@ This register is the source of truth for continuing porting work while parity sc
 - RAG/vector storage integrations use deterministic in-memory or fake-client-backed shims in the default gate. Real Qdrant, LanceDB, ChromaDB, and provider SDK integration can be added later as optional peer-dependency coverage, but should not be required for release validation.
 - RAG embedding provider backward compatibility is release-gated for the upstream `google` provider alias and legacy `model` config keys: `buildEmbedderFromDict` resolves `google` to the Google Generative AI provider, network-backed providers accept `model` as `model_name`, local runtime-backed providers (`ollama`, `text2vec`, `sentence-transformer`, `instructor`, `openclip`) preserve upstream model aliases, Google preserves task type, and request payloads are built deterministically with mocked fetches.
 - KnowledgeStorage invalid embedding configuration is release-gated for upstream constructor failure behavior: unsupported embedder providers fail during storage initialization with a clear provider error instead of creating a broken storage client.
-- KnowledgeStorage malformed and interrupted search results are release-gated with fake-client fixtures: search and asearch preserve upstream array-shaped client results even when individual items are malformed or null, timeout, missing-collection, and client/search failures return an empty list, and later successful searches can recover after a prior network interruption.
+- KnowledgeStorage malformed and interrupted search results are release-gated with fake-client fixtures: search and asearch preserve upstream array-shaped client results even when individual items are malformed or null, timeout, missing-collection, and client/search failures return an empty list, later successful searches can recover after a prior network interruption, and upstream `_client` post-construction injection is honored.
 - LLM provider classes model request construction, capability flags, response parsing, usage extraction, streaming accumulation, file conversion, and error classification with SDK-like test doubles, including upstream OpenAI `o1-preview` multimodal capability while keeping `o1-mini` / `o3-mini` text-only. Live OpenAI/Azure/Anthropic/Bedrock/Gemini SDK calls and real API credentials are intentionally outside the default gate.
 - Provider interceptors remain intentionally limited to supported transport shims: Azure, Bedrock, and Gemini reject interceptor construction with clear provider-specific errors while OpenAI/Anthropic keep deterministic interceptor support.
 - Anthropic provider image-block conversion is release-gated for upstream multimodal handoff: standard `image_url` data-URI blocks from StepExecutor/tool messages are converted into Anthropic base64 image source blocks while non-data URLs pass through unchanged, and typed `crewai-files` message attachments flow through `BaseLLM` and direct Agent `input_files` into Anthropic image/document base64 source blocks.
