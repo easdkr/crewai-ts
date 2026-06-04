@@ -33301,6 +33301,70 @@ describe("crew replay", () => {
     expect(crewInstance.executionLogs[1]?.inputs).toEqual({ topic: "replayed" });
   });
 
+  it("restores stored context task outputs before replaying a later task", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "crewai-ts-replay-context-"));
+    const storagePath = join(dir, "outputs.db");
+    try {
+      const handler = new TaskOutputStorageHandler(new KickoffTaskOutputsSQLiteStorage(storagePath));
+      const prompts: string[] = [];
+      const agent = new Agent({
+        role: "Researcher",
+        goal: "Write",
+        backstory: "Careful analyst",
+        llm: (messages) => {
+          const prompt = messages.at(-1)?.content ?? "";
+          prompts.push(prompt);
+          return `replayed sees ${prompt}`;
+        },
+      });
+      const first = new Task({ name: "first", description: "First", expectedOutput: "First", agent });
+      const second = new Task({
+        name: "second",
+        description: "Second",
+        expectedOutput: "Second",
+        agent,
+        context: [first],
+      });
+      handler.add(first, {
+        description: "First",
+        summary: "stored first",
+        raw: "stored context output",
+        pydantic: null,
+        jsonDict: null,
+        json_dict: null,
+        outputFormat: OutputFormat.RAW,
+        output_format: OutputFormat.RAW,
+        agent: "Researcher",
+        messages: [{ role: "assistant", content: "stored context output" }],
+      }, 0, { topic: "stored" });
+      handler.add(second, {
+        description: "Second",
+        summary: "stored second",
+        raw: "stored second output",
+        pydantic: null,
+        jsonDict: null,
+        json_dict: null,
+        outputFormat: OutputFormat.RAW,
+        output_format: OutputFormat.RAW,
+        agent: "Researcher",
+        messages: [],
+      }, 1, { topic: "stored" });
+      const crewInstance = new Crew({
+        agents: [agent],
+        tasks: [first, second],
+        taskOutputStorageHandler: handler,
+      });
+
+      await crewInstance.replay(second.id);
+
+      expect(first.output?.raw).toBe("stored context output");
+      expect(first.output?.messages).toEqual([{ role: "assistant", content: "stored context output" }]);
+      expect(prompts[0]).toContain("Context:\nstored context output");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("supports replay by task name and index", async () => {
     let calls = 0;
     const agent = new Agent({

@@ -32,10 +32,10 @@ import { coerceCheckpointConfig, RuntimeState, type CheckpointConfig, type Check
 import { CrewStreamingOutput } from "./streaming.js";
 import { TRAINING_DATA_FILE } from "./settings.js";
 import { ConditionalTask, Task, type TaskInputFiles } from "./task.js";
-import { TaskOutputStorageHandler, type StoredTaskOutput } from "./task-output-storage.js";
+import { TaskOutputStorageHandler, type StoredTaskOutput, type TaskOutputStorageRecord } from "./task-output-storage.js";
 import { BaseTool, CacheHandler, StructuredTool, sanitizeToolName } from "./tools.js";
 import { CrewTrainingHandler } from "./training-handler.js";
-import { Process, type AgentStepCallback, type CrewKickoffCallback, type InputValues, type TaskCallback, type Tool } from "./types.js";
+import { OutputFormat, Process, type AgentStepCallback, type CrewKickoffCallback, type InputValues, type TaskCallback, type Tool } from "./types.js";
 import type { LLM } from "./types.js";
 import { createReadFileTool, extractInputFilesFromInputs } from "./input-files.js";
 import type { EmbedderConfig } from "./rag.js";
@@ -1017,7 +1017,10 @@ export class Crew {
 
   async replay(taskRef: ReplayTaskRef, inputs?: InputValues): Promise<CrewOutput> {
     const startIndex = this.findReplayStartIndex(taskRef);
-    const replayInputs = { ...(inputs ?? this.executionLogs[startIndex]?.inputs ?? {}) };
+    const storedOutputs = this.taskOutputStorageHandler?.load() ?? [];
+    this.restoreReplayTaskOutputs(startIndex, storedOutputs);
+    const storedReplayInputs = storedOutputs.find((record) => record.task_id === this.tasks[startIndex]?.id)?.inputs;
+    const replayInputs = { ...(inputs ?? this.executionLogs[startIndex]?.inputs ?? storedReplayInputs ?? {}) };
     const previousOutputs = this.tasks
       .slice(0, startIndex)
       .map((task) => task.output)
@@ -1039,6 +1042,23 @@ export class Crew {
     } catch (error) {
       crewaiEventBus.emit(this, new CrewKickoffFailedEvent({ crewName: this.name, error }));
       throw error;
+    }
+  }
+
+  private restoreReplayTaskOutputs(startIndex: number, records: readonly TaskOutputStorageRecord[]): void {
+    if (records.length === 0) {
+      return;
+    }
+    const recordsByTaskId = new Map(records.map((record) => [record.task_id, record]));
+    for (const task of this.tasks.slice(0, startIndex)) {
+      if (task.output !== null) {
+        continue;
+      }
+      const stored = recordsByTaskId.get(task.id);
+      if (!stored) {
+        continue;
+      }
+      task.output = storedTaskOutputToTaskOutput(stored.output);
     }
   }
 
@@ -2853,6 +2873,26 @@ function serializeTaskOutput(output: TaskOutput): Record<string, unknown> {
     output_format: output.outputFormat,
     messages: output.messages,
   };
+}
+
+function storedTaskOutputToTaskOutput(output: StoredTaskOutput): TaskOutput {
+  return new TaskOutput({
+    description: output.description,
+    expectedOutput: null,
+    raw: output.raw,
+    jsonDict: output.jsonDict ?? output.json_dict ?? null,
+    pydantic: output.pydantic,
+    agent: output.agent,
+    outputFormat: normalizeStoredOutputFormat(output.outputFormat),
+    messages: output.messages ?? [],
+  });
+}
+
+function normalizeStoredOutputFormat(value: string | undefined): OutputFormat {
+  if (value === OutputFormat.JSON || value === OutputFormat.PYDANTIC || value === OutputFormat.RAW) {
+    return value;
+  }
+  return OutputFormat.RAW;
 }
 
 function bindMemoryView(value: unknown, backing: Memory): void {
