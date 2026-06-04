@@ -29093,12 +29093,16 @@ describe("task interpolation", () => {
     expect(interpolateOnly("Missing: {value}", { value: null })).toBe("Missing: None");
     expect(interpolateOnly("Data: {value}", { value: { enabled: false, tags: ["a", null] } }))
       .toBe("Data: {'enabled': False, 'tags': ['a', None]}");
+    expect(interpolateOnly("Variable: {_special_var}", { _special_var: "Special Value" }))
+      .toBe("Variable: Special Value");
     expect(interpolateOnly("This {123} and {!var} should stay but {valid_var} changes", { valid_var: "ok" }))
       .toBe("This {123} and {!var} should stay but ok changes");
     expect(interpolateOnly("{first} {second}", { first: "{second}", second: "done" })).toBe("done done");
     expect(interpolateOnly("{first}{second}", { first: "{second}", second: "done" })).toBe("donedone");
     expect(interpolateOnly(null, { name: "CrewAI" })).toBe("");
     expect(() => interpolateOnly("{missing}", {})).toThrow("Inputs dictionary cannot be empty");
+    expect(() => interpolateOnly("Hello, {name}!", { not_name: "Alice" }))
+      .toThrow("Template variable 'name' not found in inputs dictionary");
     expect(() => interpolateOnly("{data}", { data: new Set(["x"]) })).toThrow("Unsupported type Set");
     expect(() => interpolateOnly("{data}", { data: { valid: 1, invalid: () => "x" } }))
       .toThrow("Unsupported type function");
