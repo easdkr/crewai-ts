@@ -23534,6 +23534,8 @@ describe("LLM providers", () => {
       "supports_multimodal",
       "supports_stop_words",
       "_extract_azure_token_usage",
+      "_get_sync_client",
+      "_make_client_kwargs",
       "to_config_dict",
     ]) {
       expect(Object.hasOwn(AzureCompletion.prototype, methodName)).toBe(true);
@@ -23617,6 +23619,55 @@ describe("LLM providers", () => {
         delete process.env.AZURE_CREDENTIAL_SCOPES;
       } else {
         process.env.AZURE_CREDENTIAL_SCOPES = previous;
+      }
+    }
+  });
+
+  it("builds Azure clients from credentials exported after construction", () => {
+    const previousApiKey = process.env.AZURE_API_KEY;
+    const previousEndpoint = process.env.AZURE_ENDPOINT;
+    const previousOpenAIEndpoint = process.env.AZURE_OPENAI_ENDPOINT;
+    const previousApiBase = process.env.AZURE_API_BASE;
+    try {
+      delete process.env.AZURE_API_KEY;
+      delete process.env.AZURE_ENDPOINT;
+      delete process.env.AZURE_OPENAI_ENDPOINT;
+      delete process.env.AZURE_API_BASE;
+
+      const azure = new AzureCompletion({ model: "gpt-4" });
+      expect(azure.api_key).toBeNull();
+      expect(azure.endpoint).toBeNull();
+      expect(azure.is_azure_openai_endpoint).toBe(false);
+
+      process.env.AZURE_API_KEY = "late-key";
+      process.env.AZURE_ENDPOINT = "https://test.openai.azure.com/openai/deployments/gpt-4";
+      expect(azure._get_sync_client()).toMatchObject({
+        api_key: "late-key",
+        endpoint: "https://test.openai.azure.com/openai/deployments/gpt-4",
+      });
+      expect(azure.api_key).toBe("late-key");
+      expect(azure.endpoint).toBe("https://test.openai.azure.com/openai/deployments/gpt-4");
+      expect(azure.is_azure_openai_endpoint).toBe(true);
+    } finally {
+      if (previousApiKey === undefined) {
+        delete process.env.AZURE_API_KEY;
+      } else {
+        process.env.AZURE_API_KEY = previousApiKey;
+      }
+      if (previousEndpoint === undefined) {
+        delete process.env.AZURE_ENDPOINT;
+      } else {
+        process.env.AZURE_ENDPOINT = previousEndpoint;
+      }
+      if (previousOpenAIEndpoint === undefined) {
+        delete process.env.AZURE_OPENAI_ENDPOINT;
+      } else {
+        process.env.AZURE_OPENAI_ENDPOINT = previousOpenAIEndpoint;
+      }
+      if (previousApiBase === undefined) {
+        delete process.env.AZURE_API_BASE;
+      } else {
+        process.env.AZURE_API_BASE = previousApiBase;
       }
     }
   });

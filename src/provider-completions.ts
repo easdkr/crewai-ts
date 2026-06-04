@@ -2508,6 +2508,7 @@ export class AzureCompletion extends ConfiguredLLM {
   readonly maxCompletionTokens: number | null;
   readonly max_completion_tokens: number | null;
   readonly _responses_delegate: OpenAICompletion | null;
+  _client: Record<string, unknown> | null;
   private responseChainId: string | null;
   private reasoningChainItems: unknown[] | null;
 
@@ -2579,6 +2580,7 @@ export class AzureCompletion extends ConfiguredLLM {
     this.max_completion_tokens = this.maxCompletionTokens;
     this.responseChainId = this.previousResponseId;
     this.reasoningChainItems = null;
+    this._client = null;
     this._responses_delegate = this.api === "responses"
       ? new OpenAICompletion(stripUndefined({
         model: azureResponsesModelName(options.model),
@@ -2754,13 +2756,32 @@ export class AzureCompletion extends ConfiguredLLM {
   }
 
   makeClientKwargs(env: NodeJS.ProcessEnv = process.env): Record<string, unknown> {
+    const apiKey = this.apiKey ?? env.AZURE_API_KEY ?? null;
+    const endpoint = this.endpoint ?? env.AZURE_ENDPOINT ?? env.AZURE_OPENAI_ENDPOINT ?? env.AZURE_API_BASE ?? null;
     const credentialScopes = this.credentialScopes ?? AzureCompletion.credentialScopesFromEnv(env);
+    const updates: Record<string, unknown> = {};
+    if (apiKey && this.apiKey !== apiKey) {
+      updates.apiKey = apiKey;
+      updates.api_key = apiKey;
+    }
+    if (endpoint && this.endpoint !== endpoint) {
+      const isAzureEndpoint = isAzureOpenAIEndpoint(endpoint);
+      updates.endpoint = endpoint;
+      updates.baseUrl = endpoint;
+      updates.base_url = endpoint;
+      updates.isAzureOpenAIEndpoint = isAzureEndpoint;
+      updates.is_azure_openai_endpoint = isAzureEndpoint;
+    }
     if (credentialScopes && this.credentialScopes !== credentialScopes) {
-      Object.assign(this, { credentialScopes, credential_scopes: credentialScopes });
+      updates.credentialScopes = credentialScopes;
+      updates.credential_scopes = credentialScopes;
+    }
+    if (Object.keys(updates).length > 0) {
+      Object.assign(this, updates);
     }
     return {
-      endpoint: this.endpoint,
-      api_key: this.apiKey,
+      endpoint,
+      api_key: apiKey,
       api_version: this.apiVersion,
       ...(credentialScopes ? { credential_scopes: credentialScopes } : {}),
     };
@@ -2768,6 +2789,29 @@ export class AzureCompletion extends ConfiguredLLM {
 
   _make_client_kwargs(env: NodeJS.ProcessEnv = process.env): Record<string, unknown> {
     return this.makeClientKwargs(env);
+  }
+
+  getSyncClient(env: NodeJS.ProcessEnv = process.env): Record<string, unknown> {
+    if (this._client) {
+      return this._client;
+    }
+    const kwargs = this.makeClientKwargs(env);
+    if (!kwargs.endpoint) {
+      throw new Error("Azure endpoint is required");
+    }
+    if (!kwargs.api_key) {
+      throw new Error("Azure API key is required");
+    }
+    this._client = {
+      provider: "azure",
+      model: this.model,
+      ...kwargs,
+    };
+    return this._client;
+  }
+
+  _get_sync_client(env: NodeJS.ProcessEnv = process.env): Record<string, unknown> {
+    return this.getSyncClient(env);
   }
 
   prepareCompletionParams(messages: readonly LLMMessage[], tools: readonly Tool[] | null = null): AzureCompletionParams {
