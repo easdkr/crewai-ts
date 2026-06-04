@@ -1521,6 +1521,16 @@ export class Flow<TState extends object = Record<string, unknown>> {
     return this.buildAgentContext(agentName);
   }
 
+  conversationStart(): string | null {
+    const state = this.state as Record<string, unknown>;
+    const message = state.current_user_message ?? state.currentUserMessage ?? null;
+    return typeof message === "string" ? message : null;
+  }
+
+  conversation_start(): string | null {
+    return this.conversationStart();
+  }
+
   routeTurn(context: Record<string, unknown>): string | null {
     const config = getConversationalStaticConfig(this.constructor);
     if (!config) {
@@ -3855,6 +3865,12 @@ export function getFlowMetadata(instanceOrConstructor: object | FlowMetadataTarg
     const key = `${String(entry.name)}:${entry.kind}`;
     byKey.set(key, entry);
   }
+  for (const entry of conversationalFlowMetadataEntries(ctor, [...byKey.values()])) {
+    const key = `${String(entry.name)}:${entry.kind}`;
+    if (!byKey.has(key)) {
+      byKey.set(key, entry);
+    }
+  }
   return [...byKey.values()];
 }
 
@@ -3873,6 +3889,36 @@ export function getHumanFeedbackMetadata(instanceOrConstructor: object | FlowMet
     current = prototype ? prototype.constructor as FlowMetadataTarget : null;
   }
   return inherited;
+}
+
+function conversationalFlowMetadataEntries(
+  ctor: FlowMetadataTarget & { conversational?: unknown },
+  existingEntries: readonly FlowMethodEntry[],
+): FlowMethodEntry[] {
+  if (ctor.conversational !== true) {
+    return [];
+  }
+  const entries: FlowMethodEntry[] = [];
+  if (!existingEntries.some((entry) => entry.kind === "start" && entry.condition === null)) {
+    entries.push({ name: "conversation_start", kind: "start", condition: null });
+  }
+  if (!existingEntries.some((entry) => entry.kind === "router")) {
+    entries.push({ name: "route_conversation", kind: "router", condition: or_("conversation_start"), emit: ["converse", "end", "answer_from_history"] });
+  }
+  if (!hasListenerForLabel(existingEntries, "converse")) {
+    entries.push({ name: "converse_turn", kind: "listen", condition: or_("converse") });
+  }
+  if (!hasListenerForLabel(existingEntries, "end")) {
+    entries.push({ name: "end_conversation", kind: "listen", condition: or_("end") });
+  }
+  if (!hasListenerForLabel(existingEntries, "answer_from_history")) {
+    entries.push({ name: "answer_from_history_turn", kind: "listen", condition: or_("answer_from_history") });
+  }
+  return entries;
+}
+
+function hasListenerForLabel(entries: readonly FlowMethodEntry[], label: string): boolean {
+  return entries.some((entry) => entry.kind === "listen" && entry.condition !== null && conditionIncludesTrigger(entry.condition, label));
 }
 
 export function buildFlowDefinition(

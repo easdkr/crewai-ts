@@ -19604,6 +19604,38 @@ describe("flow runtime", () => {
     expect(String(routerCalls[1]?.[1]?.content)).toContain("\"last_intent\":\"research\"");
   });
 
+  it("runs experimental conversational builtin graph without manual decorator wiring", async () => {
+    const routerLlm = {
+      call() {
+        return { intent: "work" };
+      },
+    };
+
+    class BuiltinGraphFlow extends Flow<ConversationState> {
+      static conversational = true;
+      static conversational_config = new ConversationConfig({
+        router: new RouterConfig({ llm: routerLlm, routes: ["work"] }),
+      });
+
+      doWork() {
+        this.append_assistant_message("worked");
+        return "worked";
+      }
+    }
+
+    const initializer = decorateMethod(BuiltinGraphFlow, "doWork", listen("work") as unknown as Decorator);
+    const flow = new BuiltinGraphFlow();
+    initializer.call(flow);
+
+    await expect(flow.handle_turn("please work")).resolves.toBe("worked");
+
+    expect(flow.state.last_intent).toBe("work");
+    expect(flow.state.messages.map((message) => message_to_llm_dict(message))).toEqual([
+      { role: "user", content: "please work" },
+      { role: "assistant", content: "worked" },
+    ]);
+  });
+
   it("defers experimental conversational Flow finish events until session finalization", async () => {
     class DeferredFlow extends Flow<ConversationState> {
       static conversational = true;
