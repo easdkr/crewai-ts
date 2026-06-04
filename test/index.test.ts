@@ -11409,6 +11409,15 @@ describe("RAG configuration and factories", () => {
     );
   });
 
+  it("rejects upstream invalid KnowledgeStorage embedding provider configs", () => {
+    expect(() => {
+      new KnowledgeStorage({
+        collectionName: "invalid_embedding_test",
+        embedder: { provider: "invalid_provider", config: {} },
+      });
+    }).toThrow("Unknown provider: invalid_provider");
+  });
+
   it("handles sync and async KnowledgeStorage client connection failures", async () => {
     class FailingKnowledgeStorage extends KnowledgeStorage {
       override _get_client(): RagClient {
