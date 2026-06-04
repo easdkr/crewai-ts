@@ -16144,6 +16144,44 @@ describe("core crew runtime", () => {
     expect(executor.messages.at(-1)?.content).toContain("Now it's time you MUST give your absolute best final answer");
   });
 
+  it("continues CrewAgentExecutor async ReAct loops after tool execution", async () => {
+    let callCount = 0;
+    const executor = new CrewAgentExecutor({
+      llm: {
+        async acall() {
+          callCount += 1;
+          await Promise.resolve();
+          if (callCount === 1) {
+            return "Thought: I need a lookup\nAction: lookup\nAction Input: {\"query\":\"CrewAI\"}";
+          }
+          return "Thought: I have the answer\nFinal Answer: Tool result processed";
+        },
+      },
+      prompt: { prompt: "Prompt {input}" },
+      maxIter: 3,
+      tools: [
+        new StructuredTool({
+          name: "lookup",
+          description: "Lookup facts",
+          func: ({ query }: { query?: string }) => `Tool executed for ${query ?? ""}`,
+        }),
+      ],
+    });
+    const showLogs = vi.spyOn(executor, "_show_logs").mockImplementation(() => undefined);
+
+    try {
+      await expect(executor.ainvoke({ input: "test", tool_names: "lookup", tools: "Lookup facts" }))
+        .resolves.toEqual({ output: "Tool result processed" });
+    } finally {
+      showLogs.mockRestore();
+    }
+
+    expect(callCount).toBe(2);
+    expect(executor.messages.some((message) => (
+      typeof message.content === "string" && message.content.includes("Tool executed for CrewAI")
+    ))).toBe(true);
+  });
+
   it("surfaces async AgentExecutor step callback task errors without rejecting sync execution", async () => {
     const printSpy = vi.spyOn(PRINTER, "print").mockImplementation(() => undefined);
     try {
