@@ -20,7 +20,7 @@ import {
   summarizeMessages,
 } from "./agent-utils.js";
 import { Converter } from "./converter.js";
-import { PlanReplanTriggeredEvent, crewaiEventBus } from "./events.js";
+import { PlanRefinementEvent, PlanReplanTriggeredEvent, crewaiEventBus } from "./events.js";
 import { get_provider } from "./human-input.js";
 import { ToolCallHookContext, runAfterToolCallHooks, runBeforeToolCallHooks } from "./hooks.js";
 import { I18N_DEFAULT } from "./i18n.js";
@@ -637,7 +637,19 @@ export class AgentExecutor extends BaseAgentExecutor {
     const lastStep = observationSteps.length > 0 ? Math.max(...observationSteps) : null;
     const observation = lastStep === null ? null : this.state.observations[lastStep];
     if (observation?.suggestedRefinements && observation.suggestedRefinements.length > 0) {
-      new PlannerObserver().applyRefinements(observation, this.state.todos.getPendingTodos());
+      const remaining = this.state.todos.getPendingTodos();
+      this._ensurePlannerObserver().applyRefinements(observation, remaining);
+      crewaiEventBus.emit(this.agent ?? this, new PlanRefinementEvent({
+        agent_role: agentRoleLabel(this.agent),
+        step_number: lastStep ?? 0,
+        step_description: "",
+        refined_step_count: remaining.length,
+        refinements: observation.suggestedRefinements.map((refinement) => (
+          `Step ${String(refinement.stepNumber)}: ${refinement.newDescription}`
+        )),
+        from_task: this.task,
+        from_agent: this.agent,
+      }));
     }
     return "has_todos";
   }
@@ -2794,6 +2806,16 @@ function stringifyStepResult(result: unknown): string {
   } catch {
     return Object.prototype.toString.call(result);
   }
+}
+
+function agentRoleLabel(agent: unknown): string {
+  if (agent && typeof agent === "object" && "role" in agent) {
+    const role = (agent as { role?: unknown }).role;
+    return typeof role === "string" || typeof role === "number" || typeof role === "boolean"
+      ? String(role)
+      : "";
+  }
+  return "";
 }
 
 type NormalizedNativeToolCall = {

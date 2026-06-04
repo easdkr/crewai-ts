@@ -12374,7 +12374,15 @@ describe("core crew runtime", () => {
   });
 
   it("applies AgentExecutor observation refinements to pending todos before continuing", () => {
+    const refinementEvents: Array<Record<string, unknown>> = [];
+    const agent = {
+      role: "Planner",
+      goal: "Improve the plan",
+      backstory: "Uses observations",
+    } as unknown as Agent;
+    const task = { description: "Pick a product" };
     const executor = new AgentExecutor();
+    Object.assign(executor, { agent, task });
     executor.state.todos.items = [
       new TodoItem({
         stepNumber: 1,
@@ -12401,10 +12409,31 @@ describe("core crew runtime", () => {
         { step_number: 99, new_description: "Ignore missing step" },
       ],
     });
+    const off = crewaiEventBus.on("plan_refinement", (_source, event) => {
+      refinementEvents.push(event as unknown as Record<string, unknown>);
+    });
 
-    expect(executor.handle_refine_and_continue()).toBe("has_todos");
+    try {
+      expect(executor.handle_refine_and_continue()).toBe("has_todos");
+    } finally {
+      off();
+    }
     expect(executor.state.todos.get_by_step_number(2)?.description).toBe("Recommend product B with rating evidence");
     expect(executor.state.todos.get_by_step_number(3)?.description).toBe("Prepare appendix");
+    expect(refinementEvents).toHaveLength(1);
+    expect(refinementEvents[0]).toMatchObject({
+      type: "plan_refinement",
+      agent_role: "Planner",
+      step_number: 1,
+      step_description: "",
+      refined_step_count: 2,
+      refinements: [
+        "Step 2: Recommend product B with rating evidence",
+        "Step 99: Ignore missing step",
+      ],
+      from_task: task,
+      from_agent: agent,
+    });
   });
 
   it("injects todo context instead of executing isolated steps when planning is disabled", () => {
