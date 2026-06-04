@@ -15381,6 +15381,10 @@ describe("core crew runtime", () => {
     expect(executor.check_native_todo_completion()).toBe("todo_satisfied");
 
     executor.state.current_answer = null;
+    expect(executor.check_todo_completion()).toBe("todo_not_satisfied");
+    expect(executor.check_native_todo_completion()).toBe("todo_satisfied");
+
+    executor.state.todos.items = [];
     expect(executor.check_native_todo_completion()).toBe("todo_not_satisfied");
   });
 
