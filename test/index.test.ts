@@ -9734,6 +9734,23 @@ describe("crew execution utilities", () => {
       },
     })).toThrow("Config should have 'agents' and 'tasks'.");
     expect(() => new Crew({
+      config: "{\"wrong_key\":\"wrong_value\"}",
+    })).toThrow("Config should have 'agents' and 'tasks'.");
+    expect(() => new Crew({
+      config: JSON.stringify({
+        agents: [
+          { role: "Researcher", goal: "Find facts", backstory: "Careful analyst" },
+        ],
+      }),
+    })).toThrow("Config should have 'agents' and 'tasks'.");
+    expect(() => new Crew({
+      config: JSON.stringify({
+        tasks: [
+          { description: "Research", expected_output: "A brief", agent: "Researcher" },
+        ],
+      }),
+    })).toThrow("Config should have 'agents' and 'tasks'.");
+    expect(() => new Crew({
       config: {
         agents: [
           { role: "Researcher", goal: "Find facts", backstory: "Careful analyst" },
