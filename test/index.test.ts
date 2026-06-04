@@ -22385,6 +22385,44 @@ describe("flow runtime", () => {
     expect(route.emit).toBeNull();
   });
 
+  it("classifies upstream start methods with human feedback emit as FlowDefinition routers", () => {
+    class StartFeedbackRouterFlow extends Flow {
+      entryPoint() {
+        return "data";
+      }
+
+      proceed() {
+        return "proceeding";
+      }
+
+      halt() {
+        return "halted";
+      }
+    }
+
+    const initializers = [
+      decorateMethod(StartFeedbackRouterFlow, "entryPoint", start() as unknown as Decorator),
+      decorateMethod(StartFeedbackRouterFlow, "entryPoint", humanFeedback({
+        message: "Review:",
+        emit: ["continue", "stop"],
+        llm: "gpt-4o-mini",
+      }) as unknown as Decorator),
+      decorateMethod(StartFeedbackRouterFlow, "proceed", listen("continue") as unknown as Decorator),
+      decorateMethod(StartFeedbackRouterFlow, "halt", listen("stop") as unknown as Decorator),
+    ];
+    const flow = new StartFeedbackRouterFlow();
+    initializers.forEach((initializer) => {
+      initializer.call(flow);
+    });
+
+    const entryPoint = StartFeedbackRouterFlow.flow_definition().methods.entryPoint;
+
+    expect(entryPoint.is_start).toBe(true);
+    expect(entryPoint.router).toBe(true);
+    expect(entryPoint.human_feedback?.emit).toEqual(["continue", "stop"]);
+    expect(entryPoint.emit).toBeNull();
+  });
+
   it("exposes upstream snake_case flow state properties", async () => {
     class PropertyAliasFlow extends Flow<{ id: string; events: string[] }> {
       constructor() {
