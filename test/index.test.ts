@@ -32456,6 +32456,36 @@ describe("LLM providers", () => {
       response: { choices: [{ message: { content: "done" } }], usage: { total_tokens: 3 } },
       messages: params.messages,
     })).toBe("done");
+
+    const toolCallResponse = {
+      choices: [{
+        message: {
+          content: "I will search for the given query.",
+          tool_calls: [{
+            id: "call_123",
+            type: "function",
+            function: { name: "search", arguments: "{\"q\":\"x\"}" },
+          }],
+        },
+      }],
+    };
+    expect(llm._handle_non_streaming_response({
+      response: toolCallResponse,
+      messages: params.messages,
+    }, null, null)).toEqual([{
+      id: "call_123",
+      type: "function",
+      function: { name: "search", arguments: "{\"q\":\"x\"}" },
+    }]);
+    await expect(llm._ahandle_non_streaming_response({
+      response: toolCallResponse,
+      messages: params.messages,
+    }, null, null)).resolves.toEqual([{
+      id: "call_123",
+      type: "function",
+      function: { name: "search", arguments: "{\"q\":\"x\"}" },
+    }]);
+
     await expect(llm._ahandle_non_streaming_response({
       response: { choices: [{ message: { content: "async done" } }] },
       messages: params.messages,
