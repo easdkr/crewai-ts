@@ -1124,7 +1124,10 @@ export class Agent {
   }
 
   _use_trained_data(taskPrompt: string): string {
-    const trainedFile = process.env[CREWAI_TRAINED_AGENTS_FILE_ENV] ?? TRAINED_AGENTS_DATA_FILE;
+    const crewTrainedFile = readRecordValue(this.crew, "trainedAgentsFile") ?? readRecordValue(this.crew, "trained_agents_file");
+    const trainedFile = typeof crewTrainedFile === "string" && crewTrainedFile.length > 0
+      ? crewTrainedFile
+      : process.env[CREWAI_TRAINED_AGENTS_FILE_ENV] ?? TRAINED_AGENTS_DATA_FILE;
     const data = new CrewTrainingHandler(trainedFile).load();
     if (!isRecord(data)) {
       return taskPrompt;

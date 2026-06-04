@@ -200,6 +200,8 @@ export type CrewOptions = {
   checkpoint_kickoff_event_id?: string | null;
   taskOutputStorageHandler?: TaskOutputStorageHandler | null;
   task_output_storage_handler?: TaskOutputStorageHandler | null;
+  trainedAgentsFile?: string | null;
+  trained_agents_file?: string | null;
 };
 
 export class Crew extends FlowTrackable {
@@ -263,6 +265,8 @@ export class Crew extends FlowTrackable {
   checkpoint_kickoff_event_id: string | null;
   readonly taskOutputStorageHandler: TaskOutputStorageHandler | null;
   readonly task_output_storage_handler: TaskOutputStorageHandler | null;
+  trainedAgentsFile: string | null;
+  trained_agents_file: string | null;
 
   constructor(options: CrewOptions = {}) {
     super();
@@ -335,6 +339,8 @@ export class Crew extends FlowTrackable {
       ?? options.task_output_storage_handler
       ?? new TaskOutputStorageHandler();
     this.task_output_storage_handler = this.taskOutputStorageHandler;
+    this.trainedAgentsFile = normalizeTrainedAgentsFile(options.trainedAgentsFile ?? options.trained_agents_file ?? null);
+    this.trained_agents_file = this.trainedAgentsFile;
     this.createCrewKnowledge();
     this.checkConfig();
     this.checkManagerLlm();
@@ -442,6 +448,7 @@ export class Crew extends FlowTrackable {
       checkpoint_inputs: this.checkpointInputs,
       checkpoint_train: this.checkpointTrain,
       checkpoint_kickoff_event_id: this.checkpointKickoffEventId,
+      trained_agents_file: this.trainedAgentsFile,
       execution_context: this.executionContext ? this.executionContext.toJSON() : null,
     };
   }
@@ -1114,6 +1121,7 @@ export class Crew extends FlowTrackable {
       checkpointTrain: this.checkpointTrain,
       checkpointKickoffEventId: this.checkpointKickoffEventId,
       taskOutputStorageHandler: this.taskOutputStorageHandler,
+      trainedAgentsFile: this.trainedAgentsFile,
     });
   }
 
@@ -2818,6 +2826,7 @@ function normalizeCheckpointCrewEntity(entity: unknown): Crew | null {
     checkpointInputs: isPlainRecord(record.checkpoint_inputs) ? record.checkpoint_inputs : null,
     checkpointTrain: typeof record.checkpoint_train === "boolean" ? record.checkpoint_train : null,
     checkpointKickoffEventId: typeof record.checkpoint_kickoff_event_id === "string" ? record.checkpoint_kickoff_event_id : null,
+    trainedAgentsFile: typeof record.trained_agents_file === "string" ? record.trained_agents_file : null,
   });
 }
 
@@ -2958,6 +2967,13 @@ function agentTrainingId(agent: Agent): string {
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function normalizeTrainedAgentsFile(value: unknown): string | null {
+  if (typeof value === "string") {
+    return value;
+  }
+  return null;
 }
 
 function validateKickoffForEachInputs(inputs: readonly unknown[]): readonly InputValues[] {

@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 983 passing tests.
+- Test suite: 986 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -183,6 +183,7 @@ This register is the source of truth for continuing porting work while parity sc
 - AgentExecutor finalization logging is release-gated for upstream execution-log semantics: successful `finalize` emits `agent_logs_execution` with the final answer and agent/crew verbose state when an agent is attached.
 - AgentExecutor native-tool initialization is release-gated for upstream first-iteration semantics: `initialize_reasoning` enables native tool mode only when the LLM reports function-calling support and original tools exist, and prepares OpenAI tool schemas plus available function mappings.
 - AgentExecutor training feedback context is release-gated for upstream human-feedback semantics: executor-level `_is_training_mode` and `_handle_crew_training_output` integrate with `SyncHumanInputProvider` training feedback, preserving initial and improved outputs through the crew training-output shim.
+- Crew-level `trained_agents_file` is release-gated for upstream trained-data routing: copied crews preserve the configured file path, and agent trained-data lookup prefers `agent.crew.trained_agents_file` over `CREWAI_TRAINED_AGENTS_FILE` before falling back to the default file.
 - AgentExecutor force-final handling is release-gated for upstream max-iteration semantics: `ensure_force_final_answer` delegates through `handleMaxIterationsExceeded`, appends the forced-final prompt, invokes the configured LLM with callbacks, and stores the parsed final answer.
 - Agent utility async LLM calls are release-gated for upstream `aget_llm_response` semantics: async helpers prefer `acall`, preserve callback/options forwarding, reuse response validation, and propagate LLM exceptions.
 - Agent utility context compaction prompts are release-gated for upstream `en.json` summary semantics: summarizer instructions request a structured `<summary>` block, extracted chunk summaries are rewrapped in the final summary message, continuation guidance is preserved, and attached user files survive compaction.

@@ -16056,6 +16056,42 @@ describe("core crew runtime", () => {
       rmSync(dirname(trainedFile), { recursive: true, force: true });
     }
 
+    const previousCrewEnvTrainedFile = process.env.CREWAI_TRAINED_AGENTS_FILE;
+    const crewTrainedDir = mkdtempSync(join(tmpdir(), "crewai-crew-trained-agent-"));
+    const envTrainedFile = join(crewTrainedDir, "env_trained_agents_data.pkl");
+    const crewTrainedFile = join(crewTrainedDir, "crew_trained_agents_data.pkl");
+    try {
+      process.env.CREWAI_TRAINED_AGENTS_FILE = envTrainedFile;
+      writeFileSync(envTrainedFile, JSON.stringify({
+        [agentInstance.role]: {
+          suggestions: ["Use env training"],
+        },
+      }), "utf8");
+      writeFileSync(crewTrainedFile, JSON.stringify({
+        [agentInstance.role]: {
+          suggestions: ["Use crew training"],
+        },
+      }), "utf8");
+      const trainingCrew = new Crew({
+        agents: [agentInstance],
+        tasks: [new Task({ description: "Train", expectedOutput: "Done", agent: agentInstance })],
+        trained_agents_file: crewTrainedFile,
+      });
+      agentInstance.crew = trainingCrew;
+
+      const prompt = agentInstance._use_trained_data("Task prompt");
+      expect(prompt).toContain("Use crew training");
+      expect(prompt).not.toContain("Use env training");
+    } finally {
+      agentInstance.crew = null;
+      if (previousCrewEnvTrainedFile === undefined) {
+        delete process.env.CREWAI_TRAINED_AGENTS_FILE;
+      } else {
+        process.env.CREWAI_TRAINED_AGENTS_FILE = previousCrewEnvTrainedFile;
+      }
+      rmSync(crewTrainedDir, { recursive: true, force: true });
+    }
+
     const output = await agentInstance.execute_task("Summarize CrewAI");
     expect(output).toContain("Summarize CrewAI");
     expect(agentInstance.last_messages.at(-1)?.content).toContain("Summarize CrewAI");
@@ -16800,6 +16836,7 @@ describe("core crew runtime", () => {
       checkpoint_inputs: { topic: "CrewAI" },
       checkpoint_train: true,
       checkpoint_kickoff_event_id: "kickoff-1",
+      trained_agents_file: "custom_trained_agents.pkl",
     });
 
     expect(crewInstance.shareCrew).toBe(true);
@@ -16819,6 +16856,8 @@ describe("core crew runtime", () => {
     expect(crewInstance.checkpoint_train).toBe(true);
     expect(crewInstance.checkpointKickoffEventId).toBe("kickoff-1");
     expect(crewInstance.checkpoint_kickoff_event_id).toBe("kickoff-1");
+    expect(crewInstance.trainedAgentsFile).toBe("custom_trained_agents.pkl");
+    expect(crewInstance.trained_agents_file).toBe("custom_trained_agents.pkl");
 
     const copy = crewInstance.copy();
     expect(copy.share_crew).toBe(true);
@@ -16827,6 +16866,7 @@ describe("core crew runtime", () => {
     expect(copy.execution_context).not.toBe(context);
     expect(copy.execution_context?.currentTaskId).toBe("task-1");
     expect(copy.checkpoint_inputs).toEqual({ topic: "CrewAI" });
+    expect(copy.trained_agents_file).toBe("custom_trained_agents.pkl");
 
     const crewKnowledgeSource = new StringKnowledgeSource("Copied crew knowledge source.");
     const crewKnowledge = new Knowledge({ sources: [new StringKnowledgeSource("Copied crew knowledge.")] });
