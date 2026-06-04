@@ -20975,6 +20975,79 @@ describe("flow runtime", () => {
     expect(getCurrentFlowMethodName()).toBe("unknown");
   });
 
+  it("updates current flow context for listener and router method execution", async () => {
+    class ContextRoutingFlow extends Flow<{ id: string; seen: Record<string, unknown>[] }> {
+      constructor() {
+        super({ initialState: { id: "context-routing-flow", seen: [] } });
+      }
+
+      begin() {
+        this.state.seen.push({
+          phase: "begin",
+          flowId: getCurrentFlowId(),
+          flowName: getCurrentFlowName(),
+          methodName: getCurrentFlowMethodName(),
+        });
+        return "route";
+      }
+
+      choose() {
+        this.state.seen.push({
+          phase: "choose",
+          flowId: getCurrentFlowId(),
+          flowName: getCurrentFlowName(),
+          methodName: getCurrentFlowMethodName(),
+        });
+        return "done";
+      }
+
+      finish() {
+        this.state.seen.push({
+          phase: "finish",
+          flowId: getCurrentFlowId(),
+          flowName: getCurrentFlowName(),
+          methodName: getCurrentFlowMethodName(),
+        });
+        return this.state.seen;
+      }
+    }
+
+    for (const initializer of [
+      decorateMethod(ContextRoutingFlow, "begin", start() as unknown as Decorator),
+      decorateMethod(ContextRoutingFlow, "choose", router("begin") as unknown as Decorator),
+      decorateMethod(ContextRoutingFlow, "finish", listen("done") as unknown as Decorator),
+    ]) {
+      initializer.call(ContextRoutingFlow.prototype);
+    }
+
+    const output = await new ContextRoutingFlow().kickoff();
+
+    expect(output).toEqual([
+      {
+        phase: "begin",
+        flowId: "context-routing-flow",
+        flowName: "ContextRoutingFlow",
+        methodName: "begin",
+      },
+      {
+        phase: "choose",
+        flowId: "context-routing-flow",
+        flowName: "ContextRoutingFlow",
+        methodName: "choose",
+      },
+      {
+        phase: "finish",
+        flowId: "context-routing-flow",
+        flowName: "ContextRoutingFlow",
+        methodName: "finish",
+      },
+    ]);
+    expect(getCurrentFlowRequestId()).toBeNull();
+    expect(getCurrentFlowId()).toBeNull();
+    expect(getCurrentFlowName()).toBeNull();
+    expect(getCurrentFlowMethodName()).toBe("unknown");
+  });
+
   it("exports and reloads flow execution data", async () => {
     class ExportableFlow extends Flow<{ id?: string; value: number; done?: boolean }> {
       constructor() {
