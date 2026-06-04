@@ -16064,6 +16064,52 @@ describe("core crew runtime", () => {
     }
   });
 
+  it("allows concurrent CrewAgentExecutor async object invocations on separate executors", async () => {
+    let currentConcurrent = 0;
+    let maxConcurrent = 0;
+    const createAndRunExecutor = async (id: number): Promise<unknown> => {
+      const executor = new CrewAgentExecutor({
+        prompt: { prompt: "Prompt {input}" },
+      });
+      const startLogs = vi.spyOn(executor, "_show_start_logs").mockImplementation(() => undefined);
+      const saveToMemory = vi.spyOn(executor, "_save_to_memory").mockImplementation(() => undefined);
+      const invokeLoop = vi.spyOn(executor, "_ainvoke_loop").mockImplementation(async () => {
+        currentConcurrent += 1;
+        maxConcurrent = Math.max(maxConcurrent, currentConcurrent);
+        await new Promise((resolve) => {
+          setTimeout(resolve, 10);
+        });
+        currentConcurrent -= 1;
+        return new AgentFinish({
+          thought: "done",
+          output: `Result from executor ${String(id)}`,
+          text: `Result from executor ${String(id)}`,
+        });
+      });
+
+      try {
+        return await executor.ainvoke({ input: `task ${String(id)}`, tool_names: "", tools: "" });
+      } finally {
+        invokeLoop.mockRestore();
+        saveToMemory.mockRestore();
+        startLogs.mockRestore();
+      }
+    };
+
+    const results = await Promise.all([
+      createAndRunExecutor(1),
+      createAndRunExecutor(2),
+      createAndRunExecutor(3),
+    ]);
+
+    expect(results).toEqual([
+      { output: "Result from executor 1" },
+      { output: "Result from executor 2" },
+      { output: "Result from executor 3" },
+    ]);
+    expect(maxConcurrent).toBeGreaterThan(1);
+  });
+
   it("surfaces async AgentExecutor step callback task errors without rejecting sync execution", async () => {
     const printSpy = vi.spyOn(PRINTER, "print").mockImplementation(() => undefined);
     try {

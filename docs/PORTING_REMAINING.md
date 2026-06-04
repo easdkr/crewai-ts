@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 1050 passing tests.
+- Test suite: 1051 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -161,6 +161,7 @@ This register is the source of truth for continuing porting work while parity sc
 - AgentExecutor object-style invoke state reset is release-gated for upstream fresh-run semantics: stale native-tool mode, pending tool calls, plan/todo state, observations, and execution logs are cleared before each fresh invoke.
 - CrewAgentExecutor async object-style reset is release-gated for upstream async executor lifecycle semantics: `ainvoke` clears stale messages and iteration counts before a fresh task while preserving the newly formatted prompt message.
 - CrewAgentExecutor async object-style error propagation is release-gated for upstream async executor semantics: `ainvoke` rethrows `_ainvoke_loop` failures after prompt setup and does not save failed outputs to memory.
+- CrewAgentExecutor concurrent async object invocations are release-gated for upstream async executor semantics: independent executor instances can run `ainvoke` concurrently and return their own outputs without serializing the loop.
 - Crew agent parser input handling is release-gated for upstream ReAct parsing edge cases: incomplete JSON object tool inputs close open strings and braces before normalization, unbalanced quoted non-JSON tool inputs are preserved without the stray leading quote, and literal bracketed, multiline, and escaped-character tool inputs pass through unchanged.
 - AgentExecutor native tool failures are release-gated for upstream task accounting: failed native tool calls append an error tool message and increment the task tool-error counter before continuing the reasoning loop.
 - AgentExecutor native tool max-usage handling is release-gated for upstream execution ordering: usage-limited tools record the limit result before invoking deterministic available-function shims, preserving current usage counts.
