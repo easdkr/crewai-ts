@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 1001 passing tests.
+- Test suite: 1002 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -213,6 +213,7 @@ High-value behavior audits still worth running:
    - Experimental conversational Flow turn helpers are release-gated for deterministic local turns: `handle_turn` / `handleTurn` route through kickoff, `user_message` / `session_id` merge into inputs and state, runtime method tracking resets for each conversational turn, direct kickoff re-runs the graph, and `handle_turn` appends returned assistant strings when the handler did not already append one.
    - Experimental conversational agent-result helpers are release-gated for deterministic local state updates: `append_agent_result` / `appendAgentResult` records private/public events, appends per-agent thread messages, keeps private scratch out of shared history, and promotes explicit public or `visible_agent_outputs` agent results to assistant messages.
    - Experimental conversational Flow state defaults are release-gated for upstream opt-in semantics: `class C extends Flow { static conversational = true }` now starts with a `ConversationState`, and `_create_initial_state` preserves that state shape while assigning an id.
+   - Experimental conversational router catalogs are release-gated for deterministic local router prompts: `_build_route_catalog` / `_buildRouteCatalog` merge explicit router routes with built-in `converse` / `end`, honor `route_descriptions` overrides before built-ins and handler `route_description` metadata, fall back to empty descriptions, and `_build_router_messages` includes the catalog plus sorted `available_routes` context.
    - Before changing the release baseline, classify each new behavior surface by deterministic local workflow, provider/network shim, or intentionally unsupported optional integration.
 
 3. **Experimental `AgentExecutor` plan-and-execute behavior**

@@ -19480,6 +19480,59 @@ describe("flow runtime", () => {
     expect(fresh.messages).toEqual([]);
   });
 
+  it("builds experimental conversational route catalogs for router prompts", () => {
+    class CatalogFlow extends Flow<ConversationState> {
+      static conversational = true;
+      static conversational_config = new ConversationConfig({
+        router: new RouterConfig({
+          prompt: "Classify the turn.",
+          routes: ["RESEARCH", "ORDER", "BARE"],
+          route_descriptions: { ORDER: "explicit override for order route" },
+        }),
+      });
+
+      handleResearch() {
+        return "researched";
+      }
+
+      handleOrder() {
+        return "ordered";
+      }
+
+      handleBare() {
+        return "bare";
+      }
+    }
+
+    (CatalogFlow.prototype.handleResearch as unknown as { route_description: string }).route_description = "Fresh web research, current news, real-time lookups.";
+    (CatalogFlow.prototype.handleOrder as unknown as { route_description: string }).route_description = "This handler metadata should not win.";
+
+    const initializers = [
+      decorateMethod(CatalogFlow, "handleResearch", listen("RESEARCH") as unknown as Decorator),
+      decorateMethod(CatalogFlow, "handleOrder", listen("ORDER") as unknown as Decorator),
+      decorateMethod(CatalogFlow, "handleBare", listen("BARE") as unknown as Decorator),
+    ];
+    const flow = new CatalogFlow();
+    initializers.forEach((initializer) => {
+      initializer.call(flow);
+    });
+
+    const routerConfig = CatalogFlow.conversational_config.router as RouterConfig;
+    const catalog = flow._build_route_catalog(routerConfig);
+
+    expect(catalog.RESEARCH).toBe("Fresh web research, current news, real-time lookups.");
+    expect(catalog.ORDER).toBe("explicit override for order route");
+    expect(catalog.BARE).toBe("");
+    expect(catalog.converse).toContain("Ordinary chat");
+    expect(catalog.end).toContain("finished");
+
+    const messages = flow._build_router_messages(routerConfig, { current_user_message: "research CrewAI" });
+    expect(messages[0]?.content).toContain("Classify the turn.");
+    expect(messages[0]?.content).toContain("- RESEARCH: Fresh web research, current news, real-time lookups.");
+    expect(messages[0]?.content).toContain("- BARE");
+    expect(messages[1]?.content).toContain("\"available_routes\"");
+  });
+
   it("provides upstream experimental conversational data shapes", () => {
     const router = new RouterConfig({
       routes: ["converse", "handoff"],

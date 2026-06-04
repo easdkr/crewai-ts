@@ -61,6 +61,7 @@ import {
   type ConversationEventVisibility,
   ConversationState,
   ConversationMessage,
+  RouterConfig,
 } from "./experimental-conversational.js";
 import {
   appendMessage,
@@ -1194,6 +1195,16 @@ const humanFeedbackMetadata = new WeakMap<FlowMetadataTarget, Map<string, HumanF
 
 export class Flow<TState extends object = Record<string, unknown>> {
   static _flow_definition?: FlowDefinition | null;
+  static builtin_routes: readonly string[] = ["converse", "end"];
+  static builtinRoutes: readonly string[] = Flow.builtin_routes;
+  static internal_routes: readonly string[] = ["answer_from_history", "conversation_start"];
+  static internalRoutes: readonly string[] = Flow.internal_routes;
+  static builtin_route_descriptions: Readonly<Record<string, string>> = {
+    converse: "Ordinary chat, follow-ups, summaries, clarifications, and questions answerable from prior conversation history.",
+    end: "User signals the conversation is finished (goodbye, exit, done).",
+    answer_from_history: "Answer directly from prior conversation history without invoking tools, agents, or custom routes.",
+  };
+  static builtinRouteDescriptions: Readonly<Record<string, string>> = Flow.builtin_route_descriptions;
 
   static flowDefinition(this: FlowMetadataTarget & { _flow_definition?: FlowDefinition | null }): FlowDefinition {
     if (!Object.prototype.hasOwnProperty.call(this, "_flow_definition") || !this._flow_definition) {
@@ -1413,6 +1424,108 @@ export class Flow<TState extends object = Record<string, unknown>> {
     options: { visibility?: ConversationEventVisibility; metadata?: Record<string, unknown> } = {},
   ): void {
     this.appendAgentResult(agentName, result, options);
+  }
+
+  _buildRouteCatalog(routerConfig: RouterConfig | null = null): Record<string, string> {
+    const labelToMethod = new Map<string, string>();
+    for (const entry of getFlowMetadata(this)) {
+      if (entry.kind !== "listen") {
+        continue;
+      }
+      for (const label of flowConditionLabels(entry.condition)) {
+        if (!labelToMethod.has(label)) {
+          labelToMethod.set(label, String(entry.name));
+        }
+      }
+    }
+
+    const routes = this._effectiveRoutes(routerConfig);
+    const overrides = routerConfig?.route_descriptions ?? routerConfig?.routeDescriptions ?? {};
+    const builtinDescriptions = getStaticRecord(this.constructor, "builtin_route_descriptions")
+      ?? getStaticRecord(this.constructor, "builtinRouteDescriptions")
+      ?? {};
+    const catalog: Record<string, string> = {};
+    for (const routeLabel of routes) {
+      if (Object.hasOwn(overrides, routeLabel)) {
+        catalog[routeLabel] = String(overrides[routeLabel]);
+        continue;
+      }
+      if (Object.hasOwn(builtinDescriptions, routeLabel)) {
+        catalog[routeLabel] = String(builtinDescriptions[routeLabel]);
+        continue;
+      }
+      catalog[routeLabel] = this.routeDescriptionForHandler(labelToMethod.get(routeLabel));
+    }
+    return catalog;
+  }
+
+  _build_route_catalog(routerConfig: RouterConfig | null = null): Record<string, string> {
+    return this._buildRouteCatalog(routerConfig);
+  }
+
+  _buildRouterMessages(routerConfig: RouterConfig, context: Record<string, unknown>): LLMMessage[] {
+    const catalog = this._buildRouteCatalog(routerConfig);
+    const routesSection = [
+      "Routes:",
+      ...Object.entries(catalog)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([label, description]) => description ? `- ${label}: ${description}` : `- ${label}`),
+    ].join("\n");
+    const domainPrompt = routerConfig.prompt ? `${routerConfig.prompt}\n\n` : "";
+    const routingPrompt = `${domainPrompt}${routesSection}\n\nChoose exactly one route from the list above. Prefer 'converse' for follow-ups, summaries, and clarifications about prior turns - even if they touch on a topic the user previously invoked a custom route for. Use a custom route only when the user is making a fresh request for that tool or workflow.`;
+    return [
+      { role: "system", content: routingPrompt },
+      { role: "user", content: JSON.stringify({ ...context, available_routes: Object.keys(catalog).sort() }) },
+    ];
+  }
+
+  _build_router_messages(routerConfig: RouterConfig, context: Record<string, unknown>): LLMMessage[] {
+    return this._buildRouterMessages(routerConfig, context);
+  }
+
+  _effectiveRoutes(routerConfig: RouterConfig | null = null): string[] {
+    const builtinRoutes = getStaticStringArray(this.constructor, "builtin_routes")
+      ?? getStaticStringArray(this.constructor, "builtinRoutes")
+      ?? ["converse", "end"];
+    const internalRoutes = getStaticStringArray(this.constructor, "internal_routes")
+      ?? getStaticStringArray(this.constructor, "internalRoutes")
+      ?? ["answer_from_history", "conversation_start"];
+    const explicitRoutes = routerConfig?.routes ? [...routerConfig.routes] : [];
+    const customRoutes = explicitRoutes.length > 0
+      ? explicitRoutes
+      : this.validRouteLabels().filter((label) => !builtinRoutes.includes(label) && !internalRoutes.includes(label));
+    return [...new Set([...customRoutes, ...builtinRoutes])];
+  }
+
+  _effective_routes(routerConfig: RouterConfig | null = null): string[] {
+    return this._effectiveRoutes(routerConfig);
+  }
+
+  private validRouteLabels(): string[] {
+    const labels = new Set<string>();
+    for (const entry of getFlowMetadata(this)) {
+      if (entry.kind !== "listen") {
+        continue;
+      }
+      for (const label of flowConditionLabels(entry.condition)) {
+        labels.add(label);
+      }
+    }
+    return [...labels];
+  }
+
+  private routeDescriptionForHandler(handlerName: string | undefined): string {
+    if (!handlerName) {
+      return "";
+    }
+    const prototype = (this.constructor as { prototype?: Record<string, unknown> }).prototype;
+    const handler = prototype?.[handlerName];
+    if (!handler || (typeof handler !== "function" && !isRecord(handler))) {
+      return "";
+    }
+    const record = handler as unknown as Record<string, unknown>;
+    const description = record.route_description ?? record.routeDescription;
+    return typeof description === "string" ? description.trim().split(/\r?\n/, 1)[0]?.trim() ?? "" : "";
   }
 
   async handleTurn(
@@ -5255,6 +5368,21 @@ function conditionIncludesTrigger(condition: FlowCondition, triggerName: string)
   return condition.conditions.some((nested) => nestedIncludesTrigger(nested, triggerName));
 }
 
+function flowConditionLabels(condition: FlowCondition | null): string[] {
+  if (!condition) {
+    return [];
+  }
+  return condition.conditions.flatMap((nested) => {
+    if (typeof nested === "string") {
+      return [nested];
+    }
+    if (typeof nested === "function") {
+      return [nested.name];
+    }
+    return flowConditionLabels(nested);
+  });
+}
+
 function shouldSuppressOrSelfRetrigger(
   condition: FlowCondition,
   listenerName: string,
@@ -5334,6 +5462,16 @@ function cloneConversationState(state: ConversationState): ConversationState {
 
 function isConversationalFlowConstructor(constructor: object): boolean {
   return (constructor as unknown as Record<string, unknown>).conversational === true;
+}
+
+function getStaticStringArray(constructor: object, key: string): string[] | null {
+  const value = (constructor as unknown as Record<string, unknown>)[key];
+  return Array.isArray(value) && value.every((item) => typeof item === "string") ? [...value] : null;
+}
+
+function getStaticRecord(constructor: object, key: string): Record<string, unknown> | null {
+  const value = (constructor as unknown as Record<string, unknown>)[key];
+  return isRecord(value) ? value : null;
 }
 
 function cloneFlowState<TState extends object>(state: TState): TState {
