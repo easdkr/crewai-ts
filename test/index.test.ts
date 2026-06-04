@@ -2469,6 +2469,22 @@ describe("environment, logging, and file store utilities", () => {
     );
   });
 
+  it("formats OpenAI multimodal image files as image_url data URLs", () => {
+    const pngBytes = Buffer.concat([
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      Buffer.from("image-body"),
+    ]);
+    const result = format_multimodal_content({
+      chart: new ImageFile({ source: pngBytes }),
+    }, "openai/gpt-4o");
+
+    expect(result).toHaveLength(1);
+    expect(result[0]?.type).toBe("image_url");
+    const url = (result[0]?.image_url as { url?: string } | undefined)?.url ?? "";
+    expect(url.startsWith("data:image/png;base64,")).toBe(true);
+    expect(Buffer.from(url.split(",")[1] ?? "", "base64")).toEqual(pngBytes);
+  });
+
   it("skips unsupported OpenAI multimodal text files", () => {
     const files = {
       doc: new TextFile({ source: Buffer.from("hello world") }),
