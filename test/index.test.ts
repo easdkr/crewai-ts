@@ -33302,6 +33302,47 @@ describe("hierarchical process", () => {
     expect(unassignedTools.map((tool) => tool.description).join("\n")).toContain("Writer");
   });
 
+  it("matches hierarchical delegation coworkers across role case and whitespace variations", async () => {
+    const researcher = new Agent({
+      role: " Researcher ",
+      goal: "Find facts",
+      backstory: "Careful analyst",
+      llm: () => "research matched",
+    });
+    const writer = new Agent({
+      role: "SENIOR WRITER",
+      goal: "Write",
+      backstory: "Careful writer",
+      llm: () => "writer matched",
+    });
+    const unassignedTask = new Task({
+      description: "Research and write",
+      expectedOutput: "A concise brief",
+    });
+    const crew = new Crew({
+      agents: [researcher, writer],
+      tasks: [unassignedTask],
+      process: Process.hierarchical,
+      managerLlm: () => "manager",
+    });
+    crew._create_manager_agent();
+
+    const [delegationTool, questionTool] = crew._update_manager_tools(unassignedTask, []) as StructuredTool[];
+
+    expect(delegationTool?.description).toContain(" Researcher ");
+    expect(delegationTool?.description).toContain("SENIOR WRITER");
+    await expect(delegationTool?.ainvoke({
+      coworker: "researcher",
+      task: "Gather notes",
+      context: "",
+    })).resolves.toBe("research matched");
+    await expect(questionTool?.ainvoke({
+      coworker: " senior writer ",
+      question: "Draft summary",
+      context: "",
+    })).resolves.toBe("writer matched");
+  });
+
   it("rejects manager agents that are included in regular agents", () => {
     const manager = new Agent({
       role: "Manager",
