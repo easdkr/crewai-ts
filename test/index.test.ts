@@ -26047,6 +26047,51 @@ describe("LLM providers", () => {
       model: "test/configured-model",
     });
 
+    const previousDeepSeekKey = process.env.DEEPSEEK_API_KEY;
+    const previousOpenRouterKey = process.env.OPENROUTER_API_KEY;
+    const previousCerebrasKey = process.env.CEREBRAS_API_KEY;
+    const previousDashscopeKey = process.env.DASHSCOPE_API_KEY;
+    try {
+      process.env.DEEPSEEK_API_KEY = "deepseek-key";
+      process.env.OPENROUTER_API_KEY = "openrouter-key";
+      process.env.CEREBRAS_API_KEY = "cerebras-key";
+      process.env.DASHSCOPE_API_KEY = "dashscope-key";
+
+      const deepseek = create_llm("deepseek/deepseek-chat");
+      expect(deepseek).toBeInstanceOf(OpenAICompatibleCompletion);
+      expect((deepseek as OpenAICompatibleCompletion).provider).toBe("deepseek");
+      expect((deepseek as OpenAICompatibleCompletion).model).toBe("deepseek-chat");
+
+      const ollama = create_llm("ollama/llama3");
+      expect(ollama).toBeInstanceOf(OpenAICompatibleCompletion);
+      expect((ollama as OpenAICompatibleCompletion).provider).toBe("ollama");
+      expect((ollama as OpenAICompatibleCompletion).model).toBe("llama3");
+
+      const openrouter = create_llm("openrouter/anthropic/claude-3-opus");
+      expect(openrouter).toBeInstanceOf(OpenAICompatibleCompletion);
+      expect((openrouter as OpenAICompatibleCompletion).provider).toBe("openrouter");
+      expect((openrouter as OpenAICompatibleCompletion).model).toBe("anthropic/claude-3-opus");
+
+      expect((create_llm("hosted_vllm/meta-llama/Llama-3-8b") as OpenAICompatibleCompletion).provider)
+        .toBe("hosted_vllm");
+      expect((create_llm("cerebras/llama3-8b") as OpenAICompatibleCompletion).provider).toBe("cerebras");
+      expect((create_llm("dashscope/qwen-turbo") as OpenAICompatibleCompletion).provider).toBe("dashscope");
+
+      const explicitProvider = create_llm({ model: "deepseek-chat", provider: "deepseek" });
+      expect(explicitProvider).toBeInstanceOf(OpenAICompatibleCompletion);
+      expect((explicitProvider as OpenAICompatibleCompletion).model).toBe("deepseek-chat");
+      expect((explicitProvider as OpenAICompatibleCompletion).provider).toBe("deepseek");
+    } finally {
+      if (previousDeepSeekKey === undefined) delete process.env.DEEPSEEK_API_KEY;
+      else process.env.DEEPSEEK_API_KEY = previousDeepSeekKey;
+      if (previousOpenRouterKey === undefined) delete process.env.OPENROUTER_API_KEY;
+      else process.env.OPENROUTER_API_KEY = previousOpenRouterKey;
+      if (previousCerebrasKey === undefined) delete process.env.CEREBRAS_API_KEY;
+      else process.env.CEREBRAS_API_KEY = previousCerebrasKey;
+      if (previousDashscopeKey === undefined) delete process.env.DASHSCOPE_API_KEY;
+      else process.env.DASHSCOPE_API_KEY = previousDashscopeKey;
+    }
+
     const fromObject = create_llm({
       model_name: "test/object-model",
       temperature: 0.2,

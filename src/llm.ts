@@ -1073,6 +1073,7 @@ let configuredCallbacks: readonly unknown[] = [];
 let configuredSuccessCallbacks: readonly unknown[] = [];
 let configuredFailureCallbacks: readonly unknown[] = [];
 const registeredProviders = new Map<string, LLMClient>();
+const registeredProviderFactories = new Map<string, (options: ConstructorParameters<typeof ConfiguredLLM>[0]) => LLMClient>();
 const openAIModelSet = new Set<string>(OPENAI_MODELS);
 const anthropicModelSet = new Set<string>(ANTHROPIC_MODELS);
 const geminiModelSet = new Set<string>(GEMINI_MODELS);
@@ -1213,10 +1214,11 @@ export function createLLM(
   }
   if (typeof llmValue === "string") {
     const spec = resolveLLMModelSpec(llmValue);
-    return new ConfiguredLLM({
-      model: llmValue,
+    const usesProviderFactory = registeredProviderFactories.has(spec.provider);
+    return createConfiguredLLM({
+      model: usesProviderFactory ? spec.model : llmValue,
       provider: spec.provider,
-      is_litellm: !spec.useNative,
+      is_litellm: !spec.useNative && !usesProviderFactory,
     });
   }
   if (typeof llmValue === "function" || isLLMClient(llmValue)) {
@@ -1247,7 +1249,7 @@ export function createLLM(
   if (apiBase !== undefined) {
     options.api_base = apiBase;
   }
-  return new ConfiguredLLM(options);
+  return createConfiguredLLM(options);
 }
 
 export const create_llm = createLLM;
@@ -1262,15 +1264,16 @@ export function llmViaEnvironmentOrFallback(env: CreateLLMEnvironment = process.
     baseUrl = apiBase;
   }
   const spec = resolveLLMModelSpec(model);
+  const usesProviderFactory = registeredProviderFactories.has(spec.provider);
   const options: ConstructorParameters<typeof ConfiguredLLM>[0] = {
-    model,
+    model: usesProviderFactory ? spec.model : model,
     provider: spec.provider,
-    is_litellm: !spec.useNative,
+    is_litellm: !spec.useNative && !usesProviderFactory,
     ...(baseUrl === undefined ? {} : { base_url: baseUrl }),
     ...(apiBase === undefined ? {} : { api_base: apiBase }),
   };
   applyLLMEnvVars(options, spec.provider, env);
-  return new ConfiguredLLM(options);
+  return createConfiguredLLM(options);
 }
 
 export const llm_via_environment_or_fallback = llmViaEnvironmentOrFallback;
@@ -2623,6 +2626,13 @@ export function registerLLMProvider(model: string, provider: LLM): void {
   registeredProviders.set(model, createLLMClient(provider));
 }
 
+export function registerLLMProviderFactory(
+  provider: string,
+  factory: (options: ConstructorParameters<typeof ConfiguredLLM>[0]) => LLMClient,
+): void {
+  registeredProviderFactories.set(canonicalLLMProvider(provider), factory);
+}
+
 export function unregisterLLMProvider(model: string): void {
   registeredProviders.delete(model);
 }
@@ -2633,6 +2643,12 @@ export function clearLLMProviders(): void {
 
 export function resolveLLMProvider(model: string): LLMClient | null {
   return registeredProviders.get(model) ?? null;
+}
+
+function createConfiguredLLM(options: ConstructorParameters<typeof ConfiguredLLM>[0]): LLMClient {
+  const provider = typeof options.provider === "string" ? canonicalLLMProvider(options.provider) : null;
+  const factory = provider ? registeredProviderFactories.get(provider) : undefined;
+  return factory ? factory(options) : new ConfiguredLLM(options);
 }
 
 export async function callLLM(

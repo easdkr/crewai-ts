@@ -1,4 +1,4 @@
-import { ConfiguredLLM, LocalFileUploader, type BaseLLMOptions, type LLMCallOptions, type LLMMessageInput, type LLMResponse } from "./llm.js";
+import { ConfiguredLLM, LocalFileUploader, registerLLMProviderFactory, type BaseLLMOptions, type LLMCallOptions, type LLMMessageInput, type LLMResponse } from "./llm.js";
 import { convertToolsToOpenAISchema } from "./agent-utils.js";
 import { generateModelDescription, type JsonSchema } from "./schema-utils.js";
 import type { LLMMessage, Tool } from "./types.js";
@@ -1058,6 +1058,17 @@ export class OpenAICompatibleCompletion extends OpenAICompletion {
   static _resolve_headers(headers: Record<string, string> | null, config: ProviderConfig): Record<string, string> | null {
     return OpenAICompatibleCompletion.resolveHeaders(headers, config);
   }
+}
+
+for (const provider of Object.keys(OPENAI_COMPATIBLE_PROVIDERS)) {
+  registerLLMProviderFactory(provider, (options) => {
+    const { logprobs: _logprobs, ...compatibleOptions } = options;
+    void _logprobs;
+    return new OpenAICompatibleCompletion(stripUndefined({
+      ...compatibleOptions,
+      provider,
+    }) as OpenAICompletionOptions & { provider: string });
+  });
 }
 
 function stripUndefined<T extends Record<string, unknown>>(value: T): Partial<T> {
