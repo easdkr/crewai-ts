@@ -304,8 +304,8 @@ export function prepareKickoff(
     normalizedInputs = normalizeKickoffInputs(callUnknown(callback, crew, normalizedInputs));
   }
 
-  const isResumingFromCheckpoint = crew.checkpointKickoffEventId !== undefined
-    || crew.checkpoint_kickoff_event_id !== undefined;
+  const isResumingFromCheckpoint = crew.checkpointKickoffEventId != null
+    || crew.checkpoint_kickoff_event_id != null;
   if (!isResumingFromCheckpoint) {
     const started = new CrewKickoffStartedEvent({
       crewName: typeof crew.name === "string" ? crew.name : null,

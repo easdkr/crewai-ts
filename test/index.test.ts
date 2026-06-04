@@ -18266,6 +18266,70 @@ describe("standard decorators", () => {
     expect(output_pydantic).toBe(outputPydantic);
     expect(cache_handler).toBe(cacheHandler);
   });
+
+  it("emits CrewBase display names during prepare_kickoff", () => {
+    const capturedNames: Array<string | null> = [];
+    const off = crewaiEventBus.on("crew_kickoff_started", (_source, event) => {
+      capturedNames.push(event.crewName);
+    });
+    class ResearchAutomation {
+      agents: Agent[] = [];
+      tasks: Task[] = [];
+
+      researcher() {
+        return new Agent({
+          role: "Researcher",
+          goal: "Find facts",
+          backstory: "Careful analyst",
+        });
+      }
+
+      firstTask() {
+        return new Task({
+          description: "Task 1",
+          expectedOutput: "output",
+          agent: this.researcher(),
+        });
+      }
+
+      implicitCrew() {
+        return new Crew({
+          agents: this.agents,
+          tasks: this.tasks,
+        });
+      }
+
+      explicitCrew() {
+        return new Crew({
+          name: "My Research Automation",
+          agents: this.agents,
+          tasks: this.tasks,
+        });
+      }
+    }
+
+    const DecoratedAutomation = decorateClass(ResearchAutomation, CrewBase as unknown as Decorator);
+    const initializers = [
+      decorateMethod(ResearchAutomation, "researcher", agent),
+      decorateMethod(ResearchAutomation, "firstTask", task),
+      decorateMethod(ResearchAutomation, "implicitCrew", crew),
+      decorateMethod(ResearchAutomation, "explicitCrew", crew),
+    ];
+
+    try {
+      const instance = new DecoratedAutomation();
+      initializers.forEach((initializer) => {
+        initializer.call(instance);
+      });
+
+      prepare_kickoff(instance.implicitCrew(), null);
+      prepare_kickoff(instance.explicitCrew(), null);
+
+      expect(capturedNames).toEqual(["ResearchAutomation", "My Research Automation"]);
+    } finally {
+      off();
+    }
+  });
 });
 
 describe("top-level CrewAI exports", () => {
