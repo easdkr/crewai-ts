@@ -19880,6 +19880,69 @@ describe("flow runtime", () => {
     });
   });
 
+  it("auto-enables experimental conversational router only for custom routes", async () => {
+    const routerCalls: LLMMessage[][] = [];
+    const routerLlm = {
+      call(messages: LLMMessage[]) {
+        routerCalls.push(messages);
+        return { intent: "search" };
+      },
+    };
+
+    class AutoRouterFlow extends Flow<ConversationState> {
+      static conversational = true;
+      static conversational_config = new ConversationConfig({ llm: routerLlm });
+
+      handleSearch() {
+        this.append_assistant_message("searched");
+        return "searched";
+      }
+    }
+
+    const initializer = decorateMethod(AutoRouterFlow, "handleSearch", listen("search") as unknown as Decorator);
+    const flow = new AutoRouterFlow();
+    initializer.call(flow);
+
+    await expect(flow.handle_turn("research today")).resolves.toBe("searched");
+
+    expect(routerCalls).toHaveLength(1);
+    expect(flow.state.last_intent).toBe("search");
+  });
+
+  it("skips experimental conversational router auto-enable for default intents", async () => {
+    const routerLlm = {
+      call() {
+        throw new Error("router should not be auto-enabled");
+      },
+    };
+
+    class LegacyIntentFlow extends Flow<ConversationState> {
+      static conversational = true;
+      static conversational_config = new ConversationConfig({
+        llm: routerLlm,
+        default_intents: ["search"],
+        intent_llm: "fake-intent-llm",
+      });
+
+      classify_intent() {
+        return "search";
+      }
+
+      handleSearch() {
+        this.append_assistant_message("legacy-searched");
+        return "legacy-searched";
+      }
+    }
+
+    const initializer = decorateMethod(LegacyIntentFlow, "handleSearch", listen("search") as unknown as Decorator);
+    const flow = new LegacyIntentFlow();
+    initializer.call(flow);
+
+    await expect(flow.handle_turn("look it up")).resolves.toBe("legacy-searched");
+
+    expect(flow.state.last_intent).toBe("search");
+  });
+
   it("provides upstream experimental conversational data shapes", () => {
     const router = new RouterConfig({
       routes: ["converse", "handoff"],

@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 1010 passing tests.
+- Test suite: 1012 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -216,6 +216,7 @@ High-value behavior audits still worth running:
    - Experimental conversational built-in runtime graph wiring is release-gated for upstream mixin semantics: conversational flows automatically get `conversation_start`, `route_conversation`, `converse_turn`, `end_conversation`, and `answer_from_history_turn` runtime metadata when user-defined start/router/listener wiring does not already cover the same edge.
    - Experimental conversational router catalogs are release-gated for deterministic local router prompts: `_build_route_catalog` / `_buildRouteCatalog` merge explicit router routes with built-in `converse` / `end`, honor `route_descriptions` overrides before built-ins and handler `route_description` metadata, fall back to empty descriptions, and `_build_router_messages` includes the catalog plus sorted `available_routes` context.
    - Experimental conversational router decisions are release-gated for deterministic local LLM routing: `build_router_context` carries the previous `last_intent`, `route_turn` invokes router LLMs with route response-format metadata, validates returned intents against effective routes, persists the selected intent, and `converse_turn` appends chat LLM responses through canonical history.
+   - Experimental conversational router auto-enable behavior is release-gated for upstream custom-route semantics: `ConversationConfig(llm=...)` without an explicit router still routes through the LLM when custom listener routes are declared, while `default_intents` keeps the legacy classifier path and opts out of auto-router behavior.
    - Experimental conversational router response-format helpers are release-gated for upstream default routing semantics: `_router_response_format` / `_routerResponseFormat` preserve explicit router response formats and otherwise expose deterministic `ConversationRoute` metadata built from effective routes plus the configured intent field.
    - Experimental conversational answer-from-history handling is release-gated for deterministic local history turns: `route_conversation` / `routeConversation` can route to `answer_from_history` after the configured history classifier, and `answer_from_history_turn` / `answerFromHistoryTurn` calls the configured history LLM with canonical conversation context before appending the assistant reply.
    - Experimental conversational builtin end handling is release-gated for upstream `end` route semantics: `end_conversation` / `endConversation` marks `ConversationState.ended` and appends the final `"Conversation ended."` assistant message.
