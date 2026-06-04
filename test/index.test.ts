@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { gzipSync } from "node:zlib";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -16200,13 +16201,22 @@ describe("core crew runtime", () => {
       const trainingCrew = new Crew({
         agents: [agentInstance],
         tasks: [new Task({ description: "Train", expectedOutput: "Done", agent: agentInstance })],
-        trained_agents_file: crewTrainedFile,
+        trained_agents_file: pathToFileURL(crewTrainedFile),
       });
       agentInstance.crew = trainingCrew;
 
       const prompt = agentInstance._use_trained_data("Task prompt");
       expect(prompt).toContain("Use crew training");
       expect(prompt).not.toContain("Use env training");
+
+      agentInstance.crew = {
+        trained_agents_file: {
+          toString: () => crewTrainedFile,
+        },
+      };
+      const pathLikePrompt = agentInstance._use_trained_data("Task prompt");
+      expect(pathLikePrompt).toContain("Use crew training");
+      expect(pathLikePrompt).not.toContain("Use env training");
     } finally {
       agentInstance.crew = null;
       if (previousCrewEnvTrainedFile === undefined) {

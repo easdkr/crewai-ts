@@ -1,4 +1,5 @@
 import { existsSync, statSync } from "node:fs";
+import type { PathLike } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
@@ -40,7 +41,9 @@ import type { LLM } from "./types.js";
 import { createReadFileTool, extractInputFilesFromInputs } from "./input-files.js";
 import type { EmbedderConfig } from "./rag.js";
 import { aggregateRawOutputsFromTaskOutputs, aggregateRawOutputsFromTasks } from "./formatter.js";
-import { withCrewContext } from "./utilities.js";
+import { normalizePathLikeString, withCrewContext } from "./utilities.js";
+
+type PathLikeString = PathLike | { toString(): string };
 
 export type KickoffOptions = {
   inputs?: InputValues;
@@ -200,8 +203,8 @@ export type CrewOptions = {
   checkpoint_kickoff_event_id?: string | null;
   taskOutputStorageHandler?: TaskOutputStorageHandler | null;
   task_output_storage_handler?: TaskOutputStorageHandler | null;
-  trainedAgentsFile?: string | null;
-  trained_agents_file?: string | null;
+  trainedAgentsFile?: PathLikeString | null;
+  trained_agents_file?: PathLikeString | null;
 };
 
 export class Crew extends FlowTrackable {
@@ -2970,10 +2973,7 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function normalizeTrainedAgentsFile(value: unknown): string | null {
-  if (typeof value === "string") {
-    return value;
-  }
-  return null;
+  return normalizePathLikeString(value);
 }
 
 function validateKickoffForEachInputs(inputs: readonly unknown[]): readonly InputValues[] {

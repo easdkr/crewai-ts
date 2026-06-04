@@ -1,5 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { AsyncLocalStorage } from "node:async_hooks";
+import { Buffer } from "node:buffer";
+import { fileURLToPath } from "node:url";
 
 import type { LLMMessage } from "./types.js";
 import { __version__ } from "./version.js";
@@ -16,6 +18,28 @@ export class OptionalDependencyError extends ImportError {
     super(message, options);
     this.name = "OptionalDependencyError";
   }
+}
+
+export function normalizePathLikeString(value: unknown): string | null {
+  if (typeof value === "string") {
+    return value;
+  }
+  if (value instanceof URL) {
+    return value.protocol === "file:" ? fileURLToPath(value) : value.toString();
+  }
+  if (Buffer.isBuffer(value)) {
+    return value.toString();
+  }
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const candidate = value as { toString?: unknown };
+  const toString = candidate.toString;
+  if (typeof toString !== "function" || toString === Object.prototype.toString) {
+    return null;
+  }
+  const rendered = String(toString.call(candidate));
+  return rendered.length > 0 && rendered !== "[object Object]" ? rendered : null;
 }
 
 export const COMPONENTS = Object.freeze([

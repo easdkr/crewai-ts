@@ -80,6 +80,7 @@ import { loadAgentFromRepository } from "./agent-utils.js";
 import { serializeGuardrailForJson } from "./guardrail.js";
 import { inject_a2a_server_methods } from "./a2a.js";
 import { I18N_DEFAULT } from "./i18n.js";
+import { normalizePathLikeString } from "./utilities.js";
 
 export type AgentGuardrailResult =
   | readonly [boolean, unknown]
@@ -1125,8 +1126,9 @@ export class Agent {
 
   _use_trained_data(taskPrompt: string): string {
     const crewTrainedFile = readRecordValue(this.crew, "trainedAgentsFile") ?? readRecordValue(this.crew, "trained_agents_file");
-    const trainedFile = typeof crewTrainedFile === "string" && crewTrainedFile.length > 0
-      ? crewTrainedFile
+    const normalizedCrewTrainedFile = normalizePathLikeString(crewTrainedFile);
+    const trainedFile = normalizedCrewTrainedFile && normalizedCrewTrainedFile.length > 0
+      ? normalizedCrewTrainedFile
       : process.env[CREWAI_TRAINED_AGENTS_FILE_ENV] ?? TRAINED_AGENTS_DATA_FILE;
     const data = new CrewTrainingHandler(trainedFile).load();
     if (!isRecord(data)) {
