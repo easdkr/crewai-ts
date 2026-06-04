@@ -15538,6 +15538,7 @@ describe("core crew runtime", () => {
     agentInstance.interpolate_inputs({ topic: "CrewAI" });
     expect(agentInstance.role).toBe("Researcher CrewAI");
     expect(agentInstance.goal).toBe("Find facts about CrewAI");
+    expect(agentInstance.key).toBe("1429c98dda794c9ef31ac50046a40b50");
     expect(agentInstance.__repr__()).toBe("Agent(role=Researcher CrewAI, goal=Find facts about CrewAI, backstory=Careful analyst)");
     expect(agentInstance.toString()).toBe(agentInstance.__repr__());
     expect(agentInstance.resolve_memory()).toBeNull();
@@ -17030,7 +17031,7 @@ describe("core crew runtime", () => {
     expect(crewInstance.executionLogs[0]).toMatchObject({
       task: {
         name: "execution-log-task",
-        description: "Log {topic}",
+        description: "Log CrewAI",
         expectedOutput: "A structured log",
       },
       output: {
@@ -28639,6 +28640,39 @@ describe("task interpolation", () => {
     })).toBe(
       "{'name': 'TechCorp', 'departments': [{'name': 'Engineering', 'employees': 50, 'tools': ['Git', 'Docker', 'Kubernetes']}, {'name': 'Sales', 'employees': 20, 'regions': {'north': 5, 'south': 3}}]}",
     );
+  });
+
+  it("interpolates upstream hyphenated input names through crew kickoff", async () => {
+    const agentInstance = new Agent({
+      role: "Researcher",
+      goal: "be an assistant that responds with {interpolation-with-hyphens}",
+      backstory: "Careful analyst",
+      llm: () => "Hello, World!",
+    });
+    const taskInstance = new Task({
+      description: "be an assistant that responds with {interpolation-with-hyphens}",
+      expectedOutput: "The response should be addressing: {interpolation-with-hyphens}",
+      agent: agentInstance,
+    });
+    const crewInstance = new Crew({
+      agents: [agentInstance],
+      tasks: [taskInstance],
+    });
+
+    const result = await crewInstance.kickoff({
+      inputs: { "interpolation-with-hyphens": "say hello world" },
+    });
+
+    expect(taskInstance.prompt()).toContain("say hello world");
+    expect(agentInstance.goal).toContain("say hello world");
+    expect(result.raw).toBe("Hello, World!");
+
+    await crewInstance.kickoff({
+      inputs: { "interpolation-with-hyphens": "say goodbye world" },
+    });
+
+    expect(taskInstance.prompt()).toContain("say goodbye world");
+    expect(agentInstance.goal).toContain("say goodbye world");
   });
 
   it("sanitizes tool names and slugifies strings using upstream-compatible rules", () => {

@@ -721,7 +721,8 @@ export class Task {
     return parts.filter((part): part is string => Boolean(part)).join("\n");
   }
 
-  interpolateInputsAndAddConversationHistory(inputs: InputValues): void {
+  interpolateInputsAndAddConversationHistory(inputs: InputValues, options: { strictMissing?: boolean } = {}): void {
+    const strictMissing = options.strictMissing ?? true;
     if (this.checkpointOriginalDescription === null) {
       this.checkpointOriginalDescription = this.description;
       this.checkpoint_original_description = this.checkpointOriginalDescription;
@@ -738,19 +739,19 @@ export class Task {
       return;
     }
     try {
-      this.description = interpolateOnly(this.checkpointOriginalDescription, inputs, { strictMissing: true });
+      this.description = interpolateOnly(this.checkpointOriginalDescription, inputs, { strictMissing });
     } catch (error) {
       throw new Error(`Error interpolating description: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
     }
     try {
-      this.expectedOutput = interpolateOnly(this.checkpointOriginalExpectedOutput, inputs, { strictMissing: true });
+      this.expectedOutput = interpolateOnly(this.checkpointOriginalExpectedOutput, inputs, { strictMissing });
       this.expected_output = this.expectedOutput;
     } catch (error) {
       throw new Error(`Error interpolating expected_output: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
     }
     if (this.outputFile !== null && this.checkpointOriginalOutputFile !== null) {
       try {
-        this.outputFile = interpolateOnly(this.checkpointOriginalOutputFile, inputs, { strictMissing: true });
+        this.outputFile = interpolateOnly(this.checkpointOriginalOutputFile, inputs, { strictMissing });
         this.output_file = this.outputFile;
       } catch (error) {
         throw new Error(`Error interpolating output_file path: ${error instanceof Error ? error.message : String(error)}`, { cause: error });

@@ -189,6 +189,12 @@ export type AgentOptions = {
   execution_context?: ExecutionContext | null;
   checkpointKickoffEventId?: string | null;
   checkpoint_kickoff_event_id?: string | null;
+  checkpointOriginalRole?: string | null;
+  checkpoint_original_role?: string | null;
+  checkpointOriginalGoal?: string | null;
+  checkpoint_original_goal?: string | null;
+  checkpointOriginalBackstory?: string | null;
+  checkpoint_original_backstory?: string | null;
 };
 
 export type AgentExecutionOptions = {
@@ -314,6 +320,12 @@ export class Agent {
   execution_context: ExecutionContext | null;
   checkpointKickoffEventId: string | null;
   checkpoint_kickoff_event_id: string | null;
+  checkpointOriginalRole: string | null;
+  checkpoint_original_role: string | null;
+  checkpointOriginalGoal: string | null;
+  checkpoint_original_goal: string | null;
+  checkpointOriginalBackstory: string | null;
+  checkpoint_original_backstory: string | null;
   private readonly llmClient: LLMClient | null;
   private readonly functionCallingLlmClient: LLMClient | null;
   private rpmController: RpmController | null;
@@ -325,6 +337,12 @@ export class Agent {
     this.role = options.role;
     this.goal = options.goal;
     this.backstory = options.backstory;
+    this.checkpointOriginalRole = options.checkpointOriginalRole ?? options.checkpoint_original_role ?? null;
+    this.checkpoint_original_role = this.checkpointOriginalRole;
+    this.checkpointOriginalGoal = options.checkpointOriginalGoal ?? options.checkpoint_original_goal ?? null;
+    this.checkpoint_original_goal = this.checkpointOriginalGoal;
+    this.checkpointOriginalBackstory = options.checkpointOriginalBackstory ?? options.checkpoint_original_backstory ?? null;
+    this.checkpoint_original_backstory = this.checkpointOriginalBackstory;
     this.config = options.config ?? null;
     this.llm = options.llm ?? null;
     this.crew = options.crew ?? null;
@@ -456,8 +474,11 @@ export class Agent {
   }
 
   get key(): string {
+    const role = this.checkpointOriginalRole ?? this.role;
+    const goal = this.checkpointOriginalGoal ?? this.goal;
+    const backstory = this.checkpointOriginalBackstory ?? this.backstory;
     return createHash("md5")
-      .update([this.role, this.goal, this.backstory].join("|"))
+      .update([role, goal, backstory].join("|"))
       .digest("hex");
   }
 
@@ -631,6 +652,9 @@ export class Agent {
       checkpoint: this.checkpoint,
       executionContext: this.executionContext?.clone() ?? null,
       checkpointKickoffEventId: this.checkpointKickoffEventId,
+      checkpointOriginalRole: this.checkpointOriginalRole,
+      checkpointOriginalGoal: this.checkpointOriginalGoal,
+      checkpointOriginalBackstory: this.checkpointOriginalBackstory,
     });
   }
 
@@ -1284,9 +1308,22 @@ export class Agent {
   }
 
   interpolateInputs(inputs: InputValues): void {
-    this.role = interpolateAgentText(this.role, inputs);
-    this.goal = interpolateAgentText(this.goal, inputs);
-    this.backstory = interpolateAgentText(this.backstory, inputs);
+    if (this.checkpointOriginalRole === null) {
+      this.checkpointOriginalRole = this.role;
+      this.checkpoint_original_role = this.checkpointOriginalRole;
+    }
+    if (this.checkpointOriginalGoal === null) {
+      this.checkpointOriginalGoal = this.goal;
+      this.checkpoint_original_goal = this.checkpointOriginalGoal;
+    }
+    if (this.checkpointOriginalBackstory === null) {
+      this.checkpointOriginalBackstory = this.backstory;
+      this.checkpoint_original_backstory = this.checkpointOriginalBackstory;
+    }
+
+    this.role = interpolateAgentText(this.checkpointOriginalRole, inputs);
+    this.goal = interpolateAgentText(this.checkpointOriginalGoal, inputs);
+    this.backstory = interpolateAgentText(this.checkpointOriginalBackstory, inputs);
   }
 
   interpolate_inputs(inputs: InputValues): void {

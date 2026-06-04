@@ -761,6 +761,7 @@ export class Crew {
           await this.handleCrewPlanning();
         }
 
+        this.interpolateInputs(inputs, { strictMissing: false });
         const output = await this.runProcess(inputs, inputFiles);
         let finalOutput = output;
         for (const callback of this.afterKickoffCallbacks) {
@@ -809,6 +810,7 @@ export class Crew {
           await this.handleCrewPlanning();
         }
 
+        this.interpolateInputs(inputs, { strictMissing: false });
         let output: CrewOutput;
         switch (this.process) {
           case Process.sequential:
@@ -1443,9 +1445,9 @@ export class Crew {
     this.setTasksCallbacks();
   }
 
-  interpolateInputs(inputs: InputValues): void {
+  interpolateInputs(inputs: InputValues, options: { strictMissing?: boolean } = {}): void {
     for (const task of this.tasks) {
-      task.interpolateInputsAndAddConversationHistory(inputs);
+      task.interpolateInputsAndAddConversationHistory(inputs, options);
     }
     for (const agent of this.agents) {
       agent.interpolateInputs(inputs);
