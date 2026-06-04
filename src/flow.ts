@@ -1257,11 +1257,7 @@ export class Flow<TState extends object = Record<string, unknown>> {
     const initialState = options.initialState
       ?? constructorInitialState.initialState
       ?? constructorInitialState.initial_state;
-    this.state = typeof initialState === "function"
-      ? initialState()
-      : initialState
-        ? { ...initialState }
-        : {} as TState;
+    this.state = createInitialFlowState(initialState, this.constructor);
   }
 
   model_post_init(_context: unknown = null): void {
@@ -1322,9 +1318,13 @@ export class Flow<TState extends object = Record<string, unknown>> {
   }
 
   _createInitialState(): TState {
-    const current = Object.keys(this.state).length > 0
-      ? cloneFlowState(this.state)
-      : {} as TState;
+    const current = this.state instanceof ConversationState
+      ? cloneConversationState(this.state) as TState
+      : Object.keys(this.state).length > 0
+        ? cloneFlowState(this.state)
+        : isConversationalFlowConstructor(this.constructor)
+          ? new ConversationState() as TState
+          : {} as TState;
     const record = current as Record<string, unknown>;
     record.id ??= randomUUID();
     return current;
@@ -5293,6 +5293,47 @@ function nestedIncludesTrigger(condition: FlowConditionInput, triggerName: strin
 function flowStateId(state: object): string | null {
   const id = (state as Record<string, unknown>).id;
   return typeof id === "string" ? id : null;
+}
+
+function createInitialFlowState<TState extends object>(
+  initialState: TState | (() => TState) | undefined,
+  constructor: object,
+): TState {
+  if (typeof initialState === "function") {
+    return cloneInitialFlowState(initialState());
+  }
+  if (initialState) {
+    return cloneInitialFlowState(initialState);
+  }
+  if (isConversationalFlowConstructor(constructor)) {
+    return new ConversationState() as TState;
+  }
+  return {} as TState;
+}
+
+function cloneInitialFlowState<TState extends object>(state: TState): TState {
+  if (state instanceof ConversationState) {
+    return cloneConversationState(state) as TState;
+  }
+  return { ...state };
+}
+
+function cloneConversationState(state: ConversationState): ConversationState {
+  return new ConversationState({
+    id: state.id,
+    messages: state.messages,
+    current_user_message: state.current_user_message,
+    last_user_message: state.last_user_message,
+    last_intent: state.last_intent,
+    ended: state.ended,
+    events: state.events,
+    agent_threads: state.agent_threads,
+    session_ready: state.session_ready,
+  });
+}
+
+function isConversationalFlowConstructor(constructor: object): boolean {
+  return (constructor as unknown as Record<string, unknown>).conversational === true;
 }
 
 function cloneFlowState<TState extends object>(state: TState): TState {

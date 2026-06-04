@@ -19455,11 +19455,29 @@ describe("flow runtime", () => {
     flow.append_agent_result("writer", "visible draft");
     flow.append_agent_result("researcher", "public findings", { visibility: "public" });
 
-    expect(flow.state.messages).toEqual([
+    expect(flow.state.messages.map((message) => message_to_llm_dict(message))).toEqual([
       { role: "assistant", content: "visible draft", name: "writer" },
       { role: "assistant", content: "public findings", name: "researcher" },
     ]);
     expect(flow.state.events.map((event) => event.visibility)).toEqual(["private", "public", "public"]);
+  });
+
+  it("defaults experimental conversational Flow state to ConversationState", () => {
+    class BareChat extends Flow<ConversationState> {
+      static conversational = true;
+    }
+
+    const flow = new BareChat();
+
+    expect(flow.state).toBeInstanceOf(ConversationState);
+    expect(flow.state.messages).toEqual([]);
+    expect(flow.state.current_user_message).toBeNull();
+    expect(flow.state.session_ready).toBe(false);
+
+    const fresh = flow._create_initial_state();
+    expect(fresh).toBeInstanceOf(ConversationState);
+    expect(fresh.id).toEqual(expect.any(String));
+    expect(fresh.messages).toEqual([]);
   });
 
   it("provides upstream experimental conversational data shapes", () => {
