@@ -12352,6 +12352,34 @@ describe("core crew runtime", () => {
     ]);
   });
 
+  it("emits AgentExecutor start log events during reasoning initialization", () => {
+    const events: AgentLogsStartedEvent[] = [];
+    const off = crewaiEventBus.on("agent_logs_started", (_source, event) => {
+      events.push(event);
+    });
+    const agent = new Agent({
+      role: "Researcher",
+      goal: "Find facts",
+      backstory: "Careful analyst",
+    });
+    const executor = new AgentExecutor({
+      agent,
+      crew: { verbose: true } as unknown as Crew,
+      task: { description: "Research CrewAI" },
+    });
+
+    try {
+      expect(executor.initialize_reasoning()).toBe("initialized");
+    } finally {
+      off();
+    }
+
+    expect(events).toHaveLength(1);
+    expect(events[0]?.agent_role).toBe("Researcher");
+    expect(events[0]?.task_description).toBe("Research CrewAI");
+    expect(events[0]?.verbose).toBe(true);
+  });
+
   it("routes upstream provider-shaped native tool calls from AgentExecutor LLM responses", () => {
     const providerCalls = [
       { toolUseId: "bedrock_1", name: "bedrock_lookup", input: { query: "Bedrock" } },

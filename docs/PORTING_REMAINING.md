@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 880 passing tests.
+- Test suite: 881 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -130,6 +130,7 @@ This register is the source of truth for continuing porting work while parity sc
 - AgentExecutor high-effort refinement routing is release-gated for upstream decision semantics: suggested refinements only route to `refine_and_continue` when the observation also reports the remaining plan is still valid.
 - AgentExecutor step callbacks are release-gated for upstream executor-level callback semantics: `stepCallback` / `step_callback` options are preserved on the executor and take precedence before falling back to agent-level callbacks.
 - AgentExecutor state message appending is release-gated for upstream helper semantics: `_append_message_to_state` appends role-formatted LLM messages to executor state and is also available on the CrewAgentExecutor compatibility surface.
+- AgentExecutor reasoning initialization is release-gated for upstream start-log semantics: `initialize_reasoning` emits `agent_logs_started` with agent role, task description, and agent/crew verbose state before entering the reasoning loop.
 
 ## Known Remaining Porting Areas
 

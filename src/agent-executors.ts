@@ -21,6 +21,7 @@ import {
 } from "./agent-utils.js";
 import { Converter } from "./converter.js";
 import {
+  AgentLogsStartedEvent,
   PlanRefinementEvent,
   PlanReplanTriggeredEvent,
   StepObservationCompletedEvent,
@@ -789,6 +790,7 @@ export class AgentExecutor extends BaseAgentExecutor {
   }
 
   initializeReasoning(): "initialized" {
+    this._show_start_logs();
     this.state.use_native_tools = false;
     return "initialized";
   }
@@ -1410,6 +1412,25 @@ export class AgentExecutor extends BaseAgentExecutor {
 
   _append_message_to_state(text: string, role: "user" | "assistant" | "system" = "assistant"): void {
     this.state.messages.push(formatMessageForLLM(text, role));
+  }
+
+  _show_start_logs(): void {
+    if (!this.agent) {
+      throw new Error("Agent cannot be None");
+    }
+    if (!this.task) {
+      return;
+    }
+    let taskDescription: string | null = null;
+    if (typeof this.task === "object" && "description" in this.task) {
+      const description = (this.task as { description?: unknown }).description;
+      taskDescription = typeof description === "string" ? description : "";
+    }
+    crewaiEventBus.emit(this.agent, new AgentLogsStartedEvent({
+      agent_role: this.agent.role,
+      task_description: taskDescription,
+      verbose: Boolean(this.agent.verbose || this.crew?.verbose),
+    }));
   }
 
   private invokeStepCallback(answer: AgentAction | AgentFinish): void {
