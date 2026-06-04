@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 1054 passing tests.
+- Test suite: 1055 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -160,6 +160,7 @@ This register is the source of truth for continuing porting work while parity sc
 - AgentExecutor object-style invoke error diagnostics are release-gated for upstream behavior: sync and async kickoff failures print the same verbose unknown-error guidance before rethrowing and still clear the executor reentrancy guard.
 - AgentExecutor object-style invoke state reset is release-gated for upstream fresh-run semantics: stale native-tool mode, pending tool calls, plan/todo state, observations, and execution logs are cleared before each fresh invoke.
 - CrewAgentExecutor async object-style reset is release-gated for upstream async executor lifecycle semantics: `ainvoke` clears stale messages and iteration counts before a fresh task while preserving the newly formatted prompt message.
+- CrewAgentExecutor async object-style success lifecycle is release-gated for upstream async executor semantics: `ainvoke` starts logs, returns the `_ainvoke_loop` final output, saves the `AgentFinish` to memory, and preserves the formatted prompt message.
 - CrewAgentExecutor async object-style error propagation is release-gated for upstream async executor semantics: `ainvoke` rethrows `_ainvoke_loop` failures after prompt setup and does not save failed outputs to memory.
 - CrewAgentExecutor concurrent async object invocations are release-gated for upstream async executor semantics: independent executor instances can run `ainvoke` concurrently and return their own outputs without serializing the loop.
 - CrewAgentExecutor async ReAct final-answer parsing is release-gated for upstream async loop semantics: `_ainvoke_loop` calls the async LLM path once for direct final-answer responses and returns the parsed `AgentFinish` output.

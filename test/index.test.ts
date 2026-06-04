@@ -16044,6 +16044,34 @@ describe("core crew runtime", () => {
     expect(executor.messages).toEqual([{ role: "user", content: "Prompt task 2" }]);
   });
 
+  it("returns CrewAgentExecutor async object invocation outputs and saves memory", async () => {
+    const executor = new CrewAgentExecutor({
+      prompt: { prompt: "Prompt {input}" },
+    });
+    const finalAnswer = new AgentFinish({
+      thought: "Done",
+      output: "Final answer from agent",
+      text: "Final Answer: Done",
+    });
+    const startLogs = vi.spyOn(executor, "_show_start_logs").mockImplementation(() => undefined);
+    const saveToMemory = vi.spyOn(executor, "_save_to_memory").mockImplementation(() => undefined);
+    const invokeLoop = vi.spyOn(executor, "_ainvoke_loop").mockResolvedValue(finalAnswer);
+
+    try {
+      await expect(executor.ainvoke({ input: "test input", tool_names: "", tools: "" }))
+        .resolves.toEqual({ output: "Final answer from agent" });
+      expect(startLogs).toHaveBeenCalledOnce();
+      expect(invokeLoop).toHaveBeenCalledOnce();
+      expect(saveToMemory).toHaveBeenCalledOnce();
+      expect(saveToMemory).toHaveBeenCalledWith(finalAnswer);
+      expect(executor.messages).toEqual([{ role: "user", content: "Prompt test input" }]);
+    } finally {
+      invokeLoop.mockRestore();
+      saveToMemory.mockRestore();
+      startLogs.mockRestore();
+    }
+  });
+
   it("propagates CrewAgentExecutor async object invocation errors without saving memory", async () => {
     const executor = new CrewAgentExecutor({
       prompt: { prompt: "Prompt {input}" },
