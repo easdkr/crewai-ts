@@ -12853,6 +12853,29 @@ describe("core crew runtime", () => {
     expect(executor.state.ask_for_human_input).toBe(true);
   });
 
+  it("recovers AgentExecutor parser errors by appending retry guidance", () => {
+    const executor = new AgentExecutor({
+      messages: [{ role: "user", content: "Use the required format" }],
+    });
+    executor.lastParserError = new OutputParserError("Invalid Format: missing Action Input");
+    executor.state.iterations = 2;
+
+    expect(executor.recover_from_parser_error()).toBe("initialized");
+    expect(executor.state.iterations).toBe(3);
+    expect(executor.state.messages.at(-1)).toEqual({
+      role: "user",
+      content: "Invalid Format: missing Action Input",
+    });
+    expect(executor.state.current_answer).toBeInstanceOf(AgentAction);
+    expect(executor.state.current_answer).toMatchObject({
+      thought: "",
+      tool: "",
+      tool_input: "",
+      text: "Invalid Format: missing Action Input",
+    });
+    expect(executor.lastParserError).toBeNull();
+  });
+
   it("reads AgentExecutor reasoning effort from upstream planning_config", () => {
     const executor = new AgentExecutor({
       agent: { planning_config: { reasoning_effort: "low" } } as unknown as Agent,

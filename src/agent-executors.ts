@@ -10,6 +10,7 @@ import {
   extractToolCallInfo,
   formatMessageForLLM,
   handleAgentActionCore,
+  handleOutputParserException,
   _executor_stop_words,
   isContextLengthExceeded,
   isToolCallList,
@@ -1097,6 +1098,14 @@ export class AgentExecutor extends BaseAgentExecutor {
   }
 
   recoverFromParserError(): "initialized" {
+    if (this.lastParserError) {
+      const formattedAnswer = handleOutputParserException(
+        this.lastParserError,
+        this.state.messages,
+        this.state.iterations,
+      );
+      this.state.current_answer = formattedAnswer;
+    }
     this.lastParserError = null;
     this.state.iterations += 1;
     return "initialized";

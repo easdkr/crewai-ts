@@ -556,8 +556,33 @@ export function handleUnknownError(error: unknown): string {
 
 export const handle_unknown_error = handleUnknownError;
 
-export function handleOutputParserException(error: unknown): string {
-  return error instanceof OutputParserError ? error.message : handleUnknownError(error);
+export function handleOutputParserException(error: unknown): string;
+export function handleOutputParserException(
+  error: unknown,
+  messages: LLMMessage[],
+  iterations?: number,
+  logErrorAfter?: number,
+): AgentAction;
+export function handleOutputParserException(
+  error: unknown,
+  messages?: LLMMessage[],
+  iterations = 0,
+  logErrorAfter = 3,
+): string | AgentAction {
+  const errorMessage = error instanceof OutputParserError ? error.error : handleUnknownError(error);
+  if (!messages) {
+    return errorMessage;
+  }
+  messages.push({ role: "user", content: errorMessage });
+  if (iterations > logErrorAfter) {
+    console.error(`Error parsing LLM output, agent will retry: ${errorMessage}`);
+  }
+  return new AgentAction({
+    thought: "",
+    tool: "",
+    toolInput: "",
+    text: errorMessage,
+  });
 }
 
 export const handle_output_parser_exception = handleOutputParserException;
