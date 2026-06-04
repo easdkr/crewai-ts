@@ -2730,7 +2730,7 @@ export function _prepare_documents_for_chromadb(documents: readonly BaseRecord[]
     const metadata: RagMetadata | null = isRagMetadata(firstMetadata) ? firstMetadata : null;
     const docId = document.docId ?? document.doc_id
       ?? (metadata && "doc_id" in metadata ? String(metadata.doc_id) : null)
-      ?? createContentId(metadata ? `${document.content}|${JSON.stringify(metadata, Object.keys(metadata).sort())}` : document.content);
+      ?? createContentId(metadata ? `${document.content}|${stableJsonStringify(metadata)}` : document.content);
     const processedMetadata = metadata ? { ...metadata } : {};
     const existingIndex = seenIds.get(docId);
     if (existingIndex !== undefined) {
@@ -3200,6 +3200,19 @@ export function createContentId(content: string): string {
 }
 
 export const create_content_id = createContentId;
+
+function stableJsonStringify(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => stableJsonStringify(item)).join(",")}]`;
+  }
+  if (value && typeof value === "object") {
+    const entries = Object.entries(value as Record<string, unknown>)
+      .filter(([, entryValue]) => entryValue !== undefined)
+      .sort(([left], [right]) => left.localeCompare(right));
+    return `{${entries.map(([key, entryValue]) => `${JSON.stringify(key)}:${stableJsonStringify(entryValue)}`).join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
 
 export function normalizeEmbeddings(target: Embedding | Embeddings): Embeddings {
   if (!Array.isArray(target) || target.length === 0) {

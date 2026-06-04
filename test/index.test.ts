@@ -10815,6 +10815,8 @@ describe("RAG configuration and factories", () => {
         { content: "Same content", metadata: { source: "old", doc_id: "custom-id" } },
         { content: "Same content updated", metadata: { source: "new", doc_id: "custom-id" } },
         { content: "Hash content", metadata: { source: "hash" } },
+        { content: "Nested content", metadata: { source: "nested", nested: { a: 1, b: 2 } } },
+        { content: "Nested content", metadata: { source: "nested", nested: { a: 1, b: 3 } } },
       ],
     });
 
@@ -10823,11 +10825,13 @@ describe("RAG configuration and factories", () => {
       documents: string[];
       metadatas: Array<Record<string, unknown>>;
     };
-    expect(call.ids).toHaveLength(2);
+    expect(call.ids).toHaveLength(4);
     expect(call.ids[0]).toBe("custom-id");
     expect(call.documents[0]).toBe("Same content updated");
     expect(call.metadatas[0]).toEqual({ source: "new", doc_id: "custom-id" });
     expect(call.ids[1]).toBe(createContentId("Hash content|{\"source\":\"hash\"}"));
+    expect(call.ids[2]).toBe(createContentId("Nested content|{\"nested\":{\"a\":1,\"b\":2},\"source\":\"nested\"}"));
+    expect(call.ids[3]).toBe(createContentId("Nested content|{\"nested\":{\"a\":1,\"b\":3},\"source\":\"nested\"}"));
   });
 
   it("uses upstream ChromaDB default search include ordering", () => {
