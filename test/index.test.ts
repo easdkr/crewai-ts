@@ -12677,26 +12677,92 @@ describe("core crew runtime", () => {
     );
   });
 
-  it("keeps AgentExecutor synthesis fallback when structured output is requested", () => {
-    const finalResult = [
-      "The final recommendation is to adopt a phased rollout plan with weekly checkpoints.",
-      "Each milestone should have an explicit owner, a measured readiness signal, and a rollback path.",
-      "This keeps delivery risk controlled while preserving stakeholder visibility and operational readiness.",
-    ].join(" ");
-    const executor = new AgentExecutor({ response_model: { name: "StructuredAnswer" } });
+  it("synthesizes AgentExecutor final answers from todo results", () => {
+    const responseModel = { name: "StructuredAnswer" };
+    const structuredAnswer = {
+      final_answer: "Use the two-step rollout.",
+      model_dump_json: () => "{\"final_answer\":\"Use the two-step rollout.\"}",
+    };
+    const seen: Array<{
+      messages: readonly LLMMessage[];
+      options: Record<string, unknown> | undefined;
+    }> = [];
+    const task = {
+      description: "Create a rollout plan\n\nPlanning:\nOld planning text",
+    };
+    const agent = new Agent({
+      role: "Planner",
+      goal: "Plan rollouts",
+      backstory: "Careful planner",
+    });
+    const executor = new AgentExecutor({
+      agent,
+      task,
+      response_model: responseModel,
+      llm: {
+        call(messages: readonly LLMMessage[], options?: Record<string, unknown>) {
+          seen.push({ messages, options });
+          return structuredAnswer;
+        },
+      },
+    });
 
     executor.state.todos.items = [
       new TodoItem({
         stepNumber: 1,
-        description: "Write final response",
+        description: "Gather constraints",
         status: TodoStatus.COMPLETED,
-        result: finalResult,
+        result: "Stakeholders need weekly checkpoints.",
+      }),
+      new TodoItem({
+        stepNumber: 2,
+        description: "Draft rollout",
+        status: TodoStatus.COMPLETED,
+        result: "Use a two-step rollout.",
       }),
     ];
 
     expect(executor.finalize()).toBe("completed");
-    expect((executor.state.current_answer as AgentFinish).output).toBe(`Step 1: ${finalResult}`);
-    expect((executor.state.current_answer as AgentFinish).thought).toBe("");
+    expect(seen).toHaveLength(1);
+    expect(seen[0]?.messages[0]?.role).toBe("system");
+    expect(seen[0]?.messages[0]?.content).toContain("Planner");
+    expect(seen[0]?.messages[1]?.content).toContain("Create a rollout plan");
+    expect(seen[0]?.messages[1]?.content).not.toContain("Old planning text");
+    expect(seen[0]?.messages[1]?.content).toContain("Step 1 (Gather constraints):");
+    expect(seen[0]?.options).toMatchObject({
+      response_model: responseModel,
+      from_task: task,
+      from_agent: agent,
+    });
+    expect((executor.state.current_answer as AgentFinish).output).toBe(structuredAnswer);
+    expect((executor.state.current_answer as AgentFinish).text).toBe("{\"final_answer\":\"Use the two-step rollout.\"}");
+    expect((executor.state.current_answer as AgentFinish).thought).toBe(
+      "Synthesized structured final answer from all completed steps",
+    );
+
+    const fallbackExecutor = new AgentExecutor({
+      llm: {
+        call() {
+          throw new Error("synthesis unavailable");
+        },
+      },
+    });
+    fallbackExecutor.state.todos.items = [
+      new TodoItem({
+        stepNumber: 1,
+        description: "Gather constraints",
+        status: TodoStatus.COMPLETED,
+        result: "Stakeholders need weekly checkpoints.",
+      }),
+    ];
+
+    expect(fallbackExecutor.finalize()).toBe("completed");
+    expect((fallbackExecutor.state.current_answer as AgentFinish).output).toBe(
+      "Step 1 (Gather constraints):\nStakeholders need weekly checkpoints.",
+    );
+    expect((fallbackExecutor.state.current_answer as AgentFinish).thought).toBe(
+      "All planned steps completed (synthesis unavailable)",
+    );
   });
 
   it("omits structured response models during AgentExecutor ReAct tool loops", () => {

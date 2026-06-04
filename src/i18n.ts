@@ -86,6 +86,8 @@ const defaultPrompts = {
   planning: {
     system_prompt: "You are a strategic planning assistant. Create concrete, executable plans where every step produces a verifiable result.",
     create_plan_prompt: "Create an execution plan for the following task:\n\n## Task\n{description}\n\n## Expected Output\n{expected_output}\n\n## Available Tools\n{tools}\n\n## Planning Principles\nFocus on CONCRETE, EXECUTABLE steps. Each step must clearly state WHAT ACTION to take and HOW to verify it succeeded. The number of steps should match the task complexity. Hard limit: {max_steps} steps.\n\n## Rules:\n- Each step must have a clear DONE criterion\n- Do NOT group unrelated actions: if steps can fail independently, keep them separate\n- NO standalone \"thinking\" or \"planning\" steps -- act, don't just observe\n- The last step must produce the required output\n\nAfter your plan, state READY or NOT READY.",
+    synthesis_system_prompt: "You are {role}. Synthesize the completed plan steps into a clear final answer.",
+    synthesis_user_prompt: "Original task:\n{task_description}\n\nCompleted steps:\n{combined_steps}\n\nProvide the final answer based on the completed steps.",
   },
 } satisfies PromptCatalog;
 

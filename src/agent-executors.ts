@@ -1256,8 +1256,7 @@ export class AgentExecutor extends BaseAgentExecutor {
           text: output,
         });
       } else if (todosWithResults.length > 0) {
-        const output = todosWithResults.map((todo) => `Step ${String(todo.stepNumber)}: ${todo.result ?? ""}`).join("\n\n");
-        this.state.current_answer = new AgentFinish({ thought: "", output, text: output });
+        this.synthesizeFinalAnswerFromTodos();
       }
     }
     if (this.state.current_answer === null) {
@@ -1298,6 +1297,85 @@ export class AgentExecutor extends BaseAgentExecutor {
     const wordCount = result.split(/\s+/).filter(Boolean).length;
     const hasSentencePunctuation = /[.!?]/.test(result);
     return hasSentencePunctuation && (result.length >= 200 || wordCount >= 30) ? lastTodo : null;
+  }
+
+  private synthesizeFinalAnswerFromTodos(): void {
+    const stepResults = this.state.todos.items
+      .filter((todo) => todo.result)
+      .map((todo) => `Step ${String(todo.stepNumber)} (${todo.description}):\n${todo.result ?? ""}`);
+    if (stepResults.length === 0) {
+      return;
+    }
+    const combinedSteps = stepResults.join("\n\n");
+    const taskRecord = this.task && typeof this.task === "object" ? this.task as Record<string, unknown> : null;
+    let taskDescription = typeof taskRecord?.description === "string" ? taskRecord.description : this.kickoffInput;
+    if (taskDescription.includes("\n\nPlanning:\n")) {
+      taskDescription = taskDescription.split("\n\nPlanning:\n")[0] ?? "";
+    }
+    const role = this.agent?.role ?? "Assistant";
+    const systemPrompt = this.promptString("planning", "synthesis_system_prompt").replace("{role}", role);
+    const userPrompt = this.promptString("planning", "synthesis_user_prompt")
+      .replace("{task_description}", taskDescription)
+      .replace("{combined_steps}", combinedSteps);
+    const messages: LLMMessage[] = [
+      {
+        role: "system",
+        content: systemPrompt,
+      },
+      {
+        role: "user",
+        content: userPrompt,
+      },
+    ];
+    try {
+      const synthesis = this.callLlmWithMessages(messages, {
+        responseModel: this.activeResponseModel(),
+        response_model: this.activeResponseModel(),
+        fromTask: this.task,
+        from_task: this.task,
+        fromAgent: this.agent,
+        from_agent: this.agent,
+      });
+      if (synthesis) {
+        const modelDumpJson = typeof synthesis === "object"
+          ? (synthesis as { model_dump_json?: () => string; modelDumpJson?: () => string }).model_dump_json
+            ?? (synthesis as { modelDumpJson?: () => string }).modelDumpJson
+          : null;
+        if (typeof modelDumpJson === "function") {
+          this.state.current_answer = new AgentFinish({
+            thought: "Synthesized structured final answer from all completed steps",
+            output: synthesis,
+            text: modelDumpJson.call(synthesis),
+          });
+        } else {
+          const output = stringifyStepResult(synthesis);
+          this.state.current_answer = new AgentFinish({
+            thought: "Synthesized final answer from all completed steps",
+            output,
+            text: output,
+          });
+        }
+        return;
+      }
+    } catch (error) {
+      if (this.agent?.verbose) {
+        PRINTER.print(`Synthesis LLM call failed (${error instanceof Error ? error.message : String(error)}), falling back to concatenation`);
+      }
+    }
+    const output = stepResults.join("\n\n");
+    this.state.current_answer = new AgentFinish({
+      thought: "All planned steps completed (synthesis unavailable)",
+      output,
+      text: output,
+    });
+  }
+
+  private promptString(kind: "planning", key: string): string {
+    const prompt = I18N_DEFAULT.retrieve(kind, key);
+    if (typeof prompt !== "string") {
+      throw new Error(`Prompt for '${kind}':'${key}' is not a string.`);
+    }
+    return prompt;
   }
 
   handleReplan(): "has_todos" | "no_todos" {
@@ -1653,10 +1731,14 @@ export class AgentExecutor extends BaseAgentExecutor {
   }
 
   private callExecutorLlm(options: Record<string, unknown>): unknown {
+    return this.callLlmWithMessages(this.state.messages, options);
+  }
+
+  private callLlmWithMessages(messages: readonly LLMMessage[], options: Record<string, unknown>): unknown {
     const llm = this.llm;
     if (typeof llm === "function") {
       const result = (llm as (messages: readonly LLMMessage[], options?: Record<string, unknown>) => unknown)(
-        this.state.messages,
+        messages,
         options,
       );
       if (isPromiseLike(result)) {
@@ -1668,9 +1750,9 @@ export class AgentExecutor extends BaseAgentExecutor {
       ? (llm as { call?: (messages: readonly LLMMessage[], options?: Record<string, unknown>) => unknown }).call
       : null;
     if (typeof call !== "function") {
-      return this.state.messages.at(-1)?.content ?? "";
+      return messages.at(-1)?.content ?? "";
     }
-    const result = call.call(llm, this.state.messages, options);
+    const result = call.call(llm, messages, options);
     if (isPromiseLike(result)) {
       throw new Error("AgentExecutor synchronous LLM call returned a Promise.");
     }
