@@ -18964,6 +18964,38 @@ describe("flow runtime", () => {
     expect(definition.diagnostics).toEqual([]);
   });
 
+  it("includes upstream static DSL namespace fragments when building FlowDefinition", () => {
+    class NamespaceDefinitionFlow extends Flow {
+      begin() {
+        return "started";
+      }
+    }
+
+    const beginMethod = Object.getOwnPropertyDescriptor(NamespaceDefinitionFlow.prototype, "begin")?.value as Record<string, unknown>;
+    beginMethod.__flow_method_definition__ = new FlowMethodDefinition({ start: true });
+
+    const injectedHandler = () => "handled";
+    Object.assign(injectedHandler, {
+      __flow_method_definition__: new FlowMethodDefinition({ listen: "begin" }),
+    });
+
+    const buildWithNamespace = buildFlowDefinition as (
+      flowClass: typeof NamespaceDefinitionFlow,
+      namespace?: Record<string, unknown>,
+    ) => FlowDefinition;
+    const definition = buildWithNamespace(NamespaceDefinitionFlow, {
+      injectedHandler,
+    });
+
+    expect(definition.to_dict()).toMatchObject({
+      methods: {
+        begin: { start: true, router: false },
+        injectedHandler: { listen: "begin", router: false },
+      },
+    });
+    expect(definition.diagnostics).toEqual([]);
+  });
+
   it("serializes non-json human feedback metadata as FlowDefinition refs", () => {
     const marker = () => "marker";
 

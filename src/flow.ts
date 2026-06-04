@@ -3254,9 +3254,12 @@ export function getHumanFeedbackMetadata(instanceOrConstructor: object | FlowMet
   return inherited;
 }
 
-export function buildFlowDefinition(instanceOrConstructor: object | FlowMetadataTarget): FlowDefinition {
+export function buildFlowDefinition(
+  instanceOrConstructor: object | FlowMetadataTarget,
+  namespace: Record<string, unknown> | null = null,
+): FlowDefinition {
   const entries = getFlowMetadata(instanceOrConstructor);
-  const staticDefinitions = getStaticFlowMethodDefinitions(instanceOrConstructor);
+  const staticDefinitions = getStaticFlowMethodDefinitions(instanceOrConstructor, namespace);
   const feedbackMetadata = getHumanFeedbackMetadata(instanceOrConstructor);
   const methods: Record<string, FlowMethodDefinition> = {};
   const diagnostics: FlowDefinition["diagnostics"] = [];
@@ -3299,7 +3302,10 @@ export function buildFlowDefinition(instanceOrConstructor: object | FlowMetadata
 
 export const build_flow_definition = buildFlowDefinition;
 
-function getStaticFlowMethodDefinitions(instanceOrConstructor: object | FlowMetadataTarget): Map<string, FlowMethodDefinition> {
+function getStaticFlowMethodDefinitions(
+  instanceOrConstructor: object | FlowMetadataTarget,
+  namespace: Record<string, unknown> | null = null,
+): Map<string, FlowMethodDefinition> {
   const ctor = typeof instanceOrConstructor === "function"
     ? instanceOrConstructor as FlowMetadataTarget
     : instanceOrConstructor.constructor as FlowMetadataTarget;
@@ -3322,6 +3328,12 @@ function getStaticFlowMethodDefinitions(instanceOrConstructor: object | FlowMeta
       if (definition) {
         definitions.set(name, definition);
       }
+    }
+  }
+  for (const [name, value] of Object.entries(namespace ?? {})) {
+    const definition = flowMethodDefinitionFromStaticMetadata(value);
+    if (definition) {
+      definitions.set(name, definition);
     }
   }
   return definitions;
