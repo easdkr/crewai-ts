@@ -12681,6 +12681,27 @@ describe("core crew runtime", () => {
     expect(taskInstance.copy([agentInstance], {})).toBeInstanceOf(Task);
   });
 
+  it("reports upstream task execution duration semantics", () => {
+    const taskInstance = new Task({
+      description: "Track duration",
+      expectedOutput: "Duration in seconds",
+      agent: new Agent({
+        role: "Timer",
+        goal: "Track task execution",
+        backstory: "Measures deterministic task timing",
+      }),
+    });
+
+    expect(taskInstance.start_time).toBeNull();
+    expect(taskInstance.end_time).toBeNull();
+    expect(taskInstance.execution_duration).toBeNull();
+
+    taskInstance.start_time = new Date("2026-05-28T00:00:00.000Z");
+    taskInstance.end_time = new Date("2026-05-28T00:00:02.500Z");
+
+    expect(taskInstance.execution_duration).toBe(2.5);
+  });
+
   it("exposes upstream AgentExecutor routing lifecycle methods", async () => {
     const agentInstance = new Agent({
       role: "Researcher",

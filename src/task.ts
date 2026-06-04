@@ -294,9 +294,7 @@ export class Task {
   retryCount = 0;
   retry_count = 0;
   startTime: Date | null = null;
-  start_time: Date | null = null;
   endTime: Date | null = null;
-  end_time: Date | null = null;
   promptContext: string | null = null;
   prompt_context: string | null = null;
   readonly processedByAgents: Set<string>;
@@ -405,6 +403,22 @@ export class Task {
       return null;
     }
     return (this.endTime.getTime() - this.startTime.getTime()) / 1000;
+  }
+
+  get start_time(): Date | null {
+    return this.startTime;
+  }
+
+  set start_time(value: Date | string | null) {
+    this.startTime = normalizeTaskDate(value);
+  }
+
+  get end_time(): Date | null {
+    return this.endTime;
+  }
+
+  set end_time(value: Date | string | null) {
+    this.endTime = normalizeTaskDate(value);
   }
 
   get execution_duration(): number | null {
