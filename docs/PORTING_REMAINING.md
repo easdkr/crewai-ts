@@ -126,6 +126,7 @@ This register is the source of truth for continuing porting work while parity sc
 - AgentExecutor provider-shaped native tool calls are release-gated for upstream routing compatibility: OpenAI-style function calls, Bedrock `toolUseId` + `input`, Anthropic `tool_use` payloads, and Gemini `functionCall` payloads are recognized as native tool-call lists and preserve provider input args.
 - AgentExecutor mixed native tool-call responses are release-gated for upstream routing semantics: provider responses are classified by the first upstream-shaped tool-call item and invalid trailing metadata is left for execution-time filtering instead of converting the whole response into a final answer.
 - AgentExecutor lightweight plan refinement events are release-gated for upstream observation semantics: applying suggested refinements mutates pending todo descriptions and emits `plan_refinement` with agent/task context, refined step count, and refinement summaries.
+- PlannerObserver step observation events are release-gated for upstream tracing semantics: LLM-backed observations emit `step_observation_started` and `step_observation_completed` with agent/task context and observation outcome fields, while observation call failures emit `step_observation_failed` before falling back.
 
 ## Known Remaining Porting Areas
 

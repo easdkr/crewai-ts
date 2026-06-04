@@ -20,7 +20,14 @@ import {
   summarizeMessages,
 } from "./agent-utils.js";
 import { Converter } from "./converter.js";
-import { PlanRefinementEvent, PlanReplanTriggeredEvent, crewaiEventBus } from "./events.js";
+import {
+  PlanRefinementEvent,
+  PlanReplanTriggeredEvent,
+  StepObservationCompletedEvent,
+  StepObservationFailedEvent,
+  StepObservationStartedEvent,
+  crewaiEventBus,
+} from "./events.js";
 import { get_provider } from "./human-input.js";
 import { ToolCallHookContext, runAfterToolCallHooks, runBeforeToolCallHooks } from "./hooks.js";
 import { I18N_DEFAULT } from "./i18n.js";
@@ -2947,13 +2954,38 @@ export class PlannerObserver {
         const stepResult = options.result;
         const completed = options.allCompleted ?? options.all_completed ?? [];
         const remaining = options.remainingTodos ?? options.remaining_todos ?? [];
+        const eventCommon = {
+          agent_role: agentRoleLabel(this.agent),
+          step_number: completedStep.stepNumber,
+          step_description: completedStep.description,
+          from_task: this.task,
+          from_agent: this.agent,
+        };
+        crewaiEventBus.emit(this.agent ?? this, new StepObservationStartedEvent(eventCommon));
         const messages = this._buildObservationMessages(completedStep, stringifyStepResult(stepResult), completed, remaining);
         try {
           const response = callPlannerLlm(this.llm, messages);
           if (response !== null) {
-            return PlannerObserver._parseObservationResponse(response);
+            const observation = PlannerObserver._parseObservationResponse(response);
+            crewaiEventBus.emit(this.agent ?? this, new StepObservationCompletedEvent({
+              ...eventCommon,
+              step_completed_successfully: observation.stepCompletedSuccessfully,
+              key_information_learned: observation.keyInformationLearned,
+              remaining_plan_still_valid: observation.remainingPlanStillValid,
+              needs_full_replan: observation.needsFullReplan,
+              replan_reason: observation.replanReason,
+              goal_already_achieved: observation.goalAlreadyAchieved,
+              suggested_refinements: observation.suggestedRefinements?.map((refinement) => (
+                `Step ${String(refinement.stepNumber)}: ${refinement.newDescription}`
+              )) ?? null,
+            }));
+            return observation;
           }
-        } catch {
+        } catch (error) {
+          crewaiEventBus.emit(this.agent ?? this, new StepObservationFailedEvent({
+            ...eventCommon,
+            error,
+          }));
           return new StepObservation({
             step_completed_successfully: true,
             key_information_learned: stringifyStepResult(stepResult),

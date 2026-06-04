@@ -13087,24 +13087,27 @@ describe("core crew runtime", () => {
 
   it("uses PlannerObserver LLM observation for medium/high AgentExecutor steps", () => {
     const calls: LLMMessage[][] = [];
-    const executor = new AgentExecutor({
-      agent: {
-        role: "Observer",
-        planning_config: new PlanningConfig({ reasoning_effort: "medium" }),
-        llm: {
-          call(messages: readonly LLMMessage[]) {
-            calls.push([...messages]);
-            return JSON.stringify({
-              step_completed_successfully: false,
-              key_information_learned: "tool returned stale data",
-              remaining_plan_still_valid: false,
-              needs_full_replan: true,
-              replan_reason: "Need a fresh source",
-            });
-          },
+    const observationEvents: Array<Record<string, unknown>> = [];
+    const task = { description: "Research CrewAI", expected_output: "Current answer" };
+    const agent = {
+      role: "Observer",
+      planning_config: new PlanningConfig({ reasoning_effort: "medium" }),
+      llm: {
+        call(messages: readonly LLMMessage[]) {
+          calls.push([...messages]);
+          return JSON.stringify({
+            step_completed_successfully: false,
+            key_information_learned: "tool returned stale data",
+            remaining_plan_still_valid: false,
+            needs_full_replan: true,
+            replan_reason: "Need a fresh source",
+          });
         },
-      } as unknown as Agent,
-      task: { description: "Research CrewAI", expected_output: "Current answer" },
+      },
+    } as unknown as Agent;
+    const executor = new AgentExecutor({
+      agent,
+      task,
     });
     executor.state.todos.items = [
       new TodoItem({
@@ -13116,8 +13119,19 @@ describe("core crew runtime", () => {
       new TodoItem({ stepNumber: 2, description: "Write summary" }),
     ];
     executor.state.execution_log.push({ type: "step_execution", step_number: 1, success: false });
+    const offStarted = crewaiEventBus.on("step_observation_started", (_source, event) => {
+      observationEvents.push(event as unknown as Record<string, unknown>);
+    });
+    const offCompleted = crewaiEventBus.on("step_observation_completed", (_source, event) => {
+      observationEvents.push(event as unknown as Record<string, unknown>);
+    });
 
-    expect(executor.observe_step_result()).toBe("step_observed_medium");
+    try {
+      expect(executor.observe_step_result()).toBe("step_observed_medium");
+    } finally {
+      offStarted();
+      offCompleted();
+    }
     expect(calls).toHaveLength(1);
     expect(calls[0]?.[1]?.content).toContain("Research CrewAI");
     expect(executor.state.observations[1]?.needs_full_replan).toBe(true);
@@ -13128,6 +13142,31 @@ describe("core crew runtime", () => {
       llm_observation: true,
       reasoning_effort: "medium",
     });
+    expect(observationEvents).toEqual([
+      expect.objectContaining({
+        type: "step_observation_started",
+        agent_role: "Observer",
+        step_number: 1,
+        step_description: "Search docs",
+        from_task: task,
+        from_agent: agent,
+      }),
+      expect.objectContaining({
+        type: "step_observation_completed",
+        agent_role: "Observer",
+        step_number: 1,
+        step_description: "Search docs",
+        step_completed_successfully: false,
+        key_information_learned: "tool returned stale data",
+        remaining_plan_still_valid: false,
+        needs_full_replan: true,
+        replan_reason: "Need a fresh source",
+        goal_already_achieved: false,
+        suggested_refinements: null,
+        from_task: task,
+        from_agent: agent,
+      }),
+    ]);
     expect(executor.handle_step_observed_medium()).toBe("replan_now");
     expect(executor.state.last_replan_reason).toBe("Need a fresh source");
   });
