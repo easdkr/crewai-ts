@@ -404,8 +404,21 @@ export function getConstraintsForProvider(provider: string | ProviderConstraints
 
 export const get_constraints_for_provider = getConstraintsForProvider;
 
+export function usesOpenAIResponsesApi(provider: string, api: string | null = null): boolean {
+  if (api !== "responses") {
+    return false;
+  }
+  const providerLower = provider.toLowerCase();
+  return providerLower.includes("openai")
+    || providerLower === "gpt"
+    || providerLower.startsWith("gpt-")
+    || providerLower.includes("/gpt-");
+}
+
+export const uses_openai_responses_api = usesOpenAIResponsesApi;
+
 export function getSupportedContentTypes(provider: string, api: string | null = null): string[] {
-  const lookup = api === "responses" && provider.toLowerCase().includes("openai") ? "openai_responses" : provider;
+  const lookup = usesOpenAIResponsesApi(provider, api) ? "openai_responses" : provider;
   const constraints = getConstraintsForProvider(lookup);
   if (!constraints) {
     return [];

@@ -837,6 +837,7 @@ import {
   chunkPDF,
   resizeImage,
   getConstraintsForProvider,
+  getSupportedContentTypes,
   getUploadCache,
   resetUploadCache,
   platformContext,
@@ -2457,6 +2458,11 @@ describe("environment, logging, and file store utilities", () => {
     expect(getConstraintsForProvider("claude")).toBe(ANTHROPIC_CONSTRAINTS);
     expect(getConstraintsForProvider("gpt-4o")).toMatchObject({ name: "openai" });
     expect(getConstraintsForProvider("unknown-provider")).toBeNull();
+    expect(getSupportedContentTypes("openai", "responses")).toContain("application/pdf");
+    expect(getSupportedContentTypes("gpt", "responses")).toContain("application/pdf");
+    expect(getSupportedContentTypes("gpt-4o-mini", "responses")).toContain("application/pdf");
+    expect(getSupportedContentTypes("azure/gpt-4.1", "responses")).toContain("application/pdf");
+    expect(getSupportedContentTypes("gpt-4o-mini")).not.toContain("application/pdf");
 
     expect(validateImage(image, new ImageConstraints({ max_size_bytes: 10 * 1024, supported_formats: ["image/png"] }), { raise_on_error: false })).toEqual([]);
     expect(() => validateImage(image, new ImageConstraints({ max_size_bytes: 10, supported_formats: ["image/png"] }))).toThrow(FileTooLargeError);
