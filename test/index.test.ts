@@ -10399,6 +10399,41 @@ describe("execution and event context", () => {
     expect(get_crew_context()).toBeNull();
   });
 
+  it("uses a fresh crew context for each kickoffForEach execution", async () => {
+    const contexts: Array<{ item: string; id: string | null }> = [];
+    const agentInstance = new Agent({
+      role: "Researcher",
+      goal: "Research",
+      backstory: "Careful analyst",
+      llm: (messages) => messages.at(-1)?.content ?? "",
+    });
+    const taskInstance = new Task({
+      description: "Research {item}",
+      expectedOutput: "Done",
+      agent: agentInstance,
+      callback: (output) => {
+        contexts.push({
+          item: output.raw.includes("input_0") ? "input_0" : "input_1",
+          id: get_crew_context()?.id ?? null,
+        });
+      },
+    });
+
+    const outputs = await new Crew({
+      name: "context-for-each-sync",
+      agents: [agentInstance],
+      tasks: [taskInstance],
+    }).kickoffForEach({
+      inputs: [{ item: "input_0" }, { item: "input_1" }],
+    });
+
+    expect(outputs).toHaveLength(2);
+    expect(contexts).toHaveLength(2);
+    expect(contexts.every((context) => context.id !== null)).toBe(true);
+    expect(new Set(contexts.map((context) => context.id)).size).toBe(2);
+    expect(get_crew_context()).toBeNull();
+  });
+
   it("matches upstream platform integration token precedence and env fallback", () => {
     const previousToken = process.env.CREWAI_PLATFORM_INTEGRATION_TOKEN;
     setPlatformIntegrationToken(null);
