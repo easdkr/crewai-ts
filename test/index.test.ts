@@ -14299,6 +14299,7 @@ describe("core crew runtime", () => {
       text: "Action: Lookup Tool\nAction Input: {}",
     });
     expect(executor.check_todo_completion()).toBe("todo_not_satisfied");
+    expect(executor.check_native_todo_completion()).toBe("todo_not_satisfied");
 
     executor.state.current_answer = new AgentAction({
       thought: "use search",
@@ -14307,6 +14308,7 @@ describe("core crew runtime", () => {
       text: "Action: Search Tool\nAction Input: {}",
     });
     expect(executor.check_todo_completion()).toBe("todo_satisfied");
+    expect(executor.check_native_todo_completion()).toBe("todo_satisfied");
 
     executor.state.current_answer = new AgentFinish({
       thought: "done",
@@ -14314,6 +14316,10 @@ describe("core crew runtime", () => {
       text: "Final Answer: final",
     });
     expect(executor.check_todo_completion()).toBe("todo_satisfied");
+    expect(executor.check_native_todo_completion()).toBe("todo_satisfied");
+
+    executor.state.current_answer = null;
+    expect(executor.check_native_todo_completion()).toBe("todo_not_satisfied");
   });
 
   it("short-circuits AgentExecutor native tool execution for result_as_answer tools", () => {

@@ -1157,7 +1157,7 @@ export class AgentExecutor extends BaseAgentExecutor {
   }
 
   checkNativeTodoCompletion(): "todo_satisfied" | "todo_not_satisfied" {
-    return this.state.todos.currentTodo ? "todo_satisfied" : "todo_not_satisfied";
+    return this.checkTodoCompletion();
   }
 
   check_native_todo_completion(): ReturnType<AgentExecutor["checkNativeTodoCompletion"]> {
