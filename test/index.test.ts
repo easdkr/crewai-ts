@@ -19409,6 +19409,48 @@ describe("flow runtime", () => {
     });
   });
 
+  it("checkpoints state before each ask so later asks can recover earlier answers", async () => {
+    const saves: Array<{ methodName: string; state: Record<string, unknown> }> = [];
+    const answers = ["AI", "detailed"];
+    const persistence = {
+      saveState: (_flowId: string, methodName: string, state: unknown) => {
+        saves.push({ methodName, state: { ...(state as Record<string, unknown>) } });
+      },
+    };
+
+    class RecoverableAskFlow extends Flow<{ id: string; topic?: string; depth?: string }> {
+      gather() {
+        if (!this.state.topic) {
+          this.state.topic = this.ask("Topic?") as string;
+        }
+        if (!this.state.depth) {
+          this.state.depth = this.ask("Depth?") as string;
+        }
+        return { topic: this.state.topic, depth: this.state.depth };
+      }
+    }
+
+    const flow = new RecoverableAskFlow({
+      initialState: { id: "recoverable-ask" },
+      persistence: persistence as unknown as JsonFlowPersistence,
+      inputProvider: {
+        requestInput: () => answers.shift() ?? null,
+      },
+    });
+    decorateMethod(RecoverableAskFlow, "gather", start() as unknown as Decorator).call(flow);
+
+    await expect(flow.kickoff()).resolves.toEqual({ topic: "AI", depth: "detailed" });
+
+    const askCheckpoints = saves.filter((save) => save.methodName === "_ask_checkpoint");
+    expect(askCheckpoints).toHaveLength(2);
+    expect(askCheckpoints[0]?.state).toEqual({ id: "recoverable-ask" });
+    expect(askCheckpoints[1]?.state).toEqual({ id: "recoverable-ask", topic: "AI" });
+    expect(flow.inputHistory.map((entry) => [entry.message, entry.response])).toEqual([
+      ["Topic?", "AI"],
+      ["Depth?", "detailed"],
+    ]);
+  });
+
   it("returns null from ask when an async input provider times out or throws", async () => {
     class TimeoutFlow extends Flow {
       async gather() {
