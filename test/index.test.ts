@@ -29804,6 +29804,56 @@ describe("async task execution", () => {
     expect(() => new Crew({ agents: [agent], tasks: [current, future] }))
       .toThrow("future task");
   });
+
+  it("rejects sequential async context chains without a sync barrier", () => {
+    const researcher = new Agent({
+      role: "Researcher",
+      goal: "Run async research",
+      backstory: "Async capable",
+    });
+    const writer = new Agent({
+      role: "Writer",
+      goal: "Write sync reports",
+      backstory: "Sync capable",
+    });
+    const task1 = new Task({
+      description: "Task 1",
+      expectedOutput: "output",
+      agent: researcher,
+      asyncExecution: true,
+    });
+    const task2 = new Task({
+      description: "Task 2",
+      expectedOutput: "output",
+      agent: researcher,
+      asyncExecution: true,
+      context: [task1],
+    });
+    const task3 = new Task({
+      description: "Task 3",
+      expectedOutput: "output",
+      agent: researcher,
+      asyncExecution: true,
+      context: [task2],
+    });
+    const syncBarrier = new Task({
+      description: "Task 4",
+      expectedOutput: "output",
+      agent: writer,
+    });
+    const allowedAsync = new Task({
+      description: "Task 5",
+      expectedOutput: "output",
+      agent: researcher,
+      asyncExecution: true,
+      context: [syncBarrier],
+    });
+
+    expect(() => new Crew({ agents: [researcher, writer], tasks: [task1, task2, task3, syncBarrier, allowedAsync] }))
+      .toThrow("Task 'Task 2' is asynchronous and cannot include other sequential asynchronous tasks in its context.");
+    expect(() => new Crew({ agents: [researcher, writer], tasks: [task1, syncBarrier, allowedAsync] }))
+      .not.toThrow();
+  });
 });
 
 describe("conditional tasks", () => {
