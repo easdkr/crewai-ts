@@ -3378,21 +3378,21 @@ function runtimeListenerConditionFromDefinition(condition: FlowDefinitionConditi
 }
 
 function staticBooleanProperty(value: unknown, key: string): boolean {
-  return isRecord(value) && value[key] === true;
+  return (typeof value === "function" || isRecord(value)) && (value as Record<string, unknown>)[key] === true;
 }
 
 function staticConditionType(value: unknown, key: string): FlowCondition["type"] {
-  if (!isRecord(value)) {
+  if (typeof value !== "function" && !isRecord(value)) {
     return "OR";
   }
-  return value[key] === "AND" ? "AND" : "OR";
+  return (value as Record<string, unknown>)[key] === "AND" ? "AND" : "OR";
 }
 
 function stringArrayProperty(value: unknown, key: string): readonly string[] | null {
-  if (!isRecord(value)) {
+  if (typeof value !== "function" && !isRecord(value)) {
     return null;
   }
-  const raw = value[key];
+  const raw = (value as Record<string, unknown>)[key];
   if (!Array.isArray(raw)) {
     return null;
   }
@@ -4596,7 +4596,23 @@ function attachFlowMethodDefinition(
   if (typeof method !== "function" && !isRecord(method)) {
     return;
   }
-  (method as Record<string, unknown>)[FLOW_METHOD_DEFINITION_ATTR] = new FlowMethodDefinition({
+  const methodRecord = method as Record<string, unknown>;
+  methodRecord.__is_flow_method__ = true;
+  if (kind === "start") {
+    methodRecord.__is_start_method__ = true;
+  }
+  if (kind === "router") {
+    methodRecord.__is_router__ = true;
+    methodRecord.__router_emit__ = emit ? uniqueStrings(emit) : [];
+  }
+  if (condition) {
+    methodRecord.__trigger_methods__ = extractAllTriggerNames(condition);
+    methodRecord.__condition_type__ = condition.type;
+    if (!(condition.type === "OR" && condition.conditions.length === 1 && typeof condition.conditions[0] === "string")) {
+      methodRecord.__trigger_condition__ = condition;
+    }
+  }
+  methodRecord[FLOW_METHOD_DEFINITION_ATTR] = new FlowMethodDefinition({
     start: kind === "start"
       ? condition ? flowDefinitionCondition(condition) : true
       : null,

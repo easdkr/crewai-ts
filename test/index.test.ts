@@ -19066,6 +19066,50 @@ describe("flow runtime", () => {
     expect(routerEmit).toEqual({ decide: ["done"] });
   });
 
+  it("falls back to upstream legacy DSL metadata when static fragments are absent", () => {
+    class LegacyFragmentFlow extends Flow {
+      begin() {
+        return "begin";
+      }
+
+      decide() {
+        return "done";
+      }
+
+      finish() {
+        return "finished";
+      }
+    }
+
+    const initializers = [
+      decorateMethod(LegacyFragmentFlow, "begin", start() as unknown as Decorator),
+      decorateMethod(LegacyFragmentFlow, "decide", router("begin", { emit: ["done"] }) as unknown as Decorator),
+      decorateMethod(LegacyFragmentFlow, "finish", listen("done") as unknown as Decorator),
+    ];
+    initializers.forEach((initializer) => {
+      initializer.call(new LegacyFragmentFlow());
+    });
+
+    const prototype = LegacyFragmentFlow.prototype as Record<string, Record<string, unknown>>;
+    delete prototype.begin.__flow_method_definition__;
+    delete prototype.decide.__flow_method_definition__;
+    delete prototype.finish.__flow_method_definition__;
+
+    const [startMethods, listeners, routers, routerEmit] = extract_flow_definition({
+      begin: prototype.begin,
+      decide: prototype.decide,
+      finish: prototype.finish,
+    });
+
+    expect(startMethods).toEqual(["begin"]);
+    expect(listeners).toEqual({
+      decide: ["OR", ["begin"]],
+      finish: ["OR", ["done"]],
+    });
+    expect(routers).toEqual(new Set(["decide"]));
+    expect(routerEmit).toEqual({ decide: ["done"] });
+  });
+
   it("builds FlowDefinition config from upstream static class config fields", () => {
     class StaticConfigDefinitionFlow extends Flow {
       static stream = true;
