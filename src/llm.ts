@@ -1864,18 +1864,20 @@ export abstract class BaseLLM implements LLMClient {
       const typedFiles = typedMultimodalFiles(message.files);
       if (!uploader && typedFiles) {
         const api = llmApiMode(this);
-        const formattedBlocks = formatMultimodalContent(typedFiles, this.provider || this.model, api === undefined ? {} : { api });
+        const text = typeof message.content === "string" && message.content.length > 0 ? message.content : null;
+        const formattedBlocks = formatMultimodalContent(
+          typedFiles,
+          this.provider || this.model,
+          api === undefined ? { text } : { api, text },
+        );
         const { files: _files, ...rest } = message;
         void _files;
         if (formattedBlocks.length === 0) {
           return { ...rest };
         }
-        const contentBlocks = typeof message.content === "string" && message.content.length > 0
-          ? [this.formatTextContent(message.content), ...formattedBlocks]
-          : formattedBlocks;
         return {
           ...rest,
-          content: contentBlocks as unknown as string,
+          content: formattedBlocks as unknown as string,
         };
       }
       const contentBlocks: Record<string, unknown>[] = [];

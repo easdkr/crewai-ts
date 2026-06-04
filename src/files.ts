@@ -1514,11 +1514,15 @@ export type MultimodalContentApi = "completions" | "responses";
 export function formatMultimodalContent(
   files: Record<string, FileInput>,
   provider: string,
-  options: { api?: MultimodalContentApi } | MultimodalContentApi = {},
+  options: { api?: MultimodalContentApi; text?: string | null } | MultimodalContentApi = {},
 ): Record<string, unknown>[] {
   const api = typeof options === "string" ? options : options.api ?? "completions";
+  const text = typeof options === "string" ? null : options.text ?? null;
   const normalizedProvider = provider.toLowerCase();
   const result: Record<string, unknown>[] = [];
+  if (text) {
+    result.push(formatTextBlockForProvider(text, normalizedProvider, api));
+  }
   for (const [name, file] of Object.entries(files)) {
     if (!isOpenAIProvider(normalizedProvider) && !isGeminiProvider(normalizedProvider) && !isAnthropicProvider(normalizedProvider)) {
       continue;
@@ -1549,6 +1553,13 @@ export function formatMultimodalContent(
           data: encoded,
         },
       });
+    } else if (isGeminiProvider(normalizedProvider) && (file instanceof TextFile || file instanceof AudioFile || file instanceof VideoFile || file instanceof PDFFile)) {
+      result.push({
+        inlineData: {
+          mimeType: file.contentType,
+          data: encoded,
+        },
+      });
     } else if (file instanceof PDFFile && api === "responses") {
       result.push({
         type: "input_file",
@@ -1568,7 +1579,7 @@ export function formatMultimodalContent(
 export function format_multimodal_content(
   files: Record<string, FileInput>,
   provider: string,
-  options: { api?: MultimodalContentApi } | MultimodalContentApi = {},
+  options: { api?: MultimodalContentApi; text?: string | null } | MultimodalContentApi = {},
 ): Record<string, unknown>[] {
   return formatMultimodalContent(files, provider, options);
 }
@@ -1621,6 +1632,16 @@ function isAnthropicProvider(provider: string): boolean {
     || provider === "claude"
     || provider.startsWith("anthropic/")
     || provider.startsWith("claude");
+}
+
+function formatTextBlockForProvider(text: string, provider: string, api: MultimodalContentApi): Record<string, string> {
+  if (api === "responses") {
+    return { type: "input_text", text };
+  }
+  if (isGeminiProvider(provider)) {
+    return { text };
+  }
+  return { type: "text", text };
 }
 
 function isPromiseLike(value: unknown): value is PromiseLike<unknown> {

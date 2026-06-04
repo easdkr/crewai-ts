@@ -28104,6 +28104,40 @@ describe("LLM providers", () => {
     ]);
   });
 
+  it("formats Gemini BaseLLM mixed typed files as provider content blocks", () => {
+    const pngBytes = Buffer.concat([
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      Buffer.from("gemini-message-image"),
+    ]);
+    const textBytes = Buffer.from("Gemini text notes");
+    const llm = new GeminiCompletion({ model: "gemini/gemini-2.0-flash" });
+    const messages = llm._format_messages([{
+      role: "user",
+      content: "Inspect these files",
+      files: {
+        chart: new ImageFile({ source: pngBytes }),
+        readme: new TextFile({ source: textBytes }),
+      },
+    }]);
+
+    expect(messages[0]?.files).toBeUndefined();
+    expect(messages[0]?.content).toEqual([
+      { text: "Inspect these files" },
+      {
+        inlineData: {
+          mimeType: "image/png",
+          data: pngBytes.toString("base64"),
+        },
+      },
+      {
+        inlineData: {
+          mimeType: "text/plain",
+          data: textBytes.toString("base64"),
+        },
+      },
+    ]);
+  });
+
   it("uses upstream-style context window sizing and stop-word support rules", () => {
     class WindowLLM extends BaseLLM {
       call(): string {
