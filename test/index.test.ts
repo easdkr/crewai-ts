@@ -14322,6 +14322,51 @@ describe("core crew runtime", () => {
     expect(executor.check_native_todo_completion()).toBe("todo_not_satisfied");
   });
 
+  it("marks AgentExecutor todos complete from tool message results", () => {
+    const executor = new AgentExecutor();
+    executor.state.todos.items = [
+      new TodoItem({
+        stepNumber: 1,
+        description: "Search docs",
+        toolToUse: "Search Tool",
+        status: TodoStatus.RUNNING,
+      }),
+    ];
+    executor.state.current_answer = new AgentAction({
+      thought: "use search",
+      tool: "Search Tool",
+      toolInput: "{}",
+      text: "Action: Search Tool\nAction Input: {}",
+    });
+    executor.state.messages.push({ role: "tool", content: "react tool result" });
+
+    expect(executor.mark_todo_complete()).toBe("todo_marked");
+    expect(executor.state.todos.get_by_step_number(1)).toMatchObject({
+      status: TodoStatus.COMPLETED,
+      result: "react tool result",
+    });
+
+    const nativeExecutor = new AgentExecutor();
+    nativeExecutor.state.todos.items = [
+      new TodoItem({
+        stepNumber: 1,
+        description: "Use native tools",
+        status: TodoStatus.RUNNING,
+      }),
+    ];
+    nativeExecutor.state.messages.push(
+      { role: "assistant", content: "", tool_calls: [{ id: "call_1" }] } as LLMMessage,
+      { role: "tool", content: "first native result", tool_call_id: "call_1" } as LLMMessage,
+      { role: "tool", content: "second native result", tool_call_id: "call_2" } as LLMMessage,
+    );
+
+    expect(nativeExecutor.mark_todo_complete()).toBe("todo_marked");
+    expect(nativeExecutor.state.todos.get_by_step_number(1)).toMatchObject({
+      status: TodoStatus.COMPLETED,
+      result: "first native result\nsecond native result",
+    });
+  });
+
   it("short-circuits AgentExecutor native tool execution for result_as_answer tools", () => {
     const finalTool = new StructuredTool({
       name: "slow_one",

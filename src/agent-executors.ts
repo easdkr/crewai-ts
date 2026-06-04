@@ -1212,7 +1212,7 @@ export class AgentExecutor extends BaseAgentExecutor {
     const current = this.state.todos.currentTodo;
     if (current) {
       const answer = this.state.current_answer;
-      const result = answer instanceof AgentFinish ? String(answer.output) : current.result ?? "";
+      const result = this.todoCompletionResult(answer, current);
       this.state.todos.markCompleted(current.stepNumber, result);
     }
     return "todo_marked";
@@ -1220,6 +1220,31 @@ export class AgentExecutor extends BaseAgentExecutor {
 
   mark_todo_complete(): "todo_marked" {
     return this.markTodoComplete();
+  }
+
+  private todoCompletionResult(answer: unknown, current: TodoItem): string {
+    if (answer instanceof AgentFinish) {
+      return String(answer.output);
+    }
+    if (answer instanceof AgentAction) {
+      const lastMessage = this.state.messages.at(-1);
+      if (lastMessage?.role === "tool" || lastMessage?.role === "assistant") {
+        return stringifyStepResult(lastMessage.content);
+      }
+      return current.result ?? "";
+    }
+    if ((answer === null || answer === undefined) && this.state.messages.length > 0) {
+      const toolResults: string[] = [];
+      for (const message of [...this.state.messages].reverse()) {
+        if (message.role === "tool") {
+          toolResults.unshift(stringifyStepResult(message.content));
+        } else if (message.role === "assistant" && "tool_calls" in message) {
+          break;
+        }
+      }
+      return toolResults.join("\n");
+    }
+    return current.result ?? "";
   }
 
   checkMoreTodos(): "has_todos" | "all_todos_complete" | "needs_replan" {

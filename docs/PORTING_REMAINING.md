@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 902 passing tests.
+- Test suite: 903 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -317,6 +317,7 @@ When more goal budget is available, continue from the behavioral parity audits b
 - `AgentExecutor.execute_tool_action` now records non-final tool observations and appends the upstream post-tool reasoning prompt before continuing.
 - `AgentExecutor.check_todo_completion` now requires ReAct tool actions to match the running todo's expected tool when one is specified, while still accepting final answers and todos without a specified tool.
 - `AgentExecutor.check_native_todo_completion` now mirrors the same upstream current-answer contract, requiring a running todo plus a matching expected tool action or final answer before routing native todo execution as satisfied.
+- `AgentExecutor.mark_todo_complete` now mirrors upstream result extraction for tool-driven todo completion: ReAct actions use the latest tool/assistant message content, and native tool histories join the most recent tool result messages from the current assistant tool-call turn.
 - `AgentExecutor.execute_native_tool` now records the upstream assistant `tool_calls` message and named tool result messages before continuing or short-circuiting.
 - Native result-as-answer tool failures now mirror upstream behavior: `executeSingleNativeToolCall` returns an error result with `result_as_answer=false`, hook-blocked calls do not become final answers, and `AgentExecutor.execute_native_tool` records failed tool output instead of throwing or short-circuiting.
 - `AgentExecutor.execute_native_tool` now mirrors upstream max-usage ordering: original tool usage limits are checked before deterministic available functions execute, recording the limit result without incrementing or invoking the tool.
