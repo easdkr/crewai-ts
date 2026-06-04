@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 1100 passing tests.
+- Test suite: 1101 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -276,7 +276,7 @@ High-value behavior audits still worth running:
 
 3. **Experimental `AgentExecutor` plan-and-execute behavior**
    - Current TS implementation covers deterministic finalization, dynamic replanning triggers, object-style invoke setup, ReAct/native LLM routing, tool observations, native tool messages, memory save, human feedback, and plan refinement semantics.
-   - TodoList behavior now covers upstream terminal dependency handling plus empty-string result preservation for completed/failed steps.
+   - TodoList behavior now covers upstream terminal dependency handling, mixed completed/failed plan completion, plus empty-string result preservation for completed/failed steps.
    - Continue auditing only with behavior tests for end-to-end plan generation, isolated step execution, observation/replan decisions, native tool execution, and human feedback loops.
    - Do not add private helper aliases unless the behavior test requires them.
 

@@ -19653,6 +19653,19 @@ describe("agent planning", () => {
     expect(todos.get_ready_todos().map((todo) => todo.step_number)).toEqual([3]);
   });
 
+  it("treats completed and failed todos as a complete terminal plan", () => {
+    const todos = new TodoList({
+      items: [
+        { step_number: 1, description: "Build", status: TodoStatus.COMPLETED },
+        { step_number: 2, description: "Test", status: TodoStatus.FAILED },
+        { step_number: 3, description: "Report", status: TodoStatus.COMPLETED },
+      ],
+    });
+
+    expect(todos.is_complete).toBe(true);
+    expect(todos.isComplete).toBe(true);
+  });
+
   it("preserves empty string todo results while ignoring null overwrites", () => {
     const todos = new TodoList({
       items: [
