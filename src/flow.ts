@@ -1483,6 +1483,126 @@ export class Flow<TState extends object = Record<string, unknown>> {
     return this._buildRouterMessages(routerConfig, context);
   }
 
+  buildRouterContext(): Record<string, unknown> {
+    const state = this.state as Record<string, unknown>;
+    const events: unknown[] = Array.isArray(state.events)
+      ? state.events.map((event): unknown => event instanceof ConversationEvent ? event.model_dump({ exclude_none: true }) : event)
+      : [];
+    return {
+      system_prompt: this.resolveConversationalSystemPrompt(),
+      current_user_message: state.current_user_message ?? state.currentUserMessage ?? null,
+      message_history: this.conversationMessages,
+      events,
+      last_intent: state.last_intent ?? state.lastIntent ?? null,
+    };
+  }
+
+  build_router_context(): Record<string, unknown> {
+    return this.buildRouterContext();
+  }
+
+  buildAgentContext(agentName: string): LLMMessage[] {
+    const state = this.state as Record<string, unknown>;
+    const messages = [...this.conversationMessages];
+    const agentThreads = state.agent_threads ?? state.agentThreads;
+    const thread = isRecord(agentThreads) && Array.isArray(agentThreads[agentName]) ? agentThreads[agentName] : [];
+    messages.push(...thread.map((message) => {
+      const record = isRecord(message) ? message : {};
+      return {
+        role: typeof record.role === "string" ? record.role : "assistant",
+        content: stringifyFlowHelperValue(record.content),
+      } as LLMMessage;
+    }));
+    return messages;
+  }
+
+  build_agent_context(agentName: string): LLMMessage[] {
+    return this.buildAgentContext(agentName);
+  }
+
+  routeTurn(context: Record<string, unknown>): string | null {
+    const config = getConversationalStaticConfig(this.constructor);
+    if (!config) {
+      return null;
+    }
+
+    let routerConfig = config.router instanceof RouterConfig
+      ? config.router
+      : config.router
+        ? new RouterConfig(config.router)
+        : null;
+    if (!routerConfig) {
+      const defaultIntents = config.default_intents ?? config.defaultIntents ?? null;
+      if (defaultIntents) {
+        return null;
+      }
+      const customRoutes = this._effectiveRoutes(null).filter((route) => !this.builtinRouteNames().includes(route));
+      if (customRoutes.length === 0) {
+        return null;
+      }
+      routerConfig = new RouterConfig();
+    }
+
+    const route = this._routeWithConfig(routerConfig, context);
+    if (route) {
+      setConversationStateField(this.state, "last_intent", route);
+    }
+    return route;
+  }
+
+  route_turn(context: Record<string, unknown>): string | null {
+    return this.routeTurn(context);
+  }
+
+  _routeWithConfig(routerConfig: RouterConfig, context: Record<string, unknown>): string | null {
+    const routerLlm = this.defaultRouterLlm(routerConfig);
+    if (!routerLlm) {
+      return routerConfig.default_intent ?? routerConfig.defaultIntent;
+    }
+    try {
+      const response = callConversationLlm(routerLlm, this._buildRouterMessages(routerConfig, context), {
+        response_format: routerConfig.response_format ?? routerConfig.responseFormat ?? this.routerResponseFormat(routerConfig),
+      });
+      const intent = extractRouterIntent(response, routerConfig.intent_field);
+      if (!intent) {
+        return routerConfig.fallback_intent ?? routerConfig.fallbackIntent ?? routerConfig.default_intent ?? routerConfig.defaultIntent;
+      }
+      const validLabels = this._effectiveRoutes(routerConfig);
+      if (validLabels.length > 0 && !validLabels.includes(intent)) {
+        return routerConfig.fallback_intent ?? routerConfig.fallbackIntent ?? routerConfig.default_intent ?? routerConfig.defaultIntent;
+      }
+      return intent;
+    } catch {
+      return routerConfig.fallback_intent ?? routerConfig.fallbackIntent ?? routerConfig.default_intent ?? routerConfig.defaultIntent;
+    }
+  }
+
+  _route_with_config(routerConfig: RouterConfig, context: Record<string, unknown>): string | null {
+    return this._routeWithConfig(routerConfig, context);
+  }
+
+  converseTurn(): string {
+    const llm = this.defaultConversationLlm();
+    if (!llm) {
+      const content = "I can continue the conversation once an LLM is configured.";
+      this.appendAssistantMessage(content);
+      return content;
+    }
+    const messages: LLMMessage[] = [];
+    const systemPrompt = this.resolveConversationalSystemPrompt();
+    if (systemPrompt) {
+      messages.push({ role: "system", content: systemPrompt });
+    }
+    messages.push(...this.conversationMessages);
+    const content = stringifyFlowHelperValue(callConversationLlm(llm, messages));
+    this.appendAssistantMessage(content);
+    return content;
+  }
+
+  converse_turn(): string {
+    return this.converseTurn();
+  }
+
   _effectiveRoutes(routerConfig: RouterConfig | null = null): string[] {
     const builtinRoutes = getStaticStringArray(this.constructor, "builtin_routes")
       ?? getStaticStringArray(this.constructor, "builtinRoutes")
@@ -1526,6 +1646,50 @@ export class Flow<TState extends object = Record<string, unknown>> {
     const record = handler as unknown as Record<string, unknown>;
     const description = record.route_description ?? record.routeDescription;
     return typeof description === "string" ? description.trim().split(/\r?\n/, 1)[0]?.trim() ?? "" : "";
+  }
+
+  private builtinRouteNames(): string[] {
+    return getStaticStringArray(this.constructor, "builtin_routes")
+      ?? getStaticStringArray(this.constructor, "builtinRoutes")
+      ?? ["converse", "end"];
+  }
+
+  private defaultRouterLlm(routerConfig: RouterConfig): unknown {
+    const config = getConversationalStaticConfig(this.constructor);
+    return routerConfig.llm
+      ?? config?.intent_llm
+      ?? config?.intentLlm
+      ?? config?.llm
+      ?? null;
+  }
+
+  private defaultConversationLlm(): unknown {
+    const config = getConversationalStaticConfig(this.constructor);
+    if (!config) {
+      return null;
+    }
+    const router = config.router instanceof RouterConfig ? config.router : config.router ? new RouterConfig(config.router) : null;
+    return config.llm
+      ?? config.answer_from_history_llm
+      ?? config.answerFromHistoryLlm
+      ?? router?.llm
+      ?? config.intent_llm
+      ?? config.intentLlm
+      ?? null;
+  }
+
+  private resolveConversationalSystemPrompt(): string | null {
+    const config = getConversationalStaticConfig(this.constructor);
+    const prompt = config?.system_prompt ?? config?.systemPrompt;
+    return typeof prompt === "string" ? prompt : null;
+  }
+
+  private routerResponseFormat(routerConfig: RouterConfig): Record<string, unknown> {
+    return {
+      name: "ConversationRoute",
+      intent_field: routerConfig.intent_field,
+      routes: this._effectiveRoutes(routerConfig),
+    };
   }
 
   async handleTurn(
@@ -5472,6 +5636,80 @@ function getStaticStringArray(constructor: object, key: string): string[] | null
 function getStaticRecord(constructor: object, key: string): Record<string, unknown> | null {
   const value = (constructor as unknown as Record<string, unknown>)[key];
   return isRecord(value) ? value : null;
+}
+
+function getConversationalStaticConfig(constructor: object): Record<string, unknown> | null {
+  return getStaticRecord(constructor, "conversational_config")
+    ?? getStaticRecord(constructor, "conversationalConfig");
+}
+
+function callConversationLlm(llm: unknown, messages: LLMMessage[], options: Record<string, unknown> = {}): unknown {
+  const instance = typeof llm === "string" ? createLLM({ model: llm }) : llm;
+  if (!isRecord(instance) || typeof instance.call !== "function") {
+    throw new Error(`Invalid conversational LLM: expected model string or object with call().`);
+  }
+  const call = instance.call as (messages: LLMMessage[], options?: Record<string, unknown>) => unknown;
+  const normalizedOptions = Object.keys(options).length === 0
+    ? undefined
+    : {
+      ...options,
+      responseFormat: options.response_format ?? options.responseFormat,
+      responseModel: options.response_format ?? options.responseModel,
+    };
+  return call.call(instance, messages, normalizedOptions);
+}
+
+function extractRouterIntent(response: unknown, intentField: string): string | null {
+  if (typeof response === "string") {
+    const trimmed = response.trim();
+    if (!trimmed) {
+      return null;
+    }
+    try {
+      const parsed = JSON.parse(trimmed) as unknown;
+      return extractRouterIntent(parsed, intentField);
+    } catch {
+      return trimmed;
+    }
+  }
+  if (!isRecord(response)) {
+    return null;
+  }
+  const value = response[intentField]
+    ?? response.intent;
+  if (value !== undefined && value !== null) {
+    return stringifyRouterIntentValue(value);
+  }
+  const dump = response.model_dump ?? response.modelDump;
+  if (typeof dump === "function") {
+    const dumped = (dump as () => unknown).call(response);
+    return extractRouterIntent(dumped, intentField);
+  }
+  return null;
+}
+
+function stringifyRouterIntentValue(value: unknown): string {
+  if (
+    typeof value === "string"
+    || typeof value === "number"
+    || typeof value === "boolean"
+    || typeof value === "bigint"
+  ) {
+    return value.toString();
+  }
+  return stringifyFlowHelperValue(value);
+}
+
+function setConversationStateField(state: object, key: string, value: unknown): void {
+  const record = state as Record<string, unknown>;
+  record[key] = value;
+  if (key === "last_intent") {
+    record.lastIntent = value;
+  } else if (key === "current_user_message") {
+    record.currentUserMessage = value;
+  } else if (key === "last_user_message") {
+    record.lastUserMessage = value;
+  }
 }
 
 function cloneFlowState<TState extends object>(state: TState): TState {

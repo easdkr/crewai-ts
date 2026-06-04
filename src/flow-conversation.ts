@@ -166,6 +166,8 @@ export function setStateField(flow: unknown, name: string, value: unknown): void
     stateRecord.lastUserMessage = value;
   } else if (name === "last_intent") {
     stateRecord.lastIntent = value;
+  } else if (name === "current_user_message") {
+    stateRecord.currentUserMessage = value;
   } else if (name === "session_ready") {
     stateRecord.sessionReady = value;
   }
@@ -182,6 +184,7 @@ export function receiveUserMessage(
   } = {},
 ): string {
   appendMessage(flow, "user", text);
+  setStateField(flow, "current_user_message", text);
   setStateField(flow, "last_user_message", text);
 
   if (options.outcomes && options.outcomes.length > 0 && options.llm !== null && options.llm !== undefined) {
@@ -231,7 +234,6 @@ export function prepareConversationalTurn(
   if (!text.trim()) {
     return;
   }
-  setStateField(flow, "last_intent", null);
 
   const config = options.config ?? null;
   const intents = options.intents ?? config?.defaultIntents ?? null;

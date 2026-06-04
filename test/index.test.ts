@@ -19533,6 +19533,77 @@ describe("flow runtime", () => {
     expect(messages[1]?.content).toContain("\"available_routes\"");
   });
 
+  it("routes experimental conversational turns through router LLM and persists last intent", async () => {
+    const routerCalls: LLMMessage[][] = [];
+    const routerResponses = [{ intent: "research" }, { intent: "converse" }];
+    const routerLlm = {
+      call(messages: LLMMessage[], options?: Record<string, unknown>) {
+        expect(options?.response_format ?? options?.responseFormat).toBeDefined();
+        routerCalls.push(messages);
+        return routerResponses.shift();
+      },
+    };
+    const chatCalls: LLMMessage[][] = [];
+    const chatLlm = {
+      call(messages: LLMMessage[]) {
+        chatCalls.push(messages);
+        return "follow-up reply";
+      },
+    };
+
+    class RoutedFlow extends Flow<ConversationState> {
+      static conversational = true;
+      static conversational_config = new ConversationConfig({
+        llm: chatLlm,
+        router: new RouterConfig({
+          llm: routerLlm,
+          routes: ["research"],
+        }),
+      });
+
+      begin() {
+        return "ready";
+      }
+
+      route() {
+        return this.route_turn(this.build_router_context());
+      }
+
+      runResearch() {
+        this.append_agent_result("researcher", "researched", { visibility: "public" });
+        return "researched";
+      }
+
+      converseTurnHandler() {
+        return this.converse_turn();
+      }
+    }
+
+    const initializers = [
+      decorateMethod(RoutedFlow, "begin", start() as unknown as Decorator),
+      decorateMethod(RoutedFlow, "route", router("begin") as unknown as Decorator),
+      decorateMethod(RoutedFlow, "runResearch", listen("research") as unknown as Decorator),
+      decorateMethod(RoutedFlow, "converseTurnHandler", listen("converse") as unknown as Decorator),
+    ];
+    const flow = new RoutedFlow();
+    initializers.forEach((initializer) => {
+      initializer.call(flow);
+    });
+
+    await expect(flow.handle_turn("research CrewAI")).resolves.toBe("researched");
+    expect(flow.state.last_intent).toBe("research");
+    expect(message_to_llm_dict(flow.state.messages.at(-1))).toMatchObject({
+      role: "assistant",
+      content: "researched",
+    });
+
+    await expect(flow.handle_turn("tell me more about that")).resolves.toBe("follow-up reply");
+    expect(flow.state.last_intent).toBe("converse");
+    expect(chatCalls).toHaveLength(1);
+    expect(routerCalls).toHaveLength(2);
+    expect(String(routerCalls[1]?.[1]?.content)).toContain("\"last_intent\":\"research\"");
+  });
+
   it("provides upstream experimental conversational data shapes", () => {
     const router = new RouterConfig({
       routes: ["converse", "handoff"],
