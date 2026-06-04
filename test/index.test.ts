@@ -36534,7 +36534,7 @@ describe("streaming output", () => {
     expect([...streaming.__iter__()].map((chunk) => chunk.content)).toEqual(["stream final"]);
   });
 
-  it("preserves all kickoffForEach streaming results and aggregated usage", async () => {
+  it("returns per-input kickoffForEach streaming outputs and aggregated usage", async () => {
     const researcher = new Agent({
       role: "Researcher",
       goal: "Find facts",
@@ -36555,22 +36555,25 @@ describe("streaming output", () => {
       stream: true,
     });
 
-    const [streaming] = await crewInstance.kickoffForEach({
+    const streamingOutputs = await crewInstance.kickoffForEach({
       inputs: [{ topic: "dog" }, { topic: "cat" }, { topic: "apple" }],
-    }) as unknown as [CrewStreamingOutput];
+    }) as unknown as CrewStreamingOutput[];
 
-    const chunks: StreamChunk[] = [];
-    for await (const chunk of streaming) {
-      chunks.push(chunk);
+    expect(streamingOutputs).toHaveLength(3);
+    expect(streamingOutputs.every((streaming) => streaming instanceof CrewStreamingOutput)).toBe(true);
+
+    const chunks: string[][] = [];
+    for (const streaming of streamingOutputs) {
+      const streamChunks: string[] = [];
+      for await (const chunk of streaming) {
+        streamChunks.push(chunk.content);
+      }
+      chunks.push(streamChunks);
     }
 
-    expect(chunks.map((chunk) => chunk.content)).toEqual(["stream apple"]);
-    expect(streaming.results.map((result) => result.raw)).toEqual([
-      "stream dog",
-      "stream cat",
-      "stream apple",
-    ]);
-    expect(streaming.results.map((result) => result.token_usage.successfulRequests)).toEqual([1, 1, 1]);
+    expect(chunks).toEqual([["stream dog"], ["stream cat"], ["stream apple"]]);
+    expect(streamingOutputs.map((streaming) => streaming.result.raw)).toEqual(["stream dog", "stream cat", "stream apple"]);
+    expect(streamingOutputs.map((streaming) => streaming.results[0]?.token_usage.successfulRequests)).toEqual([1, 1, 1]);
     expect(crewInstance.usage_metrics.successfulRequests).toBe(3);
   });
 

@@ -843,12 +843,12 @@ export class Crew extends FlowTrackable {
   async kickoffForEach(options: KickoffForEachOptions): Promise<CrewOutput[]> {
     const inputsList = validateKickoffForEachInputs(options.inputs);
     if (this.stream) {
-      const output = new CrewStreamingOutput(async () => {
-        const results = await this.withStreamDisabled(async () => await this.kickoffForEach(options));
-        output._set_results(results);
-        return results.at(-1) ?? new CrewOutput({ raw: "", tasksOutput: [], tokenUsage: emptyUsageMetrics() });
-      });
-      return [output as unknown as CrewOutput];
+      return this.createForEachStreamingOutputs(inputsList, async (crew, inputs) => await crew.kickoff({
+        inputs,
+        ...(options.inputFiles ?? options.input_files
+          ? { inputFiles: options.inputFiles ?? options.input_files }
+          : {}),
+      })) as unknown as CrewOutput[];
     }
     let totalUsage = emptyUsageMetrics();
     const outputs: CrewOutput[] = [];
@@ -875,12 +875,12 @@ export class Crew extends FlowTrackable {
   async kickoffForEachAsync(options: KickoffForEachOptions): Promise<CrewOutput[]> {
     const inputsList = validateKickoffForEachInputs(options.inputs);
     if (this.stream) {
-      const output = new CrewStreamingOutput(async () => {
-        const results = await this.withStreamDisabled(async () => await this.kickoffForEachAsync(options));
-        output._set_results(results);
-        return results.at(-1) ?? new CrewOutput({ raw: "", tasksOutput: [], tokenUsage: emptyUsageMetrics() });
-      });
-      return [output as unknown as CrewOutput];
+      return this.createForEachStreamingOutputs(inputsList, async (crew, inputs) => await crew.kickoffAsync({
+        inputs,
+        ...(options.inputFiles ?? options.input_files
+          ? { inputFiles: options.inputFiles ?? options.input_files }
+          : {}),
+      })) as unknown as CrewOutput[];
     }
     const outputs = await Promise.all(
       inputsList.map(async (inputs) => {
@@ -908,12 +908,12 @@ export class Crew extends FlowTrackable {
   async akickoffForEach(options: KickoffForEachOptions): Promise<CrewOutput[]> {
     const inputsList = validateKickoffForEachInputs(options.inputs);
     if (this.stream) {
-      const output = new CrewStreamingOutput(async () => {
-        const results = await this.withStreamDisabled(async () => await this.akickoffForEach(options));
-        output._set_results(results);
-        return results.at(-1) ?? new CrewOutput({ raw: "", tasksOutput: [], tokenUsage: emptyUsageMetrics() });
-      });
-      return [output as unknown as CrewOutput];
+      return this.createForEachStreamingOutputs(inputsList, async (crew, inputs) => await crew.akickoff({
+        inputs,
+        ...(options.inputFiles ?? options.input_files
+          ? { inputFiles: options.inputFiles ?? options.input_files }
+          : {}),
+      })) as unknown as CrewOutput[];
     }
     const outputs = await Promise.all(
       inputsList.map(async (inputs) => {
@@ -1551,6 +1551,21 @@ export class Crew extends FlowTrackable {
     } finally {
       this.stream = previous;
     }
+  }
+
+  private createForEachStreamingOutputs(
+    inputsList: readonly InputValues[],
+    run: (crew: Crew, inputs: InputValues) => Promise<CrewOutput>,
+  ): CrewStreamingOutput[] {
+    let totalUsage = emptyUsageMetrics();
+    return inputsList.map((inputs) => new CrewStreamingOutput(async () => {
+      const crew = this.copy();
+      const output = await crew.withStreamDisabled(async () => await run(crew, inputs));
+      totalUsage = addUsageMetrics(totalUsage, output.tokenUsage);
+      this.setUsageMetrics(totalUsage);
+      this.taskOutputStorageHandler?.reset();
+      return output;
+    }));
   }
 
   private async handleCrewPlanning(): Promise<void> {
