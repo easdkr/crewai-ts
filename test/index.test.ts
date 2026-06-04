@@ -27590,6 +27590,72 @@ describe("tools", () => {
     });
   });
 
+  it("formats direct Agent Gemini text and video input files", async () => {
+    class CapturingGeminiLLM extends GeminiCompletion {
+      formattedMessages: readonly LLMMessage[] = [];
+
+      constructor() {
+        super({ model: "gemini/gemini-2.0-flash" });
+      }
+
+      override call(messages: readonly LLMMessage[]): LLMResponse {
+        this.formattedMessages = this.formatMessages(messages);
+        return "gemini media done";
+      }
+    }
+
+    const llmInstance = new CapturingGeminiLLM();
+    const agent = new Agent({
+      role: "Gemini Media Analyst",
+      goal: "Analyze Gemini media files",
+      backstory: "Expert at reading multimodal files",
+      llm: llmInstance,
+    });
+    const textBytes = Buffer.from("Gemini direct agent notes");
+    const videoBytes = Buffer.from([0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70, ...Buffer.from("mp42")]);
+    const readme = new TextFile({
+      source: new FileBytes({ data: textBytes, filename: "readme.txt" }),
+    });
+    const video = new VideoFile({
+      source: new FileBytes({ data: videoBytes, filename: "sample.mp4" }),
+    });
+
+    await expect(agent.kickoff([
+      {
+        role: "user",
+        content: "What files do you see?",
+      },
+    ], {
+      input_files: {
+        readme,
+        video,
+      },
+    })).resolves.toBe("gemini media done");
+
+    const userMessage = llmInstance.formattedMessages.findLast((message) => message.role === "user");
+    expect(userMessage?.files).toBeUndefined();
+    const contentBlocks: unknown = userMessage?.content;
+    expect(Array.isArray(contentBlocks)).toBe(true);
+    if (!Array.isArray(contentBlocks)) {
+      throw new Error("Expected Gemini content blocks");
+    }
+    expect(contentBlocks).toHaveLength(3);
+    const textBlock = contentBlocks[0] as { text?: unknown };
+    expect(String(textBlock.text)).toContain("What files do you see?");
+    expect(contentBlocks[1]).toEqual({
+      inlineData: {
+        mimeType: "text/plain",
+        data: textBytes.toString("base64"),
+      },
+    });
+    expect(contentBlocks[2]).toEqual({
+      inlineData: {
+        mimeType: "video/mp4",
+        data: videoBytes.toString("base64"),
+      },
+    });
+  });
+
   it("uses functionCallingLlm for tool selection and the main LLM for the final answer", async () => {
     const functionCalls: LLMMessage[][] = [];
     const mainCalls: LLMMessage[][] = [];
