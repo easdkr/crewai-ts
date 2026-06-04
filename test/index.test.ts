@@ -13765,6 +13765,39 @@ describe("core crew runtime", () => {
     expect(failedToolMessage.content).toContain("Error executing tool");
   });
 
+  it("records AgentExecutor native max-usage results before executing available functions", () => {
+    let calls = 0;
+    const limitedTool = new StructuredTool({
+      name: "limited_lookup",
+      description: "Lookup once",
+      maxUsageCount: 1,
+      currentUsageCount: 1,
+      func: () => "should not run",
+    });
+    const executor = new AgentExecutor({ originalTools: [limitedTool] });
+    Object.assign(executor, {
+      _available_functions: {
+        limited_lookup: () => {
+          calls += 1;
+          return "called";
+        },
+      },
+    });
+    executor.state.pending_tool_calls = [
+      { id: "call_limited", function: { name: "limited_lookup", arguments: "{}" } },
+    ];
+
+    expect(executor.execute_native_tool()).toBe("native_tool_completed");
+    expect(calls).toBe(0);
+    expect(limitedTool.current_usage_count).toBe(1);
+    expect(executor.state.messages.at(-1)).toEqual({
+      role: "tool",
+      name: "limited_lookup",
+      content: "Tool 'limited_lookup' has reached its usage limit of 1 times and cannot be used anymore.",
+      tool_call_id: "call_limited",
+    });
+  });
+
   it("keeps failed native result_as_answer tool calls from becoming final answers", async () => {
     const failingTool = new StructuredTool({
       name: "failing_tool",

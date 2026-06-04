@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 885 passing tests.
+- Test suite: 886 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -116,6 +116,7 @@ This register is the source of truth for continuing porting work while parity sc
 - AgentExecutor unknown LLM errors are release-gated for upstream diagnostics: non-context, non-parser failures print the upstream unknown-error guidance and details when verbose mode is enabled before rethrowing the original error.
 - AgentExecutor object-style invoke error diagnostics are release-gated for upstream behavior: sync and async kickoff failures print the same verbose unknown-error guidance before rethrowing and still clear the executor reentrancy guard.
 - AgentExecutor native tool failures are release-gated for upstream task accounting: failed native tool calls append an error tool message and increment the task tool-error counter before continuing the reasoning loop.
+- AgentExecutor native tool max-usage handling is release-gated for upstream execution ordering: usage-limited tools record the limit result before invoking deterministic available-function shims, preserving current usage counts.
 - AgentExecutor text-parsed tool failures are release-gated for upstream retry behavior: failed regular tool actions increment the task tool-error counter, append an error observation, and continue with the post-tool reasoning prompt instead of throwing out of the execution loop.
 - StepExecutor isolated native tool failures are release-gated for upstream retry behavior: failed native tool calls are converted into deterministic error tool messages and preserve `tool_calls_made` instead of aborting isolated step execution.
 - StepExecutor isolated text-parsed tool failures are release-gated for upstream retry behavior: failed parsed tool actions are converted into deterministic error observations, preserve `tool_calls_made`, and allow the next LLM iteration to recover with a final answer.
@@ -299,6 +300,7 @@ When more goal budget is available, continue from the behavioral parity audits b
 - `AgentExecutor.check_todo_completion` now requires ReAct tool actions to match the running todo's expected tool when one is specified, while still accepting final answers and todos without a specified tool.
 - `AgentExecutor.execute_native_tool` now records the upstream assistant `tool_calls` message and named tool result messages before continuing or short-circuiting.
 - Native result-as-answer tool failures now mirror upstream behavior: `executeSingleNativeToolCall` returns an error result with `result_as_answer=false`, hook-blocked calls do not become final answers, and `AgentExecutor.execute_native_tool` records failed tool output instead of throwing or short-circuiting.
+- `AgentExecutor.execute_native_tool` now mirrors upstream max-usage ordering: original tool usage limits are checked before deterministic available functions execute, recording the limit result without incrementing or invoking the tool.
 - Native tool argument handling now mirrors upstream deterministic behavior: malformed JSON tool-call arguments return a parse-error result before execution, dict arguments bypass parsing, valid JSON executes normally, and schema validation errors do not increment tool usage.
 - Native tool hook blocking now preserves upstream integration behavior by passing the blocked tool result through after-tool hooks without executing the tool body.
 - `CrewAgentExecutor._handle_native_tool_calls` now mirrors upstream native batch execution by running safe async tool-call batches concurrently while preserving ordered tool result messages and keeping `result_as_answer` / usage-limited tools on the sequential path.

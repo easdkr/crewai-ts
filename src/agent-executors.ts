@@ -1778,6 +1778,11 @@ export class AgentExecutor extends BaseAgentExecutor {
   }
 
   private executeNativeToolCall(name: string, args: Record<string, unknown>): unknown {
+    const tool = this.nativeToolByName(name);
+    const maxUsageLimit = this.nativeToolMaxUsageLimit(tool);
+    if (maxUsageLimit !== null) {
+      return `Tool '${sanitizeToolName(name)}' has reached its usage limit of ${String(maxUsageLimit)} times and cannot be used anymore.`;
+    }
     const availableFunctions = this.availableNativeFunctions();
     const fn = availableFunctions[name] ?? availableFunctions[sanitizeToolName(name)];
     if (typeof fn === "function") {
@@ -1787,7 +1792,6 @@ export class AgentExecutor extends BaseAgentExecutor {
       }
       return result;
     }
-    const tool = this.nativeToolByName(name);
     if (tool) {
       const result = tool.run(args);
       if (isPromiseLike(result)) {
@@ -1812,6 +1816,28 @@ export class AgentExecutor extends BaseAgentExecutor {
     const candidates = [...(record.originalTools ?? record.original_tools ?? []), ...this.tools];
     const sanitized = sanitizeToolName(name);
     return candidates.find((tool) => sanitizeToolName(tool.name) === sanitized) ?? null;
+  }
+
+  private nativeToolMaxUsageLimit(tool: Tool | null): number | null {
+    if (!tool) {
+      return null;
+    }
+    const record = tool as Tool & {
+      maxUsageCount?: unknown;
+      max_usage_count?: unknown;
+      currentUsageCount?: unknown;
+      current_usage_count?: unknown;
+      hasReachedMaxUsageCount?: () => boolean;
+      has_reached_max_usage_count?: () => boolean;
+    };
+    const maxUsageCount = record.maxUsageCount ?? record.max_usage_count;
+    const currentUsageCount = record.currentUsageCount ?? record.current_usage_count;
+    const hasReached = typeof record.hasReachedMaxUsageCount === "function"
+      ? record.hasReachedMaxUsageCount.call(tool)
+      : typeof record.has_reached_max_usage_count === "function"
+        ? record.has_reached_max_usage_count.call(tool)
+        : typeof maxUsageCount === "number" && typeof currentUsageCount === "number" && currentUsageCount >= maxUsageCount;
+    return hasReached && typeof maxUsageCount === "number" ? maxUsageCount : null;
   }
 
   private nativeToolResultAsAnswer(name: string): boolean {
