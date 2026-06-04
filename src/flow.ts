@@ -1100,6 +1100,7 @@ export type FlowSerializedMethodInfo = {
   trigger_methods: readonly string[];
   condition_type: FlowCondition["type"] | null;
   router_paths: readonly string[];
+  router_events: readonly string[];
   has_human_feedback: boolean;
   has_crew: boolean;
 };
@@ -3818,12 +3819,16 @@ export function flowStructure(instanceOrConstructor: object | FlowMetadataTarget
     description: extractClassDescription(instanceOrConstructor),
     methods: structure.methods.map((method): FlowSerializedMethodInfo => {
       const methodValue = getMethodValue(instanceOrConstructor, method.name);
+      const routerEvents = visualization.nodes[method.name]?.router_events
+        ?? visualization.nodes[method.name]?.router_paths
+        ?? method.routerPaths;
       return {
         name: method.name,
         type: method.type,
         trigger_methods: method.triggerMethods,
         condition_type: method.conditionType,
         router_paths: visualization.nodes[method.name]?.router_paths ?? method.routerPaths,
+        router_events: routerEvents,
         has_human_feedback: method.hasHumanFeedback,
         has_crew: detectsCrewReference(methodValue),
       };

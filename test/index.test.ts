@@ -24054,6 +24054,7 @@ describe("flow runtime", () => {
       type: "router",
       trigger_methods: ["begin"],
       router_paths: ["approved"],
+      router_events: ["approved"],
       has_human_feedback: false,
     });
     expect(serialized.methods.find((method) => method.name === "publish")).toMatchObject({

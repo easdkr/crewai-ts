@@ -478,7 +478,7 @@ When more goal budget is available, continue from the behavioral parity audits b
   - Platform integration token context now has default-gate coverage for upstream env fallback, context precedence, empty token preservation, nested scope restoration, and exception restoration.
   - `Flow.plot` now emits `flow_plot` and writes an interactive HTML visualization through the existing flow structure renderer.
   - Flow visualization `CSSExtension` and `JSExtension` now expose upstream-style `parse` helpers for CSS/JS template tags.
-  - `flow_structure` now has default-gate coverage for listener methods that become routers through `human_feedback(emit=[...])`.
+  - `flow_structure` now has default-gate coverage for listener methods that become routers through `human_feedback(emit=[...])` and serializes upstream `router_events` metadata alongside legacy `router_paths`.
   - `flow_structure` now mirrors upstream serializer validation by rejecting Flow instances and non-class inputs, while camelCase `flowStructure` continues to support TS instance metadata for standard decorators.
 - Added adapter-level LLM provider parity helpers:
   - `BaseLLM.acall` now provides the upstream async call surface by formatting string/list messages and delegating through the concrete `call` implementation.
