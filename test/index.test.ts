@@ -2618,6 +2618,30 @@ describe("environment, logging, and file store utilities", () => {
     expect(formatMultimodalContent(files, "openai/gpt-4o")).toEqual([]);
   });
 
+  it("formats multiple OpenAI images and filters unsupported file types", () => {
+    const pngBytes = Buffer.concat([
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      Buffer.from("multi-image"),
+    ]);
+    const multiple = format_multimodal_content({
+      chart1: new ImageFile({ source: pngBytes }),
+      chart2: new ImageFile({ source: pngBytes }),
+    }, "gpt-4o");
+
+    expect(multiple).toHaveLength(2);
+    expect(multiple.every((block) => block.type === "image_url")).toBe(true);
+    expect(format_multimodal_content({}, "gpt-4o")).toEqual([]);
+
+    const mixed = format_multimodal_content({
+      chart: new ImageFile({ source: pngBytes }),
+      doc: new PDFFile({ source: Buffer.from("%PDF-1.4 unsupported in chat completions") }),
+      text: new TextFile({ source: Buffer.from("hello") }),
+    }, "gpt-4o");
+
+    expect(mixed).toHaveLength(1);
+    expect(mixed[0]?.type).toBe("image_url");
+  });
+
   it("validates upstream crewai-files provider constraints deterministically", () => {
     const png = Buffer.concat([
       Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
