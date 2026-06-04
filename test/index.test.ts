@@ -25715,6 +25715,54 @@ describe("LLM providers", () => {
     ]);
   });
 
+  it("resolves Snowflake Cortex credentials and accounts from environment fallbacks", () => {
+    const previousPat = process.env.SNOWFLAKE_PAT;
+    const previousToken = process.env.SNOWFLAKE_TOKEN;
+    const previousJwt = process.env.SNOWFLAKE_JWT;
+    const previousAccountUrl = process.env.SNOWFLAKE_ACCOUNT_URL;
+    const previousAccount = process.env.SNOWFLAKE_ACCOUNT;
+    const previousAccountId = process.env.SNOWFLAKE_ACCOUNT_ID;
+    const previousAccountIdentifier = process.env.SNOWFLAKE_ACCOUNT_IDENTIFIER;
+    try {
+      delete process.env.SNOWFLAKE_PAT;
+      delete process.env.SNOWFLAKE_TOKEN;
+      delete process.env.SNOWFLAKE_JWT;
+      delete process.env.SNOWFLAKE_ACCOUNT_URL;
+      delete process.env.SNOWFLAKE_ACCOUNT;
+      delete process.env.SNOWFLAKE_ACCOUNT_ID;
+      delete process.env.SNOWFLAKE_ACCOUNT_IDENTIFIER;
+
+      expect(() => new SnowflakeCompletion({ model: "claude-3-5-sonnet" })).toThrow("Snowflake token is required");
+
+      process.env.SNOWFLAKE_JWT = "jwt-token";
+      process.env.SNOWFLAKE_ACCOUNT_IDENTIFIER = "org-env";
+      const jwtBacked = new SnowflakeCompletion({ model: "claude-3-5-sonnet" });
+      expect(jwtBacked.api_key).toBe("jwt-token");
+      expect(jwtBacked.account_url).toBe("https://org-env.snowflakecomputing.com/api/v2/cortex/v1");
+
+      process.env.SNOWFLAKE_PAT = "pat/pat-token";
+      process.env.SNOWFLAKE_ACCOUNT_URL = "https://account-url.snowflakecomputing.com";
+      const patBacked = new SnowflakeCompletion({ model: "claude-3-5-sonnet" });
+      expect(patBacked.api_key).toBe("pat-token");
+      expect(patBacked.account_url).toBe("https://account-url.snowflakecomputing.com/api/v2/cortex/v1");
+    } finally {
+      if (previousPat === undefined) delete process.env.SNOWFLAKE_PAT;
+      else process.env.SNOWFLAKE_PAT = previousPat;
+      if (previousToken === undefined) delete process.env.SNOWFLAKE_TOKEN;
+      else process.env.SNOWFLAKE_TOKEN = previousToken;
+      if (previousJwt === undefined) delete process.env.SNOWFLAKE_JWT;
+      else process.env.SNOWFLAKE_JWT = previousJwt;
+      if (previousAccountUrl === undefined) delete process.env.SNOWFLAKE_ACCOUNT_URL;
+      else process.env.SNOWFLAKE_ACCOUNT_URL = previousAccountUrl;
+      if (previousAccount === undefined) delete process.env.SNOWFLAKE_ACCOUNT;
+      else process.env.SNOWFLAKE_ACCOUNT = previousAccount;
+      if (previousAccountId === undefined) delete process.env.SNOWFLAKE_ACCOUNT_ID;
+      else process.env.SNOWFLAKE_ACCOUNT_ID = previousAccountId;
+      if (previousAccountIdentifier === undefined) delete process.env.SNOWFLAKE_ACCOUNT_IDENTIFIER;
+      else process.env.SNOWFLAKE_ACCOUNT_IDENTIFIER = previousAccountIdentifier;
+    }
+  });
+
   it("creates configured LLM clients from strings, objects, clients, and environment fallback", async () => {
     const existing = {
       call: () => "existing",
