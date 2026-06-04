@@ -55,6 +55,14 @@ import {
   FlowStateDefinition,
   type FlowDefinitionCondition,
 } from "./flow-definition.js";
+import {
+  appendMessage,
+  getConversationMessages,
+  getConversationalConfig,
+  normalizeKickoffInputs,
+  prepareConversationalTurn,
+} from "./flow-conversation.js";
+import type { LLMMessage } from "./types.js";
 
 export const AND_CONDITION = "AND";
 export const OR_CONDITION = "OR";
@@ -988,6 +996,13 @@ export type FlowKickoffOptions = {
   from_checkpoint?: CheckpointConfig | null;
   restoreFromStateId?: string | null;
   restore_from_state_id?: string | null;
+  userMessage?: string | Record<string, unknown> | null;
+  user_message?: string | Record<string, unknown> | null;
+  sessionId?: string | null;
+  session_id?: string | null;
+  intents?: readonly string[] | null;
+  intentLlm?: string | LLM | null;
+  intent_llm?: string | LLM | null;
 };
 
 export type FlowExecutionTraceEntry = {
@@ -1310,6 +1325,55 @@ export class Flow<TState extends object = Record<string, unknown>> {
 
   _create_initial_state(): TState {
     return this._createInitialState();
+  }
+
+  get conversationMessages(): LLMMessage[] {
+    return getConversationMessages(this);
+  }
+
+  get conversation_messages(): LLMMessage[] {
+    return this.conversationMessages;
+  }
+
+  appendMessage(role: LLMMessage["role"], content: string, extra: Record<string, unknown> = {}): void {
+    appendMessage(this, role, content, extra);
+  }
+
+  append_message(role: LLMMessage["role"], content: string, extra: Record<string, unknown> = {}): void {
+    this.appendMessage(role, content, extra);
+  }
+
+  appendAssistantMessage(content: string, extra: Record<string, unknown> = {}): void {
+    this.appendMessage("assistant", content, extra);
+  }
+
+  append_assistant_message(content: string, extra: Record<string, unknown> = {}): void {
+    this.appendAssistantMessage(content, extra);
+  }
+
+  async handleTurn(
+    message: string | Record<string, unknown>,
+    options: Omit<FlowKickoffOptions, "userMessage" | "user_message"> = {},
+  ): Promise<unknown> {
+    const result = await this.kickoffAsync({
+      ...options,
+      userMessage: message,
+    });
+    if (typeof result === "string") {
+      const messages = this.conversationMessages;
+      const last = messages.at(-1);
+      if (last?.role !== "assistant" || last.content !== result) {
+        this.appendAssistantMessage(result);
+      }
+    }
+    return result;
+  }
+
+  async handle_turn(
+    message: string | Record<string, unknown>,
+    options: Omit<FlowKickoffOptions, "userMessage" | "user_message"> = {},
+  ): Promise<unknown> {
+    return await this.handleTurn(message, options);
   }
 
   async _replayRecordedEvents(): Promise<void> {
@@ -1665,6 +1729,21 @@ export class Flow<TState extends object = Record<string, unknown>> {
     restoreFromStateId: string | null = null,
   ): Promise<unknown> {
     const options = normalizeFlowKickoffOptions(optionsOrInputs, inputFiles, fromCheckpoint, restoreFromStateId);
+    const userMessage = options.userMessage ?? options.user_message ?? null;
+    const sessionId = options.sessionId ?? options.session_id ?? null;
+    const conversationalInputs = normalizeKickoffInputs(options.inputs ?? null, {
+      userMessage,
+      sessionId,
+    });
+    if (conversationalInputs !== null) {
+      options.inputs = conversationalInputs;
+    }
+    const isConversationalTurn = userMessage !== null
+      || sessionId !== null
+      || (isRecord(options.inputs) && Object.hasOwn(options.inputs, "user_message"));
+    if (isConversationalTurn) {
+      this.resetRuntimeState();
+    }
     const checkpointConfig = options.fromCheckpoint ?? options.from_checkpoint ?? null;
     const effectiveRestoreFromStateId = options.restoreFromStateId ?? options.restore_from_state_id ?? null;
     if (checkpointConfig && effectiveRestoreFromStateId) {
@@ -1710,6 +1789,14 @@ export class Flow<TState extends object = Record<string, unknown>> {
       Object.assign(this.state, filteredInputs);
     } else {
       Object.assign(this.state, inputs);
+    }
+    if (isConversationalTurn) {
+      prepareConversationalTurn(this, {
+        userMessage,
+        intents: options.intents ?? null,
+        intentLlm: options.intentLlm ?? options.intent_llm ?? null,
+        config: getConversationalConfig(this),
+      });
     }
     const flowName = this.flowName();
     this.currentFlowRequestId = randomUUID();
@@ -5309,6 +5396,13 @@ function withoutCheckpointOptions(options: FlowKickoffOptions): FlowKickoffOptio
     ...(options.input_files === undefined ? {} : { input_files: options.input_files }),
     ...(options.restoreFromStateId === undefined ? {} : { restoreFromStateId: options.restoreFromStateId }),
     ...(options.restore_from_state_id === undefined ? {} : { restore_from_state_id: options.restore_from_state_id }),
+    ...(options.userMessage === undefined ? {} : { userMessage: options.userMessage }),
+    ...(options.user_message === undefined ? {} : { user_message: options.user_message }),
+    ...(options.sessionId === undefined ? {} : { sessionId: options.sessionId }),
+    ...(options.session_id === undefined ? {} : { session_id: options.session_id }),
+    ...(options.intents === undefined ? {} : { intents: options.intents }),
+    ...(options.intentLlm === undefined ? {} : { intentLlm: options.intentLlm }),
+    ...(options.intent_llm === undefined ? {} : { intent_llm: options.intent_llm }),
   };
 }
 
@@ -5341,7 +5435,14 @@ function isFlowKickoffOptions(value: FlowKickoffOptions | InputValues): value is
     || Object.hasOwn(value, "fromCheckpoint")
     || Object.hasOwn(value, "from_checkpoint")
     || Object.hasOwn(value, "restoreFromStateId")
-    || Object.hasOwn(value, "restore_from_state_id");
+    || Object.hasOwn(value, "restore_from_state_id")
+    || Object.hasOwn(value, "userMessage")
+    || Object.hasOwn(value, "user_message")
+    || Object.hasOwn(value, "sessionId")
+    || Object.hasOwn(value, "session_id")
+    || Object.hasOwn(value, "intents")
+    || Object.hasOwn(value, "intentLlm")
+    || Object.hasOwn(value, "intent_llm");
 }
 
 async function loadPersistedFlowState(

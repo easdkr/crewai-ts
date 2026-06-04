@@ -19362,6 +19362,71 @@ describe("flow runtime", () => {
     ]);
   });
 
+  it("runs experimental conversational Flow turns through kickoff helpers", async () => {
+    class SupportFlow extends Flow<{
+      id: string;
+      messages: Array<Record<string, unknown>>;
+      current_user_message?: string | null;
+      last_user_message?: string | null;
+      last_intent?: string | null;
+      turns: number;
+    }> {
+      static conversational = true;
+      static conversational_config = new ConversationalConfig();
+
+      constructor() {
+        super({
+          initialState: {
+            id: "initial",
+            messages: [],
+            turns: 0,
+            last_intent: "previous",
+          },
+        });
+      }
+
+      begin() {
+        this.state.turns += 1;
+        return "ready";
+      }
+
+      route() {
+        return "converse";
+      }
+
+      respond() {
+        return `reply:${String(this.state.last_user_message)}`;
+      }
+    }
+
+    const initializers = [
+      decorateMethod(SupportFlow, "begin", start() as unknown as Decorator),
+      decorateMethod(SupportFlow, "route", router("begin") as unknown as Decorator),
+      decorateMethod(SupportFlow, "respond", listen("converse") as unknown as Decorator),
+    ];
+    const flow = new SupportFlow();
+    initializers.forEach((initializer) => {
+      initializer.call(flow);
+    });
+
+    await expect(flow.handle_turn("Hello", { session_id: "chat-1" })).resolves.toBe("reply:Hello");
+    expect(flow.state.id).toBe("chat-1");
+    expect(flow.state.last_user_message).toBe("Hello");
+    expect(flow.state.messages).toEqual([
+      { role: "user", content: "Hello" },
+      { role: "assistant", content: "reply:Hello" },
+    ]);
+    expect(flow.conversation_messages).toEqual(flow.state.messages);
+
+    await expect(flow.kickoff({ user_message: { content: "Next" }, session_id: "chat-1" })).resolves.toBe("reply:Next");
+    expect(flow.state.turns).toBe(2);
+    expect(flow.state.messages).toEqual([
+      { role: "user", content: "Hello" },
+      { role: "assistant", content: "reply:Hello" },
+      { role: "user", content: "Next" },
+    ]);
+  });
+
   it("provides upstream experimental conversational data shapes", () => {
     const router = new RouterConfig({
       routes: ["converse", "handoff"],
