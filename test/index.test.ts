@@ -12334,6 +12334,25 @@ describe("core crew runtime", () => {
     expect(executor.state.current_answer).toBeNull();
   });
 
+  it("routes AgentExecutor native tool lists by the first upstream provider-shaped item", () => {
+    const mixedCalls = [
+      { id: "call_1", function: { name: "lookup", arguments: "{\"query\":\"CrewAI\"}" } },
+      { text: "provider side metadata" },
+    ];
+    const executor = new AgentExecutor({
+      llm: {
+        call() {
+          return mixedCalls;
+        },
+      },
+      messages: [{ role: "user", content: "Use a tool" }],
+    });
+
+    expect(executor.call_llm_native_tools()).toBe("native_tool_calls");
+    expect(executor.state.pending_tool_calls).toEqual(mixedCalls);
+    expect(executor.state.current_answer).toBeNull();
+  });
+
   it("preserves pending todo status when AgentExecutor handles early goal achievement", () => {
     const executor = new AgentExecutor();
     executor.state.todos.items = [

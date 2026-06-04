@@ -1013,7 +1013,7 @@ export function extractToolCallInfo(value: unknown): { toolName: string; argumen
 export const extract_tool_call_info = extractToolCallInfo;
 
 export function isToolCallList(value: unknown): value is readonly unknown[] {
-  return Array.isArray(value) && value.length > 0 && value.every((item) => extractToolCallInfo(item) !== null);
+  return Array.isArray(value) && value.length > 0 && extractToolCallInfo(value[0]) !== null;
 }
 
 export const is_tool_call_list = isToolCallList;

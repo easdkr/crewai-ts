@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 875 passing tests.
+- Test suite: 876 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -124,6 +124,7 @@ This register is the source of truth for continuing porting work while parity sc
 - AgentExecutor Gemini-style native tool parts are release-gated for upstream provider payload compatibility: `functionCall` / `function_call` pending tool calls are normalized, executed, recorded with deterministic tool-call ids, and preserved as `raw_tool_call_parts` on the assistant tool-call message.
 - AgentExecutor native tool argument parse failures are release-gated for upstream retry semantics: malformed JSON arguments preserve the original assistant tool-call payload, append an upstream-style parse error tool message, and do not execute the target tool.
 - AgentExecutor provider-shaped native tool calls are release-gated for upstream routing compatibility: OpenAI-style function calls, Bedrock `toolUseId` + `input`, Anthropic `tool_use` payloads, and Gemini `functionCall` payloads are recognized as native tool-call lists and preserve provider input args.
+- AgentExecutor mixed native tool-call responses are release-gated for upstream routing semantics: provider responses are classified by the first upstream-shaped tool-call item and invalid trailing metadata is left for execution-time filtering instead of converting the whole response into a final answer.
 
 ## Known Remaining Porting Areas
 
