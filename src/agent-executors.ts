@@ -16,6 +16,7 @@ import {
   processLlmResponse,
 } from "./agent-utils.js";
 import { Converter } from "./converter.js";
+import { PlanReplanTriggeredEvent, crewaiEventBus } from "./events.js";
 import { get_provider } from "./human-input.js";
 import { ToolCallHookContext, runAfterToolCallHooks, runBeforeToolCallHooks } from "./hooks.js";
 import { I18N_DEFAULT } from "./i18n.js";
@@ -1629,15 +1630,29 @@ export class AgentExecutor extends BaseAgentExecutor {
 
   private triggerReplan(reason: string): void {
     this.state.last_replan_reason = reason;
+    const completedTodos = this.state.todos.getCompletedTodos();
+    const taskRecord = this.task && typeof this.task === "object"
+      ? this.task as Record<string, unknown>
+      : null;
+    const stepDescription = typeof taskRecord?.description === "string"
+      ? taskRecord.description
+      : this.kickoffInput;
+    crewaiEventBus.emit(this.agent ?? this, new PlanReplanTriggeredEvent({
+      agent_role: this.agent?.role ?? "",
+      step_number: 0,
+      step_description: stepDescription,
+      replan_reason: reason,
+      replan_count: this.state.replan_count,
+      completed_steps_preserved: completedTodos.length,
+      from_task: this.task,
+      from_agent: this.agent,
+    }));
     if (!this.agent) {
       return;
     }
     const previousContext = this.buildReplanContext();
     const enhancedDescription = this.enhanceTaskForReplan(previousContext);
     try {
-      const taskRecord = this.task && typeof this.task === "object"
-        ? this.task as Record<string, unknown>
-        : null;
       const originalDescription = taskRecord && typeof taskRecord.description === "string"
         ? taskRecord.description
         : null;

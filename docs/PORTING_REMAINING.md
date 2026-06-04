@@ -4,7 +4,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
 
 ## Current Verified State
 
-- Full gate passed on 2026-06-02:
+- Full gate passed on 2026-06-04:
   - `npm test`
   - `npm run lint`
   - `npm audit --omit=dev`
@@ -14,11 +14,12 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 851 passing tests.
+- Test suite: 855 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
 - Subpath export parity: `total_missing=0`, `total_mismatched=0`.
+- During the 2026-06-04 run, a fresh latest upstream checkout showed new post-baseline export surfaces (`flow/conversation`, `experimental/conversational`, `llms/providers/snowflake/completion`, and `flow_context.current_flow_name`). These are not part of the current release baseline commit above; audit them as upstream behavior surfaces before advancing the parity baseline.
 
 ## Release Readiness Policy
 
@@ -121,23 +122,27 @@ High-value behavior audits still worth running:
    - Mark examples requiring cloud subscription/platform features as intentionally unsupported.
    - Any failing local example becomes the next behavior test.
 
-2. **Experimental `AgentExecutor` plan-and-execute behavior**
+2. **Latest upstream baseline advancement**
+   - Latest upstream now exposes conversation-flow, experimental conversational, Snowflake completion, and flow-context symbols beyond the current pinned baseline.
+   - Before changing the release baseline, classify each new surface by behavior: deterministic local workflow, provider/network shim, or intentionally unsupported optional integration.
+
+3. **Experimental `AgentExecutor` plan-and-execute behavior**
    - Current TS implementation covers deterministic finalization, dynamic replanning triggers, object-style invoke setup, ReAct/native LLM routing, tool observations, native tool messages, memory save, human feedback, and plan refinement semantics.
    - TodoList behavior now covers upstream terminal dependency handling plus empty-string result preservation for completed/failed steps.
    - Continue auditing only with behavior tests for end-to-end plan generation, isolated step execution, observation/replan decisions, native tool execution, and human feedback loops.
    - Do not add private helper aliases unless the behavior test requires them.
 
-3. **SDK-backed provider response translation**
+4. **SDK-backed provider response translation**
    - Current provider shims cover deterministic request building and SDK-like response parsing.
    - Azure Responses API delegation, OpenAI Responses structured-output request formatting, and OpenAI SDK client parameter resolution are covered by local adapter fixtures; continue auditing other provider gaps with SDK-shaped responses rather than live credentials.
    - Audit upstream edge cases with SDK-shaped fixtures only.
    - Keep live API calls out of the default gate.
 
-4. **Storage/RAG optional real-client behavior**
+5. **Storage/RAG optional real-client behavior**
    - Current default gate uses deterministic shims and fake clients.
    - Any real-client integration should be optional and separately gated.
 
-5. **Tracing/exporter integration**
+6. **Tracing/exporter integration**
    - Current behavior records deterministic local spans/events.
    - `CREWAI_TRACING_ENABLED=false` / `0` now mirrors upstream explicit tracing opt-out behavior even when local user consent state would otherwise allow tracing.
    - Remote exporter behavior remains intentionally unsupported unless the project decides to add an optional integration gate.
@@ -258,6 +263,7 @@ When more goal budget is available, continue from the behavioral parity audits b
 - `AgentExecutor.handle_refine_and_continue` now applies the latest planner observation refinements to pending todos before continuing.
 - `PlannerObserver.observe` now builds upstream-style observation prompts, parses deterministic LLM JSON responses into `StepObservation`, and falls back conservatively when observation LLM calls fail.
 - `AgentExecutor.execute_todo_sequential` now executes planning-enabled todos through isolated `StepExecutor` context, records upstream-style step execution audit fields, and falls back to upstream-style todo prompt injection only when planning is disabled.
+- `AgentExecutor.handle_replan` / dynamic replan triggers now emit upstream-style `plan_replan_triggered` observation events with reason, replan count, completed-step preservation count, task, and agent context before regenerating pending todos.
 - `AgentExecutor.execute_tool_action` now records non-final tool observations and appends the upstream post-tool reasoning prompt before continuing.
 - `AgentExecutor.check_todo_completion` now requires ReAct tool actions to match the running todo's expected tool when one is specified, while still accepting final answers and todos without a specified tool.
 - `AgentExecutor.execute_native_tool` now records the upstream assistant `tool_calls` message and named tool result messages before continuing or short-circuiting.

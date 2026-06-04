@@ -12451,6 +12451,7 @@ describe("core crew runtime", () => {
 
   it("replans AgentExecutor pending todos with previous execution context", () => {
     const prompts: string[] = [];
+    const replanEvents: Array<Record<string, unknown>> = [];
     const agent = {
       role: "Planner",
       goal: "Recover the plan",
@@ -12477,6 +12478,9 @@ describe("core crew runtime", () => {
     } as unknown as Agent;
     const task = { description: "Research CrewAI", expected_output: "Concise answer" };
     const executor = new AgentExecutor({ agent, task });
+    const off = crewaiEventBus.on("plan_replan_triggered", (_source, event) => {
+      replanEvents.push(event as unknown as Record<string, unknown>);
+    });
     executor.state.last_replan_reason = "Multiple todos encountered errors (2 errors)";
     executor.state.todos.items = [
       new TodoItem({
@@ -12498,7 +12502,11 @@ describe("core crew runtime", () => {
       }),
     ];
 
-    expect(executor.handle_replan()).toBe("has_todos");
+    try {
+      expect(executor.handle_replan()).toBe("has_todos");
+    } finally {
+      off();
+    }
     expect(executor.state.replan_count).toBe(1);
     expect(executor.state.plan).toBe("Retry with validated source");
     expect(executor.state.plan_ready).toBe(true);
@@ -12515,6 +12523,18 @@ describe("core crew runtime", () => {
     expect(prompts[0]).toContain("This is replan attempt 1.");
     expect(prompts[0]).toContain("Previous replan reason: Multiple todos encountered errors (2 errors)");
     expect(task.description).toBe("Research CrewAI");
+    expect(replanEvents).toHaveLength(1);
+    expect(replanEvents[0]).toMatchObject({
+      type: "plan_replan_triggered",
+      agent_role: "Planner",
+      step_number: 0,
+      step_description: "Research CrewAI",
+      replan_reason: "Multiple todos encountered errors (2 errors)",
+      replan_count: 1,
+      completed_steps_preserved: 1,
+      from_task: task,
+      from_agent: agent,
+    });
   });
 
   it("keeps AgentExecutor iterations and messages backed by state", () => {
