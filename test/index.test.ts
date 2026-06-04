@@ -14486,6 +14486,7 @@ describe("core crew runtime", () => {
 
   it("exposes upstream StepExecutor execute alias for todo items", async () => {
     const prompts: string[] = [];
+    let rpmChecks = 0;
     const agentInstance = new Agent({
       role: "Researcher",
       goal: "Find facts",
@@ -14495,7 +14496,13 @@ describe("core crew runtime", () => {
         return "step complete";
       },
     });
-    const executor = new StepExecutor({ agent: agentInstance });
+    const executor = new StepExecutor({
+      agent: agentInstance,
+      request_within_rpm_limit: () => {
+        rpmChecks += 1;
+        return true;
+      },
+    });
     const todo = new TodoItem({ step_number: 2, description: "Collect pricing facts" });
 
     const result = await executor.execute(todo, new StepExecutionContext({
@@ -14520,8 +14527,23 @@ describe("core crew runtime", () => {
       success: true,
       result: "step complete",
     });
+    expect(rpmChecks).toBe(2);
     expect(prompts[1]).toContain("You are an Executor focused on completing one plan step as Researcher");
     expect(prompts[1]).toContain("Step:\nDraft summary");
+
+    let delegatedRpmChecks = 0;
+    const planningExecutor = new AgentExecutor({
+      agent: agentInstance,
+      request_within_rpm_limit: () => {
+        delegatedRpmChecks += 1;
+        return true;
+      },
+    });
+    await expect(planningExecutor._ensure_step_executor().execute(
+      new TodoItem({ step_number: 3, description: "Check delegation" }),
+      new StepExecutionContext({}),
+    )).resolves.toMatchObject({ success: true, result: "step complete" });
+    expect(delegatedRpmChecks).toBe(1);
   });
 
   it("fails StepExecutor todo execution when the expected tool is not called", async () => {

@@ -1667,6 +1667,7 @@ export class AgentExecutor extends BaseAgentExecutor {
       tools: this.tools,
       availableFunctions: this.availableNativeFunctions(),
       callbacks: this.callbacks,
+      requestWithinRpmLimit: this.requestWithinRpmLimit,
     });
     return this.stepExecutor;
   }
@@ -2497,6 +2498,8 @@ export type StepExecutorOptions = {
   availableFunctions?: Record<string, unknown>;
   available_functions?: Record<string, unknown>;
   callbacks?: readonly unknown[];
+  requestWithinRpmLimit?: (() => boolean | Promise<boolean>) | null;
+  request_within_rpm_limit?: (() => boolean | Promise<boolean>) | null;
 };
 
 function parseNativeCrewArgs(value: string): Record<string, unknown> {
@@ -2534,6 +2537,8 @@ export class StepExecutor {
   readonly availableFunctions: Record<string, unknown>;
   readonly available_functions: Record<string, unknown>;
   readonly callbacks: readonly unknown[];
+  readonly requestWithinRpmLimit: (() => boolean | Promise<boolean>) | null;
+  readonly request_within_rpm_limit: (() => boolean | Promise<boolean>) | null;
 
   constructor(options: StepExecutorOptions = {}) {
     this.agent = options.agent ?? null;
@@ -2542,6 +2547,8 @@ export class StepExecutor {
     this.availableFunctions = options.availableFunctions ?? options.available_functions ?? {};
     this.available_functions = this.availableFunctions;
     this.callbacks = options.callbacks ?? [];
+    this.requestWithinRpmLimit = options.requestWithinRpmLimit ?? options.request_within_rpm_limit ?? null;
+    this.request_within_rpm_limit = this.requestWithinRpmLimit;
   }
 
   _parse_tool_args(toolInput: unknown): Record<string, unknown> {
@@ -2856,6 +2863,7 @@ export class StepExecutor {
     const started = Date.now();
     const toolCallsMade: string[] = [];
     try {
+      enforceRpmLimit(this.requestWithinRpmLimit);
       const messages = this._buildIsolatedMessages(todo, context);
       const result = this.hasNativeStepTools()
         ? await this._executeNative(messages, toolCallsMade, maxStepIterations, stepTimeout, started)
