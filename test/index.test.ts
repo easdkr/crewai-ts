@@ -6432,6 +6432,46 @@ describe("a2a utilities", () => {
     });
   });
 
+  it("injects A2A server agent-card methods during Agent construction", () => {
+    const serverAgent = new Agent({
+      role: "Server Agent",
+      goal: "Serve A2A cards",
+      backstory: "A2A-ready",
+      a2a: new A2AServerConfig({ name: "Configured Server Agent" }),
+    }) as Agent & { to_agent_card?: (url: string) => Record<string, unknown> };
+    expect(typeof serverAgent.to_agent_card).toBe("function");
+    expect(serverAgent.to_agent_card?.("https://runtime.example.com/a2a")).toMatchObject({
+      name: "Configured Server Agent",
+      url: "https://runtime.example.com/a2a",
+    });
+
+    const mixedAgent = new Agent({
+      role: "Mixed Agent",
+      goal: "Serve and delegate",
+      backstory: "A2A-ready",
+      a2a: [
+        new A2AClientConfig({ endpoint: "https://remote.example.com/a2a" }),
+        new A2AServerConfig(),
+      ],
+    }) as Agent & { to_agent_card?: (url: string) => Record<string, unknown> };
+    expect(typeof mixedAgent.to_agent_card).toBe("function");
+
+    const clientOnlyAgent = new Agent({
+      role: "Client Agent",
+      goal: "Delegate only",
+      backstory: "Client-only",
+      a2a: new A2AClientConfig({ endpoint: "https://remote.example.com/a2a" }),
+    }) as Agent & { to_agent_card?: unknown };
+    expect(clientOnlyAgent.to_agent_card).toBeUndefined();
+
+    const plainAgent = new Agent({
+      role: "Plain Agent",
+      goal: "No A2A",
+      backstory: "Plain",
+    }) as Agent & { to_agent_card?: unknown };
+    expect(plainAgent.to_agent_card).toBeUndefined();
+  });
+
   it("advertises A2A server extensions in generated agent cards", () => {
     class RequiredExtension extends ServerExtension {
       readonly uri = "urn:test:required-card-extension";

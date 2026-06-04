@@ -78,6 +78,7 @@ import { Prompts, type StandardPromptResult, type SystemPromptResult } from "./p
 import { LiteAgentOutput, type TodoExecutionResultOptions } from "./lite-agent-output.js";
 import { loadAgentFromRepository } from "./agent-utils.js";
 import { serializeGuardrailForJson } from "./guardrail.js";
+import { inject_a2a_server_methods } from "./a2a.js";
 import { I18N_DEFAULT } from "./i18n.js";
 
 export type AgentGuardrailResult =
@@ -362,6 +363,7 @@ export class Agent {
     this.apps = options.apps ? [...options.apps] : null;
     this.mcps = options.mcps ? [...options.mcps] : null;
     this.a2a = options.a2a ?? null;
+    inject_a2a_server_methods(this);
     this.agentExecutor = options.agentExecutor ?? options.agent_executor ?? null;
     this.agent_executor = this.agentExecutor;
     this.executorClass = options.executorClass ?? options.executor_class ?? null;
