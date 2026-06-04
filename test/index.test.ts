@@ -24200,6 +24200,48 @@ describe("tools", () => {
     })).resolves.toContain("read_file result:\nImportant notes");
   });
 
+  it("merges Agent message files with explicit kickoff input files", async () => {
+    const seenMessages: LLMMessage[][] = [];
+    const agent = new Agent({
+      role: "File Reader",
+      goal: "Read supplied files",
+      backstory: "Handles files carefully",
+      llm: (messages) => {
+        seenMessages.push([...messages]);
+        return "files read";
+      },
+    });
+    const messageFile = { filename: "message.txt", content: "message file content" };
+    const sharedMessageFile = { filename: "message-shared.txt", content: "old content" };
+    const explicitFile = { filename: "brief.pdf", content: "brief content" };
+    const sharedExplicitFile = { filename: "shared.pdf", content: "new content" };
+
+    await expect(agent.kickoff([
+      {
+        role: "user",
+        content: "Analyze these files",
+        files: {
+          message: messageFile,
+          shared: sharedMessageFile,
+        },
+      },
+    ], {
+      input_files: {
+        explicit: explicitFile,
+        shared: sharedExplicitFile,
+      },
+    })).resolves.toBe("files read");
+
+    expect(seenMessages[0]?.[1]?.content).toContain("Analyze these files");
+    expect(seenMessages[0]?.[1]?.content).toContain('"message" (message.txt, text/plain)');
+    expect(seenMessages[0]?.[1]?.content).toContain("message file content");
+    expect(seenMessages[0]?.[1]?.content).toContain('"explicit" (brief.pdf)');
+    expect(seenMessages[0]?.[1]?.content).toContain("brief content");
+    expect(seenMessages[0]?.[1]?.content).toContain('"shared" (shared.pdf)');
+    expect(seenMessages[0]?.[1]?.content).toContain("new content");
+    expect(seenMessages[0]?.[1]?.content).not.toContain("old content");
+  });
+
   it("uses functionCallingLlm for tool selection and the main LLM for the final answer", async () => {
     const functionCalls: LLMMessage[][] = [];
     const mainCalls: LLMMessage[][] = [];
