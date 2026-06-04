@@ -176,7 +176,19 @@ export function mapAllTaskVariables(instance: object): void {
 
 export const map_all_task_variables = mapAllTaskVariables;
 
-export function closeMcpServer<TOutput>(_instance: object, output: TOutput): TOutput {
+export function closeMcpServer<TOutput>(instance: object, output: TOutput): TOutput {
+  const record = instance as Record<string, unknown>;
+  const adapter = record._mcp_server_adapter ?? record.mcpServerAdapter ?? record.mcp_server_adapter;
+  const stop = adapter && typeof adapter === "object"
+    ? (adapter as Record<string, unknown>).stop
+    : null;
+  if (typeof stop === "function") {
+    try {
+      (stop as () => void).call(adapter);
+    } catch (error) {
+      console.warn(`Error stopping MCP server: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
   return output;
 }
 

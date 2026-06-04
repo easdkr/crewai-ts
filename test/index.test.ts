@@ -398,6 +398,7 @@ import {
   get_supported_content_types,
   is_auto_injected,
   BoundTaskMethod,
+  close_mcp_server,
   DecoratedMethod,
   get_mcp_tools,
   _make_hashable,
@@ -23892,6 +23893,33 @@ describe("project config mapping", () => {
       .toEqual(["simple_tool", "another_simple_tool"]);
     expect(get_mcp_tools(project, "simple_tool")).toEqual([simpleTool]);
     expect(project._mcp_server_adapter.tools.filter_by_names).toHaveBeenLastCalledWith(["simple_tool"]);
+  });
+
+  it("stops upstream-style project MCP adapters after kickoff outputs", () => {
+    const output = { raw: "done" };
+    const project = {
+      _mcp_server_adapter: {
+        stop: vi.fn(),
+      },
+    };
+
+    expect(close_mcp_server(project, output)).toBe(output);
+    expect(project._mcp_server_adapter.stop).toHaveBeenCalledOnce();
+
+    const warningSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      const failingProject = {
+        _mcp_server_adapter: {
+          stop: vi.fn(() => {
+            throw new Error("stop failed");
+          }),
+        },
+      };
+      expect(close_mcp_server(failingProject, output)).toBe(output);
+      expect(failingProject._mcp_server_adapter.stop).toHaveBeenCalledOnce();
+    } finally {
+      warningSpy.mockRestore();
+    }
   });
 
   it("loads YAML config and resolves decorated method references", async () => {
