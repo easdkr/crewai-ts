@@ -62,7 +62,15 @@ export function aclearTaskFiles(taskId: FileStoreId): Promise<void> {
 export const aclear_task_files = aclearTaskFiles;
 
 export function agetAllFiles(crewId: FileStoreId, taskId?: FileStoreId | null): Promise<FileInputMap | null> {
-  return Promise.resolve(getAllFiles(crewId, taskId));
+  return Promise.all([
+    agetFiles(crewId),
+    taskId === null || taskId === undefined ? Promise.resolve(null) : agetTaskFiles(taskId),
+  ]).then(([crewFiles, taskFiles]) => {
+    if (!crewFiles && !taskFiles) {
+      return null;
+    }
+    return { ...(crewFiles ?? {}), ...(taskFiles ?? {}) };
+  });
 }
 
 export const aget_all_files = agetAllFiles;

@@ -14407,6 +14407,41 @@ describe("core crew runtime", () => {
     });
   });
 
+  it("merges AgentExecutor async crew and task file stores without sync all-file lookup", async () => {
+    const crewId = "crew-files-async-executor";
+    const taskId = "task-files-async-executor";
+    const crewFile = new TextFile({ source: Buffer.from("async crew content") });
+    const taskFile = new TextFile({ source: Buffer.from("async task content") });
+    const localFile = new TextFile({ source: Buffer.from("async local content") });
+
+    try {
+      storeFiles(crewId, { document: crewFile, shared: crewFile });
+      storeTaskFiles(taskId, { shared: taskFile });
+
+      await expect(agetAllFiles(crewId, taskId)).resolves.toEqual({
+        document: crewFile,
+        shared: taskFile,
+      });
+
+      const executor = new AgentExecutor({
+        crew: { id: crewId } as unknown as Crew,
+        task: { id: taskId },
+        prompt: { prompt: "Analyze async files" },
+      });
+      executor.state.messages = [{ role: "user", content: "Analyze async files" }];
+      await executor._ainject_files_from_inputs({ files: { local: localFile } });
+
+      expect((executor.state.messages[0] as Record<string, unknown>).files).toEqual({
+        document: crewFile,
+        shared: taskFile,
+        local: localFile,
+      });
+    } finally {
+      clearFiles(crewId);
+      clearTaskFiles(taskId);
+    }
+  });
+
   it("uses a strong final todo result directly during AgentExecutor finalize", () => {
     const executor = new AgentExecutor();
     const finalResult = [
