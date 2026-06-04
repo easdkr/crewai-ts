@@ -3407,9 +3407,9 @@ export function buildFlowStructure(instanceOrConstructor: object | FlowMetadataT
   const startMethods: string[] = [];
   const routerMethods: string[] = [];
   const edges: FlowVisualizationEdge[] = [];
-  const className = typeof instanceOrConstructor === "function"
+  const className = loadedDefinition?.name ?? (typeof instanceOrConstructor === "function"
     ? instanceOrConstructor.name
-    : instanceOrConstructor.constructor.name;
+    : instanceOrConstructor.constructor.name);
   const classSignature = className ? `class ${className}` : undefined;
 
   for (const method of structure.methods) {
@@ -3423,7 +3423,7 @@ export function buildFlowStructure(instanceOrConstructor: object | FlowMetadataT
     };
     if (method.type === "router" || method.type === "start_router") {
       const inferredPaths = getPossibleReturnConstants(methodValue);
-      const routerPaths = method.hasHumanFeedback
+      const routerPaths = loadedDefinition || method.hasHumanFeedback
         ? method.routerPaths
         : inferredPaths ?? [];
       metadata.is_router = true;
@@ -3816,6 +3816,9 @@ function createStructureMethod(
 }
 
 function getLoadedFlowDefinition(instanceOrConstructor: object | FlowMetadataTarget): FlowDefinition | null {
+  if (instanceOrConstructor instanceof FlowDefinition) {
+    return instanceOrConstructor;
+  }
   const ctor = typeof instanceOrConstructor === "function"
     ? instanceOrConstructor as FlowMetadataTarget & { _flow_definition?: FlowDefinition | null }
     : instanceOrConstructor.constructor as FlowMetadataTarget & { _flow_definition?: FlowDefinition | null };

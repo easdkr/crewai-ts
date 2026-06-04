@@ -19337,6 +19337,40 @@ describe("flow runtime", () => {
     });
   });
 
+  it("builds flow visualization directly from a FlowDefinition contract", () => {
+    const definition = FlowDefinition.from_dict({
+      schema: "crewai.flow/v1",
+      name: "ContractOnlyFlow",
+      methods: {
+        begin: { start: true },
+        decide: { listen: "begin", router: true, emit: ["done"] },
+        finish: { listen: "done" },
+      },
+    });
+
+    const structure = buildFlowStructure(definition);
+
+    expect(structure.start_methods).toEqual(["begin"]);
+    expect(structure.router_methods).toEqual(["decide"]);
+    expect(structure.nodes.begin).toMatchObject({ type: "start", class_name: "ContractOnlyFlow" });
+    expect(structure.nodes.decide).toMatchObject({
+      type: "router",
+      is_router: true,
+      router_paths: ["done"],
+      trigger_methods: ["begin"],
+      class_name: "ContractOnlyFlow",
+    });
+    expect(structure.nodes.finish).toMatchObject({
+      type: "listen",
+      trigger_methods: ["done"],
+      class_name: "ContractOnlyFlow",
+    });
+    expect(structure.edges).toEqual([
+      { source: "begin", target: "decide", condition_type: "OR", is_router_path: false },
+      { source: "decide", target: "finish", condition_type: null, is_router_path: true, router_path_label: "done" },
+    ]);
+  });
+
   it("parses flow visualization CSS and JS extension tags like upstream", () => {
     const cssParser = {
       stream: [{ lineno: 7 }],
