@@ -33502,6 +33502,36 @@ describe("hierarchical process", () => {
       managerAgent: manager,
     })).toThrow("Manager agent should not be included");
   });
+
+  it("rejects manager agents with tools during hierarchical kickoff", async () => {
+    const managerTool = new StructuredTool({
+      name: "manager_tool",
+      description: "Manager-only tool",
+      func: () => "tool result",
+    });
+    const manager = new Agent({
+      role: "Manager",
+      goal: "Coordinate",
+      backstory: "Manager",
+      tools: [managerTool],
+    });
+    const researcher = new Agent({
+      role: "Researcher",
+      goal: "Find facts",
+      backstory: "Careful analyst",
+    });
+    const taskInstance = new Task({
+      description: "Research",
+      expectedOutput: "A concise brief",
+    });
+
+    await expect(new Crew({
+      agents: [researcher],
+      tasks: [taskInstance],
+      process: Process.hierarchical,
+      managerAgent: manager,
+    }).kickoff()).rejects.toThrow("Manager agent should not have tools");
+  });
 });
 
 describe("security fingerprints", () => {
