@@ -24371,6 +24371,8 @@ describe("tools", () => {
       description: "Resolved",
       args_schema: schema,
       result_as_answer: true,
+      max_usage_count: 2,
+      current_usage_count: 1,
       func: ({ query }: Record<string, unknown>) => `resolved:${String(query)}`,
     });
 
@@ -24395,6 +24397,8 @@ describe("tools", () => {
       })._validate_function_signature();
     }).toThrow("Required function parameter 'query'");
     expect(resolved.result_as_answer).toBe(true);
+    expect(resolved.max_usage_count).toBe(2);
+    expect(resolved.current_usage_count).toBe(1);
     await expect(resolved.ainvoke({ query: "CrewAI" })).resolves.toBe("resolved:CrewAI");
 
     const direct = _make_tool(function echo(value: unknown): unknown {

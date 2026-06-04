@@ -1942,13 +1942,15 @@ export function _make_with_name(name: string, options: Omit<ToolDecoratorOptions
 export function _resolve_tool_dict(value: Record<string, unknown>): StructuredTool {
   const name = typeof value.name === "string" ? value.name : "tool";
   const description = typeof value.description === "string" ? value.description : "";
+  const maxUsageCount = value.maxUsageCount ?? value.max_usage_count;
+  const currentUsageCount = value.currentUsageCount ?? value.current_usage_count;
   return new StructuredTool({
     name,
     description,
     argsSchema: _deserialize_schema(value.argsSchema ?? value.args_schema) ?? {},
     resultAsAnswer: Boolean(value.resultAsAnswer ?? value.result_as_answer),
-    maxUsageCount: typeof (value.maxUsageCount ?? value.max_usage_count) === "number" ? value.maxUsageCount as number : null,
-    currentUsageCount: typeof (value.currentUsageCount ?? value.current_usage_count) === "number" ? value.currentUsageCount as number : 0,
+    maxUsageCount: typeof maxUsageCount === "number" ? maxUsageCount : null,
+    currentUsageCount: typeof currentUsageCount === "number" ? currentUsageCount : 0,
     cacheFunction: typeof value.cacheFunction === "function"
       ? value.cacheFunction as (args: Record<string, unknown>, result: unknown) => boolean
       : typeof value.cache_function === "function"
