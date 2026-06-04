@@ -15451,7 +15451,7 @@ describe("core crew runtime", () => {
       llm: (messages) => `answer: ${messages.at(-1)?.content ?? ""}`,
     });
 
-    expect(agentInstance.key).toHaveLength(32);
+    expect(agentInstance.key).toBe("1429c98dda794c9ef31ac50046a40b50");
     expect(agentInstance.planning_enabled).toBe(false);
     agentInstance.interpolate_inputs({ topic: "CrewAI" });
     expect(agentInstance.role).toBe("Researcher CrewAI");
