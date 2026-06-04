@@ -8,6 +8,7 @@ import {
   MCPConnectionCompletedEvent,
   MCPConnectionFailedEvent,
   MCPConnectionStartedEvent,
+  MCPConfigFetchFailedEvent,
   MCPToolExecutionCompletedEvent,
   MCPToolExecutionFailedEvent,
   MCPToolExecutionStartedEvent,
@@ -909,16 +910,22 @@ export class MCPToolResolver {
       return [];
     }
     const tools: BaseTool[] = [];
+    const ampRefs: [string, string | null][] = [];
     for (const config of mcps) {
       if (typeof config === "string") {
         if (config.startsWith("https://")) {
           tools.push(...await this.resolveExternal(config));
         } else {
-          this.log("debug", `AMP MCP reference '${config}' is not available in the local TypeScript runtime.`);
+          ampRefs.push(this.parseAmpRef(config));
         }
         continue;
       }
       tools.push(...await this.resolveNative(config));
+    }
+    if (ampRefs.length > 0) {
+      const [ampTools, ampClients] = await this._resolve_amp(ampRefs);
+      tools.push(...ampTools);
+      this.clientsValue.push(...ampClients);
     }
     return tools;
   }
@@ -971,10 +978,49 @@ export class MCPToolResolver {
   }
 
   async resolveAmp(ampRefs: readonly [string, string | null][]): Promise<[BaseTool[], MCPClient[]]> {
-    await Promise.resolve();
-    void ampRefs;
-    this.log("debug", "AMP MCP resolution is not available in the local TypeScript runtime.");
-    return [[], []];
+    const uniqueSlugs = [...new Set(ampRefs.map(([slug]) => slug))];
+    const ampConfigs = this._fetch_amp_mcp_configs(uniqueSlugs);
+    const resolved = new Map<string, [BaseTool[], MCPClient[]]>();
+    const clients: MCPClient[] = [];
+
+    for (const slug of uniqueSlugs) {
+      const config = ampConfigs[slug];
+      if (!isPlainRecord(config)) {
+        crewaiEventBus.emit(this, new MCPConfigFetchFailedEvent({
+          slug,
+          error: `Config for '${slug}' not found. Make sure it is connected in your account.`,
+          error_type: "not_connected",
+        }));
+        continue;
+      }
+      try {
+        const nativeResult = await this._resolve_native(this._build_mcp_config_from_dict(config));
+        resolved.set(slug, nativeResult);
+        clients.push(...nativeResult[1]);
+      } catch (error) {
+        crewaiEventBus.emit(this, new MCPConfigFetchFailedEvent({
+          slug,
+          error: formatMCPError(error),
+          error_type: "connection_failed",
+        }));
+      }
+    }
+
+    const tools: BaseTool[] = [];
+    for (const [slug, specificTool] of ampRefs) {
+      const cached = resolved.get(slug);
+      if (!cached) {
+        continue;
+      }
+      const [slugTools] = cached;
+      if (!specificTool) {
+        tools.push(...slugTools);
+        continue;
+      }
+      const sanitized = sanitizeToolName(specificTool);
+      tools.push(...slugTools.filter((tool) => tool.name.endsWith(`_${sanitized}`)));
+    }
+    return [tools, clients];
   }
 
   async _resolve_amp(ampRefs: readonly [string, string | null][]): Promise<[BaseTool[], MCPClient[]]> {

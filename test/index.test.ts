@@ -4612,6 +4612,76 @@ describe("mcp configuration", () => {
     await expect(resolver._get_mcp_tool_schemas_async({ url: "https://api.example.com/mcp" })).resolves.toEqual({});
   });
 
+  it("resolves fake AMP MCP configs once and filters sanitized hash tool names", async () => {
+    const resolver = new MCPToolResolver({ logger: { log: vi.fn() } });
+    const fetchSpy = vi.spyOn(resolver, "_fetch_amp_mcp_configs").mockReturnValue({
+      notion: {
+        type: "sse",
+        url: "https://mcp.notion.example/sse",
+        headers: { Authorization: "Bearer token" },
+      },
+    });
+    const nativeSpy = vi.spyOn(resolver, "_resolve_native").mockResolvedValue([
+      [
+        new MCPToolWrapper({
+          mcpServerParams: { url: "https://mcp.notion.example/sse" },
+          toolName: "get_page",
+          toolSchema: { description: "Get a page", args_schema: null },
+          serverName: "mcp_notion_example_sse",
+        }),
+        new MCPToolWrapper({
+          mcpServerParams: { url: "https://mcp.notion.example/sse" },
+          toolName: "search",
+          toolSchema: { description: "Search", args_schema: null },
+          serverName: "mcp_notion_example_sse",
+        }),
+      ],
+      [],
+    ]);
+
+    try {
+      const [tools, clients] = await resolver._resolve_amp([
+        ["notion", "get-page"],
+        ["notion", "search"],
+      ]);
+
+      expect(fetchSpy).toHaveBeenCalledWith(["notion"]);
+      expect(nativeSpy).toHaveBeenCalledTimes(1);
+      expect(clients).toEqual([]);
+      expect(tools.map((tool) => tool.name)).toEqual([
+        "mcp_notion_example_sse_get_page",
+        "mcp_notion_example_sse_search",
+      ]);
+    } finally {
+      fetchSpy.mockRestore();
+      nativeSpy.mockRestore();
+    }
+  });
+
+  it("routes AMP string references through resolver bulk lookup", async () => {
+    const resolver = new MCPToolResolver({ logger: { log: vi.fn() } });
+    const ampSpy = vi.spyOn(resolver, "_resolve_amp").mockResolvedValue([
+      [
+        new MCPToolWrapper({
+          mcpServerParams: { url: "https://mcp.notion.example/sse" },
+          toolName: "get_page",
+          toolSchema: { description: "Get a page", args_schema: null },
+          serverName: "mcp_notion_example_sse",
+        }),
+      ],
+      [],
+    ]);
+
+    try {
+      const tools = await resolver.resolve(["notion#get-page"]);
+
+      expect(ampSpy).toHaveBeenCalledWith([["notion", "get-page"]]);
+      expect(tools.map((tool) => tool.name)).toEqual(["mcp_notion_example_sse_get_page"]);
+    } finally {
+      ampSpy.mockRestore();
+    }
+  });
+
   it("models MCP server configs and transport types with SDK-backed transports", async () => {
     const toolFilter = createStaticToolFilter(["read_file"]);
     const stdio = new MCPServerStdio({
