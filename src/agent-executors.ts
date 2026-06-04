@@ -1212,6 +1212,9 @@ export class AgentExecutor extends BaseAgentExecutor {
       this.state.is_finished = true;
       this._save_to_memory(finalAnswer);
       return { output: finalAnswer.output };
+    } catch (error) {
+      handleUnknownError(PRINTER, error, Boolean(this.agent?.verbose));
+      throw error;
     } finally {
       this.isExecuting = false;
     }
@@ -1259,6 +1262,9 @@ export class AgentExecutor extends BaseAgentExecutor {
       this.state.is_finished = true;
       this._save_to_memory(finalAnswer);
       return { output: finalAnswer.output };
+    } catch (error) {
+      handleUnknownError(PRINTER, error, Boolean(this.agent?.verbose));
+      throw error;
     } finally {
       this.isExecuting = false;
     }

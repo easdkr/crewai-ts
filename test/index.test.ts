@@ -12953,6 +12953,49 @@ describe("core crew runtime", () => {
     }
   });
 
+  it("prints AgentExecutor object-style invoke errors before rethrowing", () => {
+    const stdoutSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    const executor = new AgentExecutor({
+      agent: { verbose: true } as unknown as Agent,
+    });
+    Object.assign(executor, {
+      kickoff() {
+        throw new Error("kickoff exploded");
+      },
+    });
+
+    try {
+      expect(() => executor.invoke({ input: "Run the task" })).toThrow("kickoff exploded");
+      const output = stdoutSpy.mock.calls.map((call) => String(call[0])).join("");
+      expect(output).toContain("An unknown error occurred. Please check the details below.");
+      expect(output).toContain("Error details: kickoff exploded");
+    } finally {
+      stdoutSpy.mockRestore();
+    }
+  });
+
+  it("prints AgentExecutor async object-style invoke errors before rethrowing", async () => {
+    const stdoutSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    const executor = new AgentExecutor({
+      agent: { verbose: true } as unknown as Agent,
+    });
+    Object.assign(executor, {
+      async kickoff_async() {
+        await Promise.resolve();
+        throw new Error("async kickoff exploded");
+      },
+    });
+
+    try {
+      await expect(executor.ainvoke({ input: "Run the task" })).rejects.toThrow("async kickoff exploded");
+      const output = stdoutSpy.mock.calls.map((call) => String(call[0])).join("");
+      expect(output).toContain("An unknown error occurred. Please check the details below.");
+      expect(output).toContain("Error details: async kickoff exploded");
+    } finally {
+      stdoutSpy.mockRestore();
+    }
+  });
+
   it("reads AgentExecutor reasoning effort from upstream planning_config", () => {
     const executor = new AgentExecutor({
       agent: { planning_config: { reasoning_effort: "low" } } as unknown as Agent,
