@@ -16523,6 +16523,34 @@ describe("core crew runtime", () => {
     });
   });
 
+  it("returns native max-usage results when no original tool is available", async () => {
+    let calls = 0;
+    const executor = new CrewAgentExecutor();
+
+    const result = await executor._execute_single_native_tool_call({
+      call_id: "call_missing_original",
+      func_name: "limited_lookup",
+      func_args: "{}",
+      available_functions: {
+        limited_lookup: () => {
+          calls += 1;
+          return "should not run";
+        },
+      },
+      original_tool: null,
+      should_execute: false,
+    });
+
+    expect(calls).toBe(0);
+    expect(result).toEqual({
+      call_id: "call_missing_original",
+      func_name: "limited_lookup",
+      result: "Tool 'limited_lookup' has reached its maximum usage limit and cannot be used anymore.",
+      from_cache: false,
+      original_tool: null,
+    });
+  });
+
   it("keeps failed native result_as_answer tool calls from becoming final answers", async () => {
     const failingTool = new StructuredTool({
       name: "failing_tool",
