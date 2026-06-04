@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 971 passing tests.
+- Test suite: 973 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -116,6 +116,7 @@ This register is the source of truth for continuing porting work while parity sc
 - Crew project MCP tool lookup is release-gated for upstream `get_mcp_tools(*tool_names)` semantics: fake adapter tool collections honor requested tool-name filtering, while plain local MCP tool arrays keep deterministic name filtering without live MCP servers.
 - Crew project MCP adapter lifecycle is release-gated for upstream `close_mcp_server` semantics: kickoff output callbacks stop local fake adapters when present, preserve the original output, and tolerate adapter stop failures with a warning.
 - Standard agent/task decorators are release-gated for upstream async factory memoization and direct-call behavior: directly awaited async agent factories return the same cached Agent instance, and async task factories return the same cached Task instance while assigning the method name when no explicit task name is present. Standard kickoff hooks are also release-gated for upstream multiple-hook ordering: before hooks transform inputs in decorator order, and after hooks transform outputs in decorator order.
+- Global LLM/tool call hooks are release-gated for upstream multiple-hook ordering and chaining: before hooks run in registration order and can mutate shared call context, while after hooks receive the previous replacement value and chain response/result modifications in registration order.
 - Crew context metadata is release-gated with a deterministic `AsyncLocalStorage` shim rather than OpenTelemetry baggage: `CrewContext` carries upstream-style `id` and `key`, `get_crew_context` returns only an active scoped context, and `withCrewContext` preserves nested and throwing scopes.
 - BaseAgent key generation is release-gated for upstream identity semantics: agent keys are the MD5 digest of `role|goal|backstory` before input interpolation mutates those fields.
 - Task key generation is release-gated for upstream identity semantics: task keys are the MD5 digest of the original `description|expected_output` pair and remain stable after input interpolation and conversation-history injection.

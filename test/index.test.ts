@@ -37028,6 +37028,45 @@ describe("global hooks", () => {
     expect(output).not.toContain("SECRET");
   });
 
+  it("chains multiple LLM hooks in registration order", async () => {
+    const order: string[] = [];
+    beforeLlmCall((context) => {
+      order.push("before1");
+      const userMessage = context.messages.find((message) => message.role === "user");
+      if (userMessage) {
+        userMessage.content = `${userMessage.content} [before1]`;
+      }
+      return null;
+    });
+    beforeLlmCall((context) => {
+      order.push("before2");
+      const userMessage = context.messages.find((message) => message.role === "user");
+      if (userMessage) {
+        userMessage.content = `${userMessage.content} [before2]`;
+      }
+      return null;
+    });
+    afterLlmCall((context) => {
+      order.push("after1");
+      return typeof context.response === "string" ? `${context.response} [after1]` : null;
+    });
+    afterLlmCall((context) => {
+      order.push("after2");
+      return typeof context.response === "string" ? `${context.response} [after2]` : null;
+    });
+    const agentInstance = new Agent({
+      role: "Hook Chain Agent",
+      goal: "Use hooks",
+      backstory: "Hook aware",
+      llm: (messages) => `result: ${messages.at(-1)?.content ?? ""}`,
+    });
+
+    const output = await agentInstance.kickoff("Research CrewAI");
+
+    expect(output).toBe("result: Research CrewAI [before1] [before2] [after1] [after2]");
+    expect(order).toEqual(["before1", "before2", "after1", "after2"]);
+  });
+
   it("can block LLM calls from before hooks", async () => {
     beforeLlmCall(() => false);
     const agentInstance = new Agent({
@@ -37059,6 +37098,41 @@ describe("global hooks", () => {
     const output = await search.arun({ query: "original" });
 
     expect(output).toBe("found hooked query [checked]");
+  });
+
+  it("chains multiple tool hooks in registration order", async () => {
+    const order: string[] = [];
+    beforeToolCall((context) => {
+      order.push("before1");
+      context.tool_input.query = `${String(context.tool_input.query)} [before1]`;
+      return null;
+    });
+    beforeToolCall((context) => {
+      order.push("before2");
+      context.tool_input.query = `${String(context.tool_input.query)} [before2]`;
+      return null;
+    });
+    afterToolCall((context) => {
+      order.push("after1");
+      return `${String(context.tool_result)} [after1]`;
+    });
+    afterToolCall((context) => {
+      order.push("after2");
+      return `${String(context.tool_result)} [after2]`;
+    });
+    const search = new StructuredTool({
+      name: "search web",
+      description: "Search",
+      argsSchema: {
+        query: { type: "string", required: true },
+      },
+      func: ({ query }) => `found ${String(query)}`,
+    });
+
+    const output = await search.arun({ query: "original" });
+
+    expect(output).toBe("found original [before1] [before2] [after1] [after2]");
+    expect(order).toEqual(["before1", "before2", "after1", "after2"]);
   });
 
   it("registers filtered hook decorator factories like upstream", async () => {
