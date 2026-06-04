@@ -22354,6 +22354,68 @@ describe("flow runtime", () => {
     }
   });
 
+  it("prefers live human feedback LLM from decorators over serialized pending context", async () => {
+    const persistence = new SQLiteFlowPersistence();
+    const liveLlm = {
+      model: "test/live-hitl",
+      call() {
+        return "{\"outcome\":\"approved\"}";
+      },
+    };
+
+    class LiveLlmResumeFlow extends Flow<{ id: string; events: string[] }> {
+      constructor() {
+        super({ initialState: { id: "live-llm-flow", events: [] } });
+      }
+
+      review() {
+        this.state.events.push("review");
+        return "draft";
+      }
+
+      publish(outcome: string) {
+        this.state.events.push(`publish:${outcome}`);
+        return "published";
+      }
+    }
+
+    const initializers = [
+      decorateMethod(LiveLlmResumeFlow, "review", humanFeedback({
+        message: "Approve?",
+        emit: ["rejected", "approved"],
+        defaultOutcome: "rejected",
+        llm: liveLlm,
+      }) as unknown as Decorator),
+      decorateMethod(LiveLlmResumeFlow, "review", start() as unknown as Decorator),
+      decorateMethod(LiveLlmResumeFlow, "publish", listen("approved") as unknown as Decorator),
+    ];
+    const context = new PendingFeedbackContext({
+      flowId: "live-llm-flow",
+      flowClass: "LiveLlmResumeFlow",
+      methodName: "review",
+      output: "draft",
+      message: "Approve?",
+      emit: ["rejected", "approved"],
+      defaultOutcome: "rejected",
+      llm: null,
+    });
+    await persistence.savePendingFeedback("live-llm-flow", context, {
+      id: "live-llm-flow",
+      events: ["review"],
+    });
+    const restored = await LiveLlmResumeFlow.from_pending("live-llm-flow", persistence);
+    initializers.forEach((initializer) => {
+      initializer.call(restored);
+    });
+
+    await restored.resume("please ship");
+
+    expect(restored.lastHumanFeedback).toMatchObject({
+      feedback: "please ship",
+      outcome: "approved",
+    });
+  });
+
   it("rejects resume when no human feedback is pending", async () => {
     const flow = new Flow();
 

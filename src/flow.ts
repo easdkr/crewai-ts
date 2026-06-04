@@ -250,6 +250,7 @@ export type FlowMethodEntry = {
 };
 
 const FLOW_METHOD_DEFINITION_ATTR = "__flow_method_definition__";
+const HUMAN_FEEDBACK_LIVE_LLM_ATTR = "__human_feedback_live_llm__";
 
 type FlowExecutionQueueItem = {
   name: string;
@@ -2441,6 +2442,7 @@ export class Flow<TState extends object = Record<string, unknown>> {
 
   private async continueFromHumanFeedback(context: PendingFeedbackContext, feedback: string): Promise<unknown> {
     const flowName = this.flowName();
+    const llm = liveHumanFeedbackLlmFor(this, context.methodName) ?? context.llm ?? null;
     const result = this.recordHumanFeedbackResult({
       methodName: context.methodName,
       output: context.output,
@@ -2448,7 +2450,7 @@ export class Flow<TState extends object = Record<string, unknown>> {
       emit: context.emit,
       defaultOutcome: context.defaultOutcome,
       metadata: context.metadata,
-      outcome: await collapseFeedbackToOutcomeAsync(feedback, context.emit, context.defaultOutcome, context.llm ?? null),
+      outcome: await collapseFeedbackToOutcomeAsync(feedback, context.emit, context.defaultOutcome, llm),
     });
     crewaiEventBus.emit(this, new HumanFeedbackReceivedEvent({
       flowName,
@@ -2791,6 +2793,24 @@ function normalizeHumanFeedbackConfig(config: HumanFeedbackConfig): HumanFeedbac
 
 function humanFeedbackConfigFor(instanceOrConstructor: object | FlowMetadataTarget, methodName: string): HumanFeedbackConfig | null {
   return getHumanFeedbackMetadata(instanceOrConstructor).get(methodName) ?? null;
+}
+
+function liveHumanFeedbackLlmFor(
+  instanceOrConstructor: object | FlowMetadataTarget,
+  methodName: string,
+): string | Record<string, unknown> | LLM | null {
+  const method = getMethodValue(instanceOrConstructor, methodName);
+  if (typeof method !== "function" && !isRecord(method)) {
+    return null;
+  }
+  const llm = (method as Record<string, unknown>)[HUMAN_FEEDBACK_LIVE_LLM_ATTR];
+  if (llm === null || llm === undefined) {
+    return null;
+  }
+  if (typeof llm === "string" || typeof llm === "function") {
+    return llm;
+  }
+  return isRecord(llm) ? llm : null;
 }
 
 function isHumanFeedbackProvider(value: unknown): value is HumanFeedbackProvider {
@@ -3219,6 +3239,9 @@ export function humanFeedback(configOrMessage: HumanFeedbackConfig | string): Me
     };
     copyFlowMethodAttributes(value, wrapped);
     attachHumanFeedbackAttributes(wrapped, normalizedConfig);
+    (wrapped as unknown as Record<string, unknown>)[HUMAN_FEEDBACK_LIVE_LLM_ATTR] = "llm" in config
+      ? config.llm
+      : normalizedConfig.llm;
     return wrapped;
   };
 }
@@ -4733,6 +4756,7 @@ function copyFlowMethodAttributes(source: unknown, target: unknown): void {
     "__is_router__",
     "__router_emit__",
     FLOW_METHOD_DEFINITION_ATTR,
+    HUMAN_FEEDBACK_LIVE_LLM_ATTR,
   ]) {
     if (key in sourceRecord) {
       targetRecord[key] = sourceRecord[key];
