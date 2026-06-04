@@ -24444,6 +24444,27 @@ describe("tools", () => {
     expect(defaultTool.to_structured_tool().result_as_answer).toBe(false);
   });
 
+  it("preserves upstream decorator max_usage_count limits and defaults", () => {
+    const limitedTool = createFunctionTool("limited decorator", {
+      description: "Limited decorator tool",
+      max_usage_count: 3,
+    })(function limited(inputText: unknown): string {
+      return `Result: ${String(inputText)}`;
+    });
+    const defaultTool = createFunctionTool("default decorator", {
+      description: "Default decorator tool",
+    })(function unlimited(inputText: unknown): string {
+      return `Result: ${String(inputText)}`;
+    });
+
+    expect(limitedTool.max_usage_count).toBe(3);
+    expect(limitedTool.current_usage_count).toBe(0);
+    expect(limitedTool.run({ inputText: "test" })).toBe("Result: test");
+    expect(limitedTool.current_usage_count).toBe(1);
+    expect(defaultTool.max_usage_count).toBeNull();
+    expect(defaultTool.current_usage_count).toBe(0);
+  });
+
   it("validates structured tool args and enforces usage limits", async () => {
     const add = new StructuredTool({
       name: "add numbers",
