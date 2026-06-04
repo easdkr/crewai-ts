@@ -31980,6 +31980,52 @@ describe("LLM providers", () => {
     });
   });
 
+  it("uses the native Snowflake OpenAI-compatible client for non-streaming calls", async () => {
+    const snowflake = new SnowflakeCompletion({
+      model: "openai-gpt-4.1",
+      api_key: "snowflake-token",
+      account_url: "https://org-account.snowflakecomputing.com",
+    });
+    const create = vi.fn(() => ({
+      usage: {
+        prompt_tokens: 3,
+        completion_tokens: 2,
+        total_tokens: 5,
+        prompt_tokens_details: null,
+        completion_tokens_details: null,
+      },
+      choices: [{
+        message: {
+          content: "Snowflake response",
+          tool_calls: null,
+        },
+      }],
+    }));
+
+    vi.spyOn(snowflake as unknown as {
+      _get_sync_client(): Record<string, unknown>;
+    }, "_get_sync_client").mockReturnValue({
+      chat: {
+        completions: {
+          create,
+        },
+      },
+    });
+
+    await expect(snowflake.call([{ role: "user", content: "Hello" }])).resolves.toBe("Snowflake response");
+    expect(create).toHaveBeenCalledOnce();
+    expect(create.mock.calls[0]?.[0]).toMatchObject({
+      model: "openai-gpt-4.1",
+      messages: [{ role: "user", content: "Hello" }],
+    });
+    expect(snowflake.getUsageMetrics()).toMatchObject({
+      promptTokens: 3,
+      completionTokens: 2,
+      totalTokens: 5,
+      successfulRequests: 1,
+    });
+  });
+
   it("resolves Snowflake Cortex credentials and accounts from environment fallbacks", () => {
     const previousPat = process.env.SNOWFLAKE_PAT;
     const previousToken = process.env.SNOWFLAKE_TOKEN;

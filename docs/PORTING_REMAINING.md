@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 1077 passing tests.
+- Test suite: 1078 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -22,6 +22,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
 - The 2026-06-05 external examples audit promoted the deterministic `crewAI-examples` lead-score Flow shape into the local Flow concepts test: mixed method-reference/string conditions via `listen(or_(method, "event"))` and `router(method)` are release-gated without live crews, file IO, or provider calls.
 - A 2026-06-05 latest-upstream audit at `906cd9769d7e2125485bbc09e8d8ef5cb1c29805` found new Flow DSL export surfaces from `feat(flow): type DSL triggers as route-aware decorators`: `flow/dsl/_conditions`, `_human_feedback`, `_listen`, `_router`, `_start`, `_types`, `_utils`, plus `FlowTrigger` and `FlowMethodDecorator`. These are now covered by package subpath exports and deterministic root marker exports; latest-upstream root, class-method, and subpath parity all report `total_missing=0`.
 - The same latest-upstream conversation regression audit promoted two deterministic `test_flow_conversation.py` behaviors into the local gate: overriding inherited `conversation_start` without redecorating keeps the conversational start registered, and multi-turn `handle_turn` reruns the graph after a prior turn completes instead of returning stale method output.
+- The same latest-upstream Snowflake audit promoted `test_non_streaming_call_uses_native_openai_client` into the local gate: Snowflake non-streaming calls now pass model/messages to an OpenAI-compatible `chat.completions.create` client boundary, normalize response usage into local metrics, and keep live Snowflake network access outside the deterministic test via a fake client.
 - During the 2026-06-04 run, a fresh latest upstream checkout showed new post-baseline export surfaces (`flow/conversation`, `experimental/conversational`, `experimental/conversational_mixin`, `flow/dsl`, `flow/flow_definition`, `flow/runtime`, `llms/providers/snowflake`, `llms/providers/snowflake/completion`, and `flow_context.current_flow_name`). These now have deterministic TS coverage or package subpath coverage, and latest-upstream root/subpath export parity reports `total_missing=0`. These remaining surfaces are not part of the current release baseline commit above; audit them by behavior before advancing the parity baseline.
 - A later 2026-06-04 latest-upstream audit found the upstream `Flow` class moved from `flow/flow.py` to `flow/runtime.py`; `scripts/check-class-method-parity.py` now accepts both locations. That audit also found and closed the latest-upstream `Flow._rearm_or_listeners_for_trigger` method gap with deterministic OR-listener rearm helper coverage. Latest-upstream class method parity reports `total_missing=0`.
 

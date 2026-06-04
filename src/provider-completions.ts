@@ -2400,6 +2400,55 @@ export class SnowflakeCompletion extends OpenAICompletion {
     return this.prepareCompletionParams(messages, tools);
   }
 
+  getSyncClient(env: NodeJS.ProcessEnv = process.env): Record<string, unknown> {
+    void env;
+    const endpoint = `${this.accountUrl.replace(/\/+$/u, "")}/chat/completions`;
+    const token = this.api_key ?? "";
+    return {
+      chat: {
+        completions: {
+          create: async (params: Record<string, unknown>) => {
+            const response = await fetch(endpoint, {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${token}`,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify(params),
+              ...(this.timeout === null ? {} : { signal: AbortSignal.timeout(this.timeout * 1000) }),
+            });
+            if (!response.ok) {
+              throw new Error(`Snowflake completion request failed with status ${String(response.status)}.`);
+            }
+            return await response.json();
+          },
+        },
+      },
+    };
+  }
+
+  _get_sync_client(env: NodeJS.ProcessEnv = process.env): Record<string, unknown> {
+    return this.getSyncClient(env);
+  }
+
+  override async call(messages: readonly LLMMessage[], options?: LLMCallOptions): Promise<LLMResponse> {
+    const tools = options?.tools as readonly Tool[] | undefined;
+    const params = this.prepareCompletionParams(this.formatMessages(messages), tools ?? null);
+    const client = this._get_sync_client();
+    const completions = readObject(readObject(readObject(client).chat).completions);
+    const create = completions.create;
+    if (!isCompletionCreate(create)) {
+      throw new Error("Snowflake OpenAI-compatible client is missing chat.completions.create.");
+    }
+    const response = await create(params);
+    this.trackTokenUsageInternal(this.extractOpenAITokenUsage(response));
+
+    const choices = readObject(response).choices;
+    const firstChoice = Array.isArray(choices) ? readObject(choices[0]) : {};
+    const content = readObject(firstChoice.message).content;
+    return typeof content === "string" ? content : "";
+  }
+
   override supportsFunctionCalling(): boolean {
     const model = this.model.toLowerCase();
     return model.startsWith("openai-") || model.startsWith("claude-") || model.startsWith("anthropic.");
@@ -3329,6 +3378,10 @@ function numberField(record: Record<string, unknown>, field: string): number {
 
 function hasNumericField(record: Record<string, unknown>, ...fields: string[]): boolean {
   return fields.some((field) => typeof record[field] === "number" && Number.isFinite(record[field]));
+}
+
+function isCompletionCreate(value: unknown): value is (params: Record<string, unknown>) => unknown {
+  return typeof value === "function";
 }
 
 function addGeminiPropertyOrdering(schema: Record<string, unknown>): void {
