@@ -2612,7 +2612,7 @@ export class ConfiguredLLM extends BaseLLM {
 
   override supportsMultimodal(): boolean {
     const model = this.model.toLowerCase();
-    const textOnlyModels = ["o3-mini", "o1-mini", "o1-preview"];
+    const textOnlyModels = ["o3-mini", "o1-mini"];
     if (textOnlyModels.some((name) => model.startsWith(name) || model.includes(`/${name}`))) {
       return false;
     }

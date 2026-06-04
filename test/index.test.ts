@@ -30909,7 +30909,7 @@ describe("LLM providers", () => {
     expect((create_llm("anthropic/claude-3-sonnet-20240229") as BaseLLM).supports_multimodal()).toBe(true);
     expect((create_llm("gemini/gemini-pro") as BaseLLM).supports_multimodal()).toBe(true);
     expect((create_llm("gpt-3.5-turbo") as BaseLLM).supports_multimodal()).toBe(false);
-    expect((create_llm("openai/o1-preview") as BaseLLM).supports_multimodal()).toBe(false);
+    expect((create_llm("openai/o1-preview") as BaseLLM).supports_multimodal()).toBe(true);
     expect((create_llm("o3-mini") as BaseLLM).supports_multimodal()).toBe(false);
   });
 
