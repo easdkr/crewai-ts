@@ -2707,7 +2707,9 @@ export class StepExecutor {
     const toolCallsMade: string[] = [];
     try {
       const messages = this._buildIsolatedMessages(todo, context);
-      const result = await this._executeTextParsed(messages, toolCallsMade, maxStepIterations, stepTimeout, started);
+      const result = this.hasNativeStepTools()
+        ? await this._executeNative(messages, toolCallsMade, maxStepIterations, stepTimeout, started)
+        : await this._executeTextParsed(messages, toolCallsMade, maxStepIterations, stepTimeout, started);
       this._validate_expected_tool_usage(todo, toolCallsMade);
       return new StepResult({
         success: true,
@@ -2724,6 +2726,11 @@ export class StepExecutor {
         executionTime: Date.now() - started,
       });
     }
+  }
+
+  private hasNativeStepTools(): boolean {
+    return Object.keys(this.availableFunctions).length > 0
+      || this.tools.some((tool) => Boolean(tool.resultAsAnswer));
   }
 
   private _buildObservationMessage(toolResult: string): LLMMessage {

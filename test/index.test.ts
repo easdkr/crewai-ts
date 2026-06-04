@@ -13782,6 +13782,31 @@ describe("core crew runtime", () => {
     ]);
   });
 
+  it("routes StepExecutor todo execution through native tool calls", async () => {
+    const nativeResponses: unknown[] = [
+      [{ id: "call-1", function: { name: "lookup", arguments: "{\"query\":\"CrewAI\"}" } }],
+      "native complete",
+    ];
+    const executor = new StepExecutor({
+      agent: new Agent({
+        role: "Researcher",
+        goal: "Find facts",
+        backstory: "Careful analyst",
+        llm: (): LLMResponse => nativeResponses.shift() as LLMResponse,
+      }),
+      available_functions: { lookup: (args: { query?: string }) => `lookup:${args.query ?? ""}` },
+    });
+
+    await expect(executor.execute(
+      new TodoItem({ step_number: 1, description: "Search docs", tool_to_use: "lookup" }),
+      new StepExecutionContext({ taskDescription: "Research CrewAI", taskGoal: "Use sources" }),
+    )).resolves.toMatchObject({
+      success: true,
+      result: "native complete",
+      tool_calls_made: ["lookup"],
+    });
+  });
+
   it("exposes upstream StepExecutor parsing and observation helpers", () => {
     const searchTool = new StructuredTool({
       name: "Search Tool",
