@@ -9188,6 +9188,39 @@ describe("telemetry compatibility", () => {
         trace_consent: false,
       });
       expect(handler.batch_manager).toBe(batchManager);
+
+      batchManager.batch_owner_type = "crew";
+      batchManager.batchOwnerType = "crew";
+      batchManager.batch_owner_id = "crew-1";
+      batchManager.batchOwnerId = "crew-1";
+      batchManager.defer_session_finalization = true;
+      batchManager.deferSessionFinalization = true;
+      batchManager.backend_initialized = true;
+      batchManager.backendInitialized = true;
+      batchManager.batch_finalized = true;
+      batchManager.batchFinalized = true;
+      batchManager._batch_finalized = true;
+
+      handler._reset_batch_state();
+
+      expect(batchManager.batch_owner_type).toBeNull();
+      expect(batchManager.batchOwnerType).toBeNull();
+      expect(batchManager.batch_owner_id).toBeNull();
+      expect(batchManager.batchOwnerId).toBeNull();
+      expect(batchManager.defer_session_finalization).toBe(false);
+      expect(batchManager.deferSessionFinalization).toBe(false);
+      expect(batchManager.current_batch).toBeNull();
+      expect(batchManager.currentBatch).toBeNull();
+      expect(batchManager.event_buffer).toEqual([]);
+      expect(batchManager.trace_batch_id).toBeNull();
+      expect(batchManager.traceBatchId).toBeNull();
+      expect(batchManager.is_current_batch_ephemeral).toBe(false);
+      expect(batchManager.isCurrentBatchEphemeral).toBe(false);
+      expect(batchManager.backend_initialized).toBe(false);
+      expect(batchManager.backendInitialized).toBe(false);
+      expect(batchManager.batch_finalized).toBe(false);
+      expect(batchManager.batchFinalized).toBe(false);
+      expect(batchManager._batch_finalized).toBe(false);
     } finally {
       setFirstTimeTraceHook(null);
       if (previousDataDir === undefined) {

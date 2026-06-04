@@ -5752,6 +5752,35 @@ export class FirstTimeTraceHandler {
     this.ephemeralUrl = manager.ephemeralTraceUrl;
     this.ephemeral_url = this.ephemeralUrl;
   }
+
+  _resetBatchState(): void {
+    const manager = this.batchManager;
+    if (!manager) {
+      return;
+    }
+    manager.batchOwnerType = null;
+    manager.batch_owner_type = null;
+    manager.batchOwnerId = null;
+    manager.batch_owner_id = null;
+    manager.deferSessionFinalization = false;
+    manager.defer_session_finalization = false;
+    manager.currentBatch = null;
+    manager.current_batch = null;
+    manager.eventBuffer.length = 0;
+    manager.traceBatchId = null;
+    manager.trace_batch_id = null;
+    manager.isCurrentBatchEphemeral = false;
+    manager.is_current_batch_ephemeral = false;
+    manager.backendInitialized = false;
+    manager.backend_initialized = false;
+    manager.batchFinalized = false;
+    manager.batch_finalized = false;
+    manager._batch_finalized = false;
+  }
+
+  _reset_batch_state(): void {
+    this._resetBatchState();
+  }
 }
 
 export function resetEmissionSequence(): void {

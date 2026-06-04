@@ -530,7 +530,7 @@ When more goal budget is available, continue from the behavioral parity audits b
   - `TraceBatch` now defaults its batch version from the shared CrewAI version export, matching upstream trace batch manager metadata.
   - Tracing machine-id helpers now expose upstream-style Linux, generic-system, MAC, and fallback hashing behavior without network exporters.
   - `EventListener.setup_listeners` and `TraceCollectionListener.setup_listeners` now expose subclass-level upstream listener setup aliases.
-  - `FirstTimeTraceHandler` now exposes upstream-style first-time trace collection state hooks and records local consent/completion without enabling cloud upload behavior.
+  - `FirstTimeTraceHandler` now exposes upstream-style first-time trace collection state hooks, records local consent/completion without enabling cloud upload behavior, and resets batch owner/defer/finalized/current-batch state for future executions.
 - Added crew chat compatibility behavior:
   - `handleUserInput` now forwards the generated crew function schema and available function map to the chat LLM call so upstream-style conversational crew function calling can execute.
   - `check_conversational_crews_version` now accepts the upstream pyproject data argument and rejects invalid version strings instead of loosely parsing embedded digits.
