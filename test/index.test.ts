@@ -14510,6 +14510,18 @@ describe("core crew runtime", () => {
     expect(prompts[0]).toContain("Research CrewAI");
     expect(prompts[0]).toContain("Produce a concise brief");
     expect(prompts[0]).toContain("Collect pricing facts");
+
+    const stringStepResult = await executor.execute("Draft summary", new StepExecutionContext({
+      taskDescription: "Research CrewAI",
+      taskGoal: "Produce a concise brief",
+    }));
+
+    expect(stringStepResult).toMatchObject({
+      success: true,
+      result: "step complete",
+    });
+    expect(prompts[1]).toContain("You are an Executor focused on completing one plan step as Researcher");
+    expect(prompts[1]).toContain("Step:\nDraft summary");
   });
 
   it("fails StepExecutor todo execution when the expected tool is not called", async () => {

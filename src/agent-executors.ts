@@ -2820,27 +2820,7 @@ export class StepExecutor {
   }
 
   async executeStep(step: string, context: StepExecutionContext = new StepExecutionContext({})): Promise<StepResult> {
-    const started = Date.now();
-    try {
-      const prompt = [
-        context.taskDescription,
-        context.taskGoal,
-        step,
-      ].filter(Boolean).join("\n");
-      const result = this.agent ? await this.agent.kickoff(prompt) : step;
-      return new StepResult({
-        success: true,
-        result: typeof result === "string" ? result : JSON.stringify(result),
-        executionTime: Date.now() - started,
-      });
-    } catch (error) {
-      return new StepResult({
-        success: false,
-        result: "",
-        error: error instanceof Error ? error.message : String(error),
-        executionTime: Date.now() - started,
-      });
-    }
+    return await this.executeTodoItem(new TodoItem({ description: step }), context, 15, null);
   }
 
   execute_step(step: string, context?: StepExecutionContext): Promise<StepResult> {
