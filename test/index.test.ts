@@ -19799,6 +19799,21 @@ describe("agent planning", () => {
     expect(new PlannerObserver()._parse_observation_response(observation)).toBe(observation);
   });
 
+  it("parses upstream object observation responses from provider paths", () => {
+    const parsed = PlannerObserver._parse_observation_response({
+      step_completed_successfully: false,
+      key_information_learned: "timeout",
+      remaining_plan_still_valid: false,
+      needs_full_replan: true,
+      replan_reason: "step timed out",
+    });
+
+    expect(parsed).toBeInstanceOf(StepObservation);
+    expect(parsed.step_completed_successfully).toBe(false);
+    expect(parsed.needs_full_replan).toBe(true);
+    expect(parsed.replan_reason).toBe("step timed out");
+  });
+
   it("observes completed planner steps by parsing deterministic LLM responses", () => {
     const calls: LLMMessage[][] = [];
     const observer = new PlannerObserver(

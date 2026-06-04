@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 1099 passing tests.
+- Test suite: 1100 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -434,7 +434,7 @@ When more goal budget is available, continue from the behavioral parity audits b
 - `AgentExecutor.use_stop_words` now mirrors upstream executor behavior for both executor-level and agent-level LLMs, including snake_case `supports_stop_words` providers used by upstream tests.
 - `AgentExecutor.handle_goal_achieved` now preserves pending todo status while routing to finalization, matching upstream early-goal state semantics.
 - `AgentExecutor.handle_refine_and_continue` now applies the latest planner observation refinements to pending todos before continuing.
-- `PlannerObserver.observe` now builds upstream-style observation prompts, preserves typed `StepObservation` parser responses, parses deterministic LLM JSON responses into `StepObservation`, and falls back conservatively when observation LLM calls fail.
+- `PlannerObserver.observe` now builds upstream-style observation prompts, preserves typed `StepObservation` parser responses, parses deterministic LLM JSON and provider object responses into `StepObservation`, and falls back conservatively when observation LLM calls fail.
 - `AgentExecutor.execute_todo_sequential` now executes planning-enabled todos through isolated `StepExecutor` context, records upstream-style step execution audit fields, and falls back to upstream-style todo prompt injection only when planning is disabled.
 - `AgentExecutor.execute_todos_parallel` now executes ready planning todos through isolated `StepExecutor` contexts, records upstream-style step execution audit fields, observes each completed step sequentially, records observation audit fields, and marks todos from the observation result.
 - `AgentExecutor.generate_plan` now has default-gate coverage for latest-upstream state-only planning: plan text and readiness live on executor state while repeated planning leaves the shared task description unchanged.
