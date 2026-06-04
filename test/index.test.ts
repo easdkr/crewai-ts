@@ -18911,6 +18911,59 @@ describe("flow runtime", () => {
     expect(definition.diagnostics).toEqual([]);
   });
 
+  it("builds FlowDefinition methods from upstream static DSL metadata fragments", () => {
+    class StaticMetadataDefinitionFlow extends Flow {
+      begin() {
+        return "started";
+      }
+
+      decide() {
+        return "done";
+      }
+
+      finish() {
+        return "finished";
+      }
+    }
+
+    const attachStaticDefinition = (name: "begin" | "decide" | "finish", definition: unknown) => {
+      const method = Object.getOwnPropertyDescriptor(StaticMetadataDefinitionFlow.prototype, name)?.value as Record<string, unknown>;
+      method.__flow_method_definition__ = definition;
+    };
+
+    attachStaticDefinition("begin", new FlowMethodDefinition({ start: true }));
+    attachStaticDefinition(
+      "decide",
+      new FlowMethodDefinition({
+        listen: "begin",
+        router: true,
+        emit: ["done", "skip"],
+      }),
+    );
+    attachStaticDefinition("finish", {
+        listen: "done",
+        router: false,
+    });
+
+    const definition = buildFlowDefinition(StaticMetadataDefinitionFlow);
+
+    expect(definition.to_dict()).toMatchObject({
+      methods: {
+        begin: { start: true, router: false },
+        decide: {
+          listen: "begin",
+          router: true,
+          emit: ["done", "skip"],
+        },
+        finish: {
+          listen: "done",
+          router: false,
+        },
+      },
+    });
+    expect(definition.diagnostics).toEqual([]);
+  });
+
   it("serializes non-json human feedback metadata as FlowDefinition refs", () => {
     const marker = () => "marker";
 

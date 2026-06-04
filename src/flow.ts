@@ -249,6 +249,8 @@ export type FlowMethodEntry = {
   emit?: readonly string[] | null;
 };
 
+const FLOW_METHOD_DEFINITION_ATTR = "__flow_method_definition__";
+
 type FlowExecutionQueueItem = {
   name: string;
   input: unknown;
@@ -3254,22 +3256,27 @@ export function getHumanFeedbackMetadata(instanceOrConstructor: object | FlowMet
 
 export function buildFlowDefinition(instanceOrConstructor: object | FlowMetadataTarget): FlowDefinition {
   const entries = getFlowMetadata(instanceOrConstructor);
+  const staticDefinitions = getStaticFlowMethodDefinitions(instanceOrConstructor);
   const feedbackMetadata = getHumanFeedbackMetadata(instanceOrConstructor);
   const methods: Record<string, FlowMethodDefinition> = {};
   const diagnostics: FlowDefinition["diagnostics"] = [];
-  const methodNames = [...new Set(entries.map((entry) => String(entry.name)))];
+  const methodNames = [...new Set([
+    ...entries.map((entry) => String(entry.name)),
+    ...staticDefinitions.keys(),
+  ])];
 
   for (const methodName of methodNames) {
     const methodEntries = entries.filter((entry) => String(entry.name) === methodName);
+    const staticDefinition = staticDefinitions.get(methodName) ?? null;
     const feedback = feedbackMetadata.get(methodName);
     const humanFeedback = feedback ? flowHumanFeedbackDefinition(feedback, methodName, diagnostics) : null;
     const definition = new FlowMethodDefinition({
-      start: flowDefinitionStart(methodEntries),
-      listen: flowDefinitionListen(methodEntries),
-      router: methodEntries.some((entry) => entry.kind === "router") || Boolean(humanFeedback?.emit),
-      humanFeedback,
-      emit: humanFeedback?.emit ? null : flowDefinitionEmit(methodEntries),
-      persist: flowMethodPersistenceDefinition(instanceOrConstructor, methodName),
+      start: staticDefinition?.start ?? flowDefinitionStart(methodEntries),
+      listen: staticDefinition?.listen ?? flowDefinitionListen(methodEntries),
+      router: Boolean(staticDefinition?.router) || methodEntries.some((entry) => entry.kind === "router") || Boolean(humanFeedback?.emit),
+      humanFeedback: humanFeedback ?? staticDefinition?.humanFeedback ?? null,
+      emit: humanFeedback?.emit ? null : staticDefinition?.emit ?? flowDefinitionEmit(methodEntries),
+      persist: flowMethodPersistenceDefinition(instanceOrConstructor, methodName) ?? staticDefinition?.persist ?? null,
     });
     methods[methodName] = definition;
   }
@@ -3291,6 +3298,48 @@ export function buildFlowDefinition(instanceOrConstructor: object | FlowMetadata
 }
 
 export const build_flow_definition = buildFlowDefinition;
+
+function getStaticFlowMethodDefinitions(instanceOrConstructor: object | FlowMetadataTarget): Map<string, FlowMethodDefinition> {
+  const ctor = typeof instanceOrConstructor === "function"
+    ? instanceOrConstructor as FlowMetadataTarget
+    : instanceOrConstructor.constructor as FlowMetadataTarget;
+  const definitions = new Map<string, FlowMethodDefinition>();
+  const prototypes: object[] = [];
+  let current: object | null = ctor.prototype as object | null;
+  while (current && current !== Object.prototype) {
+    prototypes.unshift(current);
+    current = Object.getPrototypeOf(current) as object | null;
+  }
+
+  for (const prototype of prototypes) {
+    for (const name of Object.getOwnPropertyNames(prototype)) {
+      if (name === "constructor") {
+        continue;
+      }
+      const descriptor: PropertyDescriptor | undefined = Object.getOwnPropertyDescriptor(prototype, name);
+      const method = descriptor ? descriptor.value as unknown : undefined;
+      const definition = flowMethodDefinitionFromStaticMetadata(method);
+      if (definition) {
+        definitions.set(name, definition);
+      }
+    }
+  }
+  return definitions;
+}
+
+function flowMethodDefinitionFromStaticMetadata(method: unknown): FlowMethodDefinition | null {
+  if (!method || (typeof method !== "function" && typeof method !== "object")) {
+    return null;
+  }
+  const fragment = (method as Record<string, unknown>)[FLOW_METHOD_DEFINITION_ATTR];
+  if (fragment instanceof FlowMethodDefinition) {
+    return fragment;
+  }
+  if (isRecord(fragment)) {
+    return new FlowMethodDefinition(fragment);
+  }
+  return null;
+}
 
 function addConversationalFlowDefinitionMethods(
   instanceOrConstructor: object | FlowMetadataTarget,
