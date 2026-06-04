@@ -56,6 +56,13 @@ import {
   type FlowDefinitionCondition,
 } from "./flow-definition.js";
 import {
+  AgentMessage,
+  ConversationEvent,
+  type ConversationEventVisibility,
+  ConversationState,
+  ConversationMessage,
+} from "./experimental-conversational.js";
+import {
   appendMessage,
   getConversationMessages,
   getConversationalConfig,
@@ -1349,6 +1356,63 @@ export class Flow<TState extends object = Record<string, unknown>> {
 
   append_assistant_message(content: string, extra: Record<string, unknown> = {}): void {
     this.appendAssistantMessage(content, extra);
+  }
+
+  appendAgentResult(
+    agentName: string,
+    result: unknown,
+    options: { visibility?: ConversationEventVisibility; metadata?: Record<string, unknown> } = {},
+  ): void {
+    const state = this.state as Record<string, unknown>;
+    const content = stringifyFlowHelperValue(result);
+    const constructorRecord = this.constructor as unknown as {
+      conversational_config?: { visible_agent_outputs?: readonly string[] | "all" | null; visibleAgentOutputs?: readonly string[] | "all" | null } | null;
+      conversationalConfig?: { visible_agent_outputs?: readonly string[] | "all" | null; visibleAgentOutputs?: readonly string[] | "all" | null } | null;
+    };
+    const constructorConfig = (typeof this.constructor === "function" || isRecord(this.constructor))
+      ? constructorRecord.conversational_config ?? constructorRecord.conversationalConfig ?? null
+      : null;
+    const config = constructorConfig;
+    const visibleAgentOutputs = config?.visible_agent_outputs ?? config?.visibleAgentOutputs ?? null;
+    const visibility: ConversationEventVisibility = options.visibility
+      ?? (visibleAgentOutputs === "all" || (Array.isArray(visibleAgentOutputs) && visibleAgentOutputs.includes(agentName)) ? "public" : "private");
+
+    const event = new ConversationEvent({
+      type: "agent_result",
+      payload: { content: result },
+      agent_name: agentName,
+      visibility,
+    });
+    const events = ensureConversationArray<ConversationEvent>(state, "events");
+    events.push(event);
+
+    const agentThreads = ensureConversationThreads(state);
+    agentThreads[agentName] ??= [];
+    agentThreads[agentName].push(new AgentMessage({
+      content: result,
+      metadata: options.metadata ?? {},
+    }));
+
+    if (visibility === "public") {
+      const messages = ensureConversationArray<ConversationMessage | LLMMessage>(state, "messages");
+      if (this.state instanceof ConversationState) {
+        (messages as ConversationMessage[]).push(new ConversationMessage({
+          role: "assistant",
+          content,
+          name: agentName,
+        }));
+      } else {
+        appendMessage(this, "assistant", content, { name: agentName });
+      }
+    }
+  }
+
+  append_agent_result(
+    agentName: string,
+    result: unknown,
+    options: { visibility?: ConversationEventVisibility; metadata?: Record<string, unknown> } = {},
+  ): void {
+    this.appendAgentResult(agentName, result, options);
   }
 
   async handleTurn(
@@ -5477,6 +5541,29 @@ function nestedConditionSatisfied(
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function ensureConversationArray<T>(state: Record<string, unknown>, key: "messages" | "events"): T[] {
+  const value = state[key];
+  if (Array.isArray(value)) {
+    return value as T[];
+  }
+  const next: T[] = [];
+  state[key] = next;
+  return next;
+}
+
+function ensureConversationThreads(state: Record<string, unknown>): Record<string, AgentMessage[]> {
+  const value = state.agent_threads ?? state.agentThreads;
+  if (isRecord(value)) {
+    state.agent_threads = value;
+    state.agentThreads = value;
+    return value as Record<string, AgentMessage[]>;
+  }
+  const next: Record<string, AgentMessage[]> = {};
+  state.agent_threads = next;
+  state.agentThreads = next;
+  return next;
 }
 
 function isFlowPersistence(value: unknown): value is FlowPersistence & { toJSON?: () => unknown } {

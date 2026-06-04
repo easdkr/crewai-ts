@@ -19427,6 +19427,41 @@ describe("flow runtime", () => {
     ]);
   });
 
+  it("records experimental conversational agent results with visibility controls", () => {
+    class AgentResultFlow extends Flow<ConversationState> {
+      static conversational = true;
+      static conversational_config = new ConversationConfig({ visible_agent_outputs: ["writer"] });
+
+      constructor() {
+        super({ initialState: new ConversationState() });
+      }
+    }
+
+    const flow = new AgentResultFlow();
+    flow.append_agent_result("planner", "private scratch");
+
+    expect(flow.state.messages).toEqual([]);
+    expect(flow.state.events[0]).toMatchObject({
+      type: "agent_result",
+      agent_name: "planner",
+      visibility: "private",
+      payload: { content: "private scratch" },
+    });
+    expect(flow.state.agent_threads.planner[0]).toMatchObject({
+      role: "assistant",
+      content: "private scratch",
+    });
+
+    flow.append_agent_result("writer", "visible draft");
+    flow.append_agent_result("researcher", "public findings", { visibility: "public" });
+
+    expect(flow.state.messages).toEqual([
+      { role: "assistant", content: "visible draft", name: "writer" },
+      { role: "assistant", content: "public findings", name: "researcher" },
+    ]);
+    expect(flow.state.events.map((event) => event.visibility)).toEqual(["private", "public", "public"]);
+  });
+
   it("provides upstream experimental conversational data shapes", () => {
     const router = new RouterConfig({
       routes: ["converse", "handoff"],
