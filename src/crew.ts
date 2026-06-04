@@ -843,6 +843,7 @@ export class Crew {
     if (this.stream) {
       const output = new CrewStreamingOutput(async () => {
         const results = await this.withStreamDisabled(async () => await this.kickoffForEach(options));
+        output._set_results(results);
         return results.at(-1) ?? new CrewOutput({ raw: "", tasksOutput: [], tokenUsage: emptyUsageMetrics() });
       });
       return [output as unknown as CrewOutput];
@@ -873,6 +874,7 @@ export class Crew {
     if (this.stream) {
       const output = new CrewStreamingOutput(async () => {
         const results = await this.withStreamDisabled(async () => await this.kickoffForEachAsync(options));
+        output._set_results(results);
         return results.at(-1) ?? new CrewOutput({ raw: "", tasksOutput: [], tokenUsage: emptyUsageMetrics() });
       });
       return [output as unknown as CrewOutput];
@@ -904,6 +906,7 @@ export class Crew {
     if (this.stream) {
       const output = new CrewStreamingOutput(async () => {
         const results = await this.withStreamDisabled(async () => await this.akickoffForEach(options));
+        output._set_results(results);
         return results.at(-1) ?? new CrewOutput({ raw: "", tasksOutput: [], tokenUsage: emptyUsageMetrics() });
       });
       return [output as unknown as CrewOutput];
