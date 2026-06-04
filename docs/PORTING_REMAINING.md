@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 1024 passing tests.
+- Test suite: 1025 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -96,6 +96,7 @@ This register is the source of truth for continuing porting work while parity sc
 - LLM streaming tool-call events are release-gated with deterministic fixtures: accumulated function arguments, `TOOL_CALL` chunk classification, response ids, and tool-call payloads are emitted without invoking live provider streams.
 - LLM usage normalization mirrors upstream `_usage_to_dict` behavior for dicts, private-field filtering, unsupported primitives, model-like usage dumps, and LiteLLM nested cache/reasoning/cache-creation buckets without requiring live provider calls.
 - LLM completion event usage payloads are normalized through the same deterministic `_usage_to_dict` behavior before event emission, so model-like usage objects and private fields do not leak into `LLMCallCompletedEvent.usage`.
+- `LLMCallCompletedEvent.usage` construction is release-gated for upstream event data-shape behavior: omitted and explicit null usage stay `null`, while nested usage dictionaries are preserved unchanged.
 - Azure `api: "responses"` is modeled as a deterministic shim over the OpenAI Responses adapter: endpoint-to-`/openai/v1/` base URL normalization, Responses request preparation, response-chain state delegation, config fields, and call/acall routing are release-gated without creating Azure SDK clients or making live calls.
 - OpenAI Responses structured-output formatting is release-gated with deterministic schema-provider fixtures: local model-like schemas are converted to the flat `text.format` JSON schema shape expected by upstream Responses API requests.
 - OpenAI Responses PDF multimodal formatting is release-gated for upstream `crewai-files` handoff: PDF inputs are converted into `input_file` data URLs for concrete GPT models without live OpenAI SDK calls.

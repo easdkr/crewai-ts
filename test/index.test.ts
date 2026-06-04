@@ -5562,6 +5562,40 @@ describe("llm events", () => {
     });
   });
 
+  it("preserves upstream LLM completed usage defaults and nested dictionaries", () => {
+    const omitted = new LLMCallCompletedEvent({
+      call_id: "call-default",
+      response: "hello",
+      call_type: LLMCallType.LLM_CALL,
+    });
+    const explicitNull = new LLMCallCompletedEvent({
+      call_id: "call-null",
+      response: "hello",
+      call_type: LLMCallType.LLM_CALL,
+      usage: null,
+    });
+    const nested = new LLMCallCompletedEvent({
+      call_id: "call-nested",
+      response: "hello",
+      call_type: LLMCallType.LLM_CALL,
+      usage: {
+        prompt_tokens: 100,
+        completion_tokens: 200,
+        total_tokens: 300,
+        prompt_tokens_details: { cached_tokens: 50 },
+      },
+    });
+
+    expect(omitted.usage).toBeNull();
+    expect(explicitNull.usage).toBeNull();
+    expect(nested.usage).toEqual({
+      prompt_tokens: 100,
+      completion_tokens: 200,
+      total_tokens: 300,
+      prompt_tokens_details: { cached_tokens: 50 },
+    });
+  });
+
   it("accumulates streaming tool-call chunks by index", () => {
     const first = new AccumulatedToolArgs();
     first.accumulate({
