@@ -42,7 +42,8 @@ function mark(kind: MethodKind) {
           instanceCache.set(this, cache);
         }
         if (!cache.has(context.name)) {
-          cache.set(context.name, (value as AnyMethod<This, [], Return>).call(this));
+          const result = (value as AnyMethod<This, [], Return>).call(this);
+          cache.set(context.name, kind === "task" ? ensureTaskNameResult(result, context.name) : result);
         }
         return cache.get(context.name) as Return;
       };
@@ -160,4 +161,18 @@ function ensureTaskName(taskInstance: Task, methodName: string | symbol): Task {
   }
   Object.assign(taskInstance, { name: String(methodName) });
   return taskInstance;
+}
+
+function ensureTaskNameResult<TResult>(result: TResult, methodName: string | symbol): TResult {
+  const value = result as unknown;
+  if (value && typeof value === "object" && typeof (value as { then?: unknown }).then === "function") {
+    return (value as Promise<unknown>).then((resolved) =>
+      resolved && typeof resolved === "object"
+        ? ensureTaskName(resolved as Task, methodName)
+        : resolved,
+    ) as TResult;
+  }
+  return value && typeof value === "object"
+    ? ensureTaskName(value as Task, methodName) as TResult
+    : result;
 }

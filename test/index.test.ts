@@ -18460,6 +18460,32 @@ describe("standard decorators", () => {
     expect(cache_handler).toBe(cacheHandler);
   });
 
+  it("infers names for directly awaited async task decorator factories", async () => {
+    class AsyncTaskCrew {
+      calls = 0;
+
+      async buildAsyncTask() {
+        await Promise.resolve();
+        this.calls += 1;
+        return new Task({
+          description: "Async Description",
+          expectedOutput: "Async Output",
+        });
+      }
+    }
+
+    const initializer = decorateMethod(AsyncTaskCrew, "buildAsyncTask", task);
+    const instance = new AsyncTaskCrew();
+    initializer.call(instance);
+
+    const first = await instance.buildAsyncTask();
+    const second = await instance.buildAsyncTask();
+
+    expect(first).toBe(second);
+    expect(instance.calls).toBe(1);
+    expect(first.name).toBe("buildAsyncTask");
+  });
+
   it("emits CrewBase display names during prepare_kickoff", () => {
     const capturedNames: Array<string | null> = [];
     const off = crewaiEventBus.on("crew_kickoff_started", (_source, event) => {
