@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 911 passing tests.
+- Test suite: 912 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -85,7 +85,7 @@ This register is the source of truth for continuing porting work while parity sc
 - CrewAI cloud/platform subscription features are outside this port's scope unless they can be represented as local deterministic metadata with no network side effects.
 - Telemetry and trace upload paths are deterministic local span/event recordings. OpenTelemetry/remote trace exporters remain out of the default gate.
 - RAG/vector storage integrations use deterministic in-memory or fake-client-backed shims in the default gate. Real Qdrant, LanceDB, ChromaDB, and provider SDK integration can be added later as optional peer-dependency coverage, but should not be required for release validation.
-- KnowledgeStorage malformed search results are release-gated with fake-client fixtures: search and asearch preserve upstream array-shaped client results even when individual items are malformed or null, while client/search failures still return an empty list.
+- KnowledgeStorage malformed and interrupted search results are release-gated with fake-client fixtures: search and asearch preserve upstream array-shaped client results even when individual items are malformed or null, client/search failures return an empty list, and later successful searches can recover after a prior network interruption.
 - LLM provider classes model request construction, capability flags, response parsing, usage extraction, streaming accumulation, file conversion, and error classification with SDK-like test doubles. Live OpenAI/Azure/Anthropic/Bedrock/Gemini SDK calls and real API credentials are intentionally outside the default gate.
 - Provider interceptors remain intentionally limited to supported transport shims: Azure, Bedrock, and Gemini reject interceptor construction with clear provider-specific errors while OpenAI/Anthropic keep deterministic interceptor support.
 - Anthropic provider image-block conversion is release-gated for upstream multimodal handoff: standard `image_url` data-URI blocks from StepExecutor/tool messages are converted into Anthropic base64 image source blocks while non-data URLs pass through unchanged.

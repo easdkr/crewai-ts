@@ -11440,6 +11440,25 @@ describe("RAG configuration and factories", () => {
     await expect(storage.asearch(["test query"])).resolves.toEqual(malformedResults);
   });
 
+  it("recovers KnowledgeStorage search after upstream network interruptions", () => {
+    const recoveredResults = [
+      { content: "recovered result", score: 0.8, metadata: { source: "test" } },
+    ];
+    const search = vi.fn()
+      .mockImplementationOnce(() => {
+        throw new Error("Network interruption");
+      })
+      .mockReturnValue(recoveredResults);
+    const storage = new KnowledgeStorage({
+      collectionName: "network_test",
+      client: { search } as unknown as RagClient,
+    });
+
+    expect(storage.search(["test query"])).toEqual([]);
+    expect(storage.search(["test query"])).toEqual(recoveredResults);
+    expect(search).toHaveBeenCalledTimes(2);
+  });
+
   it("ignores upstream KnowledgeStorage reset errors for readonly or missing collections", async () => {
     const readonlyStorage = new KnowledgeStorage({
       client: {
