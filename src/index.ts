@@ -1338,6 +1338,8 @@ export {
   FileTooLargeError,
   FileUrl,
   FileValidationError,
+  formatMultimodalContent,
+  format_multimodal_content,
   GEMINI_CONSTRAINTS,
   ImageConstraints,
   ImageFile,

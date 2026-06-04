@@ -813,6 +813,8 @@ import {
   normalizeEmbeddings,
   normalizeRagConfig,
   PROVIDER_PATHS,
+  formatMultimodalContent,
+  format_multimodal_content,
   normalizeInputFiles,
   PDFFile,
   PDFConstraints,
@@ -2423,6 +2425,20 @@ describe("environment, logging, and file store utilities", () => {
     expect(Object.keys(resolved)).toEqual(["ok"]);
     expect(resolved.ok).toBeInstanceOf(InlineBase64);
     await expect(resolver.aresolve(failing, "local")).rejects.toThrow("FileUrl.aread requires an injected fetcher");
+  });
+
+  it("formats OpenAI Responses PDF files as input_file data URLs", () => {
+    const pdfBytes = Buffer.from("%PDF-1.4 test content");
+    const files = { doc: new PDFFile({ source: pdfBytes }) };
+
+    expect(formatMultimodalContent(files, "gpt-4o-mini", { api: "responses" })).toEqual([{
+      type: "input_file",
+      filename: "doc.pdf",
+      file_data: `data:application/pdf;base64,${pdfBytes.toString("base64")}`,
+    }]);
+    expect(format_multimodal_content(files, "gpt-4o-mini", "responses")).toEqual(
+      formatMultimodalContent(files, "gpt-4o-mini", { api: "responses" }),
+    );
   });
 
   it("validates upstream crewai-files provider constraints deterministically", () => {

@@ -1496,6 +1496,45 @@ export function createResolver(options: FileResolverConfig | CreateResolverOptio
 
 export const create_resolver = createResolver;
 
+export type MultimodalContentApi = "completions" | "responses";
+
+export function formatMultimodalContent(
+  files: Record<string, FileInput>,
+  provider: string,
+  options: { api?: MultimodalContentApi } | MultimodalContentApi = {},
+): Record<string, unknown>[] {
+  const api = typeof options === "string" ? options : options.api ?? "completions";
+  const normalizedProvider = provider.toLowerCase();
+  const result: Record<string, unknown>[] = [];
+  for (const [name, file] of Object.entries(files)) {
+    if (!isOpenAIProvider(normalizedProvider)) {
+      continue;
+    }
+    const encoded = Buffer.from(file.read()).toString("base64");
+    if (file instanceof PDFFile && api === "responses") {
+      result.push({
+        type: "input_file",
+        filename: file.filename ?? `${name}.pdf`,
+        file_data: `data:application/pdf;base64,${encoded}`,
+      });
+    } else if (file instanceof ImageFile) {
+      result.push({
+        type: api === "responses" ? "input_image" : "image_url",
+        image_url: { url: `data:${file.contentType};base64,${encoded}` },
+      });
+    }
+  }
+  return result;
+}
+
+export function format_multimodal_content(
+  files: Record<string, FileInput>,
+  provider: string,
+  options: { api?: MultimodalContentApi } | MultimodalContentApi = {},
+): Record<string, unknown>[] {
+  return formatMultimodalContent(files, provider, options);
+}
+
 function isFileOptions(value: unknown): value is { source: FileSourceInput; mode?: FileMode } {
   return Boolean(value && typeof value === "object" && "source" in value);
 }
@@ -1521,6 +1560,15 @@ function supportsUrlReferences(provider: FileProvider): boolean {
     return false;
   }
   return getConstraintsForProvider(provider)?.supportsUrlReferences ?? false;
+}
+
+function isOpenAIProvider(provider: string): boolean {
+  return provider === "openai"
+    || provider.startsWith("openai/")
+    || provider.startsWith("gpt-")
+    || provider.startsWith("o1")
+    || provider.startsWith("o3")
+    || provider.startsWith("o4");
 }
 
 function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
