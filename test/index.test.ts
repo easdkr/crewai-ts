@@ -13252,6 +13252,10 @@ describe("RAG configuration and factories", () => {
     });
     expect(await registered(["CrewAI"])).toEqual([[6, 3]]);
     expect(() => buildEmbedderFromDict({ provider: "custom", config: {} })).toThrow("embedding_callable");
+    expect(() => buildEmbedderFromDict({ provider: "unknown-provider" as "openai", config: {} }))
+      .toThrow("Unknown provider: unknown-provider");
+    expect(() => buildEmbedderFromDict({ config: { api_key: "test-key" } } as unknown as { provider: "openai"; config: Record<string, unknown> }))
+      .toThrow("Unknown provider: undefined");
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
       ok: true,
       json: () => Promise.resolve({ embedding: [0.1, 0.2, 0.3] }),
