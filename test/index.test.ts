@@ -15430,6 +15430,7 @@ describe("core crew runtime", () => {
   });
 
   it("short-circuits AgentExecutor native tool execution for result_as_answer tools", () => {
+    const callCounts = { slowOne: 0, slowTwo: 0 };
     const finalTool = new StructuredTool({
       name: "slow_one",
       description: "Return final",
@@ -15441,8 +15442,14 @@ describe("core crew runtime", () => {
     });
     Object.assign(executor, {
       _available_functions: {
-        slow_one: () => "one",
-        slow_two: () => "two",
+        slow_one: () => {
+          callCounts.slowOne += 1;
+          return "one";
+        },
+        slow_two: () => {
+          callCounts.slowTwo += 1;
+          return "two";
+        },
       },
     });
     executor.state.pending_tool_calls = [
@@ -15453,6 +15460,7 @@ describe("core crew runtime", () => {
     expect(executor.execute_native_tool()).toBe("tool_result_is_final");
     expect(executor.state.current_answer).toBeInstanceOf(AgentFinish);
     expect((executor.state.current_answer as AgentFinish).output).toBe("one");
+    expect(callCounts).toEqual({ slowOne: 1, slowTwo: 0 });
     expect(executor.state.pending_tool_calls).toEqual([]);
     expect(executor.state.messages[0]).toEqual({
       role: "assistant",
@@ -15462,6 +15470,43 @@ describe("core crew runtime", () => {
         { id: "call_2", type: "function", function: { name: "slow_two", arguments: "{}" } },
       ],
     });
+    expect(executor.state.messages.filter((message) => message.role === "tool")).toEqual([
+      { role: "tool", name: "slow_one", content: "one", tool_call_id: "call_1" },
+    ]);
+  });
+
+  it("short-circuits AgentExecutor native execution for upstream result_as_answer original tools", () => {
+    const callCounts = { slowOne: 0, slowTwo: 0 };
+    const resultTool = {
+      name: "slow_one",
+      result_as_answer: true,
+      resultAsAnswer: false,
+      run: () => "tool fallback",
+    } as unknown as BaseTool;
+    const executor = new AgentExecutor({
+      originalTools: [resultTool],
+    });
+    Object.assign(executor, {
+      _available_functions: {
+        slow_one: () => {
+          callCounts.slowOne += 1;
+          return "one";
+        },
+        slow_two: () => {
+          callCounts.slowTwo += 1;
+          return "two";
+        },
+      },
+    });
+    executor.state.pending_tool_calls = [
+      { id: "call_1", function: { name: "slow_one", arguments: "{}" } },
+      { id: "call_2", function: { name: "slow_two", arguments: "{}" } },
+    ];
+
+    expect(executor.execute_native_tool()).toBe("tool_result_is_final");
+    expect(executor.state.current_answer).toBeInstanceOf(AgentFinish);
+    expect((executor.state.current_answer as AgentFinish).output).toBe("one");
+    expect(callCounts).toEqual({ slowOne: 1, slowTwo: 0 });
     expect(executor.state.messages.filter((message) => message.role === "tool")).toEqual([
       { role: "tool", name: "slow_one", content: "one", tool_call_id: "call_1" },
     ]);
