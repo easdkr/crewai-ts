@@ -21628,6 +21628,56 @@ describe("flow runtime", () => {
     ]);
   });
 
+  it("routes human feedback self-loop outcomes back to the same listener", async () => {
+    const executionOrder: string[] = [];
+
+    class SelfLoopReviewFlow extends Flow<{ events: string[] }> {
+      constructor() {
+        super({ initialState: { events: [] } });
+      }
+
+      generate() {
+        executionOrder.push("generate");
+        return "draft";
+      }
+
+      review() {
+        executionOrder.push("review");
+        return `draft-${String(executionOrder.filter((event) => event === "review").length)}`;
+      }
+
+      publish() {
+        executionOrder.push("publish");
+        return "published";
+      }
+    }
+
+    const feedbackResponses = ["revise", "revise", "approved"];
+    const initializers = [
+      decorateMethod(SelfLoopReviewFlow, "generate", start() as unknown as Decorator),
+      decorateMethod(SelfLoopReviewFlow, "review", humanFeedback({
+        message: "Review",
+        emit: ["revise", "approved"],
+        defaultOutcome: "approved",
+        provider: {
+          requestFeedback: () => feedbackResponses.shift() ?? "approved",
+        },
+      }) as unknown as Decorator),
+      decorateMethod(SelfLoopReviewFlow, "review", listen(or_("generate", "revise")) as unknown as Decorator),
+      decorateMethod(SelfLoopReviewFlow, "publish", listen("approved") as unknown as Decorator),
+    ];
+    const flow = new SelfLoopReviewFlow();
+    initializers.forEach((initializer) => {
+      initializer.call(flow);
+    });
+
+    const output = await flow.kickoff();
+
+    expect(output).toBe("published");
+    expect(executionOrder).toEqual(["generate", "review", "review", "review", "publish"]);
+    expect(flow.humanFeedbackHistory.map((feedback) => feedback.outcome)).toEqual(["revise", "revise", "approved"]);
+  });
+
   it("preserves terminal flow human feedback method output while tracking routing outcome", async () => {
     class FinalReviewFlow extends Flow {
       generate() {

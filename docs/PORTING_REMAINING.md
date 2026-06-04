@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 996 passing tests.
+- Test suite: 997 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -470,6 +470,7 @@ When more goal budget is available, continue from the behavioral parity audits b
 - Flow HITL resume now restores serialized LLM config dictionaries or model strings into local LLM clients, prefers decorator-preserved live LLM objects when available, and falls back to serialized pending context when the decorator only preserved a string model, so persisted pending feedback can still use LLM-backed routing collapse after reload without losing provider credentials/config.
 - Flow method `@persist` wrappers now preserve Flow and HITL decorator metadata, including the upstream `_human_feedback_llm` live LLM attribute used by resumed human-feedback routing.
 - Flow HITL pause now auto-creates `SQLiteFlowPersistence` when a provider raises `HumanFeedbackPending` without an existing persistence backend, preserving pending feedback context and state for later resume.
+- Flow HITL routing fallback now mirrors upstream self-loop approval behavior: when the LLM outcome collapse is unavailable or unstructured, emitted outcomes fall back to deterministic feedback/default-outcome matching instead of always choosing the first emitted route, so repeated rejection loops can terminate on approval.
 - `toSerializable` now mirrors upstream BaseModel serialization by honoring `modelDump` / `model_dump` output before object entry serialization, with recursive exclude handling and upstream-style Python repr output when max-depth truncation is reached.
   - `Flow.kickoff` / `kickoffAsync` now support upstream-style `restore_from_state_id` / `restoreFromStateId` fork hydration from persisted state without reusing the source flow ID, silently fall back to default kickoff when the restore source is missing, and reject conflicting checkpoint restores.
   - `Flow.kickoff` / `kickoffAsync` now reload persisted state from `inputs.id` before applying non-id input overrides, matching upstream default-value override semantics.

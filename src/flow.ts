@@ -2940,15 +2940,15 @@ async function collapseFeedbackToOutcomeAsync(
       responseModel: { name: "FeedbackOutcome", outcomes: [...emit] },
       metadata: { model: humanFeedbackLlmModelName(llm) ?? "human-feedback" },
     });
-    return matchFeedbackOutcome(response, emit) ?? emit[0] ?? null;
+    return matchFeedbackOutcome(response, emit) ?? collapseFeedbackToOutcome(feedback, emit, defaultOutcome);
   } catch {
     try {
       const response = await callLLM(llmClient, [{ role: "user", content: prompt }], {
         metadata: { model: humanFeedbackLlmModelName(llm) ?? "human-feedback" },
       });
-      return matchFeedbackOutcome(response, emit) ?? emit[0] ?? null;
+      return matchFeedbackOutcome(response, emit) ?? collapseFeedbackToOutcome(feedback, emit, defaultOutcome);
     } catch {
-      return emit[0] ?? null;
+      return collapseFeedbackToOutcome(feedback, emit, defaultOutcome);
     }
   }
 }
