@@ -19575,6 +19575,31 @@ describe("flow runtime", () => {
     expect(definition.diagnostics).toEqual([]);
   });
 
+  it("infers FlowDefinition router emit events from string return constants", () => {
+    class InferredEmitDefinitionFlow extends Flow {
+      begin() {
+        return "started";
+      }
+
+      decide() {
+        const fallback = "manual";
+        const routes = { ok: "approved", no: "rejected" };
+        return Math.random() > 0.5 ? routes.ok : fallback;
+      }
+    }
+
+    const initializers = [
+      decorateMethod(InferredEmitDefinitionFlow, "begin", start() as unknown as Decorator),
+      decorateMethod(InferredEmitDefinitionFlow, "decide", router("begin") as unknown as Decorator),
+    ];
+    const flow = new InferredEmitDefinitionFlow();
+    initializers.forEach((initializer) => {
+      initializer.call(flow);
+    });
+
+    expect(InferredEmitDefinitionFlow.flow_definition().methods.decide.emit).toEqual(["approved", "rejected", "manual"]);
+  });
+
   it("builds FlowDefinition methods from upstream static DSL metadata fragments", () => {
     class StaticMetadataDefinitionFlow extends Flow {
       begin() {

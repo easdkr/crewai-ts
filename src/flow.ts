@@ -3317,7 +3317,7 @@ export function buildFlowDefinition(
       listen: staticDefinition?.listen ?? flowDefinitionListen(methodEntries),
       router: Boolean(staticDefinition?.router) || methodEntries.some((entry) => entry.kind === "router") || Boolean(humanFeedback?.emit),
       humanFeedback: humanFeedback ?? staticDefinition?.humanFeedback ?? null,
-      emit: humanFeedback?.emit ? null : staticDefinition?.emit ?? flowDefinitionEmit(methodEntries),
+      emit: humanFeedback?.emit ? null : staticDefinition?.emit ?? flowDefinitionEmit(methodEntries, staticMethodValues.get(methodName)),
       persist: flowMethodPersistenceDefinition(instanceOrConstructor, methodName) ?? staticDefinition?.persist ?? null,
     });
     methods[methodName] = definition;
@@ -4789,9 +4789,16 @@ function flowDefinitionListen(entries: readonly FlowMethodEntry[]): FlowDefiniti
   return listener?.condition ? flowDefinitionCondition(listener.condition) : null;
 }
 
-function flowDefinitionEmit(entries: readonly FlowMethodEntry[]): readonly string[] | null {
+function flowDefinitionEmit(entries: readonly FlowMethodEntry[], methodValue: unknown = null): readonly string[] | null {
   const routerEntry = entries.find((entry) => entry.kind === "router" && entry.emit && entry.emit.length > 0);
-  return routerEntry?.emit ? uniqueStrings(routerEntry.emit) : null;
+  if (routerEntry?.emit) {
+    return uniqueStrings(routerEntry.emit);
+  }
+  if (!entries.some((entry) => entry.kind === "router")) {
+    return null;
+  }
+  const constants = getPossibleReturnConstants(methodValue);
+  return constants ? uniqueStrings(constants) : null;
 }
 
 function flowDefinitionCondition(condition: FlowConditionInput): FlowDefinitionCondition {
