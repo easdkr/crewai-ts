@@ -511,6 +511,7 @@ import {
   context_window_size_for_model,
   create_llm,
   detectProvider,
+  http_url_adapter,
   extract_provider,
   extract_tool_info,
   extractInputFilesFromInputs,
@@ -7792,6 +7793,17 @@ describe("a2a utilities", () => {
         },
       },
     });
+  });
+
+  it("validates upstream A2A HttpUrl adapter payloads", () => {
+    expect(http_url_adapter.validate_python("https://agent.example.com/a2a", { strict: true }))
+      .toBe("https://agent.example.com/a2a");
+    expect(http_url_adapter.validatePython("http://localhost:8080/a2a/callback"))
+      .toBe("http://localhost:8080/a2a/callback");
+    expect(() => http_url_adapter.validate_python("ftp://agent.example.com/a2a", { strict: true }))
+      .toThrow("Invalid HTTP URL");
+    expect(() => http_url_adapter.validate_python("/relative/path", { strict: true }))
+      .toThrow("Invalid HTTP URL");
   });
 
   it("extracts A2A task and agent metadata like upstream validators", () => {

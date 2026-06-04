@@ -3032,7 +3032,26 @@ export function process_status_update(update: unknown): unknown {
   return update;
 }
 
-export const http_url_adapter = Object.freeze({ kind: "http_url_adapter" });
+function validateHttpUrl(value: unknown): string {
+  if (typeof value !== "string" && !(value instanceof URL)) {
+    throw new Error("Invalid HTTP URL: expected a string or URL instance.");
+  }
+  let parsed: URL;
+  try {
+    parsed = value instanceof URL ? value : new URL(value);
+  } catch {
+    throw new Error(`Invalid HTTP URL: ${String(value)}`);
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new Error(`Invalid HTTP URL: ${String(value)}`);
+  }
+  return parsed.toString();
+}
+
+export const http_url_adapter = Object.freeze({
+  validatePython: validateHttpUrl,
+  validate_python: validateHttpUrl,
+});
 
 export type AgentCardSigningAlgorithm =
   | "RS256"
