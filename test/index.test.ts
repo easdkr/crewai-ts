@@ -943,6 +943,8 @@ import {
   processLlmResponse,
   showAgentLogs,
   summarizeMessages,
+  clearNamedLocks,
+  getLockName,
   lock,
   parseToml,
   parseAgentOutput,
@@ -2722,6 +2724,29 @@ describe("lock utilities", () => {
       throw new Error("boom");
     })).rejects.toThrow("boom");
     await expect(lock("shared", () => "recovered")).resolves.toBe("recovered");
+  });
+
+  it("uses upstream-style lock names and recovers after acquisition timeouts", async () => {
+    clearNamedLocks();
+    const firstName = getLockName("redis_test");
+    const secondName = getLockName("redis_test");
+    expect(firstName).toBe(secondName);
+    expect(firstName).toMatch(/^crewai:[a-f0-9]{32}$/);
+
+    let releaseHeldLock!: () => void;
+    const held = lock("timeout-test", () => new Promise<void>((resolve) => {
+      releaseHeldLock = resolve;
+    }));
+
+    await delay(1);
+    await expect(lock("timeout-test", () => "late", { timeout: 1 })).rejects.toThrow(
+      `Failed to acquire lock '${getLockName("timeout-test")}' (timeout=1ms).`,
+    );
+
+    releaseHeldLock();
+    await held;
+    await expect(lock("timeout-test", () => "recovered", { timeout: 1 })).resolves.toBe("recovered");
+    clearNamedLocks();
   });
 });
 
