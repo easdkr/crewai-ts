@@ -27878,6 +27878,24 @@ describe("LLM providers", () => {
     expect(seen[0]?.responseModel).toBe(responseModel);
   });
 
+  it("rejects tasks with multiple structured output modes", () => {
+    expect(() => new Task({
+      description: "Score the title",
+      expectedOutput: "The score of the title.",
+      outputJson: true,
+      outputPydantic: (raw) => ({ raw }),
+    })).toThrow("Only one output type can be set, either output_pydantic or output_json.");
+
+    expect(() => new Task({
+      description: "Score from config",
+      expectedOutput: "The score of the title.",
+      config: {
+        output_json: true,
+        output_pydantic: (raw: string) => ({ raw }),
+      },
+    })).toThrow("Only one output type can be set, either output_pydantic or output_json.");
+  });
+
   it("converts raw task output through outputConverter before JSON export", async () => {
     const agentInstance = new Agent({
       role: "Researcher",
