@@ -13383,6 +13383,36 @@ describe("core crew runtime", () => {
     expect(crewInstance.usage_metrics.successfulRequests).toBe(2);
   });
 
+  it("accepts upstream direct input lists for async kickoff-for-each docs examples", async () => {
+    const analyst = new Agent({
+      role: "Data Analyst",
+      goal: "Analyze data",
+      backstory: "Careful analyst",
+      llm: (messages) => `average:${messages.at(-1)?.content ?? ""}`,
+    });
+    const taskInstance = new Task({
+      description: "Analyze ages: {ages}",
+      expectedOutput: "Average age",
+      agent: analyst,
+    });
+    const crewInstance = new Crew({ agents: [analyst], tasks: [taskInstance] });
+    const datasets = [
+      { ages: [25, 30, 35] },
+      { ages: [20, 22, 24] },
+    ];
+
+    const nativeOutputs = await crewInstance.akickoff_for_each(datasets);
+    const threadOutputs = await crewInstance.kickoff_for_each_async(datasets);
+    const syncOutputs = await crewInstance.kickoff_for_each(datasets);
+
+    expect(nativeOutputs.map((output) => output.raw)).toEqual([
+      expect.stringContaining("Analyze ages: [25, 30, 35]"),
+      expect.stringContaining("Analyze ages: [20, 22, 24]"),
+    ]);
+    expect(threadOutputs.map((output) => output.raw)).toEqual(nativeOutputs.map((output) => output.raw));
+    expect(syncOutputs.map((output) => output.raw)).toEqual(nativeOutputs.map((output) => output.raw));
+  });
+
   it("exposes upstream Task lifecycle compatibility methods", async () => {
     const prompts: string[] = [];
     const agentInstance = new Agent({

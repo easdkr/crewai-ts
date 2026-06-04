@@ -57,6 +57,8 @@ export type KickoffForEachOptions = {
   input_files?: TaskInputFiles;
 };
 
+export type KickoffForEachInput = KickoffForEachOptions | readonly InputValues[];
+
 export type TaskExecutionLog = {
   task: {
     id: string;
@@ -850,13 +852,14 @@ export class Crew extends FlowTrackable {
     });
   }
 
-  async kickoffForEach(options: KickoffForEachOptions): Promise<CrewOutput[]> {
-    const inputsList = validateKickoffForEachInputs(options.inputs);
+  async kickoffForEach(options: KickoffForEachInput): Promise<CrewOutput[]> {
+    const normalizedOptions = normalizeKickoffForEachOptions(options);
+    const inputsList = validateKickoffForEachInputs(normalizedOptions.inputs);
     if (this.stream) {
       return this.createForEachStreamingOutputs(inputsList, async (crew, inputs) => await crew.kickoff({
         inputs,
-        ...(options.inputFiles ?? options.input_files
-          ? { inputFiles: options.inputFiles ?? options.input_files }
+        ...(normalizedOptions.inputFiles ?? normalizedOptions.input_files
+          ? { inputFiles: normalizedOptions.inputFiles ?? normalizedOptions.input_files }
           : {}),
       })) as unknown as CrewOutput[];
     }
@@ -866,8 +869,8 @@ export class Crew extends FlowTrackable {
       const crew = this.copy();
       const output = await crew.kickoff({
         inputs,
-        ...(options.inputFiles ?? options.input_files
-          ? { inputFiles: options.inputFiles ?? options.input_files }
+        ...(normalizedOptions.inputFiles ?? normalizedOptions.input_files
+          ? { inputFiles: normalizedOptions.inputFiles ?? normalizedOptions.input_files }
           : {}),
       });
       totalUsage = addUsageMetrics(totalUsage, output.tokenUsage);
@@ -878,17 +881,18 @@ export class Crew extends FlowTrackable {
     return outputs;
   }
 
-  async kickoff_for_each(options: KickoffForEachOptions): Promise<CrewOutput[]> {
+  async kickoff_for_each(options: KickoffForEachInput): Promise<CrewOutput[]> {
     return await this.kickoffForEach(options);
   }
 
-  async kickoffForEachAsync(options: KickoffForEachOptions): Promise<CrewOutput[]> {
-    const inputsList = validateKickoffForEachInputs(options.inputs);
+  async kickoffForEachAsync(options: KickoffForEachInput): Promise<CrewOutput[]> {
+    const normalizedOptions = normalizeKickoffForEachOptions(options);
+    const inputsList = validateKickoffForEachInputs(normalizedOptions.inputs);
     if (this.stream) {
       return this.createForEachStreamingOutputs(inputsList, async (crew, inputs) => await crew.kickoffAsync({
         inputs,
-        ...(options.inputFiles ?? options.input_files
-          ? { inputFiles: options.inputFiles ?? options.input_files }
+        ...(normalizedOptions.inputFiles ?? normalizedOptions.input_files
+          ? { inputFiles: normalizedOptions.inputFiles ?? normalizedOptions.input_files }
           : {}),
       })) as unknown as CrewOutput[];
     }
@@ -897,8 +901,8 @@ export class Crew extends FlowTrackable {
         const crew = this.copy();
         return await crew.kickoffAsync({
           inputs,
-          ...(options.inputFiles ?? options.input_files
-            ? { inputFiles: options.inputFiles ?? options.input_files }
+          ...(normalizedOptions.inputFiles ?? normalizedOptions.input_files
+            ? { inputFiles: normalizedOptions.inputFiles ?? normalizedOptions.input_files }
             : {}),
         });
       }),
@@ -911,17 +915,18 @@ export class Crew extends FlowTrackable {
     return outputs;
   }
 
-  async kickoff_for_each_async(options: KickoffForEachOptions): Promise<CrewOutput[]> {
+  async kickoff_for_each_async(options: KickoffForEachInput): Promise<CrewOutput[]> {
     return await this.kickoffForEachAsync(options);
   }
 
-  async akickoffForEach(options: KickoffForEachOptions): Promise<CrewOutput[]> {
-    const inputsList = validateKickoffForEachInputs(options.inputs);
+  async akickoffForEach(options: KickoffForEachInput): Promise<CrewOutput[]> {
+    const normalizedOptions = normalizeKickoffForEachOptions(options);
+    const inputsList = validateKickoffForEachInputs(normalizedOptions.inputs);
     if (this.stream) {
       return this.createForEachStreamingOutputs(inputsList, async (crew, inputs) => await crew.akickoff({
         inputs,
-        ...(options.inputFiles ?? options.input_files
-          ? { inputFiles: options.inputFiles ?? options.input_files }
+        ...(normalizedOptions.inputFiles ?? normalizedOptions.input_files
+          ? { inputFiles: normalizedOptions.inputFiles ?? normalizedOptions.input_files }
           : {}),
       })) as unknown as CrewOutput[];
     }
@@ -930,8 +935,8 @@ export class Crew extends FlowTrackable {
         const crew = this.copy();
         return await crew.akickoff({
           inputs,
-          ...(options.inputFiles ?? options.input_files
-            ? { inputFiles: options.inputFiles ?? options.input_files }
+          ...(normalizedOptions.inputFiles ?? normalizedOptions.input_files
+            ? { inputFiles: normalizedOptions.inputFiles ?? normalizedOptions.input_files }
             : {}),
         });
       }),
@@ -944,7 +949,7 @@ export class Crew extends FlowTrackable {
     return outputs;
   }
 
-  async akickoff_for_each(options: KickoffForEachOptions): Promise<CrewOutput[]> {
+  async akickoff_for_each(options: KickoffForEachInput): Promise<CrewOutput[]> {
     return await this.akickoffForEach(options);
   }
 
@@ -2986,6 +2991,13 @@ function validateKickoffForEachInputs(inputs: readonly unknown[]): readonly Inpu
     }
   }
   return inputs as readonly InputValues[];
+}
+
+function normalizeKickoffForEachOptions(options: KickoffForEachInput): KickoffForEachOptions {
+  if (Array.isArray(options)) {
+    return { inputs: options as readonly InputValues[] };
+  }
+  return options as KickoffForEachOptions;
 }
 
 function withTokenUsage(output: CrewOutput, tokenUsage: UsageMetrics): CrewOutput {
