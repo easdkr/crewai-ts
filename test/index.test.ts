@@ -12627,6 +12627,68 @@ describe("RAG configuration and factories", () => {
     });
   });
 
+  it("resets Qdrant collections with upstream sync and async delete payloads", async () => {
+    const syncDeleteCollection = vi.fn();
+    const syncGetCollections = vi.fn(() => ({
+      collections: [{ name: "collection1" }, { name: "collection2" }, "collection3"],
+    }));
+    const syncClient = new QdrantClient({
+      collection_exists: vi.fn(() => true),
+      get_collections: syncGetCollections,
+      delete_collection: syncDeleteCollection,
+      query_points: vi.fn(() => ({ points: [] })),
+    });
+
+    syncClient.reset();
+
+    expect(syncGetCollections).toHaveBeenCalledOnce();
+    expect(syncDeleteCollection).toHaveBeenCalledTimes(3);
+    expect(syncDeleteCollection).toHaveBeenCalledWith({ collection_name: "collection1" });
+    expect(syncDeleteCollection).toHaveBeenCalledWith({ collection_name: "collection2" });
+    expect(syncDeleteCollection).toHaveBeenCalledWith({ collection_name: "collection3" });
+
+    const noCollectionDelete = vi.fn();
+    const noCollectionClient = new QdrantClient({
+      collection_exists: vi.fn(() => true),
+      get_collections: vi.fn(() => ({ collections: [] })),
+      delete_collection: noCollectionDelete,
+      query_points: vi.fn(() => ({ points: [] })),
+    });
+    noCollectionClient.reset();
+    expect(noCollectionDelete).not.toHaveBeenCalled();
+
+    const asyncDeleteCollection = vi.fn(async () => {
+      await Promise.resolve();
+    });
+    const asyncGetCollections = vi.fn(async () => await Promise.resolve({
+      collections: [{ name: "collection1" }, { name: "collection2" }, { name: "collection3" }],
+    }));
+    const asyncClient = new QdrantClient({
+      aquery_points: async () => await Promise.resolve({ points: [] }),
+      collection_exists: async () => await Promise.resolve(true),
+      get_collections: asyncGetCollections,
+      delete_collection: asyncDeleteCollection,
+    });
+
+    await asyncClient.areset();
+
+    expect(asyncGetCollections).toHaveBeenCalledOnce();
+    expect(asyncDeleteCollection).toHaveBeenCalledTimes(3);
+    expect(asyncDeleteCollection).toHaveBeenCalledWith({ collection_name: "collection1" });
+    expect(asyncDeleteCollection).toHaveBeenCalledWith({ collection_name: "collection2" });
+    expect(asyncDeleteCollection).toHaveBeenCalledWith({ collection_name: "collection3" });
+
+    const asyncEmptyDelete = vi.fn();
+    const asyncEmptyClient = new QdrantClient({
+      aquery_points: async () => await Promise.resolve({ points: [] }),
+      collection_exists: async () => await Promise.resolve(true),
+      get_collections: async () => await Promise.resolve({ collections: [] }),
+      delete_collection: asyncEmptyDelete,
+    });
+    await asyncEmptyClient.areset();
+    expect(asyncEmptyDelete).not.toHaveBeenCalled();
+  });
+
   it("raises upstream Qdrant client method mismatch errors for wrong sync or async clients", async () => {
     const syncClient = new QdrantClient(new FakeQdrantClient(), (text: string) => [text.length]);
     const asyncClient = new QdrantClient(new FakeAsyncQdrantClient(), (text: string) => [text.length]);
