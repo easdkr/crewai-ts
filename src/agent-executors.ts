@@ -2533,7 +2533,12 @@ export class StepExecutor {
         return String(parsed.output);
       }
       toolCallsMade.push(parsed.tool);
-      const toolResult = await this._executeTextToolWithEvents(parsed);
+      let toolResult: string;
+      try {
+        toolResult = await this._executeTextToolWithEvents(parsed);
+      } catch (error) {
+        toolResult = `Error executing tool: ${executorErrorMessage(error)}`;
+      }
       lastToolResult = toolResult;
       messages.push({ role: "assistant", content: answerText });
       messages.push(this._buildObservationMessage(toolResult));

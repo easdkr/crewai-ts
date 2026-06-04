@@ -13856,6 +13856,34 @@ describe("core crew runtime", () => {
     expect(toolCallsMade).toEqual(["Search Tool"]);
     expect(messages.some((message) => typeof message.content === "string" && message.content.includes("Observation: searched:CrewAI"))).toBe(true);
 
+    const failingTextTool = new StructuredTool({
+      name: "Failing Search",
+      description: "Fails",
+      func: () => {
+        throw new Error("text tool failed");
+      },
+    });
+    const failingTextResponses = [
+      "Thought: try failing\nAction: Failing Search\nAction Input: {}",
+      "Thought: done\nFinal Answer: recovered",
+    ];
+    const failingTextExecutor = new StepExecutor({
+      agent: new Agent({
+        role: "Researcher",
+        goal: "Recover",
+        backstory: "Careful analyst",
+        llm: () => failingTextResponses.shift() ?? "Final Answer: fallback",
+      }),
+      tools: [failingTextTool],
+    });
+    const failingTextMessages: LLMMessage[] = [];
+    const failingTextCallsMade: string[] = [];
+    await expect(failingTextExecutor._execute_text_parsed(failingTextMessages, failingTextCallsMade)).resolves.toBe("recovered");
+    expect(failingTextCallsMade).toEqual(["Failing Search"]);
+    expect(failingTextMessages.some((message) => (
+      typeof message.content === "string" && message.content.includes("Observation: Error executing tool: text tool failed")
+    ))).toBe(true);
+
     const nativeMessages: unknown[] = [];
     const nativeCallsMade: string[] = [];
     await expect(executor._execute_native_tool_calls([
