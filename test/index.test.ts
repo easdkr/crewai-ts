@@ -31422,6 +31422,30 @@ describe("crew planning", () => {
     expect(output.list_of_plans_per_task[0]?.plan).toBe("Read knowledge and answer.");
   });
 
+  it("reads upstream agent knowledge_sources directly in crew planning summaries", () => {
+    const taskInstance = {
+      description: "Explain AI systems",
+      expectedOutput: "A clear explanation",
+      agent: {
+        role: "AI Researcher",
+        goal: "Explain AI",
+        tools: [],
+        knowledge_sources: [
+          { content: "AI systems require careful training and validation." },
+        ],
+      },
+      tools: [],
+    } as unknown as Task;
+    const planner = new CrewPlanner([taskInstance], null);
+
+    expect(CrewPlanner._get_agent_knowledge(taskInstance)).toEqual([
+      "AI systems require careful training and validation.",
+    ]);
+    expect(planner._create_tasks_summary()).toContain(
+      '"agent_knowledge": "[\\"AI systems require careful training and validation.\\"]"',
+    );
+  });
+
   it("uses a planning LLM to add per-task plans to execution prompts", async () => {
     const prompts: string[] = [];
     const plannerCalls: string[] = [];

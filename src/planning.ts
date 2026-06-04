@@ -123,7 +123,11 @@ export class CrewPlanner {
   }
 
   static _get_agent_knowledge(task: Task): string[] {
-    const sources = task.agent?.knowledge?.sources ?? [];
+    const agentRecord = task.agent as unknown as { knowledge_sources?: unknown; knowledgeSources?: unknown } | null | undefined;
+    const directSources = agentRecord?.knowledge_sources ?? agentRecord?.knowledgeSources;
+    const sources = Array.isArray(directSources) && directSources.length > 0
+      ? directSources
+      : task.agent?.knowledge?.sources ?? [];
     return sources.map((source) => {
       const content = (source as { content?: unknown }).content;
       if (typeof content === "string") {

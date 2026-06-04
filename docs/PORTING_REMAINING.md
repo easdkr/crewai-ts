@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 963 passing tests.
+- Test suite: 964 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -356,6 +356,7 @@ When more goal budget is available, continue from the behavioral parity audits b
 - `CrewAgentExecutor._execute_single_native_tool_call` now applies before/after tool hooks to direct native calls, including upstream-style blocked results that skip the tool body while still flowing through after-hook auditing.
 - `AgentExecutor` replanning now builds previous-execution context, temporarily enhances the task description for the planner, preserves completed/failed history, and replaces only pending todos when a ready structured plan is returned.
 - Crew planning now has default-gate coverage for upstream issue #3953: returned plans are matched by `task_number` rather than response order, duplicate task numbers keep the first plan, and tasks with missing plans keep their original task prompt section.
+- Crew planning summaries now read upstream direct `agent.knowledge_sources` as well as initialized local knowledge stores, preserving deterministic agent knowledge context in planner prompts.
 - `AgentExecutor.call_llm_and_parse` and `call_llm_native_tools` now execute deterministic LLM calls, enforce local RPM hooks, omit structured `response_model` requests while tools are active, and route native tool-call lists into `pending_tool_calls`.
 - Prompt generation now has default-gate coverage for upstream no-thought-leakage behavior: no-tool and native-tool task prompts avoid ReAct `Thought:` / `Action Input:` instructions and job-depends/use-format pressure, while ReAct prompts with non-native tools still retain the tool-action format.
 - `AgentExecutor.observe_step_result` now respects upstream `PlanningConfig.observe_steps` and `reasoning_effort`: medium/high run planner observation by default, low and explicit `observe_steps=false` use heuristic observation, and observation audit logs record whether an LLM observation occurred.
