@@ -260,6 +260,7 @@ import {
   LLMGuardrailStartedEvent,
   LLMStreamChunkEvent,
   LLMThinkingChunkEvent,
+  LocalFileUploader,
   OAuth2AuthorizationCode,
   OAuth2ClientCredentials,
   OAuth2ServerAuth,
@@ -32365,6 +32366,85 @@ describe("task input files", () => {
     expect(String(textBlock.text)).toContain("Input files (content already loaded in conversation):");
     expect(llmInstance.firstToolNames).toContain("read_file");
     expect(output.raw).toBe("video fallback done");
+  });
+
+  it("uploads crew kickoff input files when multimodal LLMs prefer uploads", async () => {
+    class UploadingMultimodalLLM extends BaseLLM {
+      readonly uploader = new LocalFileUploader("openai");
+      formattedMessages: readonly LLMMessage[] = [];
+      capturedToolNames: readonly string[] = [];
+
+      constructor() {
+        super({
+          model: "openai/gpt-4o-mini",
+          provider: "openai",
+          preferUpload: true,
+        });
+      }
+
+      override supportsMultimodal(): boolean {
+        return true;
+      }
+
+      override getFileUploader(): LocalFileUploader {
+        return this.uploader;
+      }
+
+      override call(messages: readonly LLMMessage[], options?: LLMCallOptions): LLMResponse {
+        this.formattedMessages = this.formatMessages(messages);
+        this.capturedToolNames = options?.tools?.map((toolInstance) => toolInstance.name) ?? [];
+        return "uploaded done";
+      }
+    }
+
+    const llmInstance = new UploadingMultimodalLLM();
+    const agentInstance = new Agent({
+      role: "Upload Reader",
+      goal: "Read uploaded files",
+      backstory: "Careful reader",
+      llm: llmInstance,
+    });
+    const taskInstance = new Task({
+      description: "Summarize uploaded files",
+      expectedOutput: "Summary",
+      agent: agentInstance,
+    });
+    const imageBytes = Buffer.concat([
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      Buffer.from("upload-image"),
+    ]);
+    const chart = new ImageFile({
+      source: new FileBytes({ data: imageBytes, filename: "chart.png" }),
+    });
+
+    const output = await new Crew({ agents: [agentInstance], tasks: [taskInstance] }).kickoff({
+      input_files: { chart },
+    });
+
+    const formattedUserMessage = llmInstance.formattedMessages.findLast((message) => message.role === "user");
+    expect(formattedUserMessage?.files).toBeUndefined();
+    const formattedContent: unknown = formattedUserMessage?.content;
+    expect(Array.isArray(formattedContent)).toBe(true);
+    if (!Array.isArray(formattedContent)) {
+      throw new Error("Expected uploaded content blocks");
+    }
+    expect(formattedContent).toHaveLength(2);
+    const textBlock = formattedContent[0] as { type?: unknown; text?: unknown };
+    expect(textBlock.type).toBe("text");
+    expect(String(textBlock.text)).toContain("Input files (content already loaded in conversation):");
+    expect(formattedContent[1]).toEqual(
+      {
+        type: "file",
+        source: "upload",
+        name: "chart",
+        filename: "chart.png",
+        file_id: "openai-file-1",
+        content_type: "image/png",
+      },
+    );
+    expect(llmInstance.uploader.uploads).toHaveLength(1);
+    expect(llmInstance.capturedToolNames).toContain("read_file");
+    expect(output.raw).toBe("uploaded done");
   });
 
   it("extracts structured input files from crew kickoff inputs", async () => {
