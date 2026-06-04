@@ -982,17 +982,17 @@ export class ToolUsageStartedEvent extends BaseEvent {
   readonly tool_class: string | null;
 
   constructor(options: {
-    toolName: string;
+    toolName?: string;
     tool_name?: string;
-    toolArgs: Record<string, unknown> | string;
+    toolArgs?: Record<string, unknown> | string;
     tool_args?: Record<string, unknown> | string;
     toolClass?: string | null;
     tool_class?: string | null;
   } & Record<string, unknown>) {
     super({ type: "tool_usage_started", sourceType: "tool" });
-    this.toolName = options.toolName;
+    this.toolName = options.toolName ?? options.tool_name ?? "";
     this.tool_name = this.toolName;
-    this.toolArgs = options.toolArgs;
+    this.toolArgs = options.toolArgs ?? options.tool_args ?? {};
     this.tool_args = this.toolArgs;
     this.toolClass = options.toolClass ?? options.tool_class ?? null;
     this.tool_class = this.toolClass;

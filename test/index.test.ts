@@ -5041,6 +5041,26 @@ describe("crew tool and memory lifecycle events", () => {
     });
   });
 
+  it("accepts upstream snake_case payloads for started tool usage events", () => {
+    const started = new ToolUsageStartedEvent({
+      tool_name: "search",
+      tool_args: { query: "decorators" },
+      tool_class: "SearchTool",
+      run_attempts: 2,
+    });
+
+    expect(started).toMatchObject({
+      type: "tool_usage_started",
+      toolName: "search",
+      tool_name: "search",
+      toolArgs: { query: "decorators" },
+      tool_args: { query: "decorators" },
+      toolClass: "SearchTool",
+      tool_class: "SearchTool",
+      run_attempts: 2,
+    });
+  });
+
   it("exposes memory retrieval lifecycle events", () => {
     const started = new MemoryRetrievalStartedEvent({ task_id: "task-1" });
     const completed = new MemoryRetrievalCompletedEvent({
