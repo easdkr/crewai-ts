@@ -42,6 +42,7 @@ import { Memory, MemoryScope, MemorySlice, sanitize_scope_name, type MemoryMatch
 import {
   FlowConfigDefinition,
   FlowDefinition,
+  FlowDefinitionDiagnostic,
   FlowHumanFeedbackDefinition,
   FlowMethodDefinition,
   FlowPersistenceDefinition,
@@ -3246,12 +3247,13 @@ export function buildFlowDefinition(instanceOrConstructor: object | FlowMetadata
   const entries = getFlowMetadata(instanceOrConstructor);
   const feedbackMetadata = getHumanFeedbackMetadata(instanceOrConstructor);
   const methods: Record<string, FlowMethodDefinition> = {};
+  const diagnostics: FlowDefinition["diagnostics"] = [];
   const methodNames = [...new Set(entries.map((entry) => String(entry.name)))];
 
   for (const methodName of methodNames) {
     const methodEntries = entries.filter((entry) => String(entry.name) === methodName);
     const feedback = feedbackMetadata.get(methodName);
-    const humanFeedback = feedback ? flowHumanFeedbackDefinition(feedback) : null;
+    const humanFeedback = feedback ? flowHumanFeedbackDefinition(feedback, methodName, diagnostics) : null;
     const definition = new FlowMethodDefinition({
       start: flowDefinitionStart(methodEntries),
       listen: flowDefinitionListen(methodEntries),
@@ -3262,7 +3264,6 @@ export function buildFlowDefinition(instanceOrConstructor: object | FlowMetadata
     methods[methodName] = definition;
   }
 
-  const diagnostics: FlowDefinition["diagnostics"] = [];
   const definition = new FlowDefinition({
     name: typeof instanceOrConstructor === "function"
       ? instanceOrConstructor.name
@@ -3273,7 +3274,7 @@ export function buildFlowDefinition(instanceOrConstructor: object | FlowMetadata
     methods,
     diagnostics,
   });
-  definition.diagnostics = definition.validateContract();
+  definition.diagnostics = mergeFlowDefinitionDiagnostics(diagnostics, definition.validateContract());
   definition.logDiagnostics();
   return definition;
 }
@@ -4429,18 +4430,41 @@ function flowDefinitionCondition(condition: FlowConditionInput): FlowDefinitionC
   return values.length === 1 ? values[0] ?? "" : { or: values };
 }
 
-function flowHumanFeedbackDefinition(config: HumanFeedbackConfig): FlowHumanFeedbackDefinition {
+function flowHumanFeedbackDefinition(
+  config: HumanFeedbackConfig,
+  methodName: string,
+  diagnostics: FlowDefinition["diagnostics"],
+): FlowHumanFeedbackDefinition {
   return new FlowHumanFeedbackDefinition({
     message: config.message,
     emit: config.emit ? [...config.emit] : null,
     llm: serializeFlowDefinitionStaticValue(config.llm ?? null),
     defaultOutcome: config.defaultOutcome ?? config.default_outcome ?? null,
-    metadata: isRecord(config.metadata) ? { ...config.metadata } : null,
+    metadata: flowDefinitionMetadata(config.metadata, `methods.${methodName}.human_feedback.metadata`, diagnostics),
     provider: serializeFlowDefinitionStaticValue(config.provider ?? null),
     learn: config.learn ?? false,
     learnSource: config.learnSource ?? config.learn_source ?? "hitl",
     learnStrict: config.learnStrict ?? config.learn_strict ?? false,
   });
+}
+
+function flowDefinitionMetadata(
+  metadata: Record<string, unknown> | null | undefined,
+  path: string,
+  diagnostics: FlowDefinition["diagnostics"],
+): Record<string, unknown> | null {
+  if (!isRecord(metadata)) {
+    return null;
+  }
+  if (isJsonSerializable(metadata)) {
+    return { ...metadata };
+  }
+  diagnostics.push(new FlowDefinitionDiagnostic({
+    code: "non_serializable_value",
+    path,
+    message: "Value is not JSON serializable; storing a reference instead.",
+  }));
+  return serializeFlowDefinitionStaticValue(metadata) as Record<string, unknown>;
 }
 
 function flowStateDefinition(instanceOrConstructor: object | FlowMetadataTarget): FlowStateDefinition | null {
@@ -4538,12 +4562,66 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function isJsonSerializable(value: unknown): boolean {
+  if (!isJsonCompatibleValue(value)) {
+    return false;
+  }
   try {
     JSON.stringify(value);
     return true;
   } catch {
     return false;
   }
+}
+
+function isJsonCompatibleValue(value: unknown, seen = new Set<object>()): boolean {
+  if (value === null) {
+    return true;
+  }
+  const valueType = typeof value;
+  if (valueType === "number") {
+    return Number.isFinite(value);
+  }
+  if (valueType === "string" || valueType === "boolean") {
+    return true;
+  }
+  if (valueType === "undefined" || valueType === "function" || valueType === "symbol" || valueType === "bigint") {
+    return false;
+  }
+  if (typeof value !== "object") {
+    return false;
+  }
+  if (seen.has(value)) {
+    return false;
+  }
+  seen.add(value);
+  let compatible: boolean;
+  if (Array.isArray(value)) {
+    compatible = value.every((item) => isJsonCompatibleValue(item, seen));
+  } else if (isPlainRecord(value)) {
+    compatible = Object.values(value).every((item) => isJsonCompatibleValue(item, seen));
+  } else {
+    compatible = false;
+  }
+  seen.delete(value);
+  return compatible;
+}
+
+function mergeFlowDefinitionDiagnostics(
+  ...groups: readonly FlowDefinition["diagnostics"][]
+): FlowDefinition["diagnostics"] {
+  const diagnostics: FlowDefinition["diagnostics"] = [];
+  const seen = new Set<string>();
+  for (const group of groups) {
+    for (const diagnostic of group) {
+      const key = JSON.stringify([diagnostic.code, diagnostic.severity, diagnostic.path, diagnostic.message]);
+      if (seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      diagnostics.push(diagnostic);
+    }
+  }
+  return diagnostics;
 }
 
 function objectRef(value: unknown): string {

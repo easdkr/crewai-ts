@@ -18911,6 +18911,45 @@ describe("flow runtime", () => {
     expect(definition.diagnostics).toEqual([]);
   });
 
+  it("serializes non-json human feedback metadata as FlowDefinition refs", () => {
+    const marker = () => "marker";
+
+    class MetadataFlow extends Flow {
+      begin() {
+        return "started";
+      }
+
+      review() {
+        return "review";
+      }
+    }
+
+    const initializers = [
+      decorateMethod(MetadataFlow, "begin", start() as unknown as Decorator),
+      decorateMethod(MetadataFlow, "review", humanFeedback({
+        message: "Review this output.",
+        metadata: { marker },
+      }) as unknown as Decorator),
+      decorateMethod(MetadataFlow, "review", listen("begin") as unknown as Decorator),
+    ];
+    const flow = new MetadataFlow();
+    initializers.forEach((initializer) => {
+      initializer.call(flow);
+    });
+
+    const definition = MetadataFlow.flow_definition();
+    const review = definition.methods.review;
+
+    expect(review.human_feedback?.metadata).toEqual({ ref: "Object" });
+    expect(definition.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: "non_serializable_value",
+        path: "methods.review.human_feedback.metadata",
+      }),
+    ]));
+    expect(() => definition.to_json()).not.toThrow();
+  });
+
   it("exposes upstream snake_case flow state properties", async () => {
     class PropertyAliasFlow extends Flow<{ id: string; events: string[] }> {
       constructor() {
