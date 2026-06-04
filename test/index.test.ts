@@ -24816,8 +24816,14 @@ describe("tools", () => {
   });
 
   it("infers upstream default values from function parameters", () => {
-    function summarize(requiredParam: unknown, optionalParam = "default", nullableParam = null): string {
-      return `${String(requiredParam)} ${optionalParam} ${String(nullableParam)}`;
+    function summarize(requiredParam: unknown, optionalParam = "default", nullableParam = null, maxResults = 10, includeSources = true): string {
+      return [
+        String(requiredParam),
+        optionalParam,
+        String(nullableParam),
+        String(maxResults),
+        String(includeSources),
+      ].join(" ");
     }
     const toolInstance = StructuredTool.from_function(summarize, {
       name: "summary defaults",
@@ -24828,13 +24834,17 @@ describe("tools", () => {
       requiredParam: { required: true },
       optionalParam: { required: false, default: "default" },
       nullableParam: { required: false, default: null },
+      maxResults: { required: false, default: 10 },
+      includeSources: { required: false, default: true },
     });
-    expect(toolInstance.invoke({ requiredParam: "test" })).toBe("test default null");
+    expect(toolInstance.invoke({ requiredParam: "test" })).toBe("test default null 10 true");
     expect(toolInstance.invoke({
       requiredParam: "test",
       optionalParam: "custom",
       nullableParam: 42,
-    })).toBe("test custom 42");
+      maxResults: 3,
+      includeSources: false,
+    })).toBe("test custom 42 3 false");
   });
 
   it("raises upstream structured-tool usage limit errors from invoke aliases", async () => {
