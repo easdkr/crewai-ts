@@ -2055,12 +2055,14 @@ export class CrewAgentExecutor extends BaseAgentExecutor {
           this.messages = [];
           this.iterations = 0;
         }
+        this._show_start_logs();
         this._setup_messages(input);
         this._inject_multimodal_files(input);
         const result = this._invoke_loop();
         if (isPromiseLike<AgentFinish>(result)) {
           throw new Error("CrewAgentExecutor.invoke received an async loop result; use ainvoke instead.");
         }
+        this._save_to_memory(result);
         return { output: result.output };
       } finally {
         if (resuming) {
@@ -2083,9 +2085,11 @@ export class CrewAgentExecutor extends BaseAgentExecutor {
           this.messages = [];
           this.iterations = 0;
         }
+        this._show_start_logs();
         this._setup_messages(input);
         await this._ainject_multimodal_files(input);
         const result = await this._ainvoke_loop();
+        this._save_to_memory(result);
         return { output: result.output };
       } finally {
         if (resuming) {

@@ -14154,6 +14154,31 @@ describe("core crew runtime", () => {
     expect(resumingExecutor.messages.some((message) => message.content === "in-flight context")).toBe(true);
     expect((resumingExecutor as unknown as { _resuming?: boolean })._resuming).toBe(false);
 
+    const lifecycleEvents: string[] = [];
+    const lifecycleExecutor = new CrewAgentExecutor({
+      prompt: { prompt: "Prompt {input}" },
+      agent: new Agent({ role: "Researcher", goal: "Find facts", backstory: "Careful analyst" }),
+      task: { description: "Research CrewAI" } as unknown as Task,
+    });
+    Object.assign(lifecycleExecutor, {
+      _show_start_logs() {
+        lifecycleEvents.push("start");
+      },
+      _save_to_memory(output: AgentFinish) {
+        lifecycleEvents.push(`memory:${String(output.output)}`);
+      },
+      _invoke_loop() {
+        return new AgentFinish({ thought: "done", output: "sync output", text: "sync output" });
+      },
+      async _ainvoke_loop() {
+        await Promise.resolve();
+        return new AgentFinish({ thought: "done", output: "async output", text: "async output" });
+      },
+    });
+    expect(lifecycleExecutor.invoke({ input: "sync" })).toEqual({ output: "sync output" });
+    await expect(lifecycleExecutor.ainvoke({ input: "async" })).resolves.toEqual({ output: "async output" });
+    expect(lifecycleEvents).toEqual(["start", "memory:sync output", "start", "memory:async output"]);
+
     class TestProvider extends SyncHumanInputProvider {
       override handleFeedback(formattedAnswer: unknown): unknown {
         return formattedAnswer;
