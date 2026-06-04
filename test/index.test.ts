@@ -1541,6 +1541,25 @@ describe("serialization and project utilities", () => {
     expect(pydanticCrewOutput.to_dict()).toEqual({ summary: "dumped", score: 9 });
     expect(emptyJsonTaskOutput.to_dict()).toEqual({ summary: "dumped", score: 9 });
     expect(emptyJsonCrewOutput.to_dict()).toEqual({ summary: "dumped", score: 9 });
+    expect(pydanticTaskOutput.__str__()).toBe("[object Object]");
+    expect(new TaskOutput({
+      description: "Pydantic and JSON string priority",
+      pydantic: { toString: () => "score=4" },
+      json_dict: { score: 4 },
+      output_format: OutputFormat.PYDANTIC,
+      agent: "Researcher",
+    }).__str__()).toBe("score=4");
+    expect(new TaskOutput({
+      description: "Raw string fallback",
+      raw: "Raw task output",
+      output_format: OutputFormat.RAW,
+      agent: "Researcher",
+    }).__str__()).toBe("Raw task output");
+    expect(new TaskOutput({
+      description: "Empty output fallback",
+      output_format: OutputFormat.RAW,
+      agent: "Researcher",
+    }).__str__()).toBe("");
 
     const spacedOutput = new TaskOutput({
       description: "Alpha  Beta\nGamma Delta Epsilon Zeta Eta Theta Iota Kappa Lambda Mu",
