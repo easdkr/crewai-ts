@@ -32308,6 +32308,65 @@ describe("task input files", () => {
     expect(llmInstance.capturedToolNames).toContain("read_file");
   });
 
+  it("keeps unsupported crew multimodal files available through read_file", async () => {
+    class FormattingOpenAILLM extends BaseLLM {
+      firstFormattedMessages: readonly LLMMessage[] = [];
+      firstToolNames: readonly string[] = [];
+      calls = 0;
+
+      constructor() {
+        super({ model: "openai/gpt-4o-mini", provider: "openai" });
+      }
+
+      override supportsMultimodal(): boolean {
+        return true;
+      }
+
+      override call(messages: readonly LLMMessage[], options?: LLMCallOptions): LLMResponse {
+        this.calls += 1;
+        if (this.calls === 1) {
+          this.firstFormattedMessages = this.formatMessages(messages);
+          this.firstToolNames = options?.tools?.map((toolInstance) => toolInstance.name) ?? [];
+          return { toolName: "read_file", arguments: { file_name: "video" } };
+        }
+        return "video fallback done";
+      }
+    }
+
+    const llmInstance = new FormattingOpenAILLM();
+    const agentInstance = new Agent({
+      role: "File Analyst",
+      goal: "Analyze files",
+      backstory: "Expert analyst.",
+      llm: llmInstance,
+    });
+    const taskInstance = new Task({
+      description: "What type of file is this? Just name the file type.",
+      expectedOutput: "The file type.",
+      agent: agentInstance,
+    });
+    const video = new VideoFile({
+      source: new FileBytes({ data: Buffer.from("video bytes"), filename: "sample.mp4" }),
+    });
+
+    const output = await new Crew({ agents: [agentInstance], tasks: [taskInstance] }).kickoff({
+      input_files: { video },
+    });
+
+    const formattedUserMessage = llmInstance.firstFormattedMessages.findLast((message) => message.role === "user");
+    const formattedContent: unknown = formattedUserMessage?.content;
+    expect(Array.isArray(formattedContent)).toBe(true);
+    if (!Array.isArray(formattedContent)) {
+      throw new Error("Expected formatted OpenAI content blocks");
+    }
+    expect(formattedContent).toHaveLength(1);
+    const textBlock = formattedContent[0] as { type?: unknown; text?: unknown };
+    expect(textBlock.type).toBe("text");
+    expect(String(textBlock.text)).toContain("Input files (content already loaded in conversation):");
+    expect(llmInstance.firstToolNames).toContain("read_file");
+    expect(output.raw).toBe("video fallback done");
+  });
+
   it("extracts structured input files from crew kickoff inputs", async () => {
     const prompts: string[] = [];
     const agentInstance = new Agent({
