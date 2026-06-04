@@ -11134,6 +11134,18 @@ describe("RAG configuration and factories", () => {
     );
   });
 
+  it("handles sync and async KnowledgeStorage client connection failures", async () => {
+    class FailingKnowledgeStorage extends KnowledgeStorage {
+      override _get_client(): RagClient {
+        throw new Error("Unable to connect to ChromaDB");
+      }
+    }
+    const storage = new FailingKnowledgeStorage({ collectionName: "connection_test" });
+
+    expect(storage.search(["test query"])).toEqual([]);
+    await expect(storage.asearch(["test query"])).resolves.toEqual([]);
+  });
+
   it("ignores upstream KnowledgeStorage reset errors for readonly or missing collections", async () => {
     const readonlyStorage = new KnowledgeStorage({
       client: {

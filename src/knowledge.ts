@@ -1052,10 +1052,10 @@ export class KnowledgeStorage extends BaseKnowledgeStorage {
     if (query.length === 0) {
       return [];
     }
-    const client = this._get_client() as RagClient & {
-      asearch?: (params: Record<string, unknown>) => Promise<SearchResult[]>;
-    };
     try {
+      const client = this._get_client() as RagClient & {
+        asearch?: (params: Record<string, unknown>) => Promise<SearchResult[]>;
+      };
       const params = {
         collection_name: this.rag_collection_name(),
         query: query.length > 1 ? query.join(" ") : query[0] ?? "",
