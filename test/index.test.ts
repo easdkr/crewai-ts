@@ -27428,6 +27428,55 @@ describe("tools", () => {
     expect(llmInstance.capturedToolNames).toContain("read_file");
   });
 
+  it("passes async direct Agent kickoff input files to multimodal LLM messages", async () => {
+    class AsyncCapturingAgentMultimodalLLM extends BaseLLM {
+      capturedMessages: readonly LLMMessage[] = [];
+      capturedToolNames: readonly string[] = [];
+
+      constructor() {
+        super({ model: "openai/gpt-4o-mini", provider: "openai" });
+      }
+
+      override supportsMultimodal(): boolean {
+        return true;
+      }
+
+      override async call(messages: readonly LLMMessage[], options?: LLMCallOptions): Promise<LLMResponse> {
+        this.capturedMessages = messages.map((message) => ({
+          ...message,
+          files: message.files ? { ...message.files } : undefined,
+        }));
+        this.capturedToolNames = options?.tools?.map((toolInstance) => toolInstance.name) ?? [];
+        return await Promise.resolve("async agent multimodal done");
+      }
+    }
+
+    const llmInstance = new AsyncCapturingAgentMultimodalLLM();
+    const agent = new Agent({
+      role: "Async File Analyst",
+      goal: "Analyze files asynchronously",
+      backstory: "Expert at analyzing files",
+      llm: llmInstance,
+    });
+    const chart = new ImageFile({ source: Buffer.from([0x89, 0x50, 0x4e, 0x47]) });
+
+    await expect(agent.kickoff_async([
+      {
+        role: "user",
+        content: "Describe this image briefly.",
+      },
+    ], {
+      input_files: {
+        chart,
+      },
+    })).resolves.toBe("async agent multimodal done");
+
+    const userMessage = llmInstance.capturedMessages.findLast((message) => message.role === "user");
+    expect(userMessage?.files).toEqual({ chart });
+    expect(userMessage?.content).toContain("Describe this image briefly.");
+    expect(llmInstance.capturedToolNames).toContain("read_file");
+  });
+
   it("uses functionCallingLlm for tool selection and the main LLM for the final answer", async () => {
     const functionCalls: LLMMessage[][] = [];
     const mainCalls: LLMMessage[][] = [];
