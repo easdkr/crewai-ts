@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 1095 passing tests.
+- Test suite: 1096 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -188,7 +188,7 @@ This register is the source of truth for continuing porting work while parity sc
 - AgentExecutor context-length recovery is release-gated for upstream retry semantics: `respect_context_window=true` summarizes executor messages through the configured LLM before retrying, while disabled context-window recovery raises a clear error instead of silently continuing.
 - AgentExecutor unknown LLM errors are release-gated for upstream diagnostics: non-context, non-parser failures print the upstream unknown-error guidance and details when verbose mode is enabled before rethrowing the original error.
 - AgentExecutor object-style invoke error diagnostics are release-gated for upstream behavior: sync and async kickoff failures print the same verbose unknown-error guidance before rethrowing and still clear the executor reentrancy guard.
-- AgentExecutor object-style invoke state reset is release-gated for upstream fresh-run semantics: stale native-tool mode, pending tool calls, plan/todo state, observations, and execution logs are cleared before each fresh invoke.
+- AgentExecutor object-style invoke state reset is release-gated for upstream fresh-run semantics: stale finalize guards, native-tool mode, pending tool calls, plan/todo state, observations, and execution logs are cleared before each fresh sync or async invoke.
 - CrewAgentExecutor async object-style reset is release-gated for upstream async executor lifecycle semantics: `ainvoke` clears stale messages and iteration counts before a fresh task while preserving the newly formatted prompt message.
 - CrewAgentExecutor async object-style success lifecycle is release-gated for upstream async executor semantics: `ainvoke` starts logs, returns the `_ainvoke_loop` final output, saves the `AgentFinish` to memory, and preserves the formatted prompt message.
 - CrewAgentExecutor async object-style error propagation is release-gated for upstream async executor semantics: `ainvoke` rethrows `_ainvoke_loop` failures after prompt setup and does not save failed outputs to memory.
@@ -428,6 +428,7 @@ When more goal budget is available, continue from the behavioral parity audits b
 - `AgentExecutor.invoke` / `invoke_async` now run kickoff inside an upstream-style LLM stop-word override scope without mutating the base LLM stop list.
 - `AgentExecutor.invoke` / `invoke_async` now preserve `ask_for_human_input` and apply sync/async human-feedback handlers to the final answer before returning output.
 - `AgentExecutor.invoke` / `invoke_async` now save final answers to unified memory through upstream-style extraction and agent root-scope routing when memory is configured.
+- `AgentExecutor.invoke` / `invoke_async` now have default-gate coverage for latest-upstream finalize guard reset semantics: a previously finalized executor clears the guard before the next object-style sync or async kickoff.
 - `Memory.remember_many` / background batch saves now mirror upstream batch embedding behavior by calling the configured embedder once for the active batch, reusing those embeddings when records are created, and applying embedding-similarity intra-batch deduplication.
 - Sync `Memory.remember_many` now mirrors upstream batch consolidation against existing records when a synchronous memory LLM is configured, preventing duplicate inserts when the consolidation plan returns `insert_new=false`.
 - `AgentExecutor.use_stop_words` now mirrors upstream executor behavior for both executor-level and agent-level LLMs, including snake_case `supports_stop_words` providers used by upstream tests.

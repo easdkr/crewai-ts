@@ -15344,6 +15344,52 @@ describe("core crew runtime", () => {
     }).toThrow("without reaching a final answer");
   });
 
+  it("resets AgentExecutor finalize guards before sync and async object-style invokes", async () => {
+    const sync = new AgentExecutor();
+    sync.state.current_answer = new AgentFinish({
+      thought: "done",
+      output: "previous",
+      text: "previous",
+    });
+    expect(sync.finalize()).toBe("completed");
+    expect((sync as unknown as { finalizeCalled: boolean }).finalizeCalled).toBe(true);
+    Object.assign(sync, {
+      kickoff() {
+        expect((sync as unknown as { finalizeCalled: boolean }).finalizeCalled).toBe(false);
+        sync.state.current_answer = new AgentFinish({
+          thought: "done",
+          output: "Fresh sync final",
+          text: "complete",
+        });
+      },
+    });
+
+    expect(sync.invoke({ input: "fresh sync", tool_names: "", tools: "" })).toEqual({ output: "Fresh sync final" });
+
+    const asyncExecutor = new AgentExecutor();
+    asyncExecutor.state.current_answer = new AgentFinish({
+      thought: "done",
+      output: "previous async",
+      text: "previous async",
+    });
+    expect(asyncExecutor.finalize()).toBe("completed");
+    expect((asyncExecutor as unknown as { finalizeCalled: boolean }).finalizeCalled).toBe(true);
+    Object.assign(asyncExecutor, {
+      async kickoff_async() {
+        expect((asyncExecutor as unknown as { finalizeCalled: boolean }).finalizeCalled).toBe(false);
+        await Promise.resolve();
+        asyncExecutor.state.current_answer = new AgentFinish({
+          thought: "done",
+          output: "Fresh async final",
+          text: "complete",
+        });
+      },
+    });
+
+    await expect(asyncExecutor.ainvoke({ input: "fresh async", tool_names: "", tools: "" }))
+      .resolves.toEqual({ output: "Fresh async final" });
+  });
+
   it("formats AgentExecutor object-style invoke prompt messages before kickoff", () => {
     const executor = new AgentExecutor({
       prompt: {
