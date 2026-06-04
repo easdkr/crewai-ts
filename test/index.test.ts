@@ -166,6 +166,7 @@ import {
   ConsoleProvider,
   FeedbackOutcome,
   FlowCreatedEvent,
+  FlowFailedEvent,
   FlowFinishedEvent,
   FlowInputReceivedEvent,
   FlowInputRequestedEvent,
@@ -175,7 +176,9 @@ import {
   FlowStreamingOutput,
   FlowMethod,
   FlowTrackable,
+  MethodExecutionFailedEvent,
   MethodExecutionFinishedEvent,
+  MethodExecutionPausedEvent,
   MethodExecutionStartedEvent,
   TaskStartedEvent,
   StateWithId,
@@ -574,7 +577,6 @@ import {
   type HumanInputProvider,
   type InputValues,
   type InputResponse,
-  type MethodExecutionPausedEvent,
   type LLMCallOptions,
   type LLMMessage,
   type LLMResponse,
@@ -4698,21 +4700,68 @@ describe("mcp configuration", () => {
 
 describe("orchestration lifecycle events", () => {
   it("exposes additional flow lifecycle fields and events", () => {
+    const started = new FlowStartedEvent({ flow_name: "ResearchFlow", inputs: { topic: "CrewAI" } });
     const created = new FlowCreatedEvent({ flow_name: "ResearchFlow" });
+    const finished = new FlowFinishedEvent({ flow_name: "ResearchFlow", result: "done", state: { step: 2 } });
+    const failed = new FlowFailedEvent({ flow_name: "ResearchFlow", error: new Error("boom"), state: { step: 1 } });
     const plot = new FlowPlotEvent({ flowName: "ResearchFlow" });
     const paused = new FlowPausedEvent({
-      flowName: "ResearchFlow",
+      flow_name: "ResearchFlow",
       flow_id: "flow-1",
       method_name: "review",
       state: { step: 1 },
       message: "Approve?",
       emit: ["approved", "rejected"],
     });
+    const inputRequested = new FlowInputRequestedEvent({
+      flow_name: "ResearchFlow",
+      method_name: "ask",
+      message: "Question?",
+      metadata: { channel: "cli" },
+    });
+    const inputReceived = new FlowInputReceivedEvent({
+      flow_name: "ResearchFlow",
+      method_name: "ask",
+      message: "Question?",
+      response: "Answer",
+      metadata: { channel: "cli" },
+      response_metadata: { source: "user" },
+    });
+    const methodStarted = new MethodExecutionStartedEvent({
+      flow_name: "ResearchFlow",
+      method_name: "review",
+      state: { step: 1 },
+      params: { id: 1 },
+    });
+    const methodFinished = new MethodExecutionFinishedEvent({
+      flow_name: "ResearchFlow",
+      method_name: "review",
+      result: "approved",
+      state: { step: 2 },
+    });
+    const methodFailed = new MethodExecutionFailedEvent({
+      flow_name: "ResearchFlow",
+      method_name: "review",
+      error: new Error("method failed"),
+      state: { step: 1 },
+    });
+    const methodPaused = new MethodExecutionPausedEvent({
+      flow_name: "ResearchFlow",
+      method_name: "review",
+      flow_id: "flow-1",
+      state: { step: 1 },
+      message: "Approve?",
+    });
 
+    expect(started).toMatchObject({ type: "flow_started", flowName: "ResearchFlow", flow_name: "ResearchFlow" });
     expect(created).toMatchObject({ type: "flow_created", flow_name: "ResearchFlow" });
+    expect(finished).toMatchObject({ type: "flow_finished", flowName: "ResearchFlow", flow_name: "ResearchFlow", result: "done" });
+    expect(failed).toMatchObject({ type: "flow_failed", flowName: "ResearchFlow", flow_name: "ResearchFlow", error: "boom" });
     expect(plot).toMatchObject({ type: "flow_plot", flow_name: "ResearchFlow" });
     expect(paused).toMatchObject({
       type: "flow_paused",
+      flowName: "ResearchFlow",
+      flow_name: "ResearchFlow",
       flowId: "flow-1",
       flow_id: "flow-1",
       methodName: "review",
@@ -4720,6 +4769,55 @@ describe("orchestration lifecycle events", () => {
       state: { step: 1 },
       message: "Approve?",
       emit: ["approved", "rejected"],
+    });
+    expect(inputRequested).toMatchObject({
+      type: "flow_input_requested",
+      flowName: "ResearchFlow",
+      flow_name: "ResearchFlow",
+      methodName: "ask",
+      method_name: "ask",
+      metadata: { channel: "cli" },
+    });
+    expect(inputReceived).toMatchObject({
+      type: "flow_input_received",
+      flowName: "ResearchFlow",
+      flow_name: "ResearchFlow",
+      methodName: "ask",
+      method_name: "ask",
+      responseMetadata: { source: "user" },
+      response_metadata: { source: "user" },
+    });
+    expect(methodStarted).toMatchObject({
+      type: "method_execution_started",
+      flowName: "ResearchFlow",
+      flow_name: "ResearchFlow",
+      methodName: "review",
+      method_name: "review",
+      params: { id: 1 },
+    });
+    expect(methodFinished).toMatchObject({
+      type: "method_execution_finished",
+      flowName: "ResearchFlow",
+      flow_name: "ResearchFlow",
+      methodName: "review",
+      method_name: "review",
+      result: "approved",
+    });
+    expect(methodFailed).toMatchObject({
+      type: "method_execution_failed",
+      flowName: "ResearchFlow",
+      flow_name: "ResearchFlow",
+      methodName: "review",
+      method_name: "review",
+      error: "method failed",
+    });
+    expect(methodPaused).toMatchObject({
+      type: "method_execution_paused",
+      flowName: "ResearchFlow",
+      flow_name: "ResearchFlow",
+      methodName: "review",
+      method_name: "review",
+      flow_id: "flow-1",
     });
   });
 

@@ -1362,11 +1362,13 @@ export class MemoryRetrievalFailedEvent extends BaseEvent {
 
 export class FlowStartedEvent extends BaseEvent {
   readonly flowName: string;
+  readonly flow_name: string;
   readonly inputs: InputValues;
 
-  constructor(options: { flowName: string; inputs?: InputValues }) {
+  constructor(options: { flowName?: string; flow_name?: string; inputs?: InputValues }) {
     super({ type: "flow_started", sourceType: "flow" });
-    this.flowName = options.flowName;
+    this.flowName = options.flowName ?? options.flow_name ?? "";
+    this.flow_name = this.flowName;
     this.inputs = options.inputs ?? {};
   }
 }
@@ -1384,12 +1386,14 @@ export class FlowCreatedEvent extends BaseEvent {
 
 export class FlowFinishedEvent extends BaseEvent {
   readonly flowName: string;
+  readonly flow_name: string;
   readonly result: unknown;
   readonly state: unknown;
 
-  constructor(options: { flowName: string; result: unknown; state: unknown }) {
+  constructor(options: { flowName?: string; flow_name?: string; result: unknown; state: unknown }) {
     super({ type: "flow_finished", sourceType: "flow" });
-    this.flowName = options.flowName;
+    this.flowName = options.flowName ?? options.flow_name ?? "";
+    this.flow_name = this.flowName;
     this.result = options.result;
     this.state = options.state;
   }
@@ -1397,12 +1401,14 @@ export class FlowFinishedEvent extends BaseEvent {
 
 export class FlowFailedEvent extends BaseEvent {
   readonly flowName: string;
+  readonly flow_name: string;
   readonly error: string;
   readonly state: unknown;
 
-  constructor(options: { flowName: string; error: unknown; state: unknown }) {
+  constructor(options: { flowName?: string; flow_name?: string; error: unknown; state: unknown }) {
     super({ type: "flow_failed", sourceType: "flow" });
-    this.flowName = options.flowName;
+    this.flowName = options.flowName ?? options.flow_name ?? "";
+    this.flow_name = this.flowName;
     this.error = formatError(options.error);
     this.state = options.state;
   }
@@ -1410,6 +1416,7 @@ export class FlowFailedEvent extends BaseEvent {
 
 export class FlowPausedEvent extends BaseEvent {
   readonly flowName: string;
+  readonly flow_name: string;
   readonly flowId: string | null;
   readonly flow_id: string | null;
   readonly methodName: string | null;
@@ -1420,7 +1427,8 @@ export class FlowPausedEvent extends BaseEvent {
   readonly emit: readonly string[] | null;
 
   constructor(options: {
-    flowName: string;
+    flowName?: string;
+    flow_name?: string;
     flowId?: string | null;
     flow_id?: string | null;
     methodName?: string | null;
@@ -1431,7 +1439,8 @@ export class FlowPausedEvent extends BaseEvent {
     emit?: readonly string[] | null;
   }) {
     super({ type: "flow_paused", sourceType: "flow" });
-    this.flowName = options.flowName;
+    this.flowName = options.flowName ?? options.flow_name ?? "";
+    this.flow_name = this.flowName;
     this.flowId = options.flowId ?? options.flow_id ?? null;
     this.flow_id = this.flowId;
     this.methodName = options.methodName ?? options.method_name ?? null;
@@ -1456,19 +1465,25 @@ export class FlowPlotEvent extends BaseEvent {
 
 export class FlowInputRequestedEvent extends BaseEvent {
   readonly flowName: string;
+  readonly flow_name: string;
   readonly methodName: string | null;
+  readonly method_name: string | null;
   readonly message: string;
   readonly metadata: Record<string, unknown> | null;
 
   constructor(options: {
-    flowName: string;
+    flowName?: string;
+    flow_name?: string;
     methodName?: string | null;
+    method_name?: string | null;
     message: string;
     metadata?: Record<string, unknown> | null;
   }) {
     super({ type: "flow_input_requested", sourceType: "flow" });
-    this.flowName = options.flowName;
-    this.methodName = options.methodName ?? null;
+    this.flowName = options.flowName ?? options.flow_name ?? "";
+    this.flow_name = this.flowName;
+    this.methodName = options.methodName ?? options.method_name ?? null;
+    this.method_name = this.methodName;
     this.message = options.message;
     this.metadata = options.metadata ?? null;
   }
@@ -1476,40 +1491,53 @@ export class FlowInputRequestedEvent extends BaseEvent {
 
 export class FlowInputReceivedEvent extends BaseEvent {
   readonly flowName: string;
+  readonly flow_name: string;
   readonly methodName: string | null;
+  readonly method_name: string | null;
   readonly message: string;
   readonly response: string | null;
   readonly metadata: Record<string, unknown> | null;
   readonly responseMetadata: Record<string, unknown> | null;
+  readonly response_metadata: Record<string, unknown> | null;
 
   constructor(options: {
-    flowName: string;
+    flowName?: string;
+    flow_name?: string;
     methodName?: string | null;
+    method_name?: string | null;
     message: string;
     response: string | null;
     metadata?: Record<string, unknown> | null;
     responseMetadata?: Record<string, unknown> | null;
+    response_metadata?: Record<string, unknown> | null;
   }) {
     super({ type: "flow_input_received", sourceType: "flow" });
-    this.flowName = options.flowName;
-    this.methodName = options.methodName ?? null;
+    this.flowName = options.flowName ?? options.flow_name ?? "";
+    this.flow_name = this.flowName;
+    this.methodName = options.methodName ?? options.method_name ?? null;
+    this.method_name = this.methodName;
     this.message = options.message;
     this.response = options.response;
     this.metadata = options.metadata ?? null;
-    this.responseMetadata = options.responseMetadata ?? null;
+    this.responseMetadata = options.responseMetadata ?? options.response_metadata ?? null;
+    this.response_metadata = this.responseMetadata;
   }
 }
 
 export class MethodExecutionStartedEvent extends BaseEvent {
   readonly flowName: string;
+  readonly flow_name: string;
   readonly methodName: string;
+  readonly method_name: string;
   readonly state: unknown;
   readonly params: Record<string, unknown> | null;
 
-  constructor(options: { flowName: string; methodName: string; state: unknown; params?: Record<string, unknown> | null }) {
+  constructor(options: { flowName?: string; flow_name?: string; methodName?: string; method_name?: string; state: unknown; params?: Record<string, unknown> | null }) {
     super({ type: "method_execution_started", sourceType: "flow" });
-    this.flowName = options.flowName;
-    this.methodName = options.methodName;
+    this.flowName = options.flowName ?? options.flow_name ?? "";
+    this.flow_name = this.flowName;
+    this.methodName = options.methodName ?? options.method_name ?? "";
+    this.method_name = this.methodName;
     this.state = options.state;
     this.params = options.params ?? null;
   }
@@ -1517,14 +1545,18 @@ export class MethodExecutionStartedEvent extends BaseEvent {
 
 export class MethodExecutionFinishedEvent extends BaseEvent {
   readonly flowName: string;
+  readonly flow_name: string;
   readonly methodName: string;
+  readonly method_name: string;
   readonly result: unknown;
   readonly state: unknown;
 
-  constructor(options: { flowName: string; methodName: string; result: unknown; state: unknown }) {
+  constructor(options: { flowName?: string; flow_name?: string; methodName?: string; method_name?: string; result: unknown; state: unknown }) {
     super({ type: "method_execution_finished", sourceType: "flow" });
-    this.flowName = options.flowName;
-    this.methodName = options.methodName;
+    this.flowName = options.flowName ?? options.flow_name ?? "";
+    this.flow_name = this.flowName;
+    this.methodName = options.methodName ?? options.method_name ?? "";
+    this.method_name = this.methodName;
     this.result = options.result;
     this.state = options.state;
   }
@@ -1532,14 +1564,18 @@ export class MethodExecutionFinishedEvent extends BaseEvent {
 
 export class MethodExecutionFailedEvent extends BaseEvent {
   readonly flowName: string;
+  readonly flow_name: string;
   readonly methodName: string;
+  readonly method_name: string;
   readonly error: string;
   readonly state: unknown;
 
-  constructor(options: { flowName: string; methodName: string; error: unknown; state: unknown }) {
+  constructor(options: { flowName?: string; flow_name?: string; methodName?: string; method_name?: string; error: unknown; state: unknown }) {
     super({ type: "method_execution_failed", sourceType: "flow" });
-    this.flowName = options.flowName;
-    this.methodName = options.methodName;
+    this.flowName = options.flowName ?? options.flow_name ?? "";
+    this.flow_name = this.flowName;
+    this.methodName = options.methodName ?? options.method_name ?? "";
+    this.method_name = this.methodName;
     this.error = formatError(options.error);
     this.state = options.state;
   }
@@ -1547,7 +1583,9 @@ export class MethodExecutionFailedEvent extends BaseEvent {
 
 export class MethodExecutionPausedEvent extends BaseEvent {
   readonly flowName: string;
+  readonly flow_name: string;
   readonly methodName: string;
+  readonly method_name: string;
   readonly flowId: string | null;
   readonly flow_id: string | null;
   readonly pending: unknown;
@@ -1556,8 +1594,10 @@ export class MethodExecutionPausedEvent extends BaseEvent {
   readonly emit: readonly string[] | null;
 
   constructor(options: {
-    flowName: string;
-    methodName: string;
+    flowName?: string;
+    flow_name?: string;
+    methodName?: string;
+    method_name?: string;
     flowId?: string | null;
     flow_id?: string | null;
     pending?: unknown;
@@ -1566,8 +1606,10 @@ export class MethodExecutionPausedEvent extends BaseEvent {
     emit?: readonly string[] | null;
   }) {
     super({ type: "method_execution_paused", sourceType: "flow" });
-    this.flowName = options.flowName;
-    this.methodName = options.methodName;
+    this.flowName = options.flowName ?? options.flow_name ?? "";
+    this.flow_name = this.flowName;
+    this.methodName = options.methodName ?? options.method_name ?? "";
+    this.method_name = this.methodName;
     this.flowId = options.flowId ?? options.flow_id ?? null;
     this.flow_id = this.flowId;
     this.pending = options.pending ?? null;
