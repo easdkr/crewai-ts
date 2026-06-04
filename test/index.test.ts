@@ -11430,6 +11430,30 @@ describe("RAG configuration and factories", () => {
     await expect(storage.asearch(["test query"])).resolves.toEqual([]);
   });
 
+  it("returns empty KnowledgeStorage results for upstream search timeouts and missing collections", async () => {
+    const timeoutStorage = new KnowledgeStorage({
+      collectionName: "timeout_test",
+      client: {
+        search: vi.fn(() => {
+          throw new Error("Search operation timed out");
+        }),
+        asearch: vi.fn(() => Promise.reject(new Error("Search operation timed out"))),
+      } as unknown as RagClient,
+    });
+    const missingCollectionStorage = new KnowledgeStorage({
+      collectionName: "missing_collection",
+      client: {
+        search: vi.fn(() => {
+          throw new Error("Collection 'knowledge_missing' does not exist");
+        }),
+      } as unknown as RagClient,
+    });
+
+    expect(timeoutStorage.search(["test query"])).toEqual([]);
+    await expect(timeoutStorage.asearch(["test query"])).resolves.toEqual([]);
+    expect(missingCollectionStorage.search(["test query"])).toEqual([]);
+  });
+
   it("preserves upstream KnowledgeStorage malformed search result arrays", async () => {
     const malformedResults = [
       { content: "valid result", metadata: { source: "test" } },
