@@ -23,6 +23,7 @@ import {
   BASIC_CATALOG_FUNCTIONS,
   STANDARD_CATALOG_COMPONENTS,
 } from "./a2ui.js";
+import { ConversationState } from "./experimental-conversational.js";
 
 export type LogContextFields = Record<string, unknown>;
 
@@ -481,11 +482,7 @@ export type A2AExtensionRegistry = {
   invokeOnResponse?: (context: unknown, result: unknown) => Promise<unknown>;
   invoke_on_response?: (context: unknown, result: unknown) => Promise<unknown>;
 };
-export type ConversationState = {
-  isReady?: () => boolean;
-  is_ready?: () => boolean;
-};
-export const ConversationState = Object.freeze({ kind: "ConversationState" });
+export { ConversationState };
 export type A2AExtension = {
   injectTools?: (agent: unknown) => void;
   inject_tools?: (agent: unknown) => void;

@@ -1257,6 +1257,24 @@ export {
   type SkillCommonEventOptions,
 } from "./events.js";
 export {
+  AgentMessage,
+  ConversationConfig,
+  ConversationEvent,
+  ConversationEventVisibility,
+  ConversationMessage,
+  ConversationMessageRole,
+  RouterConfig,
+  _conversational_only,
+  messageToLlmDict,
+  message_to_llm_dict,
+  type AgentMessageOptions,
+  type ConversationConfigOptions,
+  type ConversationEventOptions,
+  type ConversationMessageOptions,
+  type ConversationStateOptions,
+  type RouterConfigOptions,
+} from "./experimental-conversational.js";
+export {
   DEFAULT_FILE_STORE_TTL,
   aclearFiles,
   aclearTaskFiles,

@@ -476,6 +476,11 @@ import {
   CrewBase,
   ChatState,
   crewaiEventBus,
+  AgentMessage,
+  ConversationConfig,
+  ConversationEvent,
+  ConversationMessage,
+  ConversationState,
   ConversationalConfig,
   createReadFileTool,
   ReadFileTool,
@@ -506,10 +511,12 @@ import {
   setCurrentFlowContext,
   getFlowMetadata,
   input_history_to_messages,
+  message_to_llm_dict,
   getPossibleReturnConstants,
   normalize_kickoff_inputs,
   prepare_conversational_turn,
   receive_user_message,
+  RouterConfig,
   set_state_field,
   getChildIndex,
   getFlowStructure,
@@ -16527,6 +16534,76 @@ describe("flow runtime", () => {
       { role: "user", content: "Answer" },
       { role: "user", content: "Follow-up" },
     ]);
+  });
+
+  it("provides upstream experimental conversational data shapes", () => {
+    const router = new RouterConfig({
+      routes: ["converse", "handoff"],
+      route_descriptions: { handoff: "Send to specialist" },
+    });
+    expect(router.default_intent).toBe("converse");
+    expect(router.fallback_intent).toBe("converse");
+    expect(router.intent_field).toBe("intent");
+    expect(router.route_descriptions).toEqual({ handoff: "Send to specialist" });
+
+    const config = new ConversationConfig({
+      router,
+      visible_agent_outputs: "all",
+      defer_trace_finalization: false,
+    });
+    class ConversationalFlow {
+      readonly marker = "flow";
+    }
+    expect(config.__call__(ConversationalFlow)).toBe(ConversationalFlow);
+    expect((ConversationalFlow as unknown as { conversational_config: ConversationConfig }).conversational_config).toBe(config);
+    expect(config.visible_agent_outputs).toBe("all");
+    expect(config.defer_trace_finalization).toBe(false);
+
+    const message = new ConversationMessage({
+      role: "assistant",
+      content: "Visible answer",
+      name: "writer",
+      metadata: { private: true },
+      files: { image: "local.png" },
+    });
+    expect(message.model_dump({ exclude_none: true })).toEqual({
+      role: "assistant",
+      content: "Visible answer",
+      name: "writer",
+      files: { image: "local.png" },
+      metadata: { private: true },
+    });
+    expect(message_to_llm_dict(message)).toEqual({
+      role: "assistant",
+      content: "Visible answer",
+      name: "writer",
+      files: { image: "local.png" },
+    });
+    expect(message_to_llm_dict({ role: "tool", content: "ok", metadata: { hidden: true }, tool_call_id: "call-1" })).toEqual({
+      role: "tool",
+      content: "ok",
+      tool_call_id: "call-1",
+    });
+    expect(message_to_llm_dict("hello")).toEqual({ role: "user", content: "hello" });
+
+    const event = new ConversationEvent({ type: "agent.progress", payload: { step: 1 }, agent_name: "writer" });
+    expect(event.visibility).toBe("private");
+    const agentMessage = new AgentMessage({ content: { scratch: "notes" } });
+    expect(agentMessage.role).toBe("assistant");
+    expect(agentMessage.metadata).toEqual({});
+
+    const state = new ConversationState({
+      messages: [message],
+      events: [event],
+      agent_threads: { writer: [agentMessage] },
+      current_user_message: "Hi",
+      session_ready: true,
+    });
+    expect(state.id).toEqual(expect.any(String));
+    expect(state.messages).toHaveLength(1);
+    expect(state.ended).toBe(false);
+    expect(state.session_ready).toBe(true);
+    expect(state.agent_threads.writer[0]?.content).toEqual({ scratch: "notes" });
   });
 
   it("provides upstream FlowDefinition schema validation and serialization", () => {

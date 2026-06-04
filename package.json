@@ -501,6 +501,10 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
+    "./experimental/conversational": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
     "./experimental/evaluation/agent_evaluator": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
