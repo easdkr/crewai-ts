@@ -11803,6 +11803,9 @@ describe("RAG configuration and factories", () => {
   });
 
   it("exposes upstream optional-provider, embedding wrapper, and Chroma async lock helpers", async () => {
+    expect(() => new _MissingProvider()).toThrow(
+      "provider '__missing__' requested but not installed",
+    );
     expect(() => new _MissingProvider({ provider: "chromadb" })).toThrow(
       "provider 'chromadb' requested but not installed",
     );
@@ -11985,6 +11988,7 @@ describe("RAG configuration and factories", () => {
       { id: "doc-1", content: "CrewAI", metadata: {}, score: 1 },
     ]);
     expect(() => createRagClient({ provider: "qdrant" })).toThrow("No RAG client factory registered");
+    expect(() => createRagClient({ provider: "unsupported" as "chromadb" })).toThrow("Unsupported provider: unsupported");
   });
 
   it("normalizes RAG records with content-derived ids", () => {
