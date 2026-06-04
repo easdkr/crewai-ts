@@ -4690,10 +4690,83 @@ export function agent_to_agent_card(agent: unknown, url: string): Record<string,
   if (serverConfig.signatures) {
     card.signatures = serverConfig.signatures;
   }
-  return card;
+  return attachAgentCardDumpMethods(card);
 }
 
 export const _agent_to_agent_card = agent_to_agent_card;
+
+type AgentCardDumpOptions = {
+  exclude_none?: boolean;
+  excludeNone?: boolean;
+};
+
+function attachAgentCardDumpMethods(card: Record<string, unknown>): Record<string, unknown> {
+  Object.defineProperties(card, {
+    model_dump: {
+      value(options: AgentCardDumpOptions = {}) {
+        return dumpAgentCard(card, options);
+      },
+    },
+    modelDump: {
+      value(options: AgentCardDumpOptions = {}) {
+        return dumpAgentCard(card, options);
+      },
+    },
+    model_dump_json: {
+      value(options: AgentCardDumpOptions = {}) {
+        return JSON.stringify(dumpAgentCard(card, options));
+      },
+    },
+    modelDumpJson: {
+      value(options: AgentCardDumpOptions = {}) {
+        return JSON.stringify(dumpAgentCard(card, options));
+      },
+    },
+  });
+  return card;
+}
+
+function dumpAgentCard(card: Record<string, unknown>, options: AgentCardDumpOptions): Record<string, unknown> {
+  const excludeNone = options.exclude_none ?? options.excludeNone ?? false;
+  return dumpAgentCardValue(card, excludeNone) as Record<string, unknown>;
+}
+
+function dumpAgentCardValue(value: unknown, excludeNone: boolean): unknown {
+  if (Array.isArray(value)) {
+    return value.map((item) => dumpAgentCardValue(item, excludeNone));
+  }
+  const record = recordOrNullA2A(value);
+  if (!record) {
+    return value;
+  }
+  const dumped: Record<string, unknown> = {};
+  for (const [key, entry] of Object.entries(record)) {
+    if (typeof entry === "function") {
+      continue;
+    }
+    if (excludeNone && (entry === null || entry === undefined)) {
+      continue;
+    }
+    dumped[agentCardJsonKey(key)] = dumpAgentCardValue(entry, excludeNone);
+  }
+  return dumped;
+}
+
+function agentCardJsonKey(key: string): string {
+  const aliases: Record<string, string> = {
+    additional_interfaces: "additionalInterfaces",
+    default_input_modes: "defaultInputModes",
+    default_output_modes: "defaultOutputModes",
+    documentation_url: "documentationUrl",
+    icon_url: "iconUrl",
+    preferred_transport: "preferredTransport",
+    protocol_version: "protocolVersion",
+    push_notifications: "pushNotifications",
+    security_schemes: "securitySchemes",
+    supports_authenticated_extended_card: "supportsAuthenticatedExtendedCard",
+  };
+  return aliases[key] ?? key;
+}
 
 function getA2AServerConfig(value: unknown): A2AServerConfig | null {
   const record = recordOrNullA2A(value);

@@ -6472,6 +6472,46 @@ describe("a2a utilities", () => {
     expect(plainAgent.to_agent_card).toBeUndefined();
   });
 
+  it("dumps generated A2A agent cards with upstream protocol field names", () => {
+    const agent = new Agent({
+      role: "Test Agent",
+      goal: "Test goal",
+      backstory: "Test backstory",
+      a2a: new A2AServerConfig(),
+    }) as Agent & {
+      to_agent_card: (url: string) => Record<string, unknown> & {
+        model_dump: (options?: { exclude_none?: boolean }) => Record<string, unknown>;
+        model_dump_json: () => string;
+      };
+    };
+
+    const card = agent.to_agent_card("http://localhost:8000");
+    const dumped = card.model_dump();
+
+    expect(dumped).toMatchObject({
+      name: "Test Agent",
+      description: "Test goal Test backstory",
+      url: "http://localhost:8000",
+      version: "1.0.0",
+      defaultInputModes: ["text/plain", "application/json"],
+      defaultOutputModes: ["text/plain", "application/json"],
+      capabilities: {
+        streaming: true,
+        pushNotifications: false,
+      },
+      skills: [{
+        id: "test_agent",
+        name: "Test Agent",
+        description: "Test goal",
+        tags: ["test-agent"],
+      }],
+    });
+    expect(card.model_dump_json()).toContain("\"Test Agent\"");
+    expect(card.model_dump({ exclude_none: true })).not.toHaveProperty("provider");
+    expect(card.model_dump({ exclude_none: true })).not.toHaveProperty("documentationUrl");
+    expect(card.model_dump({ exclude_none: true })).not.toHaveProperty("iconUrl");
+  });
+
   it("advertises A2A server extensions in generated agent cards", () => {
     class RequiredExtension extends ServerExtension {
       readonly uri = "urn:test:required-card-extension";
