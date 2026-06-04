@@ -13132,6 +13132,34 @@ describe("core crew runtime", () => {
     ]);
   });
 
+  it("preserves AgentExecutor Gemini raw native tool parts in assistant messages", () => {
+    const executor = new AgentExecutor();
+    Object.assign(executor, {
+      _available_functions: {
+        raw_search: (args: { query?: string }) => `found:${args.query ?? ""}`,
+      },
+    });
+    const rawPart = { functionCall: { name: "raw_search", args: { query: "CrewAI" } } };
+    executor.state.pending_tool_calls = [rawPart];
+
+    expect(executor.execute_native_tool()).toBe("native_tool_completed");
+    expect(executor.state.pending_tool_calls).toEqual([]);
+    expect(executor.state.messages[0]).toEqual({
+      role: "assistant",
+      content: null,
+      tool_calls: [
+        { id: "call_1", type: "function", function: { name: "raw_search", arguments: "{\"query\":\"CrewAI\"}" } },
+      ],
+      raw_tool_call_parts: [rawPart],
+    });
+    expect(executor.state.messages.at(-1)).toEqual({
+      role: "tool",
+      name: "raw_search",
+      content: "found:CrewAI",
+      tool_call_id: "call_1",
+    });
+  });
+
   it("increments task tool errors for failed AgentExecutor native tools", () => {
     const task = {
       toolsErrors: 0,

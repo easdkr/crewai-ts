@@ -939,22 +939,39 @@ export class AgentExecutor extends BaseAgentExecutor {
     this.state.pending_tool_calls = [];
     const normalizedCalls = pendingCalls
       .map((toolCall) => normalizeNativeToolCall(toolCall))
-      .filter((call) => call.name);
-    if (normalizedCalls.length > 0) {
-      this.state.messages.push({
+      .filter((call): call is { name: string; args: unknown; id: string | null } => typeof call.name === "string" && call.name.length > 0);
+    const executableCalls = normalizedCalls.map((call, index) => ({
+      ...call,
+      id: call.id ?? `call_${String(index + 1)}`,
+    }));
+    if (executableCalls.length > 0) {
+      const assistantMessage: {
+        role: "assistant";
+        content: null;
+        tool_calls: Array<{
+          id: string;
+          type: "function";
+          function: { name: string; arguments: string };
+        }>;
+        raw_tool_call_parts?: unknown[];
+      } = {
         role: "assistant",
         content: null,
-        tool_calls: normalizedCalls.map((call) => ({
-          id: call.id ?? call.name,
+        tool_calls: executableCalls.map((call) => ({
+          id: call.id,
           type: "function",
           function: {
             name: call.name,
             arguments: stringifyNativeToolArguments(call.args),
           },
         })),
-      } as unknown as LLMMessage);
+      };
+      if (pendingCalls.every(isRawNativeToolPart)) {
+        assistantMessage.raw_tool_call_parts = pendingCalls;
+      }
+      this.state.messages.push(assistantMessage as unknown as LLMMessage);
     }
-    for (const { name, args, id } of normalizedCalls) {
+    for (const { name, args, id } of executableCalls) {
       if (!name) {
         continue;
       }
@@ -972,7 +989,7 @@ export class AgentExecutor extends BaseAgentExecutor {
         role: "tool",
         name,
         content: text,
-        tool_call_id: id ?? name,
+        tool_call_id: id,
       } as unknown as LLMMessage);
       if (!failed && this.nativeToolResultAsAnswer(name)) {
         this.state.current_answer = new AgentFinish({ thought: "", output: text, text });
@@ -2782,19 +2799,35 @@ function normalizeNativeToolCall(toolCall: unknown): { name: string | null; args
   const fn = record.function && typeof record.function === "object"
     ? record.function as Record<string, unknown>
     : null;
+  const rawFunctionCall = record.functionCall ?? record.function_call;
+  const functionCall = rawFunctionCall && typeof rawFunctionCall === "object"
+    ? rawFunctionCall as Record<string, unknown>
+    : null;
   const name = typeof fn?.name === "string"
     ? fn.name
-    : typeof record.name === "string"
-      ? record.name
-      : null;
-  const rawArgs = fn && "arguments" in fn ? fn.arguments : record.arguments ?? record.args ?? {};
+    : typeof functionCall?.name === "string"
+      ? functionCall.name
+      : typeof record.name === "string"
+        ? record.name
+        : null;
+  const rawArgs = fn && "arguments" in fn
+    ? fn.arguments
+    : functionCall && "args" in functionCall
+      ? functionCall.args
+      : functionCall && "arguments" in functionCall
+        ? functionCall.arguments
+        : record.arguments ?? record.input ?? record.args ?? {};
   const args = typeof rawArgs === "string"
     ? parseNativeArgs(rawArgs)
     : rawArgs;
   return {
     name,
     args,
-    id: typeof record.id === "string" ? record.id : null,
+    id: typeof record.id === "string"
+      ? record.id
+      : typeof record.toolUseId === "string"
+        ? record.toolUseId
+        : null,
   };
 }
 
@@ -2807,6 +2840,14 @@ function stringifyNativeToolArguments(args: unknown): string {
   } catch {
     return "{}";
   }
+}
+
+function isRawNativeToolPart(toolCall: unknown): boolean {
+  if (!toolCall || typeof toolCall !== "object") {
+    return false;
+  }
+  const record = toolCall as Record<string, unknown>;
+  return Boolean(record.functionCall ?? record.function_call);
 }
 
 function parseNativeArgs(rawArgs: string): unknown {

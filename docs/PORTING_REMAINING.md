@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 871 passing tests.
+- Test suite: 872 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -121,6 +121,7 @@ This register is the source of truth for continuing porting work while parity sc
 - StepExecutor isolated text-parsed tool failures are release-gated for upstream retry behavior: failed parsed tool actions are converted into deterministic error observations, preserve `tool_calls_made`, and allow the next LLM iteration to recover with a final answer.
 - StepExecutor isolated text-parsed available functions are release-gated for upstream tool compatibility: parsed tool actions can resolve `available_functions` by raw or sanitized name and append the function result as an observation before the next LLM iteration.
 - StepExecutor isolated native tool routing is release-gated for upstream tool-call compatibility: todo execution routes native tool-call LLM responses through `_execute_native`, preserves `tool_calls_made`, validates expected tool usage, and continues to the final answer.
+- AgentExecutor Gemini-style native tool parts are release-gated for upstream provider payload compatibility: `functionCall` / `function_call` pending tool calls are normalized, executed, recorded with deterministic tool-call ids, and preserved as `raw_tool_call_parts` on the assistant tool-call message.
 
 ## Known Remaining Porting Areas
 
