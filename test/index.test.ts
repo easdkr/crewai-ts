@@ -33378,8 +33378,12 @@ describe("hierarchical process", () => {
     const unassignedTools = crew._update_manager_tools(unassignedTask, []);
 
     expect(assignedTools).toHaveLength(2);
+    expect(assignedTools[0]?.description).toContain("Delegate a specific task to one of the following coworkers: Researcher");
+    expect(assignedTools[1]?.description).toContain("Ask a specific question to one of the following coworkers: Researcher");
     expect(assignedTools.map((tool) => tool.description).join("\n")).toContain("Researcher");
     expect(assignedTools.map((tool) => tool.description).join("\n")).not.toContain("Writer");
+    expect(unassignedTools[0]?.description).toContain("Delegate a specific task to one of the following coworkers: Researcher, Writer");
+    expect(unassignedTools[1]?.description).toContain("Ask a specific question to one of the following coworkers: Researcher, Writer");
     expect(unassignedTools.map((tool) => tool.description).join("\n")).toContain("Researcher");
     expect(unassignedTools.map((tool) => tool.description).join("\n")).toContain("Writer");
   });

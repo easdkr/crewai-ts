@@ -2588,7 +2588,7 @@ function createDelegationTools(agents: readonly Agent[]): Tool[] {
   return [
     new StructuredTool({
       name: "Delegate work to coworker",
-      description: `Delegate a task to one of these coworkers: ${coworkers}`,
+      description: `Delegate a specific task to one of the following coworkers: ${coworkers}`,
       argsSchema: {
         task: { type: "string", required: true },
         context: { type: "string", required: false, default: "" },
@@ -2609,7 +2609,7 @@ function createDelegationTools(agents: readonly Agent[]): Tool[] {
     }),
     new StructuredTool({
       name: "Ask question to coworker",
-      description: `Ask a question to one of these coworkers: ${coworkers}`,
+      description: `Ask a specific question to one of the following coworkers: ${coworkers}`,
       argsSchema: {
         question: { type: "string", required: true },
         context: { type: "string", required: false, default: "" },
