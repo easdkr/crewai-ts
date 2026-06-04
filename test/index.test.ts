@@ -38546,6 +38546,50 @@ describe("hierarchical process", () => {
     expect(quietCrew._create_manager_agent().verbose).toBe(false);
   });
 
+  it("preserves LLM selection guide roles across manager, agent, and function-calling models", () => {
+    const managerLlm = new LLM({ model: "gemini-2.5-flash-preview-05-20", temperature: 0.1 });
+    const contentLlm = new LLM({ model: "claude-3-5-sonnet-20241022", temperature: 0.7 });
+    const functionCallingLlm = new LLM({ model: "gpt-4o-mini", temperature: 0 });
+    const contentAgent = new Agent({
+      role: "Content Creator",
+      goal: "Draft customer-facing content",
+      backstory: "Careful writer",
+      llm: contentLlm,
+    });
+    const taskInstance = new Task({
+      description: "Write a launch brief",
+      expectedOutput: "A concise brief",
+      agent: contentAgent,
+    });
+
+    const crew = new Crew({
+      agents: [contentAgent],
+      tasks: [taskInstance],
+      process: Process.hierarchical,
+      managerLlm,
+      functionCallingLlm,
+    });
+    const generatedManager = crew._create_manager_agent();
+
+    expect(contentAgent.llm).toBe(contentLlm);
+    expect(crew.managerLlm).toBe(managerLlm);
+    expect(crew.functionCallingLlm).toBe(functionCallingLlm);
+    expect(generatedManager.llm).toBe(managerLlm);
+    expect(generatedManager.functionCallingLlm).toBe(functionCallingLlm);
+    expect(managerLlm.to_config_dict()).toMatchObject({
+      model: "gemini-2.5-flash-preview-05-20",
+      temperature: 0.1,
+    });
+    expect(contentLlm.to_config_dict()).toMatchObject({
+      model: "claude-3-5-sonnet-20241022",
+      temperature: 0.7,
+    });
+    expect(functionCallingLlm.to_config_dict()).toMatchObject({
+      model: "gpt-4o-mini",
+      temperature: 0,
+    });
+  });
+
   it("limits hierarchical manager delegation tools to the assigned task agent", () => {
     const researcher = new Agent({
       role: "Researcher",

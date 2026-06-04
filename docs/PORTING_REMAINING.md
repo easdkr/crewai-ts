@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 1060 passing tests.
+- Test suite: 1061 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -138,6 +138,7 @@ This register is the source of truth for continuing porting work while parity sc
 - Sequential crew async context validation is release-gated for upstream barrier semantics: async tasks cannot depend on earlier async tasks without an intervening sync task, while sync-barrier context chains remain valid.
 - Crew config validation is release-gated for upstream malformed config behavior: wrong-key, agents-only, tasks-only, and empty agents/tasks configs fail before setup.
 - Hierarchical manager delegation tools are release-gated for upstream coworker scoping, manager validation, generated manager verbosity, and tool descriptions: manager agents cannot be included in the regular agents list or carry their own tools, generated manager agents inherit crew verbose settings, assigned-task delegation exposes only that task's agent, unassigned tasks expose all crew agents, and manager tool descriptions use the upstream "specific task/question" coworker wording.
+- LLM selection guide hierarchy is release-gated for deterministic configuration boundaries: documented manager, agent, and function-calling LLM choices preserve distinct model/temperature settings and generated hierarchical managers receive the manager/function-calling models without triggering live provider calls.
 - Hierarchical delegation coworker matching is release-gated for upstream role normalization: coworker inputs match agent roles despite case and surrounding whitespace differences while preserving original roles in tool descriptions.
 - Crew tool caching is release-gated for upstream shared-cache semantics: identical tool/input calls across different agents hit the shared crew `CacheHandler` with the same cache key.
 - Crew for-each input validation is release-gated for upstream runtime semantics: each `kickoffForEach` input must be a dict/Mapping-like object, so non-mapping values fail with the upstream TypeError instead of being interpolated as indexed strings.
