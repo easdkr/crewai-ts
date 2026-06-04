@@ -14343,6 +14343,22 @@ describe("core crew runtime", () => {
     await expect(executor.ainvoke({ input: "Async CrewAI" })).resolves.toEqual({ output: "Async CrewAI" });
   });
 
+  it("stores AgentExecutor generated plans in state without mutating task descriptions", () => {
+    const task = { description: "Research CrewAI", expected_output: "Concise summary" };
+    const executor = new AgentExecutor({
+      agent: { planning_enabled: true } as unknown as Agent,
+      task,
+    });
+
+    executor.generate_plan();
+    executor.generate_plan();
+
+    expect(task.description).toBe("Research CrewAI");
+    expect(executor.state.plan).toBe("Research CrewAI");
+    expect(executor.state.plan_ready).toBe(true);
+    expect(executor.state.todos.items.map((todo) => todo.description)).toEqual(["Research CrewAI"]);
+  });
+
   it("injects AgentExecutor files from crew and task stores into user messages", async () => {
     const crewId = "crew-files-executor";
     const taskId = "task-files-executor";
