@@ -32369,6 +32369,17 @@ describe("LLM providers", () => {
     expect(llm._get_custom_llm_provider()).toBe("anthropic");
     expect(llm._format_messages_for_provider([{ role: "system", content: "rules" }]))
       .toEqual([{ role: "user", content: "." }, { role: "system", content: "rules" }]);
+    const ollama = new ConfiguredLLM({ model: "ollama/llama3" });
+    expect(ollama._format_messages_for_provider([
+      { role: "user", content: "Hi there" },
+      { role: "assistant", content: "Hello!" },
+    ])).toEqual([
+      { role: "user", content: "Hi there" },
+      { role: "assistant", content: "Hello!" },
+      { role: "user", content: "" },
+    ]);
+    expect(ollama._format_messages_for_provider([{ role: "user", content: "Tell me a joke." }]))
+      .toEqual([{ role: "user", content: "Tell me a joke." }]);
     expect(llm._init_litellm()).toBe(llm);
     expect(llm.to_config_dict()).toMatchObject({ is_litellm: true });
     expect(() => {
