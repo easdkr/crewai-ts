@@ -25429,6 +25429,11 @@ describe("LLM providers", () => {
     expect(MODELS.huggingface).toBe(HUGGINGFACE_MODELS);
     expect(MODELS.sambanova).toBe(SAMBANOVA_MODELS);
     expect(NVIDIA_NIM_MODELS).toContain("nvidia_nim/meta/llama-3.1-405b-instruct");
+    expect(NVIDIA_NIM_MODELS).toContain("nvidia_nim/nvidia/nvidia-nemotron-3-ultra-550b-a55b");
+    expect(ENV_VARS.nvidia_nim).toEqual([
+      { key_name: "NVIDIA_NIM_API_KEY" },
+      { key_name: "NVIDIA_API_KEY" },
+    ]);
     expect(GROQ_MODELS).toContain("groq/llama-3.1-70b-versatile");
     expect(OLLAMA_MODELS).toEqual(["ollama/llama3.1", "ollama/mixtral"]);
     expect(WATSON_MODELS).toContain("watsonx/ibm/granite-3-8b-instruct");

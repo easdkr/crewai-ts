@@ -192,6 +192,7 @@ High-value behavior audits still worth running:
 2. **Latest upstream baseline advancement**
    - Latest upstream post-baseline root/subpath export gaps are currently closed.
    - Snowflake Cortex completion is covered as a deterministic provider shim: token/account URL normalization, Claude-family message guards, capability flags, and request-parameter shaping are release-gated without live Snowflake credentials.
+   - Latest NVIDIA Nemotron docs are covered as deterministic provider metadata: the documented `nvidia_nim/nvidia/nvidia-nemotron-3-ultra-550b-a55b` model string is in the NIM model list, and hosted NIM accepts both `NVIDIA_NIM_API_KEY` and the documented `NVIDIA_API_KEY` env alias.
    - Flow DSL definition extraction is covered with a deterministic `buildFlowDefinition` / `build_flow_definition` shim over TS decorator metadata, including nested conditions, state/config snapshots, and human-feedback routing metadata.
    - Before changing the release baseline, classify each new behavior surface by deterministic local workflow, provider/network shim, or intentionally unsupported optional integration.
 
