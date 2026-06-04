@@ -91,6 +91,11 @@ type PendingTaskExecution = {
 type PendingTaskTuple = readonly [Task, Promise<TaskOutput>, number];
 
 export type ReplayTaskRef = string | number | Task;
+export type ReplayOptions = {
+  taskId?: ReplayTaskRef;
+  task_id?: ReplayTaskRef;
+  inputs?: InputValues;
+};
 
 export type ResetMemoriesCommandType =
   | "memory"
@@ -1031,13 +1036,15 @@ export class Crew extends FlowTrackable {
     }
   }
 
-  async replay(taskRef: ReplayTaskRef, inputs?: InputValues): Promise<CrewOutput> {
-    const startIndex = this.findReplayStartIndex(taskRef);
+  async replay(taskRef: ReplayTaskRef | ReplayOptions, inputs?: InputValues): Promise<CrewOutput> {
+    const replayOptions = normalizeReplayOptions(taskRef, inputs);
+    const startIndex = this.findReplayStartIndex(replayOptions.taskRef);
     const storedOutputs = this.taskOutputStorageHandler?.load() ?? [];
     this.restoreReplayTaskOutputs(startIndex, storedOutputs);
     const storedReplayInputs = storedOutputs.find((record) => record.task_id === this.tasks[startIndex]?.id)?.inputs;
-    const replayInputs = { ...(inputs ?? this.executionLogs[startIndex]?.inputs ?? storedReplayInputs ?? {}) };
+    const replayInputs = { ...(replayOptions.inputs ?? this.executionLogs[startIndex]?.inputs ?? storedReplayInputs ?? {}) };
     (this as unknown as { _inputs: InputValues })._inputs = replayInputs;
+    this.interpolateInputs(replayInputs, { strictMissing: false });
     const previousOutputs = this.tasks
       .slice(0, startIndex)
       .map((task) => task.output)
@@ -2631,6 +2638,30 @@ function formatReplayTaskRef(taskRef: ReplayTaskRef): string {
     return String(taskRef);
   }
   return taskRef.name ?? taskRef.id;
+}
+
+function normalizeReplayOptions(taskRefOrOptions: ReplayTaskRef | ReplayOptions, inputs?: InputValues): {
+  taskRef: ReplayTaskRef;
+  inputs?: InputValues;
+} {
+  if (isReplayOptions(taskRefOrOptions)) {
+    const taskRef = taskRefOrOptions.task_id ?? taskRefOrOptions.taskId;
+    if (taskRef === undefined) {
+      throw new Error("replay requires task_id or taskId.");
+    }
+    return taskRefOrOptions.inputs === undefined
+      ? { taskRef }
+      : { taskRef, inputs: taskRefOrOptions.inputs };
+  }
+  return inputs === undefined
+    ? { taskRef: taskRefOrOptions }
+    : { taskRef: taskRefOrOptions, inputs };
+}
+
+function isReplayOptions(value: ReplayTaskRef | ReplayOptions): value is ReplayOptions {
+  return isRecord(value)
+    && !(value instanceof Task)
+    && ("task_id" in value || "taskId" in value || "inputs" in value);
 }
 
 function createDelegationTools(agents: readonly Agent[]): Tool[] {

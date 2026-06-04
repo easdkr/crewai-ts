@@ -38381,6 +38381,50 @@ describe("crew replay", () => {
     expect(crewInstance.executionLogs[1]?.inputs).toEqual({ topic: "replayed" });
   });
 
+  it("accepts upstream replay task_id options objects from docs examples", async () => {
+    let firstCalls = 0;
+    let secondCalls = 0;
+    const agent = new Agent({
+      role: "Researcher",
+      goal: "Write",
+      backstory: "Careful analyst",
+      llm: (messages) => {
+        const prompt = messages.at(-1)?.content ?? "";
+        if (prompt.includes("Task: First")) {
+          firstCalls += 1;
+          return "first output";
+        }
+        secondCalls += 1;
+        return `second sees ${prompt}`;
+      },
+    });
+    const first = new Task({
+      name: "first-task",
+      description: "First",
+      expectedOutput: "First output",
+      agent,
+    });
+    const second = new Task({
+      name: "second-task",
+      description: "Second {topic}",
+      expectedOutput: "Second output",
+      agent,
+    });
+    const crewInstance = new Crew({ agents: [agent], tasks: [first, second] });
+
+    await crewInstance.kickoff({ inputs: { topic: "original" } });
+    const replayed = await crewInstance.replay({
+      task_id: second.id,
+      inputs: { topic: "CrewAI Training" },
+    });
+
+    expect(firstCalls).toBe(1);
+    expect(secondCalls).toBe(2);
+    expect(replayed.raw).toContain("Task: Second CrewAI Training");
+    expect(replayed.raw).toContain("Context:\nfirst output");
+    expect(crewInstance.executionLogs[1]?.inputs).toEqual({ topic: "CrewAI Training" });
+  });
+
   it("restores stored context task outputs before replaying a later task", async () => {
     const dir = mkdtempSync(join(tmpdir(), "crewai-ts-replay-context-"));
     const storagePath = join(dir, "outputs.db");
