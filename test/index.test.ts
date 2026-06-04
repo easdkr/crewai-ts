@@ -33320,8 +33320,8 @@ describe("crew replay", () => {
       const first = new Task({ name: "first", description: "First", expectedOutput: "First", agent });
       const second = new Task({
         name: "second",
-        description: "Second",
-        expectedOutput: "Second",
+        description: "Second {topic}",
+        expectedOutput: "Second {topic}",
         agent,
         context: [first],
       });
@@ -33357,8 +33357,10 @@ describe("crew replay", () => {
 
       await crewInstance.replay(second.id);
 
+      expect((crewInstance as unknown as { _inputs: InputValues })._inputs).toEqual({ topic: "stored" });
       expect(first.output?.raw).toBe("stored context output");
       expect(first.output?.messages).toEqual([{ role: "assistant", content: "stored context output" }]);
+      expect(prompts[0]).toContain("Task: Second stored");
       expect(prompts[0]).toContain("Context:\nstored context output");
     } finally {
       rmSync(dir, { recursive: true, force: true });

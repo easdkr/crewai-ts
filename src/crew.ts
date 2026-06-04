@@ -1021,6 +1021,7 @@ export class Crew {
     this.restoreReplayTaskOutputs(startIndex, storedOutputs);
     const storedReplayInputs = storedOutputs.find((record) => record.task_id === this.tasks[startIndex]?.id)?.inputs;
     const replayInputs = { ...(inputs ?? this.executionLogs[startIndex]?.inputs ?? storedReplayInputs ?? {}) };
+    (this as unknown as { _inputs: InputValues })._inputs = replayInputs;
     const previousOutputs = this.tasks
       .slice(0, startIndex)
       .map((task) => task.output)
