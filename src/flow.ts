@@ -4597,9 +4597,6 @@ function flowStateDefinition(instanceOrConstructor: object | FlowMetadataTarget)
 }
 
 function flowConfigDefinition(instanceOrConstructor: object | FlowMetadataTarget): FlowConfigDefinition {
-  if (typeof instanceOrConstructor === "function") {
-    return new FlowConfigDefinition();
-  }
   const flow = instanceOrConstructor as {
     stream?: unknown;
     maxMethodCalls?: unknown;
@@ -4607,6 +4604,8 @@ function flowConfigDefinition(instanceOrConstructor: object | FlowMetadataTarget
     memory?: unknown;
     inputProvider?: unknown;
     input_provider?: unknown;
+    suppressFlowEvents?: unknown;
+    suppress_flow_events?: unknown;
   };
   return new FlowConfigDefinition({
     stream: flow.stream === true,
@@ -4617,6 +4616,7 @@ function flowConfigDefinition(instanceOrConstructor: object | FlowMetadataTarget
         : 100,
     memory: serializeFlowDefinitionStaticValue(flow.memory ?? null),
     inputProvider: serializeFlowDefinitionStaticValue(flow.inputProvider ?? flow.input_provider ?? null),
+    suppressFlowEvents: flow.suppressFlowEvents === true || flow.suppress_flow_events === true,
   });
 }
 

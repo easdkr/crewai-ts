@@ -18996,6 +18996,31 @@ describe("flow runtime", () => {
     expect(definition.diagnostics).toEqual([]);
   });
 
+  it("builds FlowDefinition config from upstream static class config fields", () => {
+    class StaticConfigDefinitionFlow extends Flow {
+      static stream = true;
+      static max_method_calls = 7;
+
+      begin() {
+        return "started";
+      }
+    }
+
+    const initializer = decorateMethod(StaticConfigDefinitionFlow, "begin", start() as unknown as Decorator);
+    initializer.call(new StaticConfigDefinitionFlow());
+
+    const definition = buildFlowDefinition(StaticConfigDefinitionFlow);
+
+    expect(definition.config.stream).toBe(true);
+    expect(definition.config.max_method_calls).toBe(7);
+    expect(definition.to_dict()).toMatchObject({
+      config: {
+        stream: true,
+        max_method_calls: 7,
+      },
+    });
+  });
+
   it("serializes non-json human feedback metadata as FlowDefinition refs", () => {
     const marker = () => "marker";
 
