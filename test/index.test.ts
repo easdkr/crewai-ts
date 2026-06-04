@@ -2593,7 +2593,44 @@ describe("environment, logging, and file store utilities", () => {
     tool.set_files(null);
     expect(tool.run({ file_name: "readme.txt" })).toBe("No input files available.");
   });
+
+  it("extracts text from upstream PDF input files instead of returning base64", async () => {
+    const tool = new ReadFileTool();
+    const pdfBytes = makePdfWithText("CrewAI agents can read PDFs");
+    tool.set_files({ "doc.pdf": new PDFFile({ source: pdfBytes }) });
+
+    const result = String(await tool.run({ file_name: "doc.pdf" }));
+
+    expect(result).not.toContain("Base64:");
+    expect(result.toLowerCase()).toContain("agents");
+  });
 });
+
+function makePdfWithText(text: string): Buffer {
+  const escaped = text.replace(/[\\()]/g, "\\$&");
+  const objects = [
+    "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n",
+    "2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n",
+    "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>\nendobj\n",
+    "4 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n",
+  ];
+  const stream = `BT /F1 24 Tf 72 720 Td (${escaped}) Tj ET`;
+  objects.push(`5 0 obj\n<< /Length ${String(Buffer.byteLength(stream))} >>\nstream\n${stream}\nendstream\nendobj\n`);
+  let pdf = "%PDF-1.4\n";
+  const offsets = [0];
+  for (const object of objects) {
+    offsets.push(Buffer.byteLength(pdf));
+    pdf += object;
+  }
+  const xrefOffset = Buffer.byteLength(pdf);
+  pdf += `xref\n0 ${String(objects.length + 1)}\n`;
+  pdf += "0000000000 65535 f \n";
+  for (let index = 1; index < offsets.length; index += 1) {
+    pdf += `${String(offsets[index]).padStart(10, "0")} 00000 n \n`;
+  }
+  pdf += `trailer\n<< /Size ${String(objects.length + 1)} /Root 1 0 R >>\nstartxref\n${String(xrefOffset)}\n%%EOF\n`;
+  return Buffer.from(pdf, "binary");
+}
 
 describe("lock utilities", () => {
   it("allows concurrent readers while writers wait for exclusive access", async () => {

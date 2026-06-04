@@ -1044,7 +1044,7 @@ export class ReadFileTool extends BaseTool {
     this.setFiles(files);
   }
 
-  protected _run(args: Record<string, unknown>): string {
+  protected _run(args: Record<string, unknown>): MaybePromise<string> {
     if (!this.files) {
       return "No input files available.";
     }
@@ -1055,11 +1055,39 @@ export class ReadFileTool extends BaseTool {
     }
     const content = file.read();
     const contentType = file.content_type ?? file.contentType ?? "application/octet-stream";
+    if (contentType === "application/pdf") {
+      const bytes = typeof content === "string" ? Buffer.from(content) : Buffer.from(content);
+      return readPDFFileText(bytes, file.filename ?? fileName);
+    }
     if (contentType.startsWith("text/") || ["application/json", "application/xml", "application/x-yaml"].includes(contentType)) {
       return typeof content === "string" ? content : Buffer.from(content).toString("utf8");
     }
     const encoded = typeof content === "string" ? Buffer.from(content).toString("base64") : Buffer.from(content).toString("base64");
     return `[Binary file: ${file.filename ?? fileName} (${contentType})]\nBase64: ${encoded}`;
+  }
+}
+
+async function readPDFFileText(content: Buffer, filename: string): Promise<string> {
+  try {
+    const module = await import("pdf-parse");
+    const PDFParse = module.PDFParse as new (options: { data: Buffer }) => {
+      getText(): Promise<{ text?: string }>;
+      destroy?: () => Promise<void> | void;
+    };
+    const parser = new PDFParse({ data: content });
+    try {
+      const result = await parser.getText();
+      const text = result.text?.trim() ?? "";
+      return text.length > 0 ? text : `[PDF file with no extractable text: ${filename}]`;
+    } finally {
+      await parser.destroy?.();
+    }
+  } catch (error) {
+    if (error instanceof Error && error.message.includes("Cannot find package")) {
+      const encoded = content.toString("base64");
+      return `[Binary file: ${filename} (application/pdf)]\nBase64: ${encoded}`;
+    }
+    return `Unable to extract text from PDF '${filename}': ${error instanceof Error ? error.message : String(error)}`;
   }
 }
 
