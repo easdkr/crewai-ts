@@ -19419,7 +19419,15 @@ describe("flow runtime", () => {
     });
     expect(structure.edges).toEqual([
       { source: "begin", target: "route", condition_type: "OR", is_router_path: false },
-      { source: "route", target: "publish", condition_type: null, is_router_path: true, router_path_label: "approved" },
+      {
+        source: "route",
+        target: "publish",
+        condition_type: null,
+        is_router_path: true,
+        is_router_event: true,
+        router_path_label: "approved",
+        router_event: "approved",
+      },
     ]);
     expect(calculateExecutionPaths(structure)).toBe(1);
   });
@@ -19500,10 +19508,44 @@ describe("flow runtime", () => {
       trigger_methods: ["done"],
       class_name: "ContractOnlyFlow",
     });
-    expect(structure.edges).toEqual([
-      { source: "begin", target: "decide", condition_type: "OR", is_router_path: false },
-      { source: "decide", target: "finish", condition_type: null, is_router_path: true, router_path_label: "done" },
-    ]);
+    expect(structure.edges).toContainEqual({
+      source: "begin",
+      target: "decide",
+      condition_type: "OR",
+      is_router_path: false,
+    });
+    expect(structure.edges).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        source: "decide",
+        target: "finish",
+        condition_type: null,
+        is_router_path: true,
+        is_router_event: true,
+        router_path_label: "done",
+        router_event: "done",
+      }),
+    ]));
+  });
+
+  it("exposes upstream static FlowDefinition visualization router event aliases", () => {
+    const definition = FlowDefinition.from_dict({
+      schema: "crewai.flow/v1",
+      name: "RouterEventAliasFlow",
+      methods: {
+        begin: { start: true },
+        decide: { listen: "begin", router: true, emit: ["done"] },
+        finish: { listen: "done" },
+      },
+    });
+
+    const structure = buildFlowStructure(definition);
+    const routerEdge = structure.edges.find((edge) => edge.source === "decide" && edge.target === "finish");
+
+    expect(structure.nodes.decide?.router_events).toEqual(["done"]);
+    expect(routerEdge).toMatchObject({
+      is_router_event: true,
+      router_event: "done",
+    });
   });
 
   it("warns instead of erroring for orphaned static FlowDefinition router triggers", () => {
@@ -19600,9 +19642,33 @@ describe("flow runtime", () => {
 
     expect(chainedStructure.edges.every((edge) => edge.source !== edge.target)).toBe(true);
     expect(chainedRouterEdges).toEqual([
-      { source: "sessionInCache", target: "checkExp", condition_type: null, is_router_path: true, router_path_label: "exp" },
-      { source: "checkExp", target: "callAiAuth", condition_type: null, is_router_path: true, router_path_label: "auth" },
-      { source: "callAiAuth", target: "forwardToAction", condition_type: null, is_router_path: true, router_path_label: "action" },
+      {
+        source: "sessionInCache",
+        target: "checkExp",
+        condition_type: null,
+        is_router_path: true,
+        is_router_event: true,
+        router_path_label: "exp",
+        router_event: "exp",
+      },
+      {
+        source: "checkExp",
+        target: "callAiAuth",
+        condition_type: null,
+        is_router_path: true,
+        is_router_event: true,
+        router_path_label: "auth",
+        router_event: "auth",
+      },
+      {
+        source: "callAiAuth",
+        target: "forwardToAction",
+        condition_type: null,
+        is_router_path: true,
+        is_router_event: true,
+        router_path_label: "action",
+        router_event: "action",
+      },
     ]);
 
     class SharedOutputRouterFlow extends Flow {
@@ -19641,8 +19707,24 @@ describe("flow runtime", () => {
     const sharedRouterEdges = buildFlowStructure(sharedFlow).edges.filter((edge) => edge.is_router_path);
 
     expect(sharedRouterEdges).toEqual([
-      { source: "routerA", target: "routerB", condition_type: null, is_router_path: true, router_path_label: "auth" },
-      { source: "routerB", target: "finalize", condition_type: null, is_router_path: true, router_path_label: "done" },
+      {
+        source: "routerA",
+        target: "routerB",
+        condition_type: null,
+        is_router_path: true,
+        is_router_event: true,
+        router_path_label: "auth",
+        router_event: "auth",
+      },
+      {
+        source: "routerB",
+        target: "finalize",
+        condition_type: null,
+        is_router_path: true,
+        is_router_event: true,
+        router_path_label: "done",
+        router_event: "done",
+      },
     ]);
   });
 

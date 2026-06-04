@@ -1063,6 +1063,7 @@ export type FlowNodeMetadata = {
   type: FlowMethodKind | "start_router";
   is_router?: boolean;
   router_paths?: readonly string[];
+  router_events?: readonly string[];
   condition_type?: FlowCondition["type"] | "IF" | null;
   trigger_condition_type?: FlowCondition["type"] | null;
   trigger_methods?: readonly string[];
@@ -1078,7 +1079,9 @@ export type FlowVisualizationEdge = {
   target: string;
   condition_type: FlowCondition["type"] | null;
   is_router_path: boolean;
+  is_router_event?: boolean;
   router_path_label?: string;
+  router_event?: string;
 };
 
 export type FlowVisualizationStructure = {
@@ -3469,6 +3472,7 @@ export function buildFlowStructure(instanceOrConstructor: object | FlowMetadataT
         : inferredPaths ?? [];
       metadata.is_router = true;
       metadata.router_paths = uniqueStrings(routerPaths);
+      metadata.router_events = metadata.router_paths;
       metadata.condition_type = method.conditionType ?? "IF";
       routerMethods.push(method.name);
     }
@@ -3511,7 +3515,9 @@ export function buildFlowStructure(instanceOrConstructor: object | FlowMetadataT
             target: String(entry.name),
             condition_type: null,
             is_router_path: true,
+            is_router_event: true,
             router_path_label: path,
+            router_event: path,
           });
         }
       }
