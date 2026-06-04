@@ -21865,6 +21865,70 @@ describe("flow runtime", () => {
     expect(flow.inputFiles).toEqual({});
   });
 
+  it("keeps flow input files available to crews in downstream listeners", async () => {
+    const crewOutputs: string[] = [];
+    const fileReadingCrew = (label: string) => {
+      const agentInstance = new Agent({
+        role: `${label} Reader`,
+        goal: "Read flow files",
+        backstory: "Careful reader",
+        llm: (messages, options) => {
+          if (!messages.some((message) => message.role === "tool")) {
+            expect(options?.tools?.map((toolInstance) => toolInstance.name)).toContain("read_file");
+            return { toolName: "read_file", arguments: { file_name: "notes" } };
+          }
+          return `${label}:${messages.at(-1)?.content ?? ""}`;
+        },
+      });
+      const taskInstance = new Task({
+        description: `${label} read flow file`,
+        expectedOutput: "File content",
+        agent: agentInstance,
+      });
+      return new Crew({ agents: [agentInstance], tasks: [taskInstance] });
+    };
+
+    class MultiCrewFlow extends Flow {
+      async describe() {
+        const output = await this.kickoffCrew(fileReadingCrew("start"));
+        crewOutputs.push(output.raw);
+        return output.raw;
+      }
+
+      async summarize(description: string) {
+        expect(description).toContain("Flow notes");
+        const output = await this.kickoffCrew(fileReadingCrew("listener"));
+        crewOutputs.push(output.raw);
+        return output.raw;
+      }
+    }
+
+    const initializers = [
+      decorateMethod(MultiCrewFlow, "describe", start() as unknown as Decorator),
+      decorateMethod(MultiCrewFlow, "summarize", listen("describe") as unknown as Decorator),
+    ];
+    const flow = new MultiCrewFlow();
+    initializers.forEach((initializer) => {
+      initializer.call(flow);
+    });
+
+    const output = await flow.kickoff({
+      input_files: {
+        notes: {
+          filename: "notes.txt",
+          content: "Flow notes",
+        },
+      },
+    }) as string;
+
+    expect(output).toBe("listener:read_file result:\nFlow notes");
+    expect(crewOutputs).toEqual([
+      "start:read_file result:\nFlow notes",
+      "listener:read_file result:\nFlow notes",
+    ]);
+    expect(flow.inputFiles).toEqual({});
+  });
+
   it("extracts structured input files from flow inputs", async () => {
     class ExtractFlow extends Flow<{ topic?: string; sawFile?: boolean }> {
       begin(inputs: Record<string, unknown>) {
