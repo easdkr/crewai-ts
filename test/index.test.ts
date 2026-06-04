@@ -27369,6 +27369,65 @@ describe("tools", () => {
     expect(seenMessages[0]?.[1]?.content).not.toContain("old content");
   });
 
+  it("passes direct Agent kickoff input files to multimodal LLM messages", async () => {
+    class CapturingAgentMultimodalLLM extends BaseLLM {
+      capturedMessages: readonly LLMMessage[] = [];
+      capturedToolNames: readonly string[] = [];
+
+      constructor() {
+        super({ model: "openai/gpt-4o-mini", provider: "openai" });
+      }
+
+      override supportsMultimodal(): boolean {
+        return true;
+      }
+
+      override call(messages: readonly LLMMessage[], options?: LLMCallOptions): LLMResponse {
+        this.capturedMessages = messages.map((message) => ({
+          ...message,
+          files: message.files ? { ...message.files } : undefined,
+        }));
+        this.capturedToolNames = options?.tools?.map((toolInstance) => toolInstance.name) ?? [];
+        return "agent multimodal done";
+      }
+    }
+
+    const llmInstance = new CapturingAgentMultimodalLLM();
+    const agent = new Agent({
+      role: "File Analyst",
+      goal: "Analyze files",
+      backstory: "Expert at analyzing files",
+      llm: llmInstance,
+    });
+    const messageChart = new ImageFile({ source: Buffer.from([0x89, 0x50, 0x4e, 0x47]) });
+    const explicitChart = new ImageFile({ source: Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x01]) });
+    const notes = new TextFile({ source: Buffer.from("Agent kickoff notes") });
+
+    await expect(agent.kickoff([
+      {
+        role: "user",
+        content: "Describe these files briefly.",
+        files: {
+          chart: messageChart,
+        },
+      },
+    ], {
+      input_files: {
+        chart: explicitChart,
+        notes,
+      },
+    })).resolves.toBe("agent multimodal done");
+
+    const userMessage = llmInstance.capturedMessages.findLast((message) => message.role === "user");
+    expect(userMessage?.files).toEqual({
+      chart: explicitChart,
+      notes,
+    });
+    expect(userMessage?.content).toContain("Describe these files briefly.");
+    expect(userMessage?.content).toContain('"notes"');
+    expect(llmInstance.capturedToolNames).toContain("read_file");
+  });
+
   it("uses functionCallingLlm for tool selection and the main LLM for the final answer", async () => {
     const functionCalls: LLMMessage[][] = [];
     const mainCalls: LLMMessage[][] = [];
