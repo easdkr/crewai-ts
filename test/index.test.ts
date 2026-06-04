@@ -41472,6 +41472,44 @@ describe("streaming output", () => {
     expect(streaming.isCompleted).toBe(true);
   });
 
+  it("streams CrewOutput chunks from crew-backed flow steps like the upstream docs", async () => {
+    class CrewBackedFlow extends Flow {
+      constructor() {
+        super({ stream: true });
+      }
+
+      researchPhase() {
+        const researcher = new Agent({
+          role: "Research Analyst",
+          goal: "Gather comprehensive information",
+          backstory: "Expert at finding relevant information",
+          llm: () => "research findings",
+        });
+        const taskInstance = new Task({
+          description: "Research AI developments in healthcare",
+          expectedOutput: "Research findings on AI in healthcare",
+          agent: researcher,
+        });
+        return new Crew({ agents: [researcher], tasks: [taskInstance] }).kickoff();
+      }
+    }
+
+    const flow = new CrewBackedFlow();
+    decorateMethod(CrewBackedFlow, "researchPhase", start() as unknown as Decorator).call(flow);
+
+    const streaming = await flow.kickoff() as FlowStreamingOutput;
+    const chunks: StreamChunk[] = [];
+    for await (const chunk of streaming) {
+      chunks.push(chunk);
+    }
+
+    expect(chunks.map((chunk) => chunk.content)).toEqual(["research findings"]);
+    expect(chunks[0]?.taskName).toBe("Research AI developments in healthcare");
+    expect(chunks[0]?.agentRole).toBe("Research Analyst");
+    expect(streaming.get_full_text()).toBe("research findings");
+    expect((streaming.result as CrewOutput).raw).toBe("research findings");
+  });
+
   it("supports direct streaming outputs with null results", async () => {
     const streaming = new FlowStreamingOutput(() => Promise.resolve(null));
 

@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 1061 passing tests.
+- Test suite: 1062 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -586,6 +586,7 @@ When more goal budget is available, continue from the behavioral parity audits b
   - `TaskOutput`, `CrewOutput`, and `LiteAgentOutput` now expose upstream-style `__str__` aliases; `TaskOutput.__str__` preserves upstream pydantic-over-json-over-raw priority and empty raw fallback, and `CrewOutput.__getitem__` mirrors keyed pydantic/json access.
   - `CrewStreamingOutput.results` now exposes upstream-style list access for completed streaming crew results.
   - Streaming state handlers now use deterministic stream-id context isolation so overlapping streaming runs receive only their own LLM chunks, covering upstream issue #5376 without relying on Python `ContextVar`.
+  - Flow streaming documentation examples are release-gated for crew-backed flow steps: a streaming Flow whose start/listener returns a `CrewOutput` now yields the crew raw text with task and agent metadata instead of serializing the output object.
   - `StreamingOutputBase` now exposes upstream-style `__aenter__` / `__aexit__` async context-manager aliases that close/cancel unfinished streams.
   - `StreamChunk.__str__` and `StreamingOutputBase.__iter__` now mirror upstream string and sync-iteration helpers.
   - `InternalInstructor.to_pydantic` now exposes upstream-style structured conversion through a provided synchronous LLM client and model validation/dump hooks.

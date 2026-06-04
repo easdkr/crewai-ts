@@ -6,7 +6,7 @@ import {
   crewaiEventBus,
   type BaseEvent,
 } from "./events.js";
-import type { CrewOutput } from "./outputs.js";
+import { CrewOutput } from "./outputs.js";
 import { sanitizeToolName } from "./tools.js";
 
 export enum StreamChunkType {
@@ -255,19 +255,15 @@ export class CrewStreamingOutput extends StreamingOutputBase<CrewOutput> {
   }
 
   protected chunksFromResult(result: CrewOutput): readonly StreamChunk[] {
-    return result.raw
-      ? [new StreamChunk({
-        content: result.raw,
-        taskIndex: Math.max(0, result.tasksOutput.length - 1),
-        taskName: result.tasksOutput.at(-1)?.name ?? result.tasksOutput.at(-1)?.description ?? "",
-        agentRole: result.tasksOutput.at(-1)?.agent ?? "",
-      })]
-      : [];
+    return chunksFromCrewOutput(result);
   }
 }
 
 export class FlowStreamingOutput extends StreamingOutputBase<unknown> {
   protected chunksFromResult(result: unknown): readonly StreamChunk[] {
+    if (result instanceof CrewOutput) {
+      return chunksFromCrewOutput(result);
+    }
     if (typeof result === "string") {
       return [new StreamChunk({ content: result })];
     }
@@ -276,6 +272,17 @@ export class FlowStreamingOutput extends StreamingOutputBase<unknown> {
     }
     return [new StreamChunk({ content: JSON.stringify(result) })];
   }
+}
+
+function chunksFromCrewOutput(result: CrewOutput): readonly StreamChunk[] {
+  return result.raw
+    ? [new StreamChunk({
+      content: result.raw,
+      taskIndex: Math.max(0, result.tasksOutput.length - 1),
+      taskName: result.tasksOutput.at(-1)?.name ?? result.tasksOutput.at(-1)?.description ?? "",
+      agentRole: result.tasksOutput.at(-1)?.agent ?? "",
+    })]
+    : [];
 }
 
 export const TaskInfo = Object.freeze({ kind: "TaskInfo" });
