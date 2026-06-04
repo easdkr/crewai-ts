@@ -1408,6 +1408,10 @@ export class AgentExecutor extends BaseAgentExecutor {
     return typeof handler === "function" ? handler.call(this, answer) : answer;
   }
 
+  _append_message_to_state(text: string, role: "user" | "assistant" | "system" = "assistant"): void {
+    this.state.messages.push(formatMessageForLLM(text, role));
+  }
+
   private invokeStepCallback(answer: AgentAction | AgentFinish): void {
     const callback = (this.stepCallback ?? this.step_callback ?? this.agent?.stepCallback ?? this.agent?.step_callback ?? null) as ((value: AgentAction | AgentFinish) => unknown) | null;
     const result = callback?.(answer);
@@ -2344,6 +2348,10 @@ export class CrewAgentExecutor extends BaseAgentExecutor {
 
   _append_message(text: string, role: "user" | "assistant" | "system" = "assistant"): void {
     this.messages.push(formatMessageForLLM(text, role));
+  }
+
+  _append_message_to_state(text: string, role: "user" | "assistant" | "system" = "assistant"): void {
+    this._append_message(text, role);
   }
 
   _handle_agent_action(formattedAnswer: AgentAction, toolResult: { result?: unknown; result_as_answer?: boolean; resultAsAnswer?: boolean }): AgentAction | AgentFinish {

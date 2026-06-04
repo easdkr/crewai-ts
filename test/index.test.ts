@@ -12342,6 +12342,16 @@ describe("core crew runtime", () => {
     expect((callbackValues[0] as AgentAction).result).toBe("found");
   });
 
+  it("appends upstream AgentExecutor state messages with role formatting", () => {
+    const executor = new AgentExecutor();
+
+    executor._append_message_to_state("look up CrewAI", "user");
+
+    expect(executor.state.messages).toEqual([
+      { role: "user", content: "look up CrewAI" },
+    ]);
+  });
+
   it("routes upstream provider-shaped native tool calls from AgentExecutor LLM responses", () => {
     const providerCalls = [
       { toolUseId: "bedrock_1", name: "bedrock_lookup", input: { query: "Bedrock" } },
