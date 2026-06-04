@@ -14,12 +14,12 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 856 passing tests.
+- Test suite: 857 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
 - Subpath export parity: `total_missing=0`, `total_mismatched=0`.
-- During the 2026-06-04 run, a fresh latest upstream checkout showed new post-baseline export surfaces (`flow/conversation`, `experimental/conversational`, `flow/flow_definition`, `llms/providers/snowflake/completion`, and `flow_context.current_flow_name`). `flow/conversation` is now covered by deterministic TS helpers; the remaining latest-upstream export gap is 25 symbols. These remaining surfaces are not part of the current release baseline commit above; audit them by behavior before advancing the parity baseline.
+- During the 2026-06-04 run, a fresh latest upstream checkout showed new post-baseline export surfaces (`flow/conversation`, `experimental/conversational`, `flow/flow_definition`, `llms/providers/snowflake/completion`, and `flow_context.current_flow_name`). `flow/conversation` and `flow/flow_definition` are now covered by deterministic TS helpers; the remaining latest-upstream export gap is 17 symbols. These remaining surfaces are not part of the current release baseline commit above; audit them by behavior before advancing the parity baseline.
 
 ## Release Readiness Policy
 
@@ -123,7 +123,7 @@ High-value behavior audits still worth running:
    - Any failing local example becomes the next behavior test.
 
 2. **Latest upstream baseline advancement**
-   - Latest upstream now exposes experimental conversational, FlowDefinition schema, Snowflake completion, and flow-context symbols beyond the current pinned baseline.
+   - Latest upstream now exposes experimental conversational, Snowflake completion, and flow-context symbols beyond the current pinned baseline.
    - Before changing the release baseline, classify each new surface by behavior: deterministic local workflow, provider/network shim, or intentionally unsupported optional integration.
 
 3. **Experimental `AgentExecutor` plan-and-execute behavior**
@@ -229,6 +229,7 @@ When more goal budget is available, continue from the behavioral parity audits b
 - `prepare_kickoff` now has default-gate coverage for upstream issue #5534 behavior: agents referenced only through `task.agent` are bound to the crew even when `Crew.agents` is empty.
 - Task guardrail JSON serialization now has default-gate round-trip coverage: callable guardrails are dropped with warnings, serializable string guardrails remain, and `guardrails` lists do not retain null entries that would fail restore validation.
 - Latest-upstream `flow/conversation` helpers are release-gated as deterministic local state utilities: `ChatState`, `ConversationalConfig`, kickoff input normalization, message append/read, state-field updates, user-message receipt, class-level conversational config resolution, intent-classification delegation with message context, and input-history message conversion.
+- Latest-upstream `flow/flow_definition` schema models are release-gated as deterministic local contract utilities: Flow definition/config/state/method/persistence/HITL/diagnostic classes, `to_dict` / `to_json` serialization, `from_dict` / `from_json` round trips, JSON schema metadata, and upstream validation diagnostics for router triggers, router emits, and human-feedback outcome/LLM consistency.
 
 ## Completed In Current Tool Behavior Pass
 

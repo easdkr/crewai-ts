@@ -488,6 +488,13 @@ import {
   extractInputFilesFromInputs,
   flow_structure,
   flowConfig,
+  FlowConfigDefinition,
+  FlowDefinition,
+  FlowDefinitionDiagnostic,
+  FlowHumanFeedbackDefinition,
+  FlowMethodDefinition,
+  FlowPersistenceDefinition,
+  FlowStateDefinition,
   get_conversation_messages,
   get_conversational_config,
   getBeforeLlmCallHooks,
@@ -16519,6 +16526,85 @@ describe("flow runtime", () => {
       { role: "user", content: "Answer" },
       { role: "user", content: "Follow-up" },
     ]);
+  });
+
+  it("provides upstream FlowDefinition schema validation and serialization", () => {
+    const definition = FlowDefinition.from_dict({
+      schema: "crewai.flow/v1",
+      name: "ReviewFlow",
+      description: "Routes a draft through review",
+      state: { type: "dict", default: { id: "flow-1" } },
+      config: { stream: true, max_method_calls: 12 },
+      persist: { enabled: true, verbose: true, persistence: { type: "sqlite" } },
+      methods: {
+        begin: { start: true },
+        route: { router: true, listen: "begin", emit: ["approved", "changes"] },
+        publish: {
+          listen: "route",
+          human_feedback: {
+            message: "Review output",
+            emit: ["approved", "changes"],
+            llm: null,
+            default_outcome: "missing",
+          },
+        },
+      },
+      diagnostics: [{ code: "preexisting", message: "kept", path: "methods.begin" }],
+    });
+
+    expect(definition.schema_).toBe("crewai.flow/v1");
+    expect(definition.methods.route.router).toBe(true);
+    expect(definition.methods.begin.is_start).toBe(true);
+    expect(definition.diagnostics.map((diagnostic) => diagnostic.code)).toEqual([
+      "preexisting",
+      "human_feedback_llm_required",
+      "human_feedback_default_not_in_emit",
+    ]);
+
+    expect(definition.to_dict()).toMatchObject({
+      schema: "crewai.flow/v1",
+      name: "ReviewFlow",
+      description: "Routes a draft through review",
+      state: { type: "dict", default: { id: "flow-1" } },
+      config: { stream: true, suppress_flow_events: false, max_method_calls: 12 },
+      persist: { enabled: true, verbose: true, persistence: { type: "sqlite" } },
+      methods: {
+        begin: { start: true, router: false },
+        route: { listen: "begin", router: true, emit: ["approved", "changes"] },
+        publish: {
+          listen: "route",
+          router: false,
+          human_feedback: {
+            message: "Review output",
+            emit: ["approved", "changes"],
+            default_outcome: "missing",
+            learn: false,
+            learn_source: "hitl",
+            learn_strict: false,
+          },
+        },
+      },
+    });
+
+    const jsonRoundTrip = FlowDefinition.from_json(definition.to_json({ indent: null }));
+    expect(jsonRoundTrip.name).toBe("ReviewFlow");
+    expect(jsonRoundTrip.diagnostics.some((diagnostic) => diagnostic.code === "human_feedback_llm_required")).toBe(true);
+    expect(FlowDefinition.json_schema()).toMatchObject({
+      title: "FlowDefinition",
+      type: "object",
+      properties: {
+        schema: { type: "string" },
+        name: { type: "string" },
+        methods: { type: "object" },
+      },
+    });
+
+    expect(new FlowMethodDefinition({ start: false }).is_start).toBe(false);
+    expect(new FlowDefinitionDiagnostic({ code: "warn", message: "careful" }).severity).toBe("warning");
+    expect(new FlowStateDefinition().type).toBe("dict");
+    expect(new FlowConfigDefinition().max_method_calls).toBe(100);
+    expect(new FlowPersistenceDefinition().enabled).toBe(false);
+    expect(new FlowHumanFeedbackDefinition({ message: "Review" }).llm).toBe("gpt-4o-mini");
   });
 
   it("exposes upstream snake_case flow state properties", async () => {

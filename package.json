@@ -585,6 +585,10 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
+    "./flow/flow_definition": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
     "./flow/flow_context": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"

@@ -1546,6 +1546,23 @@ export {
   type ConversationalConfigOptions,
 } from "./flow-conversation.js";
 export {
+  FlowConfigDefinition,
+  FlowDefinition,
+  FlowDefinitionCondition,
+  FlowDefinitionDiagnostic,
+  FlowHumanFeedbackDefinition,
+  FlowMethodDefinition,
+  FlowPersistenceDefinition,
+  FlowStateDefinition,
+  type FlowConfigDefinitionOptions,
+  type FlowDefinitionDiagnosticOptions,
+  type FlowDefinitionOptions,
+  type FlowHumanFeedbackDefinitionOptions,
+  type FlowMethodDefinitionOptions,
+  type FlowPersistenceDefinitionOptions,
+  type FlowStateDefinitionOptions,
+} from "./flow-definition.js";
+export {
   BG_CARD,
   BG_DARK,
   BORDER_SUBTLE,
