@@ -21919,6 +21919,67 @@ describe("flow runtime", () => {
       "Logger: Hello from the second method",
     ]);
 
+    class MixedConditionFlow extends Flow<{ events: string[]; iteration: number }> {
+      constructor() {
+        super({ initialState: { events: [], iteration: 0 } });
+      }
+
+      loadLeads() {
+        this.state.events.push("loadLeads");
+      }
+
+      scoreLeads() {
+        this.state.iteration += 1;
+        this.state.events.push(`scoreLeads:${String(this.state.iteration)}`);
+      }
+
+      humanInTheLoop() {
+        this.state.events.push("humanInTheLoop");
+        return this.state.iteration === 1 ? "scoredLeadsFeedback" : "generateEmails";
+      }
+
+      writeEmails() {
+        this.state.events.push("writeEmails");
+      }
+    }
+    const loadLeadsRef = Object.getOwnPropertyDescriptor(
+      MixedConditionFlow.prototype,
+      "loadLeads",
+    )?.value as () => unknown;
+    const scoreLeadsRef = Object.getOwnPropertyDescriptor(
+      MixedConditionFlow.prototype,
+      "scoreLeads",
+    )?.value as () => unknown;
+    [
+      decorateMethod(MixedConditionFlow, "loadLeads", start() as unknown as Decorator),
+      decorateMethod(
+        MixedConditionFlow,
+        "scoreLeads",
+        listen(or_(
+          loadLeadsRef,
+          "scoredLeadsFeedback",
+        )) as unknown as Decorator,
+      ),
+      decorateMethod(
+        MixedConditionFlow,
+        "humanInTheLoop",
+        router(scoreLeadsRef) as unknown as Decorator,
+      ),
+      decorateMethod(MixedConditionFlow, "writeEmails", listen("generateEmails") as unknown as Decorator),
+    ].forEach((initializer) => {
+      initializer.call(new MixedConditionFlow());
+    });
+    const mixedConditionFlow = new MixedConditionFlow();
+    await mixedConditionFlow.kickoff();
+    expect(mixedConditionFlow.state.events).toEqual([
+      "loadLeads",
+      "scoreLeads:1",
+      "humanInTheLoop",
+      "scoreLeads:2",
+      "humanInTheLoop",
+      "writeEmails",
+    ]);
+
     class AndExampleFlow extends Flow<{ id: string; greeting?: string; joke?: string; logs: string[] }> {
       constructor() {
         super({ initialState: { id: "and-doc-flow", logs: [] } });
