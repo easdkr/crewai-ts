@@ -186,10 +186,38 @@ export const cache = new Map<string, unknown>();
 const objectIds = new WeakMap<object, number>();
 let nextObjectId = 1;
 
-export function getMcpTools(instance: object): unknown[] {
+export function getMcpTools(instance: object, ...toolNames: readonly string[]): unknown[] {
   const record = instance as Record<string, unknown>;
-  const maybeTools = record.mcpTools ?? record.mcp_tools;
-  return Array.isArray(maybeTools) ? maybeTools : [];
+  const adapter = record._mcp_server_adapter ?? record.mcpServerAdapter ?? record.mcp_server_adapter;
+  const adapterTools: unknown = adapter && typeof adapter === "object"
+    ? (adapter as Record<string, unknown>).tools
+    : null;
+  const adapterToolsRecord = adapterTools && typeof adapterTools === "object"
+    ? adapterTools as Record<string, unknown>
+    : null;
+  const filterByNames: unknown = adapterToolsRecord
+    ? adapterToolsRecord.filter_by_names ?? adapterToolsRecord.filterByNames
+    : null;
+  if (typeof filterByNames === "function") {
+    const names = toolNames.length > 0 ? [...toolNames] : null;
+    const filtered: unknown = (filterByNames as (this: unknown, names: readonly string[] | null) => unknown).call(adapterTools, names);
+    return Array.isArray(filtered) ? filtered : [];
+  }
+
+  const maybeTools = adapterTools ?? record.mcpTools ?? record.mcp_tools;
+  if (!Array.isArray(maybeTools)) {
+    return [];
+  }
+  if (toolNames.length === 0) {
+    return maybeTools;
+  }
+  const requested = new Set(toolNames);
+  return maybeTools.filter((tool) => {
+    const name: unknown = tool && typeof tool === "object"
+      ? (tool as Record<string, unknown>).name
+      : null;
+    return typeof name === "string" && requested.has(name);
+  });
 }
 
 export const get_mcp_tools = getMcpTools;

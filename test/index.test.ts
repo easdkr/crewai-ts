@@ -399,6 +399,7 @@ import {
   is_auto_injected,
   BoundTaskMethod,
   DecoratedMethod,
+  get_mcp_tools,
   _make_hashable,
   _memoize_async,
   _memoize_sync,
@@ -23861,6 +23862,36 @@ describe("project config mapping", () => {
     const receiverB = new ConfigHolder();
     expect(syncMethod.call(receiverA, "same")).toBe(syncMethod.call(receiverA, "same"));
     expect(syncMethod.call(receiverB, "same")).not.toBe(syncMethod.call(receiverA, "same"));
+  });
+
+  it("filters upstream-style project MCP tools by requested names", () => {
+    const simpleTool = new StructuredTool({
+      name: "simple_tool",
+      description: "Return hi",
+      func: () => "Hi!",
+    });
+    const anotherTool = new StructuredTool({
+      name: "another_simple_tool",
+      description: "Return hi again",
+      func: () => "Hi again!",
+    });
+    const project = {
+      mcp_server_params: { host: "localhost", port: 8000 },
+      _mcp_server_adapter: {
+        tools: {
+          filter_by_names: vi.fn((names?: readonly string[] | null) =>
+            names && names.length > 0
+              ? [simpleTool, anotherTool].filter((toolInstance) => names.includes(toolInstance.name))
+              : [simpleTool, anotherTool],
+          ),
+        },
+      },
+    };
+
+    expect(get_mcp_tools(project).map((toolInstance) => (toolInstance as StructuredTool).name))
+      .toEqual(["simple_tool", "another_simple_tool"]);
+    expect(get_mcp_tools(project, "simple_tool")).toEqual([simpleTool]);
+    expect(project._mcp_server_adapter.tools.filter_by_names).toHaveBeenLastCalledWith(["simple_tool"]);
   });
 
   it("loads YAML config and resolves decorated method references", async () => {

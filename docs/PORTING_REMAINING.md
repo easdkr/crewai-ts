@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 966 passing tests.
+- Test suite: 967 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -113,6 +113,7 @@ This register is the source of truth for continuing porting work while parity sc
 - MCP transports may use the installed JS SDK shape, but release tests should continue to rely on local/fake clients and error classification rather than live MCP servers.
 - MCP native tool discovery is release-gated with deterministic fake-client behavior: empty or fully filtered tool lists warn and return no clients, and unexpected discovery failures are wrapped with a clear native MCP discovery error. Live MCP servers remain outside the default gate.
 - MCP native tool execution is release-gated for upstream fresh-client semantics: parallel invocations of the same native MCP tool create, connect, call, and disconnect distinct client instances rather than sharing execution state.
+- Crew project MCP tool lookup is release-gated for upstream `get_mcp_tools(*tool_names)` semantics: fake adapter tool collections honor requested tool-name filtering, while plain local MCP tool arrays keep deterministic name filtering without live MCP servers.
 - Crew context metadata is release-gated with a deterministic `AsyncLocalStorage` shim rather than OpenTelemetry baggage: `CrewContext` carries upstream-style `id` and `key`, `get_crew_context` returns only an active scoped context, and `withCrewContext` preserves nested and throwing scopes.
 - BaseAgent key generation is release-gated for upstream identity semantics: agent keys are the MD5 digest of `role|goal|backstory` before input interpolation mutates those fields.
 - Task key generation is release-gated for upstream identity semantics: task keys are the MD5 digest of the original `description|expected_output` pair and remain stable after input interpolation and conversation-history injection.
