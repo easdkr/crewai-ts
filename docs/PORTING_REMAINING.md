@@ -183,6 +183,7 @@ This register is the source of truth for continuing porting work while parity sc
 - AgentExecutor training feedback context is release-gated for upstream human-feedback semantics: executor-level `_is_training_mode` and `_handle_crew_training_output` integrate with `SyncHumanInputProvider` training feedback, preserving initial and improved outputs through the crew training-output shim.
 - AgentExecutor force-final handling is release-gated for upstream max-iteration semantics: `ensure_force_final_answer` delegates through `handleMaxIterationsExceeded`, appends the forced-final prompt, invokes the configured LLM with callbacks, and stores the parsed final answer.
 - Agent utility async LLM calls are release-gated for upstream `aget_llm_response` semantics: async helpers prefer `acall`, preserve callback/options forwarding, reuse response validation, and propagate LLM exceptions.
+- Agent utility context compaction prompts are release-gated for upstream `en.json` summary semantics: summarizer instructions request a structured `<summary>` block, extracted chunk summaries are rewrapped in the final summary message, continuation guidance is preserved, and attached user files survive compaction.
 
 ## Known Remaining Porting Areas
 

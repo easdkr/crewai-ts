@@ -7949,7 +7949,17 @@ describe("agent utility helpers", () => {
     expect(calls).toHaveLength(3);
     expect(messages).toHaveLength(2);
     expect(messages[0]).toEqual({ role: "system", content: "System rules" });
-    expect(messages[1]?.content).toBe("Previous conversation summary:\nChunk 1 summary\n\nChunk 2 summary\n\nChunk 3 summary");
+    expect(messages[1]?.content).toBe([
+      "<summary>",
+      "Chunk 1 summary",
+      "",
+      "Chunk 2 summary",
+      "",
+      "Chunk 3 summary",
+      "</summary>",
+      "",
+      "Continue the task from where the conversation left off. The above is a structured summary of prior context.",
+    ].join("\n"));
     expect(messages[1]?.files).toEqual({ notes: { filename: "notes.txt", content: "CrewAI notes" } });
   });
 
