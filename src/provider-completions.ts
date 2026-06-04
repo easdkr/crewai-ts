@@ -164,6 +164,36 @@ export class AnthropicCompletion extends ConfiguredLLM {
     return await super.acall(messages, options);
   }
 
+  static convertImageBlocks(content: unknown): unknown {
+    if (!Array.isArray(content)) {
+      return content;
+    }
+    return (content as unknown[]).map((block): unknown => {
+      const record = readObject(block);
+      if (record.type !== "image_url") {
+        return block;
+      }
+      const imageInfo = readObject(record.image_url);
+      const url = scalarToString(imageInfo.url) ?? "";
+      if (!url.startsWith("data:") || !url.includes(";base64,")) {
+        return block;
+      }
+      const [header, data] = url.split(";base64,", 2);
+      return {
+        type: "image",
+        source: {
+          type: "base64",
+          media_type: header?.startsWith("data:") ? header.slice("data:".length) : "image/png",
+          data: data ?? "",
+        },
+      };
+    });
+  }
+
+  static _convert_image_blocks(content: unknown): unknown {
+    return AnthropicCompletion.convertImageBlocks(content);
+  }
+
   formatMessagesForAnthropic(
     messages: LLMMessageInput,
   ): [Record<string, unknown>[], string | Record<string, unknown>[] | null] {
@@ -217,7 +247,7 @@ export class AnthropicCompletion extends ConfiguredLLM {
         pendingToolResults.push({
           type: "tool_result",
           tool_use_id: toolCallId,
-          content: content || "",
+          content: content ? AnthropicCompletion.convertImageBlocks(content) : "",
         });
         continue;
       }
@@ -240,7 +270,7 @@ export class AnthropicCompletion extends ConfiguredLLM {
         }
 
         if (Array.isArray(content)) {
-          formattedMessages.push({ role: "assistant", content });
+          formattedMessages.push({ role: "assistant", content: AnthropicCompletion.convertImageBlocks(content) });
         } else if (this.thinking && this.previousThinkingBlocks.length > 0) {
           formattedMessages.push({
             role: "assistant",
@@ -259,7 +289,10 @@ export class AnthropicCompletion extends ConfiguredLLM {
         formattedMessages.push({ role: "user", content: pendingToolResults });
         pendingToolResults = [];
       }
-      formattedMessages.push({ role, content: content ?? "" });
+      formattedMessages.push({
+        role,
+        content: Array.isArray(content) ? AnthropicCompletion.convertImageBlocks(content) : content ?? "",
+      });
     }
 
     if (pendingToolResults.length > 0) {

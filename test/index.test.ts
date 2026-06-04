@@ -24330,6 +24330,65 @@ describe("LLM providers", () => {
     })._convert_tools_for_interference(tools)).toEqual(tools);
   });
 
+  it("converts standard image_url content blocks for Anthropic messages", () => {
+    const anthropic = new AnthropicCompletion({ model: "claude-3-5-sonnet-20241022" });
+    const standardBlocks = [
+      { type: "text", text: "Observation: Here is the image:" },
+      { type: "image_url", image_url: { url: "data:image/png;base64,abc123" } },
+      { type: "image_url", image_url: { url: "https://example.com/image.png" } },
+    ];
+
+    expect(AnthropicCompletion._convert_image_blocks("plain text")).toBe("plain text");
+    expect(AnthropicCompletion._convert_image_blocks(standardBlocks)).toEqual([
+      { type: "text", text: "Observation: Here is the image:" },
+      {
+        type: "image",
+        source: {
+          type: "base64",
+          media_type: "image/png",
+          data: "abc123",
+        },
+      },
+      { type: "image_url", image_url: { url: "https://example.com/image.png" } },
+    ]);
+
+    const [messages] = anthropic._format_messages_for_anthropic([
+      { role: "user", content: standardBlocks },
+      { role: "tool", tool_call_id: "call_1", content: standardBlocks },
+    ] as unknown as LLMMessage[]);
+    expect(messages[0]?.content).toEqual([
+      { type: "text", text: "Observation: Here is the image:" },
+      {
+        type: "image",
+        source: {
+          type: "base64",
+          media_type: "image/png",
+          data: "abc123",
+        },
+      },
+      { type: "image_url", image_url: { url: "https://example.com/image.png" } },
+    ]);
+    expect(messages[1]).toEqual({
+      role: "user",
+      content: [{
+        type: "tool_result",
+        tool_use_id: "call_1",
+        content: [
+          { type: "text", text: "Observation: Here is the image:" },
+          {
+            type: "image",
+            source: {
+              type: "base64",
+              media_type: "image/png",
+              data: "abc123",
+            },
+          },
+          { type: "image_url", image_url: { url: "https://example.com/image.png" } },
+        ],
+      }],
+    });
+  });
+
   it("extracts Anthropic token usage from SDK response shapes", () => {
     class AnthropicUsage {
       get input_tokens(): number {
