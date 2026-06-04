@@ -19165,6 +19165,41 @@ describe("flow runtime", () => {
     });
   });
 
+  it("routes ask results through upstream start-to-listen flow chains", async () => {
+    const executionLog: string[] = [];
+
+    class AskListenFlow extends Flow {
+      gather() {
+        const topic = this.ask("Topic?") as string | null;
+        executionLog.push(`gathered:${topic ?? ""}`);
+        return topic;
+      }
+
+      process() {
+        executionLog.push("processing");
+        return "processed";
+      }
+    }
+
+    const flow = new AskListenFlow({
+      inputProvider: {
+        requestInput: () => "AI agents",
+      },
+    });
+    decorateMethod(AskListenFlow, "gather", start() as unknown as Decorator).call(flow);
+    decorateMethod(AskListenFlow, "process", listen("gather") as unknown as Decorator).call(flow);
+
+    await expect(flow.kickoff()).resolves.toBe("processed");
+
+    expect(executionLog).toEqual(["gathered:AI agents", "processing"]);
+    expect(flow.inputHistory).toHaveLength(1);
+    expect(flow.inputHistory[0]).toMatchObject({
+      message: "Topic?",
+      response: "AI agents",
+      methodName: "gather",
+    });
+  });
+
   it("exposes upstream snake_case ask input history", async () => {
     class AskHistoryFlow extends Flow {
       async gather() {
