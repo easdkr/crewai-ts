@@ -19906,6 +19906,19 @@ describe("agent planning", () => {
     expect(agentInstance.planningConfig?.stepTimeout).toBeNull();
   });
 
+  it("matches upstream PlanningConfig default values", () => {
+    const config = new PlanningConfig();
+
+    expect(config.max_attempts).toBeNull();
+    expect(config.max_steps).toBe(20);
+    expect(config.system_prompt).toBeNull();
+    expect(config.plan_prompt).toBeNull();
+    expect(config.refine_prompt).toBeNull();
+    expect(config.llm).toBeNull();
+    expect(config.observe_steps).toBeNull();
+    expect(config.reasoning_effort).toBe("medium");
+  });
+
   it("accepts upstream snake_case PlanningConfig fields directly", () => {
     expect(new PlanningConfig().llm).toBeNull();
 
