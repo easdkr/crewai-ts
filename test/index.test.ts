@@ -13710,6 +13710,21 @@ describe("core crew runtime", () => {
     );
   });
 
+  it("routes AgentExecutor max-iteration checks through native reasoning when under limit", () => {
+    const executor = new AgentExecutor({ maxIter: 20 });
+
+    executor.state.iterations = 25;
+    executor.state.use_native_tools = true;
+    expect(executor.check_max_iterations()).toBe("force_final_answer");
+
+    executor.state.iterations = 5;
+    executor.state.use_native_tools = false;
+    expect(executor.check_max_iterations()).toBe("continue_reasoning");
+
+    executor.state.use_native_tools = true;
+    expect(executor.check_max_iterations()).toBe("continue_reasoning_native");
+  });
+
   it("synthesizes AgentExecutor final answers from todo results", () => {
     const responseModel = { name: "StructuredAnswer" };
     const structuredAnswer = {

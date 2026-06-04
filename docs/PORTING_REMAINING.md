@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 1047 passing tests.
+- Test suite: 1048 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -176,6 +176,7 @@ This register is the source of truth for continuing porting work while parity sc
 - AgentExecutor provider-shaped native tool calls are release-gated for upstream routing compatibility: OpenAI-style function calls, Bedrock `toolUseId` + `input`, Anthropic `tool_use` payloads, and Gemini `functionCall` payloads are recognized as native tool-call lists and preserve provider input args.
 - AgentExecutor mixed native tool-call responses are release-gated for upstream routing semantics: provider responses are classified by the first upstream-shaped tool-call item and invalid trailing metadata is left for execution-time filtering instead of converting the whole response into a final answer.
 - AgentExecutor native todo completion is release-gated for upstream current-todo semantics: a running native todo is considered satisfied even before `current_answer` is populated, while missing current todos still route to `todo_not_satisfied` and explicit ReAct answers keep expected-tool matching.
+- AgentExecutor max-iteration routing is release-gated for upstream native reasoning semantics: exceeded iteration limits always route to `force_final_answer`, while under-limit native-tool mode routes to `continue_reasoning_native` instead of the ReAct continuation branch.
 - AgentExecutor parallel planning execution is release-gated for upstream StepExecutor and observation semantics: ready todos are marked running, executed through isolated StepExecutor contexts, recorded in step execution logs, then observed sequentially and marked completed or failed from the observation result.
 - AgentExecutor lightweight plan refinement events are release-gated for upstream observation semantics: applying suggested refinements mutates pending todo descriptions and emits `plan_refinement` with agent/task context, refined step count, and refinement summaries.
 - PlannerObserver step observation events are release-gated for upstream tracing semantics: LLM-backed observations emit `step_observation_started` and `step_observation_completed` with agent/task context and observation outcome fields, while observation call failures emit `step_observation_failed` before falling back to a conservative observation.
@@ -394,7 +395,7 @@ When more goal budget is available, continue from the behavioral parity audits b
 - `AgentExecutor.handle_replan` / dynamic replan triggers now emit upstream-style `plan_replan_triggered` observation events with reason, replan count, completed-step preservation count, task, and agent context before regenerating pending todos.
 - `AgentExecutor.execute_tool_action` now records non-final tool observations and appends the upstream post-tool reasoning prompt before continuing.
 - `AgentExecutor.check_todo_completion` now requires ReAct tool actions to match the running todo's expected tool when one is specified, while still accepting final answers and todos without a specified tool.
-- `AgentExecutor.check_native_todo_completion` now mirrors the same upstream current-answer contract, requiring a running todo plus a matching expected tool action or final answer before routing native todo execution as satisfied.
+- `AgentExecutor.check_native_todo_completion` now mirrors upstream current-todo semantics: missing current todos are not satisfied, running native todos are satisfied even before `current_answer` is populated, and explicit ReAct answers still keep expected-tool matching.
 - `AgentExecutor.mark_todo_complete` now mirrors upstream result extraction for tool-driven todo completion: ReAct actions use the latest tool/assistant message content, and native tool histories join the most recent tool result messages from the current assistant tool-call turn.
 - `AgentExecutor.execute_native_tool` now records the upstream assistant `tool_calls` message and named tool result messages before continuing or short-circuiting.
 - Native result-as-answer tool failures now mirror upstream behavior: `executeSingleNativeToolCall` returns an error result with `result_as_answer=false`, hook-blocked calls do not become final answers, and `AgentExecutor.execute_native_tool` records failed tool output instead of throwing or short-circuiting.
