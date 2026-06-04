@@ -487,7 +487,7 @@ export class FlowDefinition {
   }
 
   withDiagnostics(): this {
-    this.diagnostics = this.validateContract();
+    this.diagnostics = mergeDiagnostics(this.diagnostics, this.validateContract());
     this.logDiagnostics();
     return this;
   }

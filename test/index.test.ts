@@ -18751,6 +18751,12 @@ describe("flow runtime", () => {
       "human_feedback_llm_required",
       "human_feedback_default_not_in_emit",
     ]);
+    definition.with_diagnostics();
+    expect(definition.diagnostics.map((diagnostic) => diagnostic.code)).toEqual([
+      "preexisting",
+      "human_feedback_llm_required",
+      "human_feedback_default_not_in_emit",
+    ]);
 
     expect(definition.to_dict()).toMatchObject({
       schema: "crewai.flow/v1",
