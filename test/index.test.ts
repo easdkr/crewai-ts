@@ -23594,6 +23594,20 @@ describe("LLM providers", () => {
         "custom-scope",
       ]);
 
+      delete process.env.AZURE_CREDENTIAL_SCOPES;
+      const lazyAzure = new AzureCompletion({
+        model: "gpt-4o",
+        api_key: "azure-key",
+        endpoint: "https://example.openai.azure.com/openai/deployments/gpt-4o",
+      });
+      expect(lazyAzure.credential_scopes).toBeNull();
+
+      process.env.AZURE_CREDENTIAL_SCOPES = "https://late/.default";
+      expect(lazyAzure._make_client_kwargs()).toMatchObject({
+        credential_scopes: ["https://late/.default"],
+      });
+      expect(lazyAzure.credential_scopes).toEqual(["https://late/.default"]);
+
       process.env.AZURE_CREDENTIAL_SCOPES = " , ";
       expect((AzureCompletion as unknown as {
         _credential_scopes_from_env(): string[] | null;

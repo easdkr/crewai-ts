@@ -2753,6 +2753,23 @@ export class AzureCompletion extends ConfiguredLLM {
     return this.toConfigDict();
   }
 
+  makeClientKwargs(env: NodeJS.ProcessEnv = process.env): Record<string, unknown> {
+    const credentialScopes = this.credentialScopes ?? AzureCompletion.credentialScopesFromEnv(env);
+    if (credentialScopes && this.credentialScopes !== credentialScopes) {
+      Object.assign(this, { credentialScopes, credential_scopes: credentialScopes });
+    }
+    return {
+      endpoint: this.endpoint,
+      api_key: this.apiKey,
+      api_version: this.apiVersion,
+      ...(credentialScopes ? { credential_scopes: credentialScopes } : {}),
+    };
+  }
+
+  _make_client_kwargs(env: NodeJS.ProcessEnv = process.env): Record<string, unknown> {
+    return this.makeClientKwargs(env);
+  }
+
   prepareCompletionParams(messages: readonly LLMMessage[], tools: readonly Tool[] | null = null): AzureCompletionParams {
     const params: AzureCompletionParams = {
       messages: [...messages],
