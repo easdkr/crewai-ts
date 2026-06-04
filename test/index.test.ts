@@ -14810,6 +14810,17 @@ describe("core crew runtime", () => {
       content: "lookup:Agents",
       tool_call_id: "call-2",
     });
+
+    const modelLikeNativeExecutor = new StepExecutor({
+      agent: new Agent({
+        role: "Native",
+        goal: "Return structured data",
+        backstory: "Executor",
+        llm: (): LLMResponse => ({ model_dump_json: () => "{\"status\":\"complete\"}" }) as unknown as LLMResponse,
+      }),
+      available_functions: { lookup: () => "unused" },
+    });
+    await expect(modelLikeNativeExecutor._execute_native([], [])).resolves.toBe("{\"status\":\"complete\"}");
   });
 
   it("exposes upstream Agent and BaseAgent compatibility methods", async () => {

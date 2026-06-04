@@ -2909,11 +2909,29 @@ function stringifyStepResult(result: unknown): string {
   if (result === null || result === undefined) {
     return "";
   }
+  const modelDumpJson = modelDumpJsonFunction(result);
+  if (modelDumpJson) {
+    return modelDumpJson();
+  }
   try {
     return JSON.stringify(result);
   } catch {
     return Object.prototype.toString.call(result);
   }
+}
+
+function modelDumpJsonFunction(value: unknown): (() => string) | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const record = value as Record<string, unknown>;
+  if (typeof record.model_dump_json === "function") {
+    return () => String((record.model_dump_json as () => unknown).call(value));
+  }
+  if (typeof record.modelDumpJson === "function") {
+    return () => String((record.modelDumpJson as () => unknown).call(value));
+  }
+  return null;
 }
 
 function agentRoleLabel(agent: unknown): string {
