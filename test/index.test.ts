@@ -23568,6 +23568,70 @@ describe("tools", () => {
     expect(calls).toBe(1);
   });
 
+  it("shares crew tool cache lookups across agents for identical tool inputs", async () => {
+    let toolCalls = 0;
+    const multiplier = new StructuredTool({
+      name: "multiplier",
+      description: "Multiply two numbers",
+      argsSchema: {
+        first_number: { type: "number", required: true },
+        second_number: { type: "number", required: true },
+      },
+      func: ({ first_number, second_number }) => {
+        toolCalls += 1;
+        return Number(first_number) * Number(second_number);
+      },
+    });
+    const firstAgent = new Agent({
+      role: "Calculator",
+      goal: "Use cached math",
+      backstory: "Careful calculator",
+      llm: (messages) => messages.some((message) => message.role === "tool")
+        ? "final 12"
+        : { toolName: "multiplier", arguments: { first_number: 2, second_number: 6 } },
+    });
+    const secondAgent = new Agent({
+      role: "Reviewer",
+      goal: "Use cached math",
+      backstory: "Careful reviewer",
+      llm: (messages) => messages.some((message) => message.role === "tool")
+        ? "reviewed 12"
+        : { toolName: "multiplier", arguments: { first_number: 2, second_number: 6 } },
+    });
+    const readSpy = vi.spyOn(CacheHandler.prototype, "read").mockImplementation((tool, input) =>
+      tool === "multiplier" && input === "{\"first_number\":2,\"second_number\":6}" ? "12" : null
+    );
+
+    try {
+      const output = await new Crew({
+        agents: [firstAgent, secondAgent],
+        tasks: [
+          new Task({
+            description: "What is 2 times 6?",
+            expectedOutput: "The result",
+            tools: [multiplier],
+            agent: firstAgent,
+          }),
+          new Task({
+            description: "What is 2 times 6?",
+            expectedOutput: "The result",
+            tools: [multiplier],
+            agent: secondAgent,
+          }),
+        ],
+      }).kickoff();
+
+      const multiplierReads = readSpy.mock.calls.filter(([tool, input]) =>
+        tool === "multiplier" && input === "{\"first_number\":2,\"second_number\":6}"
+      );
+      expect(multiplierReads).toHaveLength(2);
+      expect(toolCalls).toBe(0);
+      expect(output.tasksOutput.map((taskOutput) => taskOutput.raw)).toEqual(["final 12", "reviewed 12"]);
+    } finally {
+      readSpy.mockRestore();
+    }
+  });
+
   it("supports upstream-style cache and tools handlers", () => {
     const cache = new CacheHandler();
     const handler = new ToolsHandler({ cache });

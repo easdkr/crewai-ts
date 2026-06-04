@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 927 passing tests.
+- Test suite: 928 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -124,6 +124,7 @@ This register is the source of truth for continuing porting work while parity sc
 - Crew config validation is release-gated for upstream malformed config behavior: wrong-key, agents-only, tasks-only, and empty agents/tasks configs fail before setup.
 - Hierarchical manager delegation tools are release-gated for upstream coworker scoping: assigned-task delegation exposes only that task's agent, while unassigned tasks expose all crew agents.
 - Hierarchical delegation coworker matching is release-gated for upstream role normalization: coworker inputs match agent roles despite case and surrounding whitespace differences while preserving original roles in tool descriptions.
+- Crew tool caching is release-gated for upstream shared-cache semantics: identical tool/input calls across different agents hit the shared crew `CacheHandler` with the same cache key.
 - Crew kickoff interpolation is release-gated for upstream hyphenated input names: keys such as `interpolation-with-hyphens` interpolate through agent fields, task prompt text, and final task execution while repeated kickoffs re-render from original agent/task templates.
 - Flow event causal ordering is release-gated for listener chains, OR-condition listeners, router paths, parallel listeners, and repeated flow kickoffs: downstream method execution events preserve upstream `triggered_by_event_id` links to the exact method completion event that caused them without cross-run event-id leakage.
 - Flow ask listener integration is release-gated for upstream start-to-listen chains: a start method can return an `ask()` result, downstream listeners still execute, and the final flow output reflects the listener result while input history records the originating method.
