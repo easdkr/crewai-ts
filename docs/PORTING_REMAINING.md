@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 908 passing tests.
+- Test suite: 909 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -112,6 +112,7 @@ This register is the source of truth for continuing porting work while parity sc
 - Crew context metadata is release-gated with a deterministic `AsyncLocalStorage` shim rather than OpenTelemetry baggage: `CrewContext` carries upstream-style `id` and `key`, `get_crew_context` returns only an active scoped context, and `withCrewContext` preserves nested and throwing scopes.
 - Flow event causal ordering is release-gated for listener chains, OR-condition listeners, router paths, parallel listeners, and repeated flow kickoffs: downstream method execution events preserve upstream `triggered_by_event_id` links to the exact method completion event that caused them without cross-run event-id leakage.
 - Flow ask listener integration is release-gated for upstream start-to-listen chains: a start method can return an `ask()` result, downstream listeners still execute, and the final flow output reflects the listener result while input history records the originating method.
+- Flow ask and human feedback coexistence is release-gated for upstream interactive flows: a flow can gather input with `ask()`, pass the result into a listener, collect human feedback on that listener output, and preserve both input history and `lastHumanFeedback`.
 - Flow ask input metadata is release-gated for upstream nullable response semantics: `InputResponse` values with `text=null` return `null` while preserving response metadata in input history and received events.
 - Flow ask checkpoint recovery is release-gated for upstream multi-question flows: each `ask()` writes an `_ask_checkpoint` before waiting for input, and later ask checkpoints include state changes made from earlier answers.
 - Event bus replay is release-gated with deterministic local dispatch: replayed events preserve upstream event ids, parent ids, and emission sequences, expose replay context inside handlers, and do not re-record replayed events into runtime state.

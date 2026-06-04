@@ -19584,6 +19584,60 @@ describe("flow runtime", () => {
     });
   });
 
+  it("lets ask input and human feedback coexist in the same flow", async () => {
+    class AskReviewFlow extends Flow<{ topic?: string }> {
+      gather() {
+        const topic = this.ask("Topic?") as string | null;
+        this.state.topic = topic ?? undefined;
+        return topic;
+      }
+
+      review() {
+        return `Researching: ${this.state.topic ?? "unknown"}`;
+      }
+    }
+
+    const initializers = [
+      decorateMethod(AskReviewFlow, "gather", start() as unknown as Decorator),
+      decorateMethod(AskReviewFlow, "review", humanFeedback({
+        message: "Review this topic:",
+        provider: {
+          requestFeedback: (context) => {
+            expect(context.output).toBe("Researching: AI");
+            return "looks good";
+          },
+        },
+      }) as unknown as Decorator),
+      decorateMethod(AskReviewFlow, "review", listen("gather") as unknown as Decorator),
+    ];
+    const flow = new AskReviewFlow({
+      inputProvider: {
+        requestInput: () => "AI",
+      },
+    });
+    initializers.forEach((initializer) => {
+      initializer.call(flow);
+    });
+
+    await expect(flow.kickoff()).resolves.toMatchObject({
+      output: "Researching: AI",
+      feedback: "looks good",
+      outcome: null,
+      methodName: "review",
+    });
+    expect(flow.inputHistory).toHaveLength(1);
+    expect(flow.inputHistory[0]).toMatchObject({
+      message: "Topic?",
+      response: "AI",
+      methodName: "gather",
+    });
+    expect(flow.lastHumanFeedback).toMatchObject({
+      output: "Researching: AI",
+      feedback: "looks good",
+      methodName: "review",
+    });
+  });
+
   it("routes flow human feedback emit outcomes to listeners", async () => {
     class ReviewFlow extends Flow<{ events: string[] }> {
       constructor() {
