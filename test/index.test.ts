@@ -17503,6 +17503,11 @@ describe("core crew runtime", () => {
       agent_role: "Memory Researcher",
     }));
 
+    await expect(crewInstance.train(0, join(tmpdir(), "invalid-training.pkl"), { topic: "CrewAI" }))
+      .rejects.toThrow("n_iterations must be a positive integer.");
+    await expect(crewInstance.train(1.5, join(tmpdir(), "invalid-training.pkl"), { topic: "CrewAI" }))
+      .rejects.toThrow("n_iterations must be a positive integer.");
+
     try {
       await crewInstance.train(1, trainingFile, { topic: "CrewAI" });
       expect(readFileSync(`${trainingFile}.pkl`, "utf8")).toBe("{}\n");

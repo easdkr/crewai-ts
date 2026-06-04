@@ -959,6 +959,9 @@ export class Crew extends FlowTrackable {
   }
 
   async train(nIterations: number, filename: string, inputs: InputValues | null = {}): Promise<void> {
+    if (!Number.isInteger(nIterations) || nIterations <= 0) {
+      throw new Error("n_iterations must be a positive integer.");
+    }
     const trainingInputs = inputs ?? {};
     crewaiEventBus.emit(this, new CrewTrainStartedEvent({
       crewName: this.name,
