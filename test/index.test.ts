@@ -17270,6 +17270,44 @@ describe("core crew runtime", () => {
     ]));
   });
 
+  it("adds AddImageTool to multimodal agents during kickoff when the LLM lacks vision support", async () => {
+    const usedTools: Array<readonly unknown[]> = [];
+    const multimodalAgent = new Agent({
+      role: "Visual Analyst",
+      goal: "Inspect images",
+      backstory: "Reviews visual evidence",
+      multimodal: true,
+      llm: (messages, { tools } = {}) => {
+        usedTools.push(tools ?? []);
+        return "image handled";
+      },
+    });
+    (multimodalAgent.llm as unknown as { supports_multimodal: () => boolean }).supports_multimodal = () => false;
+    const task = new Task({
+      description: "Inspect the image",
+      expectedOutput: "Visual analysis",
+      agent: multimodalAgent,
+    });
+
+    await new Crew({ agents: [multimodalAgent], tasks: [task] }).kickoff();
+
+    const imageTools = (usedTools[0] ?? []).filter((toolInstance) =>
+      (toolInstance as { name?: string }).name === "add_image_to_content"
+    );
+    expect(imageTools).toHaveLength(1);
+    const result = await (imageTools[0] as { invoke: (input: Record<string, unknown>) => unknown }).invoke({
+      image_url: "https://example.com/test-image.jpg",
+      action: "Please analyze this image",
+    });
+    expect(result).toEqual({
+      role: "user",
+      content: [
+        { type: "text", text: "Please analyze this image" },
+        { type: "image_url", image_url: { url: "https://example.com/test-image.jpg" } },
+      ],
+    });
+  });
+
   it("exposes upstream Crew platform, MCP, and manager tool helpers", () => {
     const platformTool = new StructuredTool({ name: "platform search", description: "Platform search", func: () => "platform" });
     const mcpTool = new StructuredTool({ name: "mcp search", description: "MCP search", func: () => "mcp" });
