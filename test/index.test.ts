@@ -2502,6 +2502,38 @@ describe("environment, logging, and file store utilities", () => {
     }]);
   });
 
+  it("formats Gemini multimodal media files as inlineData blocks", () => {
+    const pdfBytes = Buffer.from("%PDF-1.4 gemini document");
+    const audioBytes = Buffer.from("RIFF....WAVEfmt ");
+    const videoBytes = Buffer.from([0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70, ...Buffer.from("mp42")]);
+    const result = format_multimodal_content({
+      doc: new PDFFile({ source: new FileBytes({ data: pdfBytes, filename: "brief.pdf" }) }),
+      audio: new AudioFile({ source: new FileBytes({ data: audioBytes, filename: "sample.wav" }) }),
+      video: new VideoFile({ source: new FileBytes({ data: videoBytes, filename: "sample.mp4" }) }),
+    }, "gemini/gemini-2.0-flash");
+
+    expect(result).toEqual([
+      {
+        inlineData: {
+          mimeType: "application/pdf",
+          data: pdfBytes.toString("base64"),
+        },
+      },
+      {
+        inlineData: {
+          mimeType: "audio/wav",
+          data: audioBytes.toString("base64"),
+        },
+      },
+      {
+        inlineData: {
+          mimeType: "video/mp4",
+          data: Buffer.from(videoBytes).toString("base64"),
+        },
+      },
+    ]);
+  });
+
   it("formats Anthropic multimodal files as base64 source blocks", () => {
     const pngBytes = Buffer.concat([
       Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
