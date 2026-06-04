@@ -39,6 +39,7 @@ import {
 import { get_provider } from "./human-input.js";
 import { ToolCallHookContext, runAfterToolCallHooks, runBeforeToolCallHooks } from "./hooks.js";
 import { I18N_DEFAULT } from "./i18n.js";
+import { agetAllFiles, getAllFiles, type FileInputMap, type FileStoreId } from "./file-store.js";
 import { BaseLLM, callStopOverrideSync, UsageMetrics, type LLMCallOptions, type LLMResponse } from "./llm.js";
 import { PRINTER } from "./logger.js";
 import { sanitize_scope_name } from "./memory.js";
@@ -1497,6 +1498,7 @@ export class AgentExecutor extends BaseAgentExecutor {
     this.isExecuting = true;
     try {
       this.resetInvocationState(inputs);
+      this.injectFilesFromInputs(inputs);
       const kickoff = (this as unknown as { kickoff?: () => unknown }).kickoff;
       if (typeof kickoff === "function") {
         const kickoffResult = this.withLlmStopWords(() => kickoff.call(this));
@@ -1536,6 +1538,7 @@ export class AgentExecutor extends BaseAgentExecutor {
     this.isExecuting = true;
     try {
       this.resetInvocationState(inputs);
+      await this.ainjectFilesFromInputs(inputs);
       const kickoffAsync = (this as unknown as { kickoff_async?: () => Promise<unknown>; kickoffAsync?: () => Promise<unknown> }).kickoff_async
         ?? (this as unknown as { kickoffAsync?: () => Promise<unknown> }).kickoffAsync;
       if (typeof kickoffAsync === "function") {
@@ -1605,14 +1608,66 @@ export class AgentExecutor extends BaseAgentExecutor {
     } else if (this.kickoffInput) {
       this.state.messages.push({ role: "user", content: this.kickoffInput });
     }
+  }
+
+  injectFilesFromInputs(inputs: Record<string, unknown>): void {
+    const files = this.collectFilesFromInputs(inputs, getAllFiles);
+    if (!files || Object.keys(files).length === 0) {
+      return;
+    }
+    this.attachFilesToLastUserMessage(files);
+  }
+
+  _inject_files_from_inputs(inputs: Record<string, unknown>): void {
     this.injectFilesFromInputs(inputs);
   }
 
-  private injectFilesFromInputs(inputs: Record<string, unknown>): void {
-    const files = inputs.files;
-    if (!files) {
+  async ainjectFilesFromInputs(inputs: Record<string, unknown>): Promise<void> {
+    const files = await this.collectFilesFromInputsAsync(inputs);
+    if (!files || Object.keys(files).length === 0) {
       return;
     }
+    this.attachFilesToLastUserMessage(files);
+  }
+
+  async _ainject_files_from_inputs(inputs: Record<string, unknown>): Promise<void> {
+    await this.ainjectFilesFromInputs(inputs);
+  }
+
+  private collectFilesFromInputs(
+    inputs: Record<string, unknown>,
+    getStoredFiles: (crewId: FileStoreId, taskId?: FileStoreId | null) => FileInputMap | null,
+  ): FileInputMap | null {
+    const storedFiles = this.storedFiles(getStoredFiles);
+    const inputFiles = isFileInputMap(inputs.files) ? inputs.files : null;
+    if (!storedFiles && !inputFiles) {
+      return null;
+    }
+    return { ...(storedFiles ?? {}), ...(inputFiles ?? {}) };
+  }
+
+  private async collectFilesFromInputsAsync(inputs: Record<string, unknown>): Promise<FileInputMap | null> {
+    const crewId = fileStoreIdFrom(this.crew);
+    const taskId = fileStoreIdFrom(this.task);
+    const storedFiles = crewId === null ? null : await agetAllFiles(crewId, taskId);
+    const inputFiles = isFileInputMap(inputs.files) ? inputs.files : null;
+    if (!storedFiles && !inputFiles) {
+      return null;
+    }
+    return { ...(storedFiles ?? {}), ...(inputFiles ?? {}) };
+  }
+
+  private storedFiles(
+    getStoredFiles: (crewId: FileStoreId, taskId?: FileStoreId | null) => FileInputMap | null,
+  ): FileInputMap | null {
+    const crewId = fileStoreIdFrom(this.crew);
+    if (crewId === null) {
+      return null;
+    }
+    return getStoredFiles(crewId, fileStoreIdFrom(this.task));
+  }
+
+  private attachFilesToLastUserMessage(files: FileInputMap): void {
     for (let index = this.state.messages.length - 1; index >= 0; index -= 1) {
       const message = this.state.messages[index] as Record<string, unknown>;
       if (message.role === "user") {
@@ -3733,6 +3788,21 @@ function syncUsageMetricAliases(metrics: UsageMetrics): void {
 
 function isPromiseLike<T = unknown>(value: unknown): value is PromiseLike<T> {
   return !!value && typeof value === "object" && "then" in value && typeof (value as { then?: unknown }).then === "function";
+}
+
+function fileStoreIdFrom(value: unknown): FileStoreId | null {
+  if (typeof value === "string" || typeof value === "number" || typeof value === "bigint") {
+    return value;
+  }
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const id = (value as { id?: unknown }).id;
+  return typeof id === "string" || typeof id === "number" || typeof id === "bigint" ? id : null;
+}
+
+function isFileInputMap(value: unknown): value is FileInputMap {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
 
 function handleAsyncStepCallbackResult(result: unknown, agent: Agent | null | undefined): void {

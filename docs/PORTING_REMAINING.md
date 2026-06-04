@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 986 passing tests.
+- Test suite: 987 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -173,6 +173,7 @@ This register is the source of truth for continuing porting work while parity sc
 - AgentExecutor ready-todo routing is release-gated for upstream deadlock recovery semantics: when no todo is ready but the plan is incomplete, `get_ready_todos_method` routes to `needs_replan` and records the dependency-deadlock reason.
 - AgentExecutor step callbacks are release-gated for upstream executor-level callback semantics: `stepCallback` / `step_callback` options are preserved on the executor and take precedence before falling back to agent-level callbacks.
 - AgentExecutor async step-callback errors are release-gated for upstream event-loop safety: sync callback invocation attaches rejection handling for async callback tasks and prints the upstream error message when the agent is verbose instead of leaking an unhandled rejection.
+- AgentExecutor file injection is release-gated for latest-upstream multimodal input semantics: object-style sync and async invokes merge crew-scoped files, task-scoped files, and explicit `inputs.files` into the last user message, with task files overriding crew files and explicit input files overriding stored files.
 - AgentExecutor state message appending is release-gated for upstream helper semantics: `_append_message_to_state` appends role-formatted LLM messages to executor state and is also available on the CrewAgentExecutor compatibility surface.
 - AgentExecutor planning flag routing is release-gated for upstream plan-and-execute semantics: `generate_plan` and `check_todos_available` honor Python-style `planning_enabled` as well as TS `planningEnabled` before creating or routing todos.
 - AgentExecutor plan-step conversion is release-gated for upstream planning semantics: `_create_todos_from_plan` converts structured plan steps into pending todos while preserving step numbers, descriptions, suggested tools, and dependencies.

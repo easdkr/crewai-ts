@@ -13105,6 +13105,54 @@ describe("core crew runtime", () => {
     await expect(executor.ainvoke({ input: "Async CrewAI" })).resolves.toEqual({ output: "Async CrewAI" });
   });
 
+  it("injects AgentExecutor files from crew and task stores into user messages", async () => {
+    const crewId = "crew-files-executor";
+    const taskId = "task-files-executor";
+    const crewFile = new TextFile({ source: Buffer.from("crew scoped content") });
+    const taskFile = new TextFile({ source: Buffer.from("task scoped content") });
+    const localFile = new TextFile({ source: Buffer.from("local content") });
+    const executor = new AgentExecutor({
+      crew: { id: crewId } as unknown as Crew,
+      task: { id: taskId },
+      prompt: { prompt: "Analyze files" },
+    });
+
+    try {
+      storeFiles(crewId, { document: crewFile, shared: crewFile });
+      storeTaskFiles(taskId, { shared: taskFile });
+
+      await executor.ainvoke({ input: "Analyze", files: { local: localFile } });
+    } finally {
+      clearFiles(crewId);
+      clearTaskFiles(taskId);
+    }
+
+    expect(executor.state.messages[0]).toMatchObject({ role: "user" });
+    expect((executor.state.messages[0] as Record<string, unknown>).files).toEqual({
+      document: crewFile,
+      shared: taskFile,
+      local: localFile,
+    });
+
+    const syncExecutor = new AgentExecutor({
+      crew: { id: crewId } as unknown as Crew,
+      task: { id: taskId },
+      prompt: { prompt: "Analyze files" },
+    });
+    try {
+      storeFiles(crewId, { document: crewFile });
+      storeTaskFiles(taskId, { shared: taskFile });
+      syncExecutor.invoke({ input: "Analyze" });
+    } finally {
+      clearFiles(crewId);
+      clearTaskFiles(taskId);
+    }
+    expect((syncExecutor.state.messages[0] as Record<string, unknown>).files).toEqual({
+      document: crewFile,
+      shared: taskFile,
+    });
+  });
+
   it("uses a strong final todo result directly during AgentExecutor finalize", () => {
     const executor = new AgentExecutor();
     const finalResult = [
