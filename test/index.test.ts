@@ -43,6 +43,8 @@ import {
   A2ADelegationStartedEvent,
   A2AMessageSentEvent,
   A2AResponseReceivedEvent,
+  A2AServerTaskCompletedEvent,
+  A2AServerTaskStartedEvent,
   A2ATransportNegotiatedEvent,
   A2ATaskState,
   APIKeyAuth,
@@ -1031,6 +1033,7 @@ import {
   _prepare_auth_headers,
   _validate_a2a_extension,
   get_timestamp,
+  execute_with_extensions,
   poll_for_cancel,
   watch_for_cancel,
   _execute_impl,
@@ -6839,6 +6842,56 @@ describe("a2a utilities", () => {
       context_id: "ctx-a2a",
       status: { state: A2ATaskState.completed },
       artifacts: [{ name: "result_task-a2a" }],
+    });
+  });
+
+  it("emits upstream A2A server task lifecycle events during successful execution", async () => {
+    const events: Array<A2AServerTaskStartedEvent | A2AServerTaskCompletedEvent> = [];
+    const offStarted = crewaiEventBus.on("a2a_server_task_started", (_source, event) => {
+      events.push(event);
+    });
+    const offCompleted = crewaiEventBus.on("a2a_server_task_completed", (_source, event) => {
+      events.push(event);
+    });
+    const enqueued: unknown[] = [];
+    const agent = {
+      tools: [],
+      aexecute_task: vi.fn(async () => {
+        await Promise.resolve();
+        return "Task completed successfully";
+      }),
+    };
+    try {
+      await execute_with_extensions(agent, {
+        task_id: "task-lifecycle",
+        context_id: "ctx-lifecycle",
+        get_user_input: () => "Run task",
+      }, {
+        enqueue_event: (event) => {
+          enqueued.push(event);
+        },
+      });
+    } finally {
+      offStarted();
+      offCompleted();
+    }
+
+    expect(events.map((event) => event.type)).toEqual([
+      "a2a_server_task_started",
+      "a2a_server_task_completed",
+    ]);
+    expect(events[0]).toMatchObject({
+      task_id: "task-lifecycle",
+      context_id: "ctx-lifecycle",
+    });
+    expect(events[1]).toMatchObject({
+      task_id: "task-lifecycle",
+      context_id: "ctx-lifecycle",
+      result: "Task completed successfully",
+    });
+    expect(enqueued[0]).toMatchObject({
+      id: "task-lifecycle",
+      status: { state: A2ATaskState.completed },
     });
   });
 

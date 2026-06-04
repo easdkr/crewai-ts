@@ -9,6 +9,10 @@ import {
   A2AContentTypeNegotiatedEvent,
   A2APollingStartedEvent,
   A2APollingStatusEvent,
+  A2AServerTaskCanceledEvent,
+  A2AServerTaskCompletedEvent,
+  A2AServerTaskFailedEvent,
+  A2AServerTaskStartedEvent,
   A2AStreamingChunkEvent,
   A2AStreamingStartedEvent,
   A2APushNotificationRegisteredEvent,
@@ -1250,6 +1254,26 @@ function isA2ATaskLike(value: unknown): value is A2ATaskLike {
 
 function formatA2AError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function isA2ACancellationError(error: unknown): boolean {
+  return error instanceof Error && (
+    error.name === "CancelledError"
+    || error.name === "AbortError"
+    || /cancelled|canceled/i.test(error.message)
+  );
+}
+
+function stringifyA2AResult(result: unknown): string {
+  const scalar = stringFromUnknown(result);
+  if (scalar) {
+    return scalar;
+  }
+  try {
+    return JSON.stringify(result);
+  } catch {
+    return String(result);
+  }
 }
 
 function isFinalStreamingUpdate(update: unknown): boolean {
@@ -4150,11 +4174,27 @@ export async function execute_with_extensions(
   if (!taskId || !contextId) {
     throw new Error("task_id and context_id are required");
   }
-  await extensionRegistry?.invoke_on_request?.(extensionContext);
-  await extensionRegistry?.invokeOnRequest?.(extensionContext);
-  const result = await executeAgentTask(agent, context);
-  const transformed = await transformA2AResponse(extensionRegistry, extensionContext, result);
-  await enqueueA2AEvent(eventQueue, createCompletedTask(context, transformed));
+  crewaiEventBus.emit(agent, new A2AServerTaskStartedEvent({ task_id: taskId, context_id: contextId, from_agent: agent }));
+  try {
+    await extensionRegistry?.invoke_on_request?.(extensionContext);
+    await extensionRegistry?.invokeOnRequest?.(extensionContext);
+    const result = await executeAgentTask(agent, context);
+    const transformed = await transformA2AResponse(extensionRegistry, extensionContext, result);
+    await enqueueA2AEvent(eventQueue, createCompletedTask(context, transformed));
+    crewaiEventBus.emit(agent, new A2AServerTaskCompletedEvent({
+      task_id: taskId,
+      context_id: contextId,
+      result: stringifyA2AResult(transformed),
+      from_agent: agent,
+    }));
+  } catch (error) {
+    if (isA2ACancellationError(error)) {
+      crewaiEventBus.emit(agent, new A2AServerTaskCanceledEvent({ task_id: taskId, context_id: contextId, from_agent: agent }));
+    } else {
+      crewaiEventBus.emit(agent, new A2AServerTaskFailedEvent({ task_id: taskId, context_id: contextId, error, from_agent: agent }));
+    }
+    throw error;
+  }
 }
 
 export async function cancel(context: A2AExecutionContext, eventQueue: A2AEventQueue): Promise<A2ATaskLike | null> {
