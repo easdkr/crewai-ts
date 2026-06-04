@@ -187,7 +187,10 @@ function extractLooseJsonObject(value: string): string | null {
       }
     }
   }
-  return depth > 0 ? `${value}}` : null;
+  if (depth > 0) {
+    return `${value}${inString ?? ""}${"}".repeat(depth)}`;
+  }
+  return null;
 }
 
 export const parse_agent_output = parseAgentOutput;

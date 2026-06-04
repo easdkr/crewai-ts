@@ -7957,6 +7957,30 @@ describe("agent utility helpers", () => {
     expect(seenArgs).toEqual([{ query: "CrewAI" }]);
     expect(output).toBe("final answer");
   });
+
+  it("repairs upstream parser edge cases for incomplete JSON and unbalanced quoted tool input", () => {
+    const incompleteJson = parseAgentOutput([
+      "Thought: Let's find the temperature",
+      "Action: search",
+      "Action Input: {\"query\": \"temperature in SF\"",
+    ].join("\n"));
+    expect(incompleteJson).toBeInstanceOf(AgentAction);
+    expect(incompleteJson).toMatchObject({
+      tool: "search",
+      toolInput: JSON.stringify({ query: "temperature in SF" }),
+    });
+
+    const unbalancedQuote = parseAgentOutput([
+      "Thought: Let's find the temperature",
+      "Action: search",
+      "Action Input: \"what is the temperature in SF?",
+    ].join("\n"));
+    expect(unbalancedQuote).toBeInstanceOf(AgentAction);
+    expect(unbalancedQuote).toMatchObject({
+      tool: "search",
+      toolInput: "what is the temperature in SF?",
+    });
+  });
 });
 
 describe("evaluator utilities", () => {
