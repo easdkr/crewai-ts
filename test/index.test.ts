@@ -33466,6 +33466,36 @@ describe("hierarchical process", () => {
     expect(managerCalls[0]).toContain("Research CrewAI");
   });
 
+  it("copies crew verbose settings to generated hierarchical manager agents", () => {
+    const researcher = new Agent({
+      role: "Researcher",
+      goal: "Find facts",
+      backstory: "Careful analyst",
+    });
+    const taskInstance = new Task({
+      description: "Research",
+      expectedOutput: "A concise brief",
+    });
+
+    const verboseCrew = new Crew({
+      agents: [researcher],
+      tasks: [taskInstance],
+      process: Process.hierarchical,
+      managerLlm: () => "manager",
+      verbose: true,
+    });
+    const quietCrew = new Crew({
+      agents: [researcher],
+      tasks: [taskInstance],
+      process: Process.hierarchical,
+      managerLlm: () => "manager",
+      verbose: false,
+    });
+
+    expect(verboseCrew._create_manager_agent().verbose).toBe(true);
+    expect(quietCrew._create_manager_agent().verbose).toBe(false);
+  });
+
   it("limits hierarchical manager delegation tools to the assigned task agent", () => {
     const researcher = new Agent({
       role: "Researcher",
