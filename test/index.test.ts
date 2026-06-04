@@ -12344,6 +12344,35 @@ describe("core crew runtime", () => {
     expect(executor.state.pending_tool_calls).toEqual(toolCalls);
   });
 
+  it("initializes AgentExecutor native tool mode from upstream tool support", () => {
+    const lookup = new StructuredTool({
+      name: "Lookup Tool",
+      description: "Lookup facts",
+      func: () => "found",
+    });
+    const executor = new AgentExecutor({
+      agent: new Agent({
+        role: "Researcher",
+        goal: "Find facts",
+        backstory: "Careful analyst",
+      }),
+      task: { description: "Research CrewAI" },
+      llm: { supportsFunctionCalling: () => true },
+      originalTools: [lookup],
+    });
+
+    expect(executor.initialize_reasoning()).toBe("initialized");
+    expect(executor.state.use_native_tools).toBe(true);
+    const openaiTools = (executor as unknown as {
+      _openai_tools?: Array<{ type: string; function: { name: string } }>;
+    })._openai_tools;
+    expect(openaiTools).toHaveLength(1);
+    expect(openaiTools?.[0]?.type).toBe("function");
+    expect(openaiTools?.[0]?.function.name).toBe("lookup_tool");
+    expect((executor as unknown as { _available_functions?: Record<string, unknown> })._available_functions?.lookup_tool)
+      .toBeInstanceOf(Function);
+  });
+
   it("invokes executor-level AgentExecutor step callbacks during tool actions", () => {
     const callbackValues: unknown[] = [];
     const executor = new AgentExecutor({

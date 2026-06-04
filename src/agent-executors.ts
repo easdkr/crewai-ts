@@ -14,9 +14,11 @@ import {
   handleOutputParserException,
   handleUnknownError,
   _executor_stop_words,
+  checkNativeToolSupport,
   isContextLengthExceeded,
   isToolCallList,
   processLlmResponse,
+  setupNativeTools,
   summarizeMessages,
 } from "./agent-utils.js";
 import { Converter } from "./converter.js";
@@ -792,7 +794,17 @@ export class AgentExecutor extends BaseAgentExecutor {
 
   initializeReasoning(): "initialized" {
     this._show_start_logs();
-    this.state.use_native_tools = false;
+    if (this.state.iterations === 0) {
+      this.state.use_native_tools = checkNativeToolSupport(this.llm, this.originalTools);
+      if (this.state.use_native_tools) {
+        const [openaiTools, availableFunctions, toolNameMapping] = setupNativeTools(this.originalTools);
+        Object.assign(this, {
+          _openai_tools: openaiTools,
+          _available_functions: availableFunctions,
+          _tool_name_mapping: toolNameMapping,
+        });
+      }
+    }
     return "initialized";
   }
 

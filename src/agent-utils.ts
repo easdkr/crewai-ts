@@ -1020,7 +1020,12 @@ export const is_tool_call_list = isToolCallList;
 
 export function checkNativeToolSupport(llm: unknown, tools: readonly Tool[]): boolean {
   const record = llm && typeof llm === "object" ? llm as Record<string, unknown> : {};
-  return tools.length > 0 && (record.supportsNativeToolCalling === true || record.supports_native_tool_calling === true);
+  const supportsFunctionCalling = record.supportsFunctionCalling ?? record.supports_function_calling;
+  const supportsNativeToolCalling = record.supportsNativeToolCalling ?? record.supports_native_tool_calling;
+  return tools.length > 0 && (
+    (typeof supportsFunctionCalling === "function" && Boolean(supportsFunctionCalling.call(llm)))
+    || supportsNativeToolCalling === true
+  );
 }
 
 export const check_native_tool_support = checkNativeToolSupport;
