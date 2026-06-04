@@ -4509,17 +4509,10 @@ export class EventBus {
     try {
       const result = handler(source, event, this.currentRuntimeState);
       if (isPromiseLike(result)) {
-        return this.trackPendingHandler(result.catch((error: unknown) => {
-          queueMicrotask(() => {
-            throw error;
-          });
-        }));
+        return this.trackPendingHandler(result.catch(() => undefined));
       }
       return undefined;
-    } catch (error) {
-      queueMicrotask(() => {
-        throw error;
-      });
+    } catch {
       return undefined;
     }
   }

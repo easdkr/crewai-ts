@@ -40590,6 +40590,40 @@ describe("runtime state", () => {
     expect(seen).toEqual(["AsyncFlow"]);
   });
 
+  it("continues event dispatch after handler failures without surfacing uncaught errors", async () => {
+    const bus = new EventBus();
+    const seen: string[] = [];
+    bus.on("flow_started", () => {
+      seen.push("broken");
+      throw new Error("Simulated handler failure");
+    });
+    bus.on("flow_started", () => {
+      seen.push("working");
+    });
+
+    bus.emit("source", new FlowStartedEvent({ flowName: "ErrorFlow", inputs: {} }));
+    expect(await bus.flush()).toBe(true);
+    await Promise.resolve();
+
+    expect(seen).toEqual(["broken", "working"]);
+
+    const asyncBus = new EventBus();
+    const asyncSeen: string[] = [];
+    asyncBus.on("flow_started", async () => {
+      await Promise.resolve();
+      asyncSeen.push("broken");
+      throw new Error("Async handler failure");
+    });
+    asyncBus.on("flow_started", async () => {
+      await Promise.resolve();
+      asyncSeen.push("working");
+    });
+
+    await asyncBus.aemit("source", new FlowStartedEvent({ flowName: "AsyncErrorFlow", inputs: {} }));
+
+    expect(asyncSeen).toEqual(["broken", "working"]);
+  });
+
   it("aemit only runs async handlers and ignores dependency ordering", async () => {
     const bus = new EventBus();
     const seen: string[] = [];
