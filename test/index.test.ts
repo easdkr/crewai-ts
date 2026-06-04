@@ -34833,6 +34833,57 @@ describe("lite agent", () => {
     expect(agent.messages).toHaveLength(1);
   });
 
+  it("merges LiteAgent message files with kickoff input files", async () => {
+    const seenMessages: LLMMessage[][] = [];
+    const agent = new LiteAgent({
+      role: "File Reader",
+      goal: "Read supplied files",
+      backstory: "Handles files carefully",
+      llm: (messages) => {
+        seenMessages.push([...messages]);
+        return "files read";
+      },
+    });
+    const messageFile = { filename: "message.txt", content: "message file content" };
+    const sharedMessageFile = { filename: "message-shared.txt", content: "old content" };
+    const explicitFile = { filename: "brief.pdf", content: "brief content" };
+    const sharedExplicitFile = { filename: "shared.pdf", content: "new content" };
+
+    const output = await agent.kickoff([
+      {
+        role: "user",
+        content: "Analyze these files",
+        files: {
+          message: messageFile,
+          shared: sharedMessageFile,
+        },
+      },
+    ], {
+      input_files: {
+        explicit: explicitFile,
+        shared: sharedExplicitFile,
+      },
+    });
+
+    expect(output.raw).toBe("files read");
+    expect(output.messages).toEqual([{
+      role: "user",
+      content: "Analyze these files",
+      files: {
+        message: messageFile,
+        shared: sharedMessageFile,
+      },
+    }]);
+    expect(seenMessages[0]?.[1]?.content).toContain("Analyze these files");
+    expect(seenMessages[0]?.[1]?.content).toContain('"message" (message.txt, text/plain)');
+    expect(seenMessages[0]?.[1]?.content).toContain("message file content");
+    expect(seenMessages[0]?.[1]?.content).toContain('"explicit" (brief.pdf)');
+    expect(seenMessages[0]?.[1]?.content).toContain("brief content");
+    expect(seenMessages[0]?.[1]?.content).toContain('"shared" (shared.pdf)');
+    expect(seenMessages[0]?.[1]?.content).toContain("new content");
+    expect(seenMessages[0]?.[1]?.content).not.toContain("old content");
+  });
+
   it("supports tools, guardrails, structured output parsing, and snake_case aliases", async () => {
     const guardrailEvents: CrewAIEvent[] = [];
     crewaiEventBus.on("llm_guardrail_started", (_source, event) => {

@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 904 passing tests.
+- Test suite: 905 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -603,6 +603,7 @@ When more goal budget is available, continue from the behavioral parity audits b
   - `LiteAgent` now exposes upstream-style setup/helper methods for LLM setup, tool parsing, A2A setup, guardrail validation, and memory resolution.
   - `LiteAgent` now exposes before/after LLM hook getters, an upstream-style `key` property getter, and resolves `memory: true` to a default `Memory` instance.
   - `LiteAgent.kickoff` now has default-gate coverage for upstream `verbose=False` behavior, suppressing printer output while still returning a `LiteAgentOutput`.
+  - `LiteAgent.kickoff` now has default-gate coverage for upstream file-input merging: files attached to message inputs are rendered into the execution prompt, explicit kickoff `input_files` are included, and explicit files override message files with the same key.
 - Added token usage compatibility behavior:
   - `TokenProcess` now exposes upstream-style mutable token counters and `sum_*` helpers while preserving message-array prompt token estimation.
 - Added converter compatibility behavior:
