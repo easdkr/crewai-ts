@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 921 passing tests.
+- Test suite: 922 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -117,6 +117,7 @@ This register is the source of truth for continuing porting work while parity sc
 - Task key generation is release-gated for upstream identity semantics: task keys are the MD5 digest of the original `description|expected_output` pair and remain stable after input interpolation and conversation-history injection.
 - Task execution duration is release-gated for upstream lifecycle semantics: fresh tasks expose null start/end/duration values, and duration is the exact second difference between assigned `end_time` and `start_time`.
 - Task interpolation is release-gated for upstream structured literal formatting: lists, dictionaries, nested structures, and empty lists interpolate to Python-style literal strings without losing nested scalar values.
+- Task copy context semantics are release-gated for upstream behavior: unspecified context remains unspecified, explicit null remains null, and list context entries are remapped through task key mappings.
 - Crew kickoff interpolation is release-gated for upstream hyphenated input names: keys such as `interpolation-with-hyphens` interpolate through agent fields, task prompt text, and final task execution while repeated kickoffs re-render from original agent/task templates.
 - Flow event causal ordering is release-gated for listener chains, OR-condition listeners, router paths, parallel listeners, and repeated flow kickoffs: downstream method execution events preserve upstream `triggered_by_event_id` links to the exact method completion event that caused them without cross-run event-id leakage.
 - Flow ask listener integration is release-gated for upstream start-to-listen chains: a start method can return an `ask()` result, downstream listeners still execute, and the final flow output reflects the listener result while input history records the originating method.

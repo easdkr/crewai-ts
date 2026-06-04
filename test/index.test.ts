@@ -28159,6 +28159,35 @@ describe("task output files", () => {
     expect(copied.output?.raw).toBe("copied output");
   });
 
+  it("preserves upstream task copy context semantics", () => {
+    const unspecified = new Task({
+      description: "Unspecified context",
+      expectedOutput: "Done",
+    });
+    const none = new Task({
+      description: "None context",
+      expectedOutput: "Done",
+      context: null,
+    });
+    const contextTask = new Task({
+      description: "Context source",
+      expectedOutput: "Source done",
+    });
+    const mappedContext = new Task({
+      description: "Mapped context",
+      expectedOutput: "Mapped done",
+    });
+    const withList = new Task({
+      description: "List context",
+      expectedOutput: "Done",
+      context: [contextTask],
+    });
+
+    expect(unspecified.copy([], {}).context).toBeUndefined();
+    expect(none.copy([], {}).context).toBeNull();
+    expect(withList.copy([], { [contextTask.key]: mappedContext }).context).toEqual([mappedContext]);
+  });
+
   it("settles upstream-compatible task async futures", async () => {
     const agentInstance = new Agent({
       role: "Future Agent",
