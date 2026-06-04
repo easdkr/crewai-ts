@@ -769,12 +769,37 @@ export class AgentExecutor extends BaseAgentExecutor {
   }
 
   executeTodosParallel(): Promise<"parallel_todos_complete"> {
-    for (const todo of this.state.todos.getReadyTodos()) {
-      this.state.todos.markRunning(todo.stepNumber);
-      todo.result ??= todo.description;
-      this.state.todos.markCompleted(todo.stepNumber, todo.result);
+    const readyTodos = this.state.todos.getReadyTodos();
+    if (!this.isPlanningEnabled()) {
+      for (const todo of readyTodos) {
+        this.state.todos.markRunning(todo.stepNumber);
+        todo.result ??= todo.description;
+        this.state.todos.markCompleted(todo.stepNumber, todo.result);
+      }
+      return Promise.resolve("parallel_todos_complete");
     }
-    return Promise.resolve("parallel_todos_complete");
+    for (const todo of readyTodos) {
+      this.state.todos.markRunning(todo.stepNumber);
+    }
+    return Promise.all(readyTodos.map(async (todo) => {
+      try {
+        const result = await this._executePlanningTodo(todo);
+        todo.result = result.result;
+        this.state.execution_log.push({
+          type: "step_execution",
+          step_number: todo.stepNumber,
+          success: result.success,
+          result_preview: result.result.slice(0, 200),
+          error: result.error,
+          tool_calls: result.toolCallsMade,
+          execution_time: result.executionTime,
+        });
+      } catch (error) {
+        const errorMessage = `Error: ${executorErrorMessage(error)}`;
+        todo.result = errorMessage;
+        this.state.todos.markFailed(todo.stepNumber, errorMessage);
+      }
+    })).then(() => "parallel_todos_complete");
   }
 
   execute_todos_parallel(): Promise<"parallel_todos_complete"> {

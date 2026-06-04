@@ -12998,6 +12998,54 @@ describe("core crew runtime", () => {
     expect(executor.state.todos.get_by_step_number(2)?.status).toBe(TodoStatus.RUNNING);
   });
 
+  it("executes AgentExecutor parallel todos through isolated StepExecutor contexts", async () => {
+    const prompts: string[] = [];
+    const agentInstance = new Agent({
+      role: "Researcher",
+      goal: "Find facts",
+      backstory: "Careful analyst",
+      planningConfig: new PlanningConfig({ max_step_iterations: 3 }),
+      llm: (messages) => {
+        const prompt = messages.map((message) => message.content).join("\n");
+        prompts.push(prompt);
+        return prompt.includes("Collect docs") ? "docs result" : "summary result";
+      },
+    });
+    const executor = new AgentExecutor({
+      agent: agentInstance,
+      task: {
+        description: "Research CrewAI",
+        expected_output: "Concise brief",
+      },
+    });
+    executor.state.todos.items = [
+      new TodoItem({ stepNumber: 1, description: "Collect docs" }),
+      new TodoItem({ stepNumber: 2, description: "Summarize docs" }),
+    ];
+
+    await expect(executor.execute_todos_parallel()).resolves.toBe("parallel_todos_complete");
+
+    expect(prompts).toHaveLength(2);
+    expect(prompts[0]).toContain("Collect docs");
+    expect(prompts[1]).toContain("Summarize docs");
+    expect(executor.state.todos.get_by_step_number(1)?.result).toBe("docs result");
+    expect(executor.state.todos.get_by_step_number(2)?.result).toBe("summary result");
+    expect(executor.state.todos.get_by_step_number(1)?.status).toBe(TodoStatus.RUNNING);
+    expect(executor.state.todos.get_by_step_number(2)?.status).toBe(TodoStatus.RUNNING);
+    expect(executor.state.execution_log.filter((entry) => entry.type === "step_execution")).toEqual([
+      expect.objectContaining({
+        step_number: 1,
+        success: true,
+        result_preview: "docs result",
+      }),
+      expect.objectContaining({
+        step_number: 2,
+        success: true,
+        result_preview: "summary result",
+      }),
+    ]);
+  });
+
   it("routes AgentExecutor dynamic replanning from upstream error signals", () => {
     const executor = new AgentExecutor();
     executor.state.todos.items = [
