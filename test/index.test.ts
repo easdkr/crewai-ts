@@ -7981,6 +7981,42 @@ describe("agent utility helpers", () => {
       toolInput: "what is the temperature in SF?",
     });
   });
+
+  it("preserves upstream parser literal tool inputs with brackets, newlines, and escaped characters", () => {
+    const mixedBrackets = parseAgentOutput([
+      "Thought: Let's find the temperature",
+      "Action: search",
+      "Action Input: [temperature in {SF}]",
+    ].join("\n"));
+    expect(mixedBrackets).toBeInstanceOf(AgentAction);
+    expect(mixedBrackets).toMatchObject({
+      tool: "search",
+      toolInput: "[temperature in {SF}]",
+    });
+
+    const multiline = parseAgentOutput([
+      "Thought: Let's find the temperature",
+      "Action: search",
+      "Action Input: what is",
+      "the temperature in SF?",
+    ].join("\n"));
+    expect(multiline).toBeInstanceOf(AgentAction);
+    expect(multiline).toMatchObject({
+      tool: "search",
+      toolInput: "what is\nthe temperature in SF?",
+    });
+
+    const escaped = parseAgentOutput([
+      "Thought: Let's find the temperature",
+      "Action: search",
+      "Action Input: what is the temperature in SF? \\n",
+    ].join("\n"));
+    expect(escaped).toBeInstanceOf(AgentAction);
+    expect(escaped).toMatchObject({
+      tool: "search",
+      toolInput: "what is the temperature in SF? \\n",
+    });
+  });
 });
 
 describe("evaluator utilities", () => {
