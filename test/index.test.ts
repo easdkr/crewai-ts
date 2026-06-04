@@ -654,6 +654,9 @@ import {
   HuggingFaceEmbeddingFunction,
   HuggingFaceProvider,
   InternalInstructor,
+  SNOWFLAKE_CORTEX_PATH,
+  SNOWFLAKE_TOKEN_ENV_VARS,
+  SnowflakeCompletion,
   _is_valid_llm,
   InstructorEmbeddingFunction,
   InstructorProvider,
@@ -24472,6 +24475,89 @@ describe("LLM providers", () => {
         args: { query: "CrewAI" },
         index: 0,
       },
+    ]);
+  });
+
+  it("provides Snowflake Cortex completion provider normalization and Claude history guards", () => {
+    expect(SNOWFLAKE_CORTEX_PATH).toBe("/api/v2/cortex/v1");
+    expect(SNOWFLAKE_TOKEN_ENV_VARS).toEqual(["SNOWFLAKE_PAT", "SNOWFLAKE_TOKEN", "SNOWFLAKE_JWT"]);
+    expect((SnowflakeCompletion as unknown as {
+      _normalize_snowflake_base_url(value: string): string;
+    })._normalize_snowflake_base_url("acme.snowflakecomputing.com")).toBe("https://acme.snowflakecomputing.com/api/v2/cortex/v1");
+    expect((SnowflakeCompletion as unknown as {
+      _base_url_from_account_identifier(value: string): string;
+    })._base_url_from_account_identifier("org-account")).toBe("https://org-account.snowflakecomputing.com/api/v2/cortex/v1");
+    expect((SnowflakeCompletion as unknown as {
+      _resolve_token(value?: string | null): string;
+    })._resolve_token("pat/direct-token")).toBe("direct-token");
+    expect(() => (SnowflakeCompletion as unknown as {
+      _normalize_snowflake_base_url(value: string): string;
+    })._normalize_snowflake_base_url("https://acme.snowflakecomputing.com/api/v2/cortex/v1/chat/completions")).toThrow(
+      "do not include endpoint paths",
+    );
+
+    const snowflake = new SnowflakeCompletion({
+      model: "claude-3-5-sonnet",
+      api_key: "pat/snowflake-token",
+      account_identifier: "org-account",
+      database: "CREWAI",
+      schema_name: "PUBLIC",
+      warehouse: "COMPUTE_WH",
+      role: "ANALYST",
+      max_tokens: 256,
+    });
+
+    expect(snowflake.to_config_dict()).toMatchObject({
+      model: "claude-3-5-sonnet",
+      provider: "snowflake",
+      api_key: "snowflake-token",
+      base_url: "https://org-account.snowflakecomputing.com/api/v2/cortex/v1",
+      account_url: "https://org-account.snowflakecomputing.com/api/v2/cortex/v1",
+      account_identifier: "org-account",
+      database: "CREWAI",
+      schema_name: "PUBLIC",
+      warehouse: "COMPUTE_WH",
+      role: "ANALYST",
+    });
+    expect(snowflake.supports_function_calling()).toBe(true);
+    expect(snowflake.supports_multimodal()).toBe(true);
+    expect(new SnowflakeCompletion({
+      model: "llama3.3-70b",
+      api_key: "snowflake-token",
+      account_url: "https://acme.snowflakecomputing.com",
+    }).supports_function_calling()).toBe(false);
+
+    const params = (snowflake as unknown as {
+      _prepare_completion_params(messages: LLMMessage[]): Record<string, unknown>;
+    })._prepare_completion_params([{ role: "user", content: "Continue" }]);
+    expect(params).toMatchObject({
+      model: "claude-3-5-sonnet",
+      messages: [{ role: "user", content: "Continue" }],
+      max_completion_tokens: 256,
+    });
+    expect(params).not.toHaveProperty("max_tokens");
+
+    const formatted = (snowflake as unknown as {
+      _format_messages(messages: Array<LLMMessage & Record<string, unknown>>): Array<LLMMessage & Record<string, unknown>>;
+    })._format_messages([
+      { role: "user", content: "Find docs" },
+      {
+        role: "assistant",
+        content: "",
+        tool_calls: ["{'id': 'tool-1', 'type': 'function', 'function': {'name': 'search_docs', 'arguments': '{\"query\":\"CrewAI\"}'}}"],
+      },
+      { role: "tool", tool_call_id: "tool-1", name: "search_docs", content: "found CrewAI" },
+      {
+        role: "assistant",
+        content: "",
+        tool_calls: [{ id: "dangling", type: "function", function: { name: "missing", arguments: "{}" } }],
+      },
+      { role: "assistant", content: "final answer" },
+    ]);
+
+    expect(formatted).toEqual([
+      { role: "user", content: "Find docs" },
+      { role: "user", content: "Tool results from previous tool calls:\n- search_docs: found CrewAI" },
     ]);
   });
 

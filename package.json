@@ -505,6 +505,10 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
+    "./experimental/conversational_mixin": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
     "./experimental/evaluation/agent_evaluator": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
@@ -569,6 +573,10 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
+    "./flow/dsl": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
     "./flow/async_feedback/providers": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
@@ -630,6 +638,10 @@
       "import": "./dist/index.js"
     },
     "./flow/persistence/sqlite": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./flow/runtime": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
@@ -806,6 +818,14 @@
       "import": "./dist/index.js"
     },
     "./llms/providers/openai_compatible/completion": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./llms/providers/snowflake/completion": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./llms/providers/snowflake": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },

@@ -14,12 +14,12 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 858 passing tests.
+- Test suite: 859 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
 - Subpath export parity: `total_missing=0`, `total_mismatched=0`.
-- During the 2026-06-04 run, a fresh latest upstream checkout showed new post-baseline export surfaces (`flow/conversation`, `experimental/conversational`, `flow/flow_definition`, `llms/providers/snowflake/completion`, and `flow_context.current_flow_name`). `flow/conversation`, `flow/flow_definition`, `flow_context.current_flow_name`, and `experimental/conversational` are now covered by deterministic TS helpers; the remaining latest-upstream export gap is 3 Snowflake completion symbols. These remaining surfaces are not part of the current release baseline commit above; audit them by behavior before advancing the parity baseline.
+- During the 2026-06-04 run, a fresh latest upstream checkout showed new post-baseline export surfaces (`flow/conversation`, `experimental/conversational`, `experimental/conversational_mixin`, `flow/dsl`, `flow/flow_definition`, `flow/runtime`, `llms/providers/snowflake`, `llms/providers/snowflake/completion`, and `flow_context.current_flow_name`). These now have deterministic TS coverage or package subpath coverage, and latest-upstream root/subpath export parity reports `total_missing=0`. These remaining surfaces are not part of the current release baseline commit above; audit them by behavior before advancing the parity baseline.
 
 ## Release Readiness Policy
 
@@ -123,8 +123,9 @@ High-value behavior audits still worth running:
    - Any failing local example becomes the next behavior test.
 
 2. **Latest upstream baseline advancement**
-   - Latest upstream now exposes Snowflake completion symbols beyond the current pinned baseline.
-   - Before changing the release baseline, classify each new surface by behavior: deterministic local workflow, provider/network shim, or intentionally unsupported optional integration.
+   - Latest upstream post-baseline root/subpath export gaps are currently closed.
+   - Snowflake Cortex completion is covered as a deterministic provider shim: token/account URL normalization, Claude-family message guards, capability flags, and request-parameter shaping are release-gated without live Snowflake credentials.
+   - Before changing the release baseline, classify each new behavior surface by deterministic local workflow, provider/network shim, or intentionally unsupported optional integration.
 
 3. **Experimental `AgentExecutor` plan-and-execute behavior**
    - Current TS implementation covers deterministic finalization, dynamic replanning triggers, object-style invoke setup, ReAct/native LLM routing, tool observations, native tool messages, memory save, human feedback, and plan refinement semantics.

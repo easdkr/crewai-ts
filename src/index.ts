@@ -476,7 +476,10 @@ export {
   ConverseToolTypeDef,
   GeminiCompletion,
   NATIVE_STRUCTURED_OUTPUT_MODELS,
+  SNOWFLAKE_CORTEX_PATH,
+  SNOWFLAKE_TOKEN_ENV_VARS,
   STRUCTURED_OUTPUT_TOOL_NAME,
+  SnowflakeCompletion,
   TOOL_SEARCH_TOOL_TYPES,
   ToolInputSchema,
   ToolSpec,
@@ -486,6 +489,7 @@ export {
   type AzureCompletionOptions,
   type BedrockCompletionOptions,
   type GeminiCompletionOptions,
+  type SnowflakeCompletionOptions,
 } from "./provider-completions.js";
 export {
   AgentPlanning,
