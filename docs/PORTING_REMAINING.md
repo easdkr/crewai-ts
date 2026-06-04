@@ -313,6 +313,7 @@ When more goal budget is available, continue from the behavioral parity audits b
 ## Completed In Current Tool Behavior Pass
 
 - `BaseTool.run` / `arun` and decorator-created structured tools now mirror upstream schema validation for LLM-generated kwargs: when an `argsSchema` is present, validated execution receives only schema fields plus defaults, hallucinated extra keys are stripped before execution, and usage counts do not increment on validation errors.
+- `BaseTool.to_structured_tool` now has default-gate coverage for upstream cache-function passthrough: custom `cacheFunction` / `cache_function` handlers are preserved when converting a base tool into a structured tool.
 - `ToolUsage.use` now has default-gate coverage for upstream failing-tool event behavior: failed tool runs emit started/error events without emitting a finished event.
 - `PickleHandler.load` now mirrors upstream corrupted persistence behavior for the JSON-backed TS shim: missing or empty files still load as `{}`, while malformed saved data raises `pickle data was truncated` instead of being silently discarded.
 - `MCPToolResolver._resolve_native` now mirrors upstream deterministic native MCP resolver behavior for fake clients: when discovery yields no usable tools it logs a warning and returns `[[], []]`, and unexpected discovery failures are wrapped as native MCP tool discovery errors while still disconnecting the discovery client.

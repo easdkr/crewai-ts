@@ -24797,6 +24797,7 @@ describe("tools", () => {
   });
 
   it("mirrors upstream original tool usage state when converted to structured tool", () => {
+    const noCache = () => false;
     class EchoTool extends BaseTool {
       constructor() {
         super({
@@ -24806,6 +24807,7 @@ describe("tools", () => {
             value: { type: "string", required: true },
           },
           maxUsageCount: 2,
+          cacheFunction: noCache,
         });
       }
 
@@ -24817,6 +24819,8 @@ describe("tools", () => {
     const original = new EchoTool();
     const structured = original.to_structured_tool();
 
+    expect(original.cache_function).toBe(noCache);
+    expect(structured.cache_function).toBe(noCache);
     expect(structured.current_usage_count).toBe(0);
     expect(original.current_usage_count).toBe(0);
     expect(structured.invoke({ value: "first" })).toBe("first");
