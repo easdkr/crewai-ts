@@ -19713,6 +19713,51 @@ describe("flow runtime", () => {
     expect(new DeferOff()._should_defer_trace_finalization()).toBe(false);
   });
 
+  it("marks experimental conversational sessions ended through builtin end route", async () => {
+    const routerLlm = {
+      call() {
+        return { intent: "end" };
+      },
+    };
+
+    class EndFlow extends Flow<ConversationState> {
+      static conversational = true;
+      static conversational_config = new ConversationConfig({
+        router: new RouterConfig({ llm: routerLlm }),
+      });
+
+      begin() {
+        return "ready";
+      }
+
+      route() {
+        return this.route_turn(this.build_router_context());
+      }
+
+      endTurn() {
+        return this.end_conversation();
+      }
+    }
+
+    const initializers = [
+      decorateMethod(EndFlow, "begin", start() as unknown as Decorator),
+      decorateMethod(EndFlow, "route", router("begin") as unknown as Decorator),
+      decorateMethod(EndFlow, "endTurn", listen("end") as unknown as Decorator),
+    ];
+    const flow = new EndFlow();
+    initializers.forEach((initializer) => {
+      initializer.call(flow);
+    });
+
+    await expect(flow.handle_turn("bye")).resolves.toBe("Conversation ended.");
+
+    expect(flow.state.ended).toBe(true);
+    expect(flow.state.messages.at(-1)).toMatchObject({
+      role: "assistant",
+      content: "Conversation ended.",
+    });
+  });
+
   it("provides upstream experimental conversational data shapes", () => {
     const router = new RouterConfig({
       routes: ["converse", "handoff"],

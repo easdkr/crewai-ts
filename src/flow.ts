@@ -1604,6 +1604,17 @@ export class Flow<TState extends object = Record<string, unknown>> {
     return this.converseTurn();
   }
 
+  endConversation(): string {
+    setConversationStateField(this.state, "ended", true);
+    const content = "Conversation ended.";
+    this.appendAssistantMessage(content);
+    return content;
+  }
+
+  end_conversation(): string {
+    return this.endConversation();
+  }
+
   finalizeSessionTraces(): void {
     if (!this.deferredFlowFinished) {
       return;
