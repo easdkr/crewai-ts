@@ -1887,6 +1887,30 @@ describe("serialization and project utilities", () => {
       "search tools requires the optional dependency 'definitely_missing_pkg'.\nInstall it with: uv add definitely_missing_pkg",
     );
   });
+
+  it("covers upstream import utility edge cases for empty paths, nested modules, and chained causes", async () => {
+    expect(await validateImportPath("node:fs/promises.readFile")).toBeTypeOf("function");
+    expect(await importAndValidateDefinition("node:fs/promises.readFile")).toBeTypeOf("function");
+
+    await expect(validateImportPath("")).rejects.toThrow(
+      "import_path '' must be of the form 'module.ClassName'",
+    );
+    await expect(requireModule("node:path", { purpose: "path tests", attr: "missingAttr" })).rejects.toThrow(
+      "Module 'node:path' has no attribute 'missingAttr'",
+    );
+
+    try {
+      await requireModule("definitely_missing_nested.module", { purpose: "nested optional" });
+      throw new Error("expected optional dependency failure");
+    } catch (error) {
+      expect(error).toBeInstanceOf(OptionalDependencyError);
+      expect((error as Error).cause).toBeInstanceOf(Error);
+      expect(String(error)).toContain(
+        "nested optional requires the optional dependency 'definitely_missing_nested.module'",
+      );
+      expect(String(error)).toContain("uv add definitely_missing_nested");
+    }
+  });
 });
 
 class MemoryFileStream {
