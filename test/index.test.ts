@@ -19200,6 +19200,40 @@ describe("flow runtime", () => {
     });
   });
 
+  it("preserves flow lifecycle events while asking for input", async () => {
+    const events: Array<FlowStartedEvent | FlowFinishedEvent> = [];
+    crewaiEventBus.on("flow_started", (_source, event) => {
+      events.push(event);
+    });
+    crewaiEventBus.on("flow_finished", (_source, event) => {
+      events.push(event);
+    });
+
+    class AskLifecycleFlow extends Flow {
+      gather() {
+        return this.ask("Q?");
+      }
+    }
+
+    const flow = new AskLifecycleFlow({
+      inputProvider: {
+        requestInput: () => "answer",
+      },
+    });
+    decorateMethod(AskLifecycleFlow, "gather", start() as unknown as Decorator).call(flow);
+
+    await expect(flow.kickoff()).resolves.toBe("answer");
+
+    expect(events.map((event) => event.type)).toEqual(["flow_started", "flow_finished"]);
+    expect(events[0]).toMatchObject({
+      flowName: "AskLifecycleFlow",
+    });
+    expect(events[1]).toMatchObject({
+      flowName: "AskLifecycleFlow",
+      result: "answer",
+    });
+  });
+
   it("exposes upstream snake_case ask input history", async () => {
     class AskHistoryFlow extends Flow {
       async gather() {
