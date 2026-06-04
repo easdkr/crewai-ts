@@ -32353,6 +32353,17 @@ describe("LLM providers", () => {
       originalModel: "groq/llama-3.3-70b",
       useNative: false,
     });
+    expect(resolve_llm_model_spec("together/qwen-2.5-72b")).toEqual({
+      provider: "together",
+      model: "qwen-2.5-72b",
+      originalModel: "together/qwen-2.5-72b",
+      useNative: false,
+    });
+    expect((create_llm("together/qwen-2.5-72b") as ConfiguredLLM).to_config_dict()).toMatchObject({
+      model: "together/qwen-2.5-72b",
+      provider: "together",
+      is_litellm: true,
+    });
 
     const claudeEnv = create_llm(null, {
       MODEL: "claude/claude-opus-4-0",
