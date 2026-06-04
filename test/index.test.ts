@@ -33498,6 +33498,50 @@ describe("crew planning", () => {
     );
   });
 
+  it("formats upstream crew planning summaries with agent tools and no-tool fallback", () => {
+    const search = new CrewStructuredTool({
+      name: "tool1",
+      description: "Tool 1 description",
+      func: () => "result",
+    });
+    const summarize = new CrewStructuredTool({
+      name: "tool2",
+      description: "Tool 2 description",
+      func: () => "summary",
+    });
+    const toolAgent = new Agent({
+      role: "Tool Agent",
+      goal: "Use tools",
+      backstory: "Plans with tools",
+      tools: [search, summarize],
+    });
+    const noToolAgent = new Agent({
+      role: "No Tool Agent",
+      goal: "Reason directly",
+      backstory: "Plans without tools",
+    });
+    const planner = new CrewPlanner([
+      new Task({
+        description: "Task with tools",
+        expectedOutput: "Tool output",
+        agent: toolAgent,
+      }),
+      new Task({
+        description: "Task without tools",
+        expectedOutput: "Direct output",
+        agent: noToolAgent,
+      }),
+    ], null);
+
+    const summary = planner._create_tasks_summary();
+
+    expect(summary).toContain("Task Number 1 - Task with tools");
+    expect(summary).toContain("\"agent_tools\": [tool1, tool2]");
+    expect(summary).toContain("Task Number 2 - Task without tools");
+    expect(summary).toContain("\"agent_tools\": \"agent has no tools\"");
+    expect(summary).not.toContain("\"agent_knowledge\"");
+  });
+
   it("uses a planning LLM to add per-task plans to execution prompts", async () => {
     const prompts: string[] = [];
     const plannerCalls: string[] = [];
