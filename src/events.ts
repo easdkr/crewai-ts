@@ -4102,6 +4102,11 @@ export class TraceBatchManager {
   batch_owner_id: string | null = null;
   backendInitialized = false;
   backend_initialized = false;
+  batchFinalized = false;
+  batch_finalized = false;
+  _batch_finalized = false;
+  deferSessionFinalization = false;
+  defer_session_finalization = false;
   ephemeralTraceUrl: string | null = null;
   ephemeral_trace_url: string | null = null;
   private pendingEventsCount = 0;
@@ -4120,6 +4125,7 @@ export class TraceBatchManager {
     this.current_batch = batch;
     this.isCurrentBatchEphemeral = useEphemeral;
     this.is_current_batch_ephemeral = useEphemeral;
+    this.setBatchFinalized(false);
     this.traceBatchId = batch.batchId;
     this.trace_batch_id = batch.batchId;
     this.recordStartTime("execution");
@@ -4164,7 +4170,7 @@ export class TraceBatchManager {
   }
 
   finalizeBatch(): TraceBatch | null {
-    if (!this.currentBatch) {
+    if (this.batchFinalized || !this.currentBatch) {
       return null;
     }
     const finalized = this.currentBatch;
@@ -4176,6 +4182,7 @@ export class TraceBatchManager {
     this.trace_batch_id = null;
     this.isCurrentBatchEphemeral = false;
     this.is_current_batch_ephemeral = false;
+    this.setBatchFinalized(true);
     return finalized;
   }
 
@@ -4231,6 +4238,12 @@ export class TraceBatchManager {
     }
     this.executionStartTimes.delete(key);
     return Date.now() - start;
+  }
+
+  private setBatchFinalized(value: boolean): void {
+    this.batchFinalized = value;
+    this.batch_finalized = value;
+    this._batch_finalized = value;
   }
 
   calculate_duration(key: string): number {

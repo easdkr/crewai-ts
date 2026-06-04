@@ -9192,6 +9192,30 @@ describe("telemetry compatibility", () => {
     }
   });
 
+  it("marks trace batches finalized and resets the guard on reinitialization", () => {
+    const batchManager = new TraceBatchManager();
+    batchManager.initialize_batch(
+      { trace_id: "trace-1", user_id: "user-1" },
+      { execution_type: "flow", flow_name: "DemoFlow" },
+    );
+    batchManager.add_event(new TraceEvent({ type: "default_env", source_type: "test" }));
+
+    const finalized = batchManager.finalize_batch();
+
+    expect(finalized?.events).toHaveLength(1);
+    expect(batchManager.event_buffer).toEqual([]);
+    expect(batchManager.batch_finalized).toBe(true);
+    expect(batchManager.finalize_batch()).toBeNull();
+
+    batchManager.initialize_batch(
+      { trace_id: "trace-2", user_id: "user-1" },
+      { execution_type: "flow", flow_name: "NextFlow" },
+    );
+
+    expect(batchManager.batch_finalized).toBe(false);
+    expect(batchManager.current_batch?.execution_metadata).toMatchObject({ flow_name: "NextFlow" });
+  });
+
   it("records task, tool, flow, and feature spans without network exporters", () => {
     const telemetry = new Telemetry();
     telemetry.clearSpans();
