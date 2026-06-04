@@ -12654,6 +12654,7 @@ describe("core crew runtime", () => {
     });
 
     const originalKey = taskInstance.key;
+    expect(originalKey).toBe("61dd598e0351e8fd5694903ffc5ed275");
     taskInstance.interpolate_inputs_and_add_conversation_history({
       topic: "CrewAI",
       crew_chat_messages: JSON.stringify([{ role: "user", content: "Use TS examples" }]),
