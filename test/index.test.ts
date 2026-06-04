@@ -19289,6 +19289,54 @@ describe("flow runtime", () => {
     expect(calculateExecutionPaths(structure)).toBe(1);
   });
 
+  it("uses loaded FlowDefinition metadata when building flow visualization", () => {
+    const definition = FlowDefinition.from_dict({
+      schema: "crewai.flow/v1",
+      name: "ExplicitNonStartFlow",
+      methods: {
+        begin: { start: true },
+        handle: { start: false, listen: "begin" },
+      },
+    });
+
+    class ExplicitNonStartFlow extends Flow {
+      begin() {
+        return "ready";
+      }
+
+      handle() {
+        return "handled";
+      }
+    }
+
+    const initializers = [
+      decorateMethod(ExplicitNonStartFlow, "begin", start() as unknown as Decorator),
+      decorateMethod(ExplicitNonStartFlow, "handle", start() as unknown as Decorator),
+    ];
+    const flow = new ExplicitNonStartFlow();
+    initializers.forEach((initializer) => {
+      initializer.call(flow);
+    });
+    (ExplicitNonStartFlow as typeof Flow & { _flow_definition?: FlowDefinition })._flow_definition = definition;
+
+    const genericStructure = getFlowStructure(flow);
+    const visualization = buildFlowStructure(flow);
+
+    expect(genericStructure.startMethods).toEqual(["begin"]);
+    expect(genericStructure.methods.find((method) => method.name === "handle")).toMatchObject({
+      type: "listen",
+      triggerMethods: ["begin"],
+    });
+    expect(visualization.start_methods).toEqual(["begin"]);
+    expect(visualization.nodes.handle?.type).toBe("listen");
+    expect(visualization.edges).toContainEqual({
+      source: "begin",
+      target: "handle",
+      condition_type: "OR",
+      is_router_path: false,
+    });
+  });
+
   it("parses flow visualization CSS and JS extension tags like upstream", () => {
     const cssParser = {
       stream: [{ lineno: 7 }],

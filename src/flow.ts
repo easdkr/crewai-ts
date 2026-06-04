@@ -3281,6 +3281,11 @@ export function buildFlowDefinition(instanceOrConstructor: object | FlowMetadata
 export const build_flow_definition = buildFlowDefinition;
 
 export function getFlowStructure(instanceOrConstructor: object | FlowMetadataTarget): FlowStructure {
+  const loadedDefinition = getLoadedFlowDefinition(instanceOrConstructor);
+  if (loadedDefinition) {
+    return flowDefinitionToStructure(loadedDefinition, instanceOrConstructor);
+  }
+
   const entries = getFlowMetadata(instanceOrConstructor);
   const feedbackMetadata = getHumanFeedbackMetadata(instanceOrConstructor);
   const name = typeof instanceOrConstructor === "function"
@@ -3393,8 +3398,11 @@ export function getPossibleReturnConstants(method: unknown): readonly string[] |
 export const get_possible_return_constants = getPossibleReturnConstants;
 
 export function buildFlowStructure(instanceOrConstructor: object | FlowMetadataTarget): FlowVisualizationStructure {
-  const entries = getFlowMetadata(instanceOrConstructor);
-  const structure = getFlowStructure(instanceOrConstructor);
+  const loadedDefinition = getLoadedFlowDefinition(instanceOrConstructor);
+  const entries = loadedDefinition ? flowDefinitionEntries(loadedDefinition) : getFlowMetadata(instanceOrConstructor);
+  const structure = loadedDefinition
+    ? flowDefinitionToStructure(loadedDefinition, instanceOrConstructor)
+    : getFlowStructure(instanceOrConstructor);
   const nodes: Record<string, FlowNodeMetadata> = {};
   const startMethods: string[] = [];
   const routerMethods: string[] = [];
@@ -3805,6 +3813,111 @@ function createStructureMethod(
     routerPaths: feedbackConfig?.emit ?? routerPathsFor(methodName, entries),
     hasHumanFeedback: Boolean(feedbackConfig),
   };
+}
+
+function getLoadedFlowDefinition(instanceOrConstructor: object | FlowMetadataTarget): FlowDefinition | null {
+  const ctor = typeof instanceOrConstructor === "function"
+    ? instanceOrConstructor as FlowMetadataTarget & { _flow_definition?: FlowDefinition | null }
+    : instanceOrConstructor.constructor as FlowMetadataTarget & { _flow_definition?: FlowDefinition | null };
+  if (!Object.prototype.hasOwnProperty.call(ctor, "_flow_definition")) {
+    return null;
+  }
+  return ctor._flow_definition instanceof FlowDefinition ? ctor._flow_definition : null;
+}
+
+function flowDefinitionToStructure(
+  definition: FlowDefinition,
+  instanceOrConstructor: object | FlowMetadataTarget,
+): FlowStructure {
+  const className = typeof instanceOrConstructor === "function"
+    ? instanceOrConstructor.name
+    : instanceOrConstructor.constructor.name;
+  const methods = Object.entries(definition.methods).map(([methodName, method]): FlowStructureMethod => {
+    const triggerCondition = flowMethodDefinitionTriggerCondition(method);
+    const isStart = method.isStart;
+    const isRouter = method.router || Boolean(method.humanFeedback?.emit?.length);
+    return {
+      name: methodName,
+      type: isStart && isRouter
+        ? "start_router"
+        : isStart
+          ? "start"
+          : isRouter
+            ? "router"
+            : "listen",
+      triggerMethods: triggerCondition ? extractAllTriggerNames(triggerCondition) : [],
+      conditionType: triggerCondition?.type ?? null,
+      routerPaths: method.humanFeedback?.emit ?? method.emit ?? [],
+      hasHumanFeedback: Boolean(method.humanFeedback),
+    };
+  });
+  const edges = Object.entries(definition.methods).flatMap(([methodName, method]) => {
+    const triggerCondition = flowMethodDefinitionTriggerCondition(method);
+    return triggerCondition ? conditionEdges(triggerCondition, methodName, methods) : [];
+  });
+
+  return {
+    name: definition.name || className,
+    methods,
+    edges,
+    startMethods: methods.filter((method) => method.type === "start" || method.type === "start_router").map((method) => method.name),
+    routerMethods: methods.filter((method) => method.type === "router" || method.type === "start_router").map((method) => method.name),
+  };
+}
+
+function flowDefinitionEntries(definition: FlowDefinition): readonly FlowMethodEntry[] {
+  const entries: FlowMethodEntry[] = [];
+  for (const [methodName, method] of Object.entries(definition.methods)) {
+    if (method.isStart) {
+      entries.push({
+        name: methodName,
+        kind: "start",
+        condition: method.start === true ? null : flowDefinitionConditionToFlowCondition(method.start as FlowDefinitionCondition),
+      });
+    }
+    const triggerCondition = method.listen === null ? null : flowDefinitionConditionToFlowCondition(method.listen);
+    if (method.router || method.humanFeedback?.emit?.length) {
+      entries.push({ name: methodName, kind: "router", condition: triggerCondition, emit: method.emit });
+    } else if (triggerCondition) {
+      entries.push({ name: methodName, kind: "listen", condition: triggerCondition });
+    }
+  }
+  return entries;
+}
+
+function flowMethodDefinitionTriggerCondition(method: FlowMethodDefinition): FlowCondition | null {
+  if (method.listen !== null) {
+    return flowDefinitionConditionToFlowCondition(method.listen);
+  }
+  if (method.start !== null && method.start !== true && method.start !== false) {
+    return flowDefinitionConditionToFlowCondition(method.start);
+  }
+  return null;
+}
+
+function flowDefinitionConditionToFlowCondition(condition: FlowDefinitionCondition): FlowCondition {
+  const nested = flowDefinitionConditionInput(condition);
+  return typeof nested === "string" ? or_(nested) : nested;
+}
+
+function flowDefinitionConditionInput(condition: FlowDefinitionCondition): string | FlowCondition {
+  if (typeof condition === "string") {
+    return condition;
+  }
+  const andValue = condition.and;
+  if (Array.isArray(andValue)) {
+    return { type: "AND", conditions: andValue.map((nested) => flowDefinitionConditionInput(nested as FlowDefinitionCondition)) };
+  }
+  const orValue = condition.or;
+  if (Array.isArray(orValue)) {
+    return { type: "OR", conditions: orValue.map((nested) => flowDefinitionConditionInput(nested as FlowDefinitionCondition)) };
+  }
+  const type = condition.type;
+  const conditions = condition.conditions;
+  if ((type === "AND" || type === "OR") && Array.isArray(conditions)) {
+    return { type, conditions: conditions.map((nested) => flowDefinitionConditionInput(nested as FlowDefinitionCondition)) };
+  }
+  return JSON.stringify(condition);
 }
 
 function conditionEdges(
