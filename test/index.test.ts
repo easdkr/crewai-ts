@@ -373,7 +373,13 @@ import {
   SkillDiscoveryCompletedEvent,
   SkillDownloadCompletedEvent,
   SkillLoadFailedEvent,
+  SIGNAL_EVENT_TYPES,
+  SigContEvent,
+  SigHupEvent,
   SigIntEvent,
+  SigTermEvent,
+  SigTStpEvent,
+  signal_event_adapter,
   SignalType,
   StepObservation,
   StepObservationCompletedEvent,
@@ -5311,6 +5317,39 @@ describe("orchestration lifecycle events", () => {
       formatted_answer: { text: "done" },
       verbose: false,
     });
+  });
+
+  it("parses upstream signal event adapter payloads", () => {
+    expect(SIGNAL_EVENT_TYPES).toEqual([
+      SigTermEvent,
+      SigIntEvent,
+      SigHupEvent,
+      SigTStpEvent,
+      SigContEvent,
+    ]);
+
+    const restored = signal_event_adapter.validate_python({
+      type: "SIGTERM",
+      reason: "roundtrip test",
+    });
+
+    expect(restored).toBeInstanceOf(SigTermEvent);
+    expect(restored).toMatchObject({
+      type: "SIGTERM",
+      signal_number: SignalType.SIGTERM,
+      reason: "roundtrip test",
+    });
+    expect(restored.model_dump()).toMatchObject({
+      type: "SIGTERM",
+      signal_number: SignalType.SIGTERM,
+      reason: "roundtrip test",
+    });
+    expect(signal_event_adapter.validate_python(restored.model_dump())).toBeInstanceOf(SigTermEvent);
+    expect(signal_event_adapter.validate_python({ type: "SIGINT" })).toBeInstanceOf(SigIntEvent);
+    expect(signal_event_adapter.validate_python({ type: "SIGHUP" })).toBeInstanceOf(SigHupEvent);
+    expect(signal_event_adapter.validate_python({ type: "SIGTSTP" })).toBeInstanceOf(SigTStpEvent);
+    expect(signal_event_adapter.validate_python({ type: "SIGCONT" })).toBeInstanceOf(SigContEvent);
+    expect(() => signal_event_adapter.validate_python({ type: "SIGKILL" })).toThrow("Unsupported signal event type");
   });
 });
 

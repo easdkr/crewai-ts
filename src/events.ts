@@ -1928,6 +1928,18 @@ export abstract class SignalEventBase extends BaseEvent {
     this.signal_number = signalNumber;
     this.reason = reason ?? null;
   }
+
+  modelDump(): Record<string, unknown> {
+    return {
+      ...this.to_json(),
+      signal_number: this.signal_number,
+      reason: this.reason,
+    };
+  }
+
+  model_dump(): Record<string, unknown> {
+    return this.modelDump();
+  }
 }
 
 export class SigTermEvent extends SignalEventBase {
@@ -1963,7 +1975,34 @@ export class SigContEvent extends SignalEventBase {
 export type SignalEvent = SigTermEvent | SigIntEvent | SigHupEvent | SigTStpEvent | SigContEvent;
 export const SignalEvent = Object.freeze({ kind: "SignalEvent" });
 export const SIGNAL_EVENT_TYPES = Object.freeze([SigTermEvent, SigIntEvent, SigHupEvent, SigTStpEvent, SigContEvent] as const);
-export const signal_event_adapter = Object.freeze({ kind: "signal_event_adapter" });
+
+function validateSignalEventPayload(data: unknown): SignalEvent {
+  if (!data || typeof data !== "object" || Array.isArray(data)) {
+    throw new Error("Signal event payload must be an object.");
+  }
+  const payload = data as Record<string, unknown>;
+  const reason = typeof payload.reason === "string" || payload.reason === null ? payload.reason : undefined;
+  const options = reason === undefined ? {} : { reason };
+  switch (payload.type) {
+    case "SIGTERM":
+      return new SigTermEvent(options);
+    case "SIGINT":
+      return new SigIntEvent(options);
+    case "SIGHUP":
+      return new SigHupEvent(options);
+    case "SIGTSTP":
+      return new SigTStpEvent(options);
+    case "SIGCONT":
+      return new SigContEvent(options);
+    default:
+      throw new Error(`Unsupported signal event type: ${String(payload.type)}`);
+  }
+}
+
+export const signal_event_adapter = Object.freeze({
+  validatePython: validateSignalEventPayload,
+  validate_python: validateSignalEventPayload,
+});
 
 export function on_signal<THandler extends EventHandler<SignalEvent>>(handler: THandler): THandler {
   crewaiEventBus.on("SIGTERM", handler);
