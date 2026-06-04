@@ -24482,6 +24482,34 @@ describe("tools", () => {
     expect(asyncTool.current_usage_count).toBe(1);
   });
 
+  it("validates decorator-created tool kwargs before usage accounting", async () => {
+    const seen: Record<string, unknown>[] = [];
+    const executeCode = createFunctionTool("execute code", {
+      description: "Execute code snippets",
+      argsSchema: {
+        code: { type: "string", required: true },
+        language: { type: "string", default: "python" },
+      },
+    })(function execute(code: unknown, language: unknown): string {
+      seen.push({ code, language });
+      return `Executed ${String(language)}: ${String(code)}`;
+    });
+
+    expect(executeCode.run({ code: "1+1", extra_hallucinated_field: "junk" })).toBe("Executed python: 1+1");
+    expect(seen).toEqual([{ code: "1+1", language: "python" }]);
+    expect(executeCode.current_usage_count).toBe(1);
+
+    await expect(executeCode.arun({ code: "2+2", language: "typescript", ignored: true }))
+      .resolves.toBe("Executed typescript: 2+2");
+    expect(seen[1]).toEqual({ code: "2+2", language: "typescript" });
+    expect(executeCode.current_usage_count).toBe(2);
+
+    expect(() => executeCode.run({ wrong_arg: "value" })).toThrow("missing required argument 'code'");
+    expect(executeCode.current_usage_count).toBe(2);
+    await expect(executeCode.arun({ wrong_arg: "value" })).rejects.toThrow("missing required argument 'code'");
+    expect(executeCode.current_usage_count).toBe(2);
+  });
+
   it("emits upstream-style ToolUsage error and finished events", () => {
     const seen: Array<ToolUsageErrorEvent | ToolUsageFinishedEvent> = [];
     crewaiEventBus.on("tool_usage_error", (_source, event) => {
