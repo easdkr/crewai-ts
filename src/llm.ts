@@ -2419,7 +2419,7 @@ export abstract class BaseLLM implements LLMClient {
       const modelDump = usage.model_dump ?? usage.modelDump;
       if (typeof modelDump === "function") {
         const dumped = (modelDump as () => unknown)();
-        return isRecord(dumped) ? dumped : null;
+        return isRecord(dumped) ? normalizeUsageDict(dumped) : null;
       }
       const result: Record<string, unknown> = {};
       for (const [key, value] of Object.entries(usage)) {
@@ -2427,7 +2427,7 @@ export abstract class BaseLLM implements LLMClient {
           result[key] = value;
         }
       }
-      return result;
+      return normalizeUsageDict(result);
     }
     return null;
   }
@@ -2982,6 +2982,34 @@ function normalizeUsageMetrics(metrics: UsageMetricsLike): UsageMetrics {
     cacheCreationTokens: metrics.cacheCreationTokens ?? metrics.cache_creation_tokens ?? 0,
     successfulRequests: metrics.successfulRequests ?? metrics.successful_requests ?? 0,
   });
+}
+
+function normalizeUsageDict(usage: Record<string, unknown>): Record<string, unknown> {
+  const result = { ...usage };
+  const promptDetails = isRecord(result.prompt_tokens_details) ? result.prompt_tokens_details : null;
+  const completionDetails = isRecord(result.completion_tokens_details) ? result.completion_tokens_details : null;
+  const cachedPromptTokens = firstDefined(
+    result.cached_tokens,
+    result.cached_prompt_tokens,
+    result.cache_read_input_tokens,
+    promptDetails?.cached_tokens,
+  );
+  if (cachedPromptTokens !== undefined) {
+    result.cached_prompt_tokens = cachedPromptTokens;
+  }
+  const reasoningTokens = firstDefined(result.reasoning_tokens, completionDetails?.reasoning_tokens);
+  if (reasoningTokens !== undefined) {
+    result.reasoning_tokens = reasoningTokens;
+  }
+  const cacheCreationTokens = firstDefined(result.cache_creation_tokens, result.cache_creation_input_tokens);
+  if (cacheCreationTokens !== undefined) {
+    result.cache_creation_tokens = cacheCreationTokens;
+  }
+  return result;
+}
+
+function firstDefined(...values: unknown[]): unknown {
+  return values.find((value) => value !== null && value !== undefined);
 }
 
 function defineUsageMetricAliases(metrics: UsageMetrics): void {

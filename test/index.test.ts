@@ -26252,6 +26252,30 @@ describe("LLM providers", () => {
     expect(BaseLLM._usage_to_dict(42)).toBeNull();
   });
 
+  it("normalizes nested LiteLLM usage buckets without changing core token counts", () => {
+    const usage = {
+      prompt_tokens: 100,
+      completion_tokens: 200,
+      total_tokens: 300,
+      prompt_tokens_details: { cached_tokens: 40 },
+      completion_tokens_details: { reasoning_tokens: 60 },
+      cache_creation_input_tokens: 10,
+    };
+
+    expect(BaseLLM._usage_to_dict(usage)).toEqual({
+      prompt_tokens: 100,
+      completion_tokens: 200,
+      total_tokens: 300,
+      prompt_tokens_details: { cached_tokens: 40 },
+      completion_tokens_details: { reasoning_tokens: 60 },
+      cache_creation_input_tokens: 10,
+      cached_prompt_tokens: 40,
+      reasoning_tokens: 60,
+      cache_creation_tokens: 10,
+    });
+    expect(usage).not.toHaveProperty("cached_prompt_tokens");
+  });
+
   it("exposes upstream provider model constants for non-native LLM providers", () => {
     expect(PROVIDERS).toEqual([
       "openai",
