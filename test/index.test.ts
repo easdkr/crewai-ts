@@ -15457,6 +15457,34 @@ describe("core crew runtime", () => {
     }
   });
 
+  it("surfaces async AgentExecutor step callback task errors without rejecting sync execution", async () => {
+    const printSpy = vi.spyOn(PRINTER, "print").mockImplementation(() => undefined);
+    try {
+      const agent = new Agent({
+        role: "Researcher",
+        goal: "Audit callbacks",
+        backstory: "Reports async callback failures",
+        verbose: true,
+      });
+      const executor = new CrewAgentExecutor({
+        agent,
+        step_callback: async () => {
+          await Promise.resolve();
+          throw new Error("callback failed");
+        },
+      });
+
+      executor._invoke_step_callback(new AgentFinish({ thought: "done", output: "ok", text: "ok" }));
+      await new Promise((resolve) => {
+        setTimeout(resolve, 0);
+      });
+
+      expect(printSpy).toHaveBeenCalledWith("Error in async step_callback task: callback failed", "red");
+    } finally {
+      printSpy.mockRestore();
+    }
+  });
+
   it("exposes upstream StepExecutor execute alias for todo items", async () => {
     const prompts: string[] = [];
     let rpmChecks = 0;

@@ -1702,9 +1702,7 @@ export class AgentExecutor extends BaseAgentExecutor {
   private invokeStepCallback(answer: AgentAction | AgentFinish): void {
     const callback = (this.stepCallback ?? this.step_callback ?? this.agent?.stepCallback ?? this.agent?.step_callback ?? null) as ((value: AgentAction | AgentFinish) => unknown) | null;
     const result = callback?.(answer);
-    if (isPromiseLike(result)) {
-      void result;
-    }
+    handleAsyncStepCallbackResult(result, this.agent);
   }
 
   private injectTodoContext(todo: TodoItem): void {
@@ -2686,9 +2684,7 @@ export class CrewAgentExecutor extends BaseAgentExecutor {
   _invoke_step_callback(formattedAnswer: AgentAction | AgentFinish): void {
     const callback = (this.stepCallback ?? this.step_callback ?? this.agent?.stepCallback ?? this.agent?.step_callback ?? null) as ((value: AgentAction | AgentFinish) => unknown) | null;
     const result = callback?.(formattedAnswer);
-    if (result && typeof result === "object" && "then" in result) {
-      void result;
-    }
+    handleAsyncStepCallbackResult(result, this.agent);
   }
 
   async _ainvoke_step_callback(formattedAnswer: AgentAction | AgentFinish): Promise<void> {
@@ -3737,6 +3733,17 @@ function syncUsageMetricAliases(metrics: UsageMetrics): void {
 
 function isPromiseLike<T = unknown>(value: unknown): value is PromiseLike<T> {
   return !!value && typeof value === "object" && "then" in value && typeof (value as { then?: unknown }).then === "function";
+}
+
+function handleAsyncStepCallbackResult(result: unknown, agent: Agent | null | undefined): void {
+  if (!isPromiseLike(result)) {
+    return;
+  }
+  void Promise.resolve(result).catch((error: unknown) => {
+    if (agent?.verbose) {
+      PRINTER.print(`Error in async step_callback task: ${executorErrorMessage(error)}`, "red");
+    }
+  });
 }
 
 function executorErrorMessage(error: unknown): string {
