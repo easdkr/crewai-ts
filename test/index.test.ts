@@ -11421,6 +11421,25 @@ describe("RAG configuration and factories", () => {
     await expect(storage.asearch(["test query"])).resolves.toEqual([]);
   });
 
+  it("preserves upstream KnowledgeStorage malformed search result arrays", async () => {
+    const malformedResults = [
+      { content: "valid result", metadata: { source: "test" } },
+      { invalid: "missing content field", metadata: { source: "test" } },
+      null,
+      { content: null, metadata: { source: "test" } },
+    ];
+    const storage = new KnowledgeStorage({
+      collectionName: "malformed_test",
+      client: {
+        search: vi.fn(() => malformedResults),
+        asearch: vi.fn(() => Promise.resolve(malformedResults)),
+      } as unknown as RagClient,
+    });
+
+    expect(storage.search(["test query"])).toEqual(malformedResults);
+    await expect(storage.asearch(["test query"])).resolves.toEqual(malformedResults);
+  });
+
   it("ignores upstream KnowledgeStorage reset errors for readonly or missing collections", async () => {
     const readonlyStorage = new KnowledgeStorage({
       client: {
