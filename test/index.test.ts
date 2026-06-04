@@ -18885,6 +18885,32 @@ describe("flow runtime", () => {
     expect(definition.diagnostics).toEqual([]);
   });
 
+  it("preserves explicit router emit events in FlowDefinition metadata", () => {
+    class ExplicitRouterFlow extends Flow {
+      begin() {
+        return "started";
+      }
+
+      decide() {
+        return "left";
+      }
+    }
+
+    const initializers = [
+      decorateMethod(ExplicitRouterFlow, "begin", start() as unknown as Decorator),
+      decorateMethod(ExplicitRouterFlow, "decide", router("begin", { emit: ["left", "right", "left"] }) as unknown as Decorator),
+    ];
+    const flow = new ExplicitRouterFlow();
+    initializers.forEach((initializer) => {
+      initializer.call(flow);
+    });
+
+    const definition = ExplicitRouterFlow.flow_definition();
+
+    expect(definition.methods.decide.emit).toEqual(["left", "right"]);
+    expect(definition.diagnostics).toEqual([]);
+  });
+
   it("exposes upstream snake_case flow state properties", async () => {
     class PropertyAliasFlow extends Flow<{ id: string; events: string[] }> {
       constructor() {

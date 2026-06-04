@@ -239,6 +239,7 @@ export type FlowMethodEntry = {
   name: string | symbol;
   kind: FlowMethodKind;
   condition: FlowCondition | null;
+  emit?: readonly string[] | null;
 };
 
 type FlowExecutionQueueItem = {
@@ -3140,8 +3141,11 @@ export function listen(condition: FlowConditionInput): MethodDecoratorFactory {
   return flowDecorator("listen", normalizeFlowCondition(condition));
 }
 
-export function router(condition: FlowConditionInput): MethodDecoratorFactory {
-  return flowDecorator("router", normalizeFlowCondition(condition));
+export function router(
+  condition: FlowConditionInput,
+  options: { emit?: readonly string[] | null } = {},
+): MethodDecoratorFactory {
+  return flowDecorator("router", normalizeFlowCondition(condition), options.emit ?? null);
 }
 
 export function humanFeedback(configOrMessage: HumanFeedbackConfig | string): MethodDecoratorFactory {
@@ -3253,7 +3257,7 @@ export function buildFlowDefinition(instanceOrConstructor: object | FlowMetadata
       listen: flowDefinitionListen(methodEntries),
       router: methodEntries.some((entry) => entry.kind === "router") || Boolean(humanFeedback?.emit),
       humanFeedback,
-      emit: null,
+      emit: flowDefinitionEmit(methodEntries),
     });
     methods[methodName] = definition;
   }
@@ -4233,7 +4237,11 @@ function extractAllTriggerNames(condition: FlowCondition): string[] {
   });
 }
 
-function flowDecorator(kind: FlowMethodKind, condition: FlowCondition | null): MethodDecoratorFactory {
+function flowDecorator(
+  kind: FlowMethodKind,
+  condition: FlowCondition | null,
+  emit: readonly string[] | null = null,
+): MethodDecoratorFactory {
   return function decorate<This extends object>(
     value: AnyFlowMethod<This>,
     context: ClassMethodDecoratorContext<This, AnyFlowMethod<This>>,
@@ -4241,7 +4249,7 @@ function flowDecorator(kind: FlowMethodKind, condition: FlowCondition | null): M
     context.addInitializer(function init(this: This) {
       const ctor = this.constructor as FlowMetadataTarget;
       const entries = flowMetadata.get(ctor) ?? [];
-      entries.push({ name: context.name, kind, condition });
+      entries.push({ name: context.name, kind, condition, emit: emit ? uniqueStrings(emit) : null });
       flowMetadata.set(ctor, entries);
     });
     return value;
@@ -4276,6 +4284,11 @@ function flowDefinitionStart(entries: readonly FlowMethodEntry[]): boolean | Flo
 function flowDefinitionListen(entries: readonly FlowMethodEntry[]): FlowDefinitionCondition | null {
   const listener = entries.find((entry) => entry.kind === "listen" || entry.kind === "router");
   return listener?.condition ? flowDefinitionCondition(listener.condition) : null;
+}
+
+function flowDefinitionEmit(entries: readonly FlowMethodEntry[]): readonly string[] | null {
+  const routerEntry = entries.find((entry) => entry.kind === "router" && entry.emit && entry.emit.length > 0);
+  return routerEntry?.emit ? uniqueStrings(routerEntry.emit) : null;
 }
 
 function flowDefinitionCondition(condition: FlowConditionInput): FlowDefinitionCondition {
