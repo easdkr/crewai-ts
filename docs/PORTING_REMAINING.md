@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 1227 passing tests.
+- Test suite: 1228 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -449,7 +449,7 @@ When more goal budget is available, continue from the behavioral parity audits b
 - Flow human-feedback routing now preserves the reviewed method's real output for terminal `@human_feedback(emit=...)` methods and method-output history, including async method returns and null outputs, while still using the collapsed outcome for router paths and downstream listener inputs.
 - LiteAgent kickoff now mirrors upstream memory behavior with deterministic memory fixtures: it recalls memories into the execution messages, exposes memory tools without delegating custom memory objects to the internal Agent memory path, and saves extracted memories through `extract_memories` / `remember_many`.
 - Experimental skills registry resolution now mirrors upstream feature gating: `resolveRegistryRef` / `resolve_registry_ref` require `CREWAI_EXPERIMENTAL=1` before resolving project-local or cached registry references, while deterministic cache/local resolution remains covered when the flag is enabled.
-- Task output file handling now mirrors upstream safety and filesystem behavior: `output_file` rejects path traversal, shell expansion including `$HOME` and `~`, shell metacharacters, and invalid template variables; `create_directory=false` raises a clear directory-missing error instead of surfacing raw filesystem `ENOENT`, while still writing when the target directory already exists.
+- Task output file handling now mirrors upstream safety and filesystem behavior: `output_file` rejects path traversal, shell expansion including `$HOME` and `~`, shell metacharacters, and invalid template variables; `create_directory=false` raises a clear directory-missing error instead of surfacing raw filesystem `ENOENT`, while still writing when the target directory already exists, and crew kickoff writes interpolated task output files end-to-end.
 - `prepare_kickoff` now has default-gate coverage for upstream issue #5534 behavior: agents referenced only through `task.agent` are bound to the crew even when `Crew.agents` is empty.
 - Task guardrail JSON serialization now has default-gate round-trip coverage: callable guardrails are dropped with warnings, serializable string guardrails remain, and `guardrails` lists do not retain null entries that would fail restore validation.
 - Latest-upstream `flow/conversation` helpers are release-gated as deterministic local state utilities: `ChatState`, `ConversationalConfig`, kickoff input normalization, message append/read, state-field updates, user-message receipt, class-level conversational config resolution, intent-classification delegation with message context, and input-history message conversion.

@@ -42664,6 +42664,36 @@ describe("task output files", () => {
       .toBe("final report");
   });
 
+  it("writes interpolated task output files during crew kickoff", async () => {
+    const baseDirectory = mkdtempSync(join(tmpdir(), "crewai-ts-crew-output-"));
+    const outputFile = join(baseDirectory, "output_{topic}.txt");
+    const agentInstance = new Agent({
+      role: "Researcher",
+      goal: "Analyze AI topics",
+      backstory: "You have extensive AI research experience.",
+      allow_delegation: false,
+      llm: (messages) => `advantages:${messages.at(-1)?.content ?? ""}`,
+    });
+    const taskInstance = new Task({
+      description: "Explain the advantages of {topic}.",
+      expected_output: "A summary of the main advantages, bullet points recommended.",
+      agent: agentInstance,
+      output_file: outputFile,
+    });
+    const crewInstance = new Crew({
+      agents: [agentInstance],
+      tasks: [taskInstance],
+      process: Process.sequential,
+    });
+
+    const output = await crewInstance.kickoff({ inputs: { topic: "AI" } });
+
+    const expectedFile = join(baseDirectory, "output_AI.txt");
+    expect(existsSync(expectedFile)).toBe(true);
+    expect(readFileSync(expectedFile, "utf8")).toBe(output.raw);
+    expect(output.raw).toContain("Explain the advantages of AI.");
+  });
+
   it("writes JSON task output as pretty JSON", async () => {
     const baseDirectory = mkdtempSync(join(tmpdir(), "crewai-ts-json-output-"));
     const outputFile = join(baseDirectory, "{name}.json");
