@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 1118 passing tests.
+- Test suite: 1119 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -544,7 +544,7 @@ When more goal budget is available, continue from the behavioral parity audits b
 - Flow HITL learning now has deterministic local behavior for injected LLM clients: recalled memory lessons can pre-review method output before provider display, and non-empty feedback can distill new lessons into flow memory.
 - Flow HITL pending feedback context now mirrors upstream LLM serialization safety by preserving deterministic provider config fields such as temperature, project, and location while redacting `api_key` / `apiKey` secrets before provider or persistence handoff.
 - Flow HITL resume now restores serialized LLM config dictionaries or model strings into local LLM clients, prefers decorator-preserved live LLM objects when available, and falls back to serialized pending context when the decorator only preserved a string model, so persisted pending feedback can still use LLM-backed routing collapse after reload without losing provider credentials/config.
-- Flow method `@persist` and async HITL wrappers now preserve Flow and HITL decorator metadata, including the upstream `_human_feedback_llm` live LLM attribute used by resumed human-feedback routing.
+- Flow method `@persist`, `@listen`, instance access, and async HITL wrappers now preserve Flow and HITL decorator metadata, including the upstream `_human_feedback_llm` live LLM attribute used by resumed human-feedback routing.
 - Flow HITL pause now auto-creates `SQLiteFlowPersistence` when a provider raises `HumanFeedbackPending` without an existing persistence backend, preserving pending feedback context and state for later resume.
 - Flow HITL routing fallback now mirrors upstream self-loop approval behavior: when the LLM outcome collapse is unavailable or unstructured, emitted outcomes fall back to deterministic feedback/default-outcome matching instead of always choosing the first emitted route, so repeated rejection loops can terminate on approval.
 - `toSerializable` now mirrors upstream BaseModel serialization by honoring `modelDump` / `model_dump` output before object entry serialization, with recursive exclude handling and upstream-style Python repr output when max-depth truncation is reached.

@@ -25986,6 +25986,47 @@ describe("flow runtime", () => {
     expect((AsyncHitlFlow.prototype.review as unknown as { _human_feedback_llm?: unknown })._human_feedback_llm).toBe(llm);
   });
 
+  it("preserves live human feedback LLM metadata across listen wrappers and instances", () => {
+    const llm = {
+      model: "test/listen-hitl",
+      call() {
+        return "{\"outcome\":\"approved\"}";
+      },
+    };
+
+    class ListenHitlFlow extends Flow<{ id: string }> {
+      constructor() {
+        super({ initialState: { id: "listen-hitl-flow" } });
+      }
+
+      generate() {
+        return "draft";
+      }
+
+      review() {
+        return "content";
+      }
+    }
+
+    const initializers = [
+      decorateMethod(ListenHitlFlow, "generate", start() as unknown as Decorator),
+      decorateMethod(ListenHitlFlow, "review", humanFeedback({
+        message: "Review:",
+        emit: ["approved", "rejected"],
+        defaultOutcome: "rejected",
+        llm,
+      }) as unknown as Decorator),
+      decorateMethod(ListenHitlFlow, "review", listen("generate") as unknown as Decorator),
+    ];
+    const flow = new ListenHitlFlow();
+    initializers.forEach((initializer) => {
+      initializer.call(flow);
+    });
+
+    expect((ListenHitlFlow.prototype.review as unknown as { _human_feedback_llm?: unknown })._human_feedback_llm).toBe(llm);
+    expect((flow.review as unknown as { _human_feedback_llm?: unknown })._human_feedback_llm).toBe(llm);
+  });
+
   it("uses serialized pending LLM when decorator live human feedback LLM is only a string", async () => {
     const persistence = new SQLiteFlowPersistence();
     const llmCalls: LLMMessage[][] = [];
