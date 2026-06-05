@@ -784,6 +784,7 @@ export class Crew extends FlowTrackable {
           await this.handleCrewPlanning();
         }
 
+        this.setTasksCallbacks();
         this.interpolateInputs(inputs, { strictMissing: false });
         const output = await this.runProcess(inputs, inputFiles);
         let finalOutput = output;
@@ -834,6 +835,7 @@ export class Crew extends FlowTrackable {
           await this.handleCrewPlanning();
         }
 
+        this.setTasksCallbacks();
         this.interpolateInputs(inputs, { strictMissing: false });
         let output: CrewOutput;
         switch (this.process) {

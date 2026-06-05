@@ -20125,6 +20125,38 @@ describe("core crew runtime", () => {
     ]);
   });
 
+  it("injects crew taskCallback onto tasks and passes TaskOutput instances", async () => {
+    const callbackOutputs: TaskOutput[] = [];
+    const agentInstance = new Agent({
+      role: "Worker",
+      goal: "Run callback tasks",
+      backstory: "Callback worker",
+      llm: () => "callback output",
+    });
+    const taskInstance = new Task({
+      description: "Run callback task",
+      expected_output: "callback result",
+      agent: agentInstance,
+      async_execution: true,
+    });
+    const crewInstance = new Crew({
+      agents: [agentInstance],
+      tasks: [taskInstance],
+      process: Process.sequential,
+      task_callback: (output) => {
+        callbackOutputs.push(output);
+      },
+    });
+
+    await crewInstance.kickoff();
+
+    expect(taskInstance.callback).toBeInstanceOf(Function);
+    expect(callbackOutputs).toHaveLength(1);
+    expect(callbackOutputs[0]).toBeInstanceOf(TaskOutput);
+    expect(callbackOutputs[0]).toBe(taskInstance.output);
+    expect(callbackOutputs[0]?.raw).toBe("callback output");
+  });
+
   it("writes task execution logs when outputLogFile is enabled", async () => {
     const directory = mkdtempSync(join(tmpdir(), "crewai-ts-logs-"));
     const logFile = join(directory, "logs.json");
