@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 1188 passing tests.
+- Test suite: 1189 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -259,6 +259,7 @@ This register is the source of truth for continuing porting work while parity sc
 - PlanningConfig construction is release-gated for upstream default, validation, and custom planning fields, including default null attempt/prompt/LLM/observe fields, default `max_steps=20`, default `reasoning_effort="medium"`, rejection of invalid reasoning effort levels, and string LLM identifiers preserved on explicit configs.
 - Agent explicit `planning_config` construction is release-gated for upstream custom prompt preservation: `Agent(planning_config=PlanningConfig(...))` keeps the provided planner system prompt, plan prompt, `max_steps`, and Python-style `planning_enabled` truthiness.
 - Planning model serialization is release-gated for upstream Pydantic-style dump behavior: `PlanStep`, `TodoItem`, and `TodoList` expose `model_dump` / `modelDump` / JSON serialization with upstream snake_case field names.
+- Structured planning schema and parser defaults are release-gated for upstream provider-facing planning: `FUNCTION_SCHEMA` preserves required `plan` / `steps` / `ready` fields, strict `additionalProperties=false` payloads, nullable `tool_to_use`, and function-call step parsing fills missing optional step fields with upstream defaults.
 - AgentExecutor reasoning initialization is release-gated for upstream start-log semantics: `initialize_reasoning` emits `agent_logs_started` with agent role, task description, and agent/crew verbose state before entering the reasoning loop.
 - AgentExecutor finalization logging is release-gated for upstream execution-log semantics: successful `finalize` emits `agent_logs_execution` with the final answer and agent/crew verbose state when an agent is attached.
 - AgentExecutor native-tool initialization is release-gated for upstream first-iteration semantics: `initialize_reasoning` enables native tool mode only when the LLM reports function-calling support and original tools exist, and prepares OpenAI tool schemas plus available function mappings.

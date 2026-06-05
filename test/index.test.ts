@@ -20876,6 +20876,52 @@ describe("agent planning", () => {
     expect((events[1] as AgentReasoningCompletedEvent).plan).toBe("Search then summarize");
   });
 
+  it("preserves upstream structured planning schema and missing-step defaults", () => {
+    expect(FUNCTION_SCHEMA.type).toBe("function");
+    expect(FUNCTION_SCHEMA.function.name).toBe("create_reasoning_plan");
+    const parameters = FUNCTION_SCHEMA.function.parameters;
+    const stepItems = parameters.properties.steps.items;
+    expect(parameters.required).toEqual(["plan", "steps", "ready"]);
+    expect(parameters.additionalProperties).toBe(false);
+    expect(stepItems.required).toEqual(["step_number", "description", "tool_to_use", "depends_on"]);
+    expect(stepItems.additionalProperties).toBe(false);
+    expect(stepItems.properties.tool_to_use.type).toEqual(["string", "null"]);
+
+    const reasoning = new AgentReasoning({
+      agent: {
+        role: "Planner",
+        goal: "Plan",
+        backstory: "Plans tasks",
+        llm: {
+          supports_function_calling: () => true,
+          call() {
+            return JSON.stringify({
+              plan: "Plan with partial steps",
+              ready: true,
+              steps: [
+                { step_number: 1, description: "Valid step", tool_to_use: null, depends_on: [] },
+                { step_number: 2 },
+                { step_number: 3, description: "Another valid", tool_to_use: null, depends_on: [] },
+              ],
+            });
+          },
+        },
+      },
+      description: "Create a plan",
+      expectedOutput: "Plan",
+    });
+
+    const [plan, steps, ready] = reasoning._call_with_function("Plan prompt", "create_plan") as [string, PlanStep[], boolean];
+
+    expect(plan).toBe("Plan with partial steps");
+    expect(ready).toBe(true);
+    expect(steps.map((step) => step.model_dump())).toEqual([
+      { step_number: 1, description: "Valid step", tool_to_use: null, depends_on: [] },
+      { step_number: 2, description: "", tool_to_use: null, depends_on: [] },
+      { step_number: 3, description: "Another valid", tool_to_use: null, depends_on: [] },
+    ]);
+  });
+
   it("refines AgentReasoning text plans until ready", async () => {
     const prompts: string[] = [];
     const reasoning = new AgentReasoning({
