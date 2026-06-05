@@ -30153,6 +30153,34 @@ describe("LLM providers", () => {
     expect(usage).not.toHaveProperty("cached_prompt_tokens");
   });
 
+  it("normalizes individual upstream usage buckets only when present", () => {
+    expect(BaseLLM._usage_to_dict({
+      prompt_tokens: 100,
+      cached_tokens: 30,
+    })).toMatchObject({ cached_prompt_tokens: 30 });
+    expect(BaseLLM._usage_to_dict({
+      input_tokens: 100,
+      cache_read_input_tokens: 25,
+    })).toMatchObject({ cached_prompt_tokens: 25 });
+    expect(BaseLLM._usage_to_dict({
+      completion_tokens: 200,
+      completion_tokens_details: { reasoning_tokens: 60 },
+    })).toMatchObject({ reasoning_tokens: 60 });
+    expect(BaseLLM._usage_to_dict({
+      input_tokens: 100,
+      cache_creation_input_tokens: 70,
+    })).toMatchObject({ cache_creation_tokens: 70 });
+    expect(BaseLLM._usage_to_dict({
+      prompt_tokens: 100,
+      completion_tokens: 200,
+      total_tokens: 300,
+    })).toEqual({
+      prompt_tokens: 100,
+      completion_tokens: 200,
+      total_tokens: 300,
+    });
+  });
+
   it("exposes upstream provider model constants for non-native LLM providers", () => {
     expect(PROVIDERS).toEqual([
       "openai",
