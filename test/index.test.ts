@@ -22714,6 +22714,174 @@ describe("standard decorators", () => {
     }
   });
 
+  it("runs the crewAI-examples match-profile-to-positions CrewBase workflow deterministically", async () => {
+    const prompts: string[] = [];
+    const fileReads: string[] = [];
+    const csvQueries: string[] = [];
+    const fileReadTool = new StructuredTool({
+      name: "File Read Tool",
+      description: "Read a CV file",
+      func: (input) => {
+        const filePathValue = (input as { file_path?: unknown }).file_path;
+        const filePath = typeof filePathValue === "string" ? filePathValue : "";
+        fileReads.push(filePath);
+        return existsSync(filePath) ? readFileSync(filePath, "utf8") : "missing file";
+      },
+    });
+    const csvSearchTool = new StructuredTool({
+      name: "CSV Search Tool",
+      description: "Search jobs in a CSV file",
+      func: (input) => {
+        const queryValue = (input as { query?: unknown }).query;
+        const query = typeof queryValue === "string" ? queryValue : "";
+        csvQueries.push(query);
+        return "Senior TypeScript Engineer,Remote,CrewAI";
+      },
+    });
+
+    class MatchToProposalCrew {
+      agents: Agent[] = [];
+      tasks: Task[] = [];
+      agents_config = {
+        cv_reader: {
+          role: "CV Reader",
+          goal: "Read candidate CV from {path_to_cv}",
+          backstory: "Extracts candidate skills",
+        },
+        matcher: {
+          role: "Position Matcher",
+          goal: "Match the candidate with jobs from {path_to_jobs_csv}",
+          backstory: "Maps profiles to open positions",
+        },
+      };
+      tasks_config = {
+        read_cv_task: {
+          description: "Read the CV at {path_to_cv}",
+          expected_output: "Candidate profile summary",
+        },
+        match_cv_task: {
+          description: "Match the candidate profile against {path_to_jobs_csv}",
+          expected_output: "Best matching proposals",
+        },
+      };
+
+      cv_reader() {
+        const config = this.agents_config.cv_reader;
+        return new Agent({
+          role: config.role,
+          goal: config.goal,
+          backstory: config.backstory,
+          tools: [fileReadTool],
+          verbose: true,
+          allow_delegation: false,
+          llm: (messages) => {
+            const prompt = messages.at(-1)?.content ?? "";
+            prompts.push(`${config.role}:${prompt}`);
+            return "Candidate has TypeScript and multi-agent orchestration experience.";
+          },
+        });
+      }
+
+      matcher() {
+        const config = this.agents_config.matcher;
+        return new Agent({
+          role: config.role,
+          goal: config.goal,
+          backstory: config.backstory,
+          tools: [fileReadTool, csvSearchTool],
+          verbose: true,
+          allow_delegation: false,
+          llm: (messages) => {
+            const prompt = messages.at(-1)?.content ?? "";
+            prompts.push(`${config.role}:${prompt}`);
+            return "Matched proposal: Senior TypeScript Engineer at CrewAI.";
+          },
+        });
+      }
+
+      read_cv_task() {
+        const config = this.tasks_config.read_cv_task;
+        return new Task({
+          config,
+          description: config.description,
+          expected_output: config.expected_output,
+          agent: this.cv_reader(),
+        });
+      }
+
+      match_cv_task() {
+        const config = this.tasks_config.match_cv_task;
+        return new Task({
+          config,
+          description: config.description,
+          expected_output: config.expected_output,
+          agent: this.matcher(),
+        });
+      }
+
+      crew() {
+        return new Crew({
+          agents: this.agents,
+          tasks: this.tasks,
+          process: Process.sequential,
+          verbose: 2,
+        });
+      }
+    }
+
+    const DecoratedMatchToProposalCrew = decorateClass(MatchToProposalCrew, CrewBase as unknown as Decorator);
+    const project = new DecoratedMatchToProposalCrew();
+    [
+      decorateMethod(MatchToProposalCrew, "cv_reader", agent),
+      decorateMethod(MatchToProposalCrew, "matcher", agent),
+      decorateMethod(MatchToProposalCrew, "read_cv_task", task),
+      decorateMethod(MatchToProposalCrew, "match_cv_task", task),
+      decorateMethod(MatchToProposalCrew, "crew", crew),
+    ].forEach((initializer) => {
+      initializer.call(project);
+    });
+
+    const dataDir = mkdtempSync(join(tmpdir(), "crewai-match-profile-"));
+    const cvPath = join(dataDir, "cv.md");
+    const jobsPath = join(dataDir, "jobs.csv");
+    writeFileSync(cvPath, "# Candidate\n\nTypeScript, agents, orchestration\n", "utf8");
+    writeFileSync(jobsPath, "title,location,company\nSenior TypeScript Engineer,Remote,CrewAI\n", "utf8");
+    try {
+      const crewInstance = project.crew();
+      expect(crewInstance.process).toBe(Process.sequential);
+      expect(project.agents.map((projectAgent: Agent) => [projectAgent.role, projectAgent.allow_delegation])).toEqual([
+        ["CV Reader", false],
+        ["Position Matcher", false],
+      ]);
+      expect(project.cv_reader().tools.map((toolInstance) => toolInstance.name)).toEqual(["file_read_tool"]);
+      expect(project.matcher().tools.map((toolInstance) => toolInstance.name)).toEqual([
+        "file_read_tool",
+        "csv_search_tool",
+      ]);
+      expect(project.tasks.map((projectTask: Task) => projectTask.name)).toEqual([
+        "read_cv_task",
+        "match_cv_task",
+      ]);
+      expect(fileReadTool.invoke({ file_path: cvPath })).toContain("TypeScript");
+      expect(csvSearchTool.invoke({ query: "TypeScript", file_path: jobsPath })).toContain("Senior TypeScript Engineer");
+
+      const output = await crewInstance.kickoff({
+        inputs: {
+          path_to_jobs_csv: jobsPath,
+          path_to_cv: cvPath,
+        },
+      });
+
+      expect(output.raw).toContain("Senior TypeScript Engineer");
+      expect(prompts.some((prompt) => prompt.includes(cvPath))).toBe(true);
+      expect(prompts.some((prompt) => prompt.includes(jobsPath))).toBe(true);
+      expect(fileReads).toEqual([cvPath]);
+      expect(csvQueries).toEqual(["TypeScript"]);
+    } finally {
+      rmSync(dataDir, { recursive: true, force: true });
+    }
+  });
+
   it("infers names for directly awaited async task decorator factories", async () => {
     class AsyncTaskCrew {
       calls = 0;
