@@ -40036,6 +40036,65 @@ describe("memory", () => {
     ]);
   });
 
+  it("constrains memory batch consolidation searches to the effective root scope", () => {
+    const consolidationPrompts: string[] = [];
+    const memory = new Memory({
+      rootScope: "/crew/a",
+      consolidation_threshold: 0.1,
+      embedder: (texts: readonly string[]) => texts.map(() => [0.1, 0.1]),
+      llm: (messages, options) => {
+        if (options?.responseModel === ConsolidationPlan) {
+          consolidationPrompts.push(messages.at(-1)?.content ?? "");
+          return JSON.stringify({
+            actions: [{
+              action: "update",
+              record_id: "inside-root",
+              new_content: "inside root updated",
+              reason: "same root scope",
+            }],
+            insert_new: false,
+          });
+        }
+        return JSON.stringify({
+          suggested_scope: "/inner",
+          categories: ["scope"],
+          importance: 0.7,
+          extracted_metadata: { entities: [], dates: [], topics: [] },
+        });
+      },
+    });
+    memory.update(new MemoryRecord({
+      id: "inside-root",
+      content: "Root-scoped CrewAI decision",
+      scope: "/crew/a/inner",
+      categories: ["scope"],
+      importance: 0.7,
+      embedding: [0.1, 0.1],
+    }));
+    memory.update(new MemoryRecord({
+      id: "outside-root",
+      content: "Root-scoped CrewAI decision outside",
+      scope: "/crew/b/inner",
+      categories: ["scope"],
+      importance: 0.7,
+      embedding: [0.1, 0.1],
+    }));
+
+    expect(memory.remember_many(["Root-scoped CrewAI decision new"], {
+      scope: "/inner",
+      categories: ["scope"],
+      root_scope: "/crew/a",
+    })).toEqual([]);
+    memory.drain_writes();
+
+    expect(consolidationPrompts).toHaveLength(1);
+    expect(consolidationPrompts[0]).toContain("inside-root");
+    expect(consolidationPrompts[0]).not.toContain("outside-root");
+    expect(memory.get_record("inside-root")?.content).toBe("inside root updated");
+    expect(memory.get_record("outside-root")?.content).toBe("Root-scoped CrewAI decision outside");
+    expect(memory.allRecords()).toHaveLength(2);
+  });
+
   it("consolidates async batch saves against existing memories with first action winning", async () => {
     const seen: string[] = [];
     const memory = new Memory({

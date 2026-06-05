@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 1129 passing tests.
+- Test suite: 1130 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -440,6 +440,7 @@ When more goal budget is available, continue from the behavioral parity audits b
 - `AgentExecutor.invoke` / `invoke_async` now have default-gate coverage for latest-upstream finalize guard reset semantics: a previously finalized executor clears the guard before the next object-style sync or async kickoff.
 - `Memory.remember_many` / background batch saves now mirror upstream batch embedding behavior by calling the configured embedder once for the active batch, reusing those embeddings when records are created, and applying embedding-similarity intra-batch deduplication.
 - Sync `Memory.remember_many` now mirrors upstream batch consolidation against existing records when a synchronous memory LLM is configured, preventing duplicate inserts when the consolidation plan returns `insert_new=false`.
+- Memory batch consolidation now stays inside the effective `root_scope` boundary when looking up similar records, so root-scoped saves do not update or suppress records from sibling memory trees.
 - `AgentExecutor.use_stop_words` now mirrors upstream executor behavior for both executor-level and agent-level LLMs, including snake_case `supports_stop_words` providers used by upstream tests.
 - `AgentExecutor.handle_goal_achieved` now preserves pending todo status while routing to finalization, matching upstream early-goal state semantics.
 - `AgentExecutor.handle_refine_and_continue` now applies the latest planner observation refinements to pending todos before continuing.
