@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 1156 passing tests.
+- Test suite: 1157 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -51,7 +51,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
 - The latest-upstream Qdrant batch-add audit is now release-gated deterministically: default and explicit batch sizes split sync and async `add_documents` / `aadd_documents` upserts into upstream-shaped `collection_name` and flattened point payloads with generated vectors and metadata.
 - The latest-upstream Qdrant empty-add audit is now release-gated deterministically: sync and async `add_documents` / `aadd_documents` reject empty document lists with the upstream-shaped `Documents list cannot be empty` error before checking collection existence.
 - The latest-upstream Qdrant missing-collection audit is now release-gated deterministically: sync and async add/search calls fail with `Collection '...' does not exist` before upsert or query payloads are sent.
-- The latest-upstream Qdrant collection lifecycle audit is now release-gated deterministically: collection existence checks and create/get payloads resolve snake_case `collection_name` consistently before camelCase aliases, preventing mixed-name existence checks from targeting a different collection than the upstream-shaped create payload; sync and async create calls reject already-existing collections before touching create payloads.
+- The latest-upstream Qdrant collection lifecycle audit is now release-gated deterministically: collection existence checks and create/get payloads resolve snake_case `collection_name` consistently before camelCase aliases, preventing mixed-name existence checks from targeting a different collection than the upstream-shaped create payload; sync and async create calls reject already-existing collections before touching create payloads, and async get-or-create skips create for existing collections or creates then fetches missing collections.
 - The latest-upstream Qdrant client-boundary audit is now release-gated deterministically: add/delete/reset sync methods reject async clients and async aliases reject sync clients with upstream-shaped `ClientMethodMismatchError` guidance.
 - The latest-upstream Qdrant search audit is now release-gated deterministically: sync and async search calls check collection existence, use upstream query payloads with embeddings, filters, limit, score threshold, payload/vector flags, and normalize result content/metadata/scores; sync `search()` also rejects async clients with upstream-shaped guidance to use `asearch()`.
 - The latest-upstream Qdrant delete audit is now release-gated deterministically: sync and async delete calls check collection existence first, send upstream-shaped `{ collection_name }` delete payloads, and leave delete untouched when the collection is missing.
@@ -366,7 +366,7 @@ When more goal budget is available, continue from the behavioral parity audits b
 - `ChromaDBClient.delete_collection` / `adelete_collection` now use upstream SDK payload shapes and pass only the sanitized `name` field.
 - `ChromaDBClient.reset` / `areset` and delete/reset client boundary errors are release-gated for upstream sync and async client shapes.
 - `ChromaDBClient.default_batch_size` / `defaultBatchSize` initialization is release-gated for upstream default and custom constructor values.
-- `QdrantClient.create_collection` / `get_or_create_collection` and async counterparts now use upstream SDK payload filtering, including default deterministic vector params, supported collection options, and already-existing collection errors without forwarding wrapper-only fields.
+- `QdrantClient.create_collection` / `get_or_create_collection` and async counterparts now use upstream SDK payload filtering, including default deterministic vector params, supported collection options, already-existing collection errors, and async existing/new get-or-create lifecycle calls without forwarding wrapper-only fields.
 - `QdrantClient.add_documents` / `aadd_documents` now use upstream point payload semantics by flattening document metadata beside `content` instead of nesting it under a `metadata` object.
 - `QdrantClient.search` / `asearch` now use upstream SDK query payloads with embedding arrays, `with_payload`, `with_vectors`, `query_filter`, and upstream score/result normalization for both sync and async clients.
 - Added upstream-style `KnowledgeStorage` save/asave error conversion for embedding dimension mismatches.

@@ -13046,6 +13046,43 @@ describe("RAG configuration and factories", () => {
     expect(asyncCreateCollection).not.toHaveBeenCalled();
   });
 
+  it("uses upstream Qdrant async get-or-create lifecycle calls", async () => {
+    const existingCreateCollection = vi.fn(async () => {
+      await Promise.resolve();
+    });
+    const existingGetCollection = vi.fn(async () => await Promise.resolve({ name: "existing_collection" }));
+    const existingClient = new QdrantClient({
+      aquery_points: async () => await Promise.resolve({ points: [] }),
+      collection_exists: async () => await Promise.resolve(true),
+      create_collection: existingCreateCollection,
+      get_collection: existingGetCollection,
+    });
+
+    await expect(existingClient.aget_or_create_collection({ collection_name: "existing_collection" }))
+      .resolves.toEqual({ name: "existing_collection" });
+    expect(existingCreateCollection).not.toHaveBeenCalled();
+    expect(existingGetCollection).toHaveBeenCalledWith("existing_collection");
+
+    const newCreateCollection = vi.fn(async () => {
+      await Promise.resolve();
+    });
+    const newGetCollection = vi.fn(async () => await Promise.resolve({ name: "new_collection" }));
+    const newClient = new QdrantClient({
+      aquery_points: async () => await Promise.resolve({ points: [] }),
+      collection_exists: async () => await Promise.resolve(false),
+      create_collection: newCreateCollection,
+      get_collection: newGetCollection,
+    });
+
+    await expect(newClient.aget_or_create_collection({ collection_name: "new_collection" }))
+      .resolves.toEqual({ name: "new_collection" });
+    expect(newCreateCollection).toHaveBeenCalledWith({
+      collection_name: "new_collection",
+      vectors_config: { size: 384, distance: "Cosine" },
+    });
+    expect(newGetCollection).toHaveBeenCalledWith("new_collection");
+  });
+
   it("uses upstream Qdrant search payload shape and result normalization", () => {
     const queryPoints = vi.fn(() => ({
       points: [
