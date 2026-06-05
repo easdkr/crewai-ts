@@ -42768,6 +42768,45 @@ describe("hierarchical process", () => {
     })).resolves.toBe("writer matched");
   });
 
+  it("matches hierarchical delegation coworkers from bracketed coworker strings", async () => {
+    const researcher = new Agent({
+      role: "Researcher",
+      goal: "Find facts",
+      backstory: "Careful analyst",
+      llm: () => "researcher bracket matched",
+    });
+    const writer = new Agent({
+      role: "Writer",
+      goal: "Write",
+      backstory: "Careful writer",
+      llm: () => "writer bracket matched",
+    });
+    const unassignedTask = new Task({
+      description: "Research and write",
+      expectedOutput: "A concise brief",
+    });
+    const crew = new Crew({
+      agents: [researcher, writer],
+      tasks: [unassignedTask],
+      process: Process.hierarchical,
+      managerLlm: () => "manager",
+    });
+    crew._create_manager_agent();
+
+    const [delegationTool, questionTool] = crew._update_manager_tools(unassignedTask, []) as StructuredTool[];
+
+    await expect(delegationTool?.ainvoke({
+      coworker: "[Researcher]",
+      task: "Gather notes",
+      context: "",
+    })).resolves.toBe("researcher bracket matched");
+    await expect(questionTool?.ainvoke({
+      coworker: "[Writer]",
+      question: "Draft summary",
+      context: "",
+    })).resolves.toBe("writer bracket matched");
+  });
+
   it("rejects manager agents that are included in regular agents", () => {
     const manager = new Agent({
       role: "Manager",
