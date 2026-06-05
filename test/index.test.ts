@@ -23214,6 +23214,206 @@ describe("standard decorators", () => {
     expect(seniorPhotographer.allow_delegation).toBe(false);
   });
 
+  it("runs the crewAI-examples prep-for-a-meeting manual crew workflow deterministically", async () => {
+    const prompts: string[] = [];
+    const exaSearchTools = [
+      new StructuredTool({
+        name: "search",
+        description: "Search for a webpage based on the query.",
+        func: ({ query }: { query: string }) => `Search result for ${query}`,
+      }),
+      new StructuredTool({
+        name: "find_similar",
+        description: "Search for webpages similar to a given URL.",
+        func: ({ url }: { url: string }) => `Similar pages for ${url}`,
+      }),
+      new StructuredTool({
+        name: "get_contents",
+        description: "Get the contents of a webpage.",
+        func: ({ ids }: { ids: string }) => `Contents for ${ids}`,
+      }),
+    ];
+
+    const ExaSearchTool = {
+      tools() {
+        return exaSearchTools;
+      },
+    };
+
+    class MeetingPreparationAgents {
+      readonly llm = (messages: readonly LLMMessage[]) => {
+        const prompt = messages.at(-1)?.content ?? "";
+        prompts.push(prompt);
+        if (prompt.includes("Compile all the research findings")) {
+          return "Briefing document: participants, industry, talking points, and strategic recommendations.";
+        }
+        if (prompt.includes("Develop strategic talking points")) {
+          return "Talking points: ask about launch risk, timeline, and decision criteria.";
+        }
+        if (prompt.includes("Analyze the current industry trends")) {
+          return "Industry landscape: agent orchestration is moving toward deterministic operations.";
+        }
+        return "Participant research: CTO and product lead background with recent AI workflow launches.";
+      };
+
+      research_agent() {
+        return new Agent({
+          role: "Research Specialist",
+          goal: "Conduct thorough research on people and companies involved in the meeting",
+          tools: ExaSearchTool.tools(),
+          backstory: "Uncovers detailed information about the meeting participants.",
+          verbose: true,
+          llm: this.llm,
+        });
+      }
+
+      industry_analysis_agent() {
+        return new Agent({
+          role: "Industry Analyst",
+          goal: "Analyze the current industry trends, challenges, and opportunities",
+          tools: ExaSearchTool.tools(),
+          backstory: "Identifies trends, challenges, and opportunities for the meeting.",
+          verbose: true,
+          llm: this.llm,
+        });
+      }
+
+      meeting_strategy_agent() {
+        return new Agent({
+          role: "Meeting Strategy Advisor",
+          goal: "Develop talking points, questions, and strategic angles for the meeting",
+          tools: ExaSearchTool.tools(),
+          backstory: "Guides the development of talking points and strategic angles.",
+          verbose: true,
+          llm: this.llm,
+        });
+      }
+
+      summary_and_briefing_agent() {
+        return new Agent({
+          role: "Briefing Coordinator",
+          goal: "Compile all gathered information into a concise, informative briefing document",
+          tools: ExaSearchTool.tools(),
+          backstory: "Consolidates research, analysis, and strategic insights.",
+          verbose: true,
+          llm: this.llm,
+        });
+      }
+    }
+
+    class MeetingPreparationTasks {
+      research_task(agentInstance: Agent, participants: string, context: string) {
+        return new Task({
+          description: [
+            "Conduct comprehensive research on each of the individuals and companies",
+            "involved in the upcoming meeting.",
+            "",
+            `Participants: ${participants}`,
+            `Meeting Context: ${context}`,
+          ].join("\n"),
+          expected_output: "A detailed report summarizing key findings about each participant and company.",
+          async_execution: true,
+          agent: agentInstance,
+        });
+      }
+
+      industry_analysis_task(agentInstance: Agent, participants: string, context: string) {
+        return new Task({
+          description: [
+            "Analyze the current industry trends, challenges, and opportunities",
+            "relevant to the meeting's context.",
+            "",
+            `Participants: ${participants}`,
+            `Meeting Context: ${context}`,
+          ].join("\n"),
+          expected_output: "An insightful analysis that identifies major trends and strategic opportunities.",
+          async_execution: true,
+          agent: agentInstance,
+        });
+      }
+
+      meeting_strategy_task(agentInstance: Agent, context: string, objective: string) {
+        return new Task({
+          description: [
+            "Develop strategic talking points, questions, and discussion angles",
+            "for the meeting based on the research and industry analysis conducted",
+            "",
+            `Meeting Context: ${context}`,
+            `Meeting Objective: ${objective}`,
+          ].join("\n"),
+          expected_output: "Complete report with a list of key talking points and strategic questions.",
+          agent: agentInstance,
+        });
+      }
+
+      summary_and_briefing_task(agentInstance: Agent, context: string, objective: string) {
+        return new Task({
+          description: [
+            "Compile all the research findings, industry analysis, and strategic",
+            "talking points into a concise, comprehensive briefing document for",
+            "the meeting.",
+            "",
+            `Meeting Context: ${context}`,
+            `Meeting Objective: ${objective}`,
+          ].join("\n"),
+          expected_output: "A well-structured briefing document with participant bios and strategic recommendations.",
+          agent: agentInstance,
+        });
+      }
+    }
+
+    const participants = "cto@example.com, product@example.com";
+    const context = "Evaluating CrewAI TS for enterprise meeting preparation";
+    const objective = "Secure a pilot commitment";
+    const agents = new MeetingPreparationAgents();
+    const tasks = new MeetingPreparationTasks();
+    const researcherAgent = agents.research_agent();
+    const industryAnalystAgent = agents.industry_analysis_agent();
+    const meetingStrategyAgent = agents.meeting_strategy_agent();
+    const summaryAndBriefingAgent = agents.summary_and_briefing_agent();
+    const research = tasks.research_task(researcherAgent, participants, context);
+    const industryAnalysis = tasks.industry_analysis_task(industryAnalystAgent, participants, context);
+    const meetingStrategy = tasks.meeting_strategy_task(meetingStrategyAgent, context, objective);
+    const summaryAndBriefing = tasks.summary_and_briefing_task(summaryAndBriefingAgent, context, objective);
+    meetingStrategy.context = [research, industryAnalysis];
+    summaryAndBriefing.context = [research, industryAnalysis, meetingStrategy];
+
+    const crewInstance = new Crew({
+      agents: [researcherAgent, industryAnalystAgent, meetingStrategyAgent, summaryAndBriefingAgent],
+      tasks: [research, industryAnalysis, meetingStrategy, summaryAndBriefing],
+    });
+
+    expect(crewInstance.process).toBe(Process.sequential);
+    expect(crewInstance.agents.map((agentInstance) => agentInstance.role)).toEqual([
+      "Research Specialist",
+      "Industry Analyst",
+      "Meeting Strategy Advisor",
+      "Briefing Coordinator",
+    ]);
+    expect(crewInstance.agents.every((agentInstance) => (
+      agentInstance.tools.map((toolInstance) => toolInstance.name).join(",") === "search,find_similar,get_contents"
+    ))).toBe(true);
+    expect(research.async_execution).toBe(true);
+    expect(industryAnalysis.async_execution).toBe(true);
+    expect(meetingStrategy.context).toEqual([research, industryAnalysis]);
+    expect(summaryAndBriefing.context).toEqual([research, industryAnalysis, meetingStrategy]);
+
+    const output = await crewInstance.kickoff();
+
+    expect(output.raw).toContain("Briefing document");
+    expect(output.tasksOutput.map((taskOutput) => taskOutput.raw)).toEqual([
+      "Participant research: CTO and product lead background with recent AI workflow launches.",
+      "Industry landscape: agent orchestration is moving toward deterministic operations.",
+      "Talking points: ask about launch risk, timeline, and decision criteria.",
+      "Briefing document: participants, industry, talking points, and strategic recommendations.",
+    ]);
+    expect(prompts.some((prompt) => prompt.includes(`Participants: ${participants}`))).toBe(true);
+    expect(prompts.some((prompt) => prompt.includes(`Meeting Context: ${context}`))).toBe(true);
+    expect(prompts.some((prompt) => prompt.includes(`Meeting Objective: ${objective}`))).toBe(true);
+    expect(prompts.some((prompt) => prompt.includes("Participant research: CTO and product lead"))).toBe(true);
+    expect(prompts.some((prompt) => prompt.includes("Talking points: ask about launch risk"))).toBe(true);
+  });
+
   it("infers names for directly awaited async task decorator factories", async () => {
     class AsyncTaskCrew {
       calls = 0;
