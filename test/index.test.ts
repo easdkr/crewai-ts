@@ -13139,6 +13139,28 @@ describe("RAG configuration and factories", () => {
     );
   });
 
+  it("raises upstream Qdrant add delete and reset mismatch errors for wrong clients", async () => {
+    const syncClient = new QdrantClient(new FakeQdrantClient(), (text: string) => [text.length]);
+    const asyncClient = new QdrantClient(new FakeAsyncQdrantClient(), (text: string) => [text.length]);
+    const documents = [{ content: "CrewAI document" }];
+
+    expect(() => {
+      asyncClient.add_documents({ collection_name: "docs", documents });
+    }).toThrow("Method add_documents() requires a QdrantClient. Use aadd_documents() for AsyncQdrantClient.");
+    await expect(syncClient.aadd_documents({ collection_name: "docs", documents }))
+      .rejects.toThrow("Method aadd_documents() requires a AsyncQdrantClient. Use add_documents() for QdrantClient.");
+    expect(() => {
+      asyncClient.delete_collection({ collection_name: "docs" });
+    }).toThrow("Method delete_collection() requires a QdrantClient. Use adelete_collection() for AsyncQdrantClient.");
+    await expect(syncClient.adelete_collection({ collection_name: "docs" }))
+      .rejects.toThrow("Method adelete_collection() requires a AsyncQdrantClient. Use delete_collection() for QdrantClient.");
+    expect(() => {
+      asyncClient.reset();
+    }).toThrow("Method reset() requires a QdrantClient. Use areset() for AsyncQdrantClient.");
+    await expect(syncClient.areset())
+      .rejects.toThrow("Method areset() requires a AsyncQdrantClient. Use reset() for QdrantClient.");
+  });
+
   it("saves and searches knowledge through the configured RAG client", async () => {
     const fake = new FakeChromaClient();
     const client = new ChromaDBClient(fake, (texts: readonly string[]) => texts.map((text) => [text.length]));

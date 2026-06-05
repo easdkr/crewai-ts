@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 1150 passing tests.
+- Test suite: 1151 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -50,6 +50,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
 - The latest-upstream Qdrant empty-add audit is now release-gated deterministically: sync and async `add_documents` / `aadd_documents` reject empty document lists with the upstream-shaped `Documents list cannot be empty` error before checking collection existence.
 - The latest-upstream Qdrant missing-collection audit is now release-gated deterministically: sync and async add/search calls fail with `Collection '...' does not exist` before upsert or query payloads are sent.
 - The latest-upstream Qdrant collection lifecycle audit is now release-gated deterministically: collection existence checks and create/get payloads resolve snake_case `collection_name` consistently before camelCase aliases, preventing mixed-name existence checks from targeting a different collection than the upstream-shaped create payload.
+- The latest-upstream Qdrant client-boundary audit is now release-gated deterministically: add/delete/reset sync methods reject async clients and async aliases reject sync clients with upstream-shaped `ClientMethodMismatchError` guidance.
 - The latest-upstream Qdrant delete audit is now release-gated deterministically: sync and async delete calls check collection existence first, send upstream-shaped `{ collection_name }` delete payloads, and leave delete untouched when the collection is missing.
 - The latest-upstream Qdrant reset audit is now release-gated deterministically: sync and async reset enumerate collection responses, delete each collection with upstream-shaped `{ collection_name }` payloads, and leave delete untouched when the provider reports no collections.
 - The latest-upstream RAG factory and optional-provider audit is now release-gated deterministically: missing optional providers surface upstream-shaped provider names including `__missing__`, registered factories receive normalized config objects, and unsupported providers raise `Unsupported provider: ...` before any client lookup.
