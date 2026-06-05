@@ -24710,6 +24710,120 @@ describe("standard decorators", () => {
     expect(prompts[0]).toContain("Identify the next big trend in AI");
   });
 
+  it("runs the crewAI-examples NVIDIA NIM intro integration deterministically", async () => {
+    const env: Partial<Record<"MODEL" | "NVIDIA_API_URL" | "NVIDIA_API_KEY" | "NVIDIA_NIM_API_KEY", string>> = {
+      MODEL: "meta/llama-3.1-8b-instruct",
+      NVIDIA_API_URL: "https://integrate.api.nvidia.com/v1",
+      NVIDIA_API_KEY: "nim-key",
+    };
+    env.NVIDIA_NIM_API_KEY = env.NVIDIA_API_KEY;
+    const invokeCalls: Array<Record<string, unknown>> = [];
+
+    class ChatNVIDIAShim {
+      constructor(readonly options: { model: string; base_url: string }) {}
+
+      get model() {
+        return this.options.model;
+      }
+
+      invoke(params: Record<string, unknown>) {
+        invokeCalls.push(params);
+        return { content: `NVIDIA ${params.model as string} trend report: local NIM inference and agent evaluation.` };
+      }
+    }
+
+    class NvllmShim {
+      readonly model: string;
+      readonly llm: ChatNVIDIAShim;
+      readonly temperature: number | null;
+      readonly max_tokens: number | null;
+      callbacks: unknown[];
+
+      constructor(options: {
+        llm: ChatNVIDIAShim;
+        model_str: string;
+        temperature?: number | null;
+        max_tokens?: number | null;
+        callbacks?: unknown[] | null;
+      }) {
+        this.llm = options.llm;
+        this.model = options.model_str;
+        this.temperature = options.temperature ?? null;
+        this.max_tokens = options.max_tokens ?? null;
+        this.callbacks = options.callbacks ?? [];
+      }
+
+      call(messages: readonly LLMMessage[], callbacks: unknown[] = []) {
+        if (callbacks.length > 0) {
+          this.callbacks = callbacks;
+        }
+        const response = this.llm.invoke({
+          model: this.llm.model,
+          input: messages,
+          timeout: null,
+          temperature: this.temperature,
+          top_p: null,
+          n: null,
+          stop: null,
+          max_tokens: this.max_tokens,
+          presence_penalty: null,
+          frequency_penalty: null,
+          logit_bias: null,
+          response_format: null,
+          seed: null,
+          logprobs: null,
+          top_logprobs: null,
+          api_key: env.NVIDIA_NIM_API_KEY,
+        });
+        return response.content;
+      }
+    }
+
+    const model = env.MODEL ?? "meta/llama-3.1-8b-instruct";
+    const apiBase = env.NVIDIA_API_URL ?? "https://integrate.api.nvidia.com/v1";
+    const chatNvidia = new ChatNVIDIAShim({ model, base_url: apiBase });
+    const defaultLlm = new NvllmShim({
+      model_str: `nvidia_nim/${model}`,
+      llm: chatNvidia,
+    });
+    const researcher = new Agent({
+      role: "Senior Researcher",
+      goal: "Discover groundbreaking technologies",
+      verbose: true,
+      llm: (messages) => defaultLlm.call(messages),
+      backstory: "A curious mind fascinated by cutting-edge innovation and the potential to change the world.",
+    });
+    const researchTask = new Task({
+      description: "Identify the next big trend in AI",
+      agent: researcher,
+      expected_output: "Data Insights",
+    });
+    const techCrew = new Crew({
+      agents: [researcher],
+      tasks: [researchTask],
+      process: Process.sequential,
+    });
+
+    const output = await techCrew.kickoff();
+
+    expect(env.NVIDIA_NIM_API_KEY).toBe("nim-key");
+    expect(defaultLlm.model).toBe("nvidia_nim/meta/llama-3.1-8b-instruct");
+    expect(chatNvidia.options).toEqual({
+      model: "meta/llama-3.1-8b-instruct",
+      base_url: "https://integrate.api.nvidia.com/v1",
+    });
+    expect(techCrew.process).toBe(Process.sequential);
+    expect(output.raw).toContain("NVIDIA meta/llama-3.1-8b-instruct trend report");
+    expect(invokeCalls).toHaveLength(1);
+    expect(invokeCalls[0]).toMatchObject({
+      model: "meta/llama-3.1-8b-instruct",
+      api_key: "nim-key",
+      max_tokens: null,
+    });
+    expect(String((invokeCalls[0]?.input as readonly LLMMessage[] | undefined)?.at(-1)?.content))
+      .toContain("Identify the next big trend in AI");
+  });
+
   it("infers names for directly awaited async task decorator factories", async () => {
     class AsyncTaskCrew {
       calls = 0;
