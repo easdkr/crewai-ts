@@ -22029,6 +22029,117 @@ describe("standard decorators", () => {
     expect(responsePrompts.filter((prompt) => prompt.includes("PROCEEDING WITH CANDIDATE: False"))).toHaveLength(1);
   });
 
+  it("runs the crewAI-examples self-evaluation nested crews deterministically", async () => {
+    type XPostVerification = { valid: boolean; feedback: string | null };
+    const prompts: string[] = [];
+    const characterCounterTool = new StructuredTool({
+      name: "Character Counter Tool",
+      description: "Counts the number of characters in a given string.",
+      func: ({ text }: { text: string }) => `The input string has ${String(text.length)} characters.`,
+    });
+    const shakespeareanBard = new Agent({
+      role: "Shakespearean Bard",
+      goal: "Craft sarcastic and playful hot takes in the style of Shakespeare.",
+      backstory: "A witty bard creating humorous quips.",
+      tools: [characterCounterTool],
+      llm: (messages) => {
+        const prompt = messages.at(-1)?.content ?? "";
+        prompts.push(prompt);
+        if (prompt.includes("add the 1-3-1 structure")) {
+          return [
+            "Flying cars, thou noisy promise, dost hover near and test our patience.",
+            "One wheel in cloud, one debt on earth.",
+            "The roads rejoice, yet rooftops quake.",
+            "Progress may take wing, yet wisdom must still hold the reins.",
+            "Let invention fly, but keep thy landing humble.",
+          ].join("\n");
+        }
+        return "Flying cars, thou art late.";
+      },
+    });
+    const writeTask = new Task({
+      description: [
+        "Given the topic '{topic}', compose a humorous hot take in the style of Shakespeare.",
+        "The final short form social media post must be over 200 characters and not exceed 280 characters, and emojis are strictly forbidden.",
+        "Please incorporate the following feedback if present:",
+        "{feedback}",
+      ].join("\n"),
+      expectedOutput: "A witty, Shakespearean hot take between 200 and 280 characters [Inclusive].",
+      agent: shakespeareanBard,
+    });
+    const shakespeareCrew = new Crew({
+      agents: [shakespeareanBard],
+      tasks: [writeTask],
+      process: Process.sequential,
+    });
+    const reviewAgent = new Agent({
+      role: "X Post Verifier",
+      goal: "Ensure that any X post meets the strict guidelines.",
+      backstory: "A careful reviewer maintaining clarity and brevity.",
+      tools: [characterCounterTool],
+      llm: (messages) => {
+        const prompt = messages.at(-1)?.content ?? "";
+        prompts.push(prompt);
+        const post = prompt.split("X Post to Verify:").at(-1)?.split("\n\n").at(0)?.trim() ?? "";
+        let containsOnlyAscii = true;
+        for (let index = 0; index < post.length; index += 1) {
+          if (post.charCodeAt(index) >= 128) {
+            containsOnlyAscii = false;
+            break;
+          }
+        }
+        const valid = post.length >= 200 && post.length <= 280 && containsOnlyAscii;
+        return JSON.stringify({
+          valid,
+          feedback: valid ? null : "Please add the 1-3-1 structure and keep it between 200 and 280 characters.",
+        });
+      },
+    });
+    const verifyTask = new Task({
+      description: [
+        "Verify that the given X post meets the following criteria:",
+        "- It is between 200 and 280 characters inclusive.",
+        "- It contains no emojis.",
+        "- It contains only the post itself, without additional commentary.",
+        "X Post to Verify:",
+        "{x_post}",
+      ].join("\n"),
+      expectedOutput: "Pass: True/False and feedback if failed.",
+      agent: reviewAgent,
+      output_pydantic: (raw) => JSON.parse(raw) as XPostVerification,
+    });
+    const reviewCrew = new Crew({
+      agents: [reviewAgent],
+      tasks: [verifyTask],
+      process: Process.sequential,
+    });
+    const firstPost = await shakespeareCrew.kickoff({
+      inputs: { topic: "Flying cars", feedback: null },
+    });
+    const firstReview = await reviewCrew.kickoff({
+      inputs: { x_post: firstPost.raw },
+    });
+    const secondPost = await shakespeareCrew.kickoff({
+      inputs: { topic: "Flying cars", feedback: (firstReview.pydantic as XPostVerification).feedback },
+    });
+    const secondReview = await reviewCrew.kickoff({
+      inputs: { x_post: secondPost.raw },
+    });
+
+    expect(shakespeareanBard.tools.map((toolInstance) => toolInstance.name)).toEqual(["character_counter_tool"]);
+    expect(reviewAgent.tools.map((toolInstance) => toolInstance.name)).toEqual(["character_counter_tool"]);
+    expect(characterCounterTool.invoke(JSON.stringify({ text: "Flying cars" }))).toBe("The input string has 11 characters.");
+    expect(firstReview.pydantic).toEqual({
+      valid: false,
+      feedback: "Please add the 1-3-1 structure and keep it between 200 and 280 characters.",
+    });
+    expect(secondReview.pydantic).toEqual({ valid: true, feedback: null });
+    expect(secondPost.raw.length).toBeGreaterThanOrEqual(200);
+    expect(secondPost.raw.length).toBeLessThanOrEqual(280);
+    expect(prompts.some((prompt) => prompt.includes("Please incorporate the following feedback if present"))).toBe(true);
+    expect(prompts.some((prompt) => prompt.includes("add the 1-3-1 structure"))).toBe(true);
+  });
+
   it("runs the crewAI-examples game-builder CrewBase template deterministically", async () => {
     const prompts: string[] = [];
     const gameDesigns = {
