@@ -36617,6 +36617,15 @@ describe("task interpolation", () => {
     }).toThrow("Unsupported type Set");
   });
 
+  it("preserves upstream interpolation edge cases for literals and scalar values", () => {
+    expect(interpolateOnly("{}", { data: {} })).toBe("{}");
+    expect(interpolateOnly("[]", { data: [] })).toBe("[]");
+    expect(interpolateOnly("{num}", { num: 42 })).toBe("42");
+    expect(interpolateOnly("{num}", { num: 3.14 })).toBe("3.14");
+    expect(interpolateOnly("{flag}", { flag: true })).toBe("True");
+    expect(interpolateOnly("{flag}", { flag: false })).toBe("False");
+  });
+
   it("preserves upstream literal formatting for structured interpolation values", () => {
     expect(interpolateOnly("Available items: {items}", { items: ["apple", "banana", "cherry"] }))
       .toBe("Available items: ['apple', 'banana', 'cherry']");
