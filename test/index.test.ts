@@ -21769,6 +21769,63 @@ describe("flow runtime", () => {
     expect(String(routerCalls[1]?.[1]?.content)).toContain("\"last_intent\":\"research\"");
   });
 
+  it("falls back to the configured conversational router intent for invalid LLM routes", async () => {
+    const routerLlm = {
+      call(_messages: LLMMessage[], options?: Record<string, unknown>) {
+        expect(options?.response_format ?? options?.responseFormat).toBeDefined();
+        return { intent: "unknown" };
+      },
+    };
+
+    class FallbackRoutedFlow extends Flow<ConversationState> {
+      static conversational = true;
+      static conversational_config = new ConversationConfig({
+        router: new RouterConfig({
+          llm: routerLlm,
+          routes: ["research", "clarify"],
+          default_intent: "clarify",
+          fallback_intent: "clarify",
+        }),
+      });
+
+      begin() {
+        return "ready";
+      }
+
+      route() {
+        return this.route_turn(this.build_router_context());
+      }
+
+      research() {
+        this.append_assistant_message("researched");
+        return "researched";
+      }
+
+      askClarification() {
+        this.append_assistant_message("clarify");
+        return "clarify";
+      }
+    }
+
+    const initializers = [
+      decorateMethod(FallbackRoutedFlow, "begin", start() as unknown as Decorator),
+      decorateMethod(FallbackRoutedFlow, "route", router("begin") as unknown as Decorator),
+      decorateMethod(FallbackRoutedFlow, "research", listen("research") as unknown as Decorator),
+      decorateMethod(FallbackRoutedFlow, "askClarification", listen("clarify") as unknown as Decorator),
+    ];
+    const flow = new FallbackRoutedFlow();
+    initializers.forEach((initializer) => {
+      initializer.call(flow);
+    });
+
+    await expect(flow.handle_turn("something vague")).resolves.toBe("clarify");
+    expect(flow.state.last_intent).toBe("clarify");
+    expect(message_to_llm_dict(flow.state.messages.at(-1))).toMatchObject({
+      role: "assistant",
+      content: "clarify",
+    });
+  });
+
   it("runs experimental conversational builtin graph without manual decorator wiring", async () => {
     const routerLlm = {
       call() {
