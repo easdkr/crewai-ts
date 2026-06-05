@@ -9264,7 +9264,7 @@ describe("evaluator utilities", () => {
       ]);
       expect(events[0]).toMatchObject({
         agent_role: "Researcher",
-        agent_id: "",
+        agent_id: agentInstance.id,
         task_id: taskInstance.id,
         iteration: 1,
       });
@@ -41712,6 +41712,43 @@ describe("hierarchical process", () => {
       process: Process.hierarchical,
       managerAgent: manager,
     })).toThrow("Manager agent should not be included");
+  });
+
+  it("copies hierarchical manager agents with a fresh identity", () => {
+    const researcher = new Agent({
+      role: "Researcher",
+      goal: "Find facts",
+      backstory: "Careful analyst",
+    });
+    const writer = new Agent({
+      role: "Writer",
+      goal: "Write",
+      backstory: "Careful writer",
+    });
+    const manager = new Agent({
+      role: "Project Manager",
+      goal: "Coordinate the crew",
+      backstory: "Experienced coordinator",
+      allowDelegation: true,
+    });
+    const taskInstance = new Task({
+      description: "Research and write",
+      expectedOutput: "A concise brief",
+    });
+
+    const crew = new Crew({
+      agents: [researcher, writer],
+      tasks: [taskInstance],
+      process: Process.hierarchical,
+      managerAgent: manager,
+      verbose: true,
+    });
+    const copy = crew.copy();
+
+    expect(copy.manager_agent).not.toBeNull();
+    expect(copy.manager_agent?.id).not.toBe(manager.id);
+    expect(copy.manager_agent?.role).toBe(manager.role);
+    expect(copy.manager_agent?.goal).toBe(manager.goal);
   });
 
   it("rejects manager agents with tools during hierarchical kickoff", async () => {

@@ -240,6 +240,7 @@ export class Crew extends FlowTrackable {
   knowledge: Knowledge | null;
   knowledgeSources: readonly KnowledgeSource[];
   managerAgent: Agent | null;
+  manager_agent: Agent | null;
   managerLlm: LLM | string | null;
   functionCallingLlm: LLM | string | null;
   function_calling_llm: LLM | string | null;
@@ -305,6 +306,7 @@ export class Crew extends FlowTrackable {
     this.knowledgeSources = options.knowledgeSources ?? options.knowledge_sources ?? [];
     this.knowledge = options.knowledge ?? null;
     this.managerAgent = options.managerAgent ?? options.manager_agent ?? null;
+    this.manager_agent = this.managerAgent;
     this.managerLlm = options.managerLlm ?? options.manager_llm ?? null;
     this.functionCallingLlm = normalizeCrewFunctionCallingLlm(
       options.functionCallingLlm ?? options.function_calling_llm ?? null,

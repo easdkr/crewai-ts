@@ -1,5 +1,6 @@
 import {
   createHash,
+  randomUUID,
 } from "node:crypto";
 import { existsSync, statSync } from "node:fs";
 
@@ -96,6 +97,8 @@ type ModelDumpOptions = {
 export type CodeExecutionMode = "safe" | "unsafe";
 
 export type AgentOptions = {
+  id?: string | null;
+  agent_id?: string | null;
   role: string;
   goal: string;
   backstory: string;
@@ -229,6 +232,8 @@ export type AgentPreparedKickoff = readonly [
 export class Agent {
   readonly entityType = "agent";
   readonly entity_type = "agent";
+  readonly id: string;
+  readonly agent_id: string;
   role: string;
   goal: string;
   backstory: string;
@@ -337,6 +342,8 @@ export class Agent {
 
   constructor(options: AgentOptions) {
     options = Agent.validateFromRepository(options) as AgentOptions;
+    this.id = options.id ?? options.agent_id ?? randomUUID();
+    this.agent_id = this.id;
     this.role = options.role;
     this.goal = options.goal;
     this.backstory = options.backstory;
@@ -1114,7 +1121,8 @@ export class Agent {
       return taskPrompt;
     }
     const idValue = readRecordValue(this, "id");
-    const agentTraining = data[typeof idValue === "string" || typeof idValue === "number" ? String(idValue) : this.key];
+    const agentId = typeof idValue === "string" || typeof idValue === "number" ? String(idValue) : "";
+    const agentTraining = data[this.key] ?? (agentId.length > 0 ? data[agentId] : undefined);
     if (!isRecord(agentTraining)) {
       return taskPrompt;
     }
