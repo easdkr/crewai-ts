@@ -44863,6 +44863,30 @@ describe("streaming output", () => {
     expect(chunksB.every((chunk) => chunk.taskId === "b" && chunk.agentRole === "B")).toBe(true);
   });
 
+  it("preserves upstream empty streaming content chunks", () => {
+    const state = createStreamingState({
+      index: 0,
+      name: "empty_task",
+      id: "empty-task-id",
+      agent_role: "Streamer",
+      agent_id: "streamer-id",
+    }, []);
+
+    const chunks = [...createChunkGenerator(state, () => {
+      crewaiEventBus.emit(null, new LLMStreamChunkEvent({
+        chunk: "",
+        call_id: "empty-call",
+        response_id: "empty-response",
+      }));
+    })];
+
+    expect(chunks).toHaveLength(1);
+    expect(chunks[0]?.content).toBe("");
+    expect(chunks[0]?.chunk_type).toBe(StreamChunkType.TEXT);
+    expect(chunks[0]?.taskName).toBe("empty_task");
+    expect(chunks[0]?.agentRole).toBe("Streamer");
+  });
+
   it("returns a CrewStreamingOutput when a crew is configured for streaming", async () => {
     const researcher = new Agent({
       role: "Researcher",
