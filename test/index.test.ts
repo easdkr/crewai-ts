@@ -23693,6 +23693,32 @@ describe("flow runtime", () => {
     }
   });
 
+  it("does not warn when explicit FlowDefinition router events cover listeners", () => {
+    const definition = FlowDefinition.from_dict({
+      schema: "crewai.flow/v1",
+      name: "ProperlyTypedRouterFlow",
+      methods: {
+        begin: { start: true },
+        typedRouter: { listen: "begin", router: true, emit: ["event_a", "event_b"] },
+        handleA: { listen: "event_a" },
+        handleB: { listen: "event_b" },
+      },
+    });
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    try {
+      buildFlowStructure(definition);
+
+      expect(warnSpy).not.toHaveBeenCalledWith(expect.stringContaining("Router events for"));
+      expect(warnSpy).not.toHaveBeenCalledWith(expect.stringContaining("Static visualization could not match listener triggers"));
+      expect(errorSpy).not.toHaveBeenCalled();
+    } finally {
+      warnSpy.mockRestore();
+      errorSpy.mockRestore();
+    }
+  });
+
   it("parses flow visualization CSS and JS extension tags like upstream", () => {
     const cssParser = {
       stream: [{ lineno: 7 }],
