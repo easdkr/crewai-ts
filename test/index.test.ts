@@ -33304,6 +33304,10 @@ describe("LLM providers", () => {
       _normalize_snowflake_base_url(value: string): string;
     })._normalize_snowflake_base_url("acme.snowflakecomputing.com")).toBe("https://acme.snowflakecomputing.com/api/v2/cortex/v1");
     expect((SnowflakeCompletion as unknown as {
+      _normalize_snowflake_base_url(value: string): string;
+    })._normalize_snowflake_base_url("https://acme.snowflakecomputing.com/api/v2/cortex/v1"))
+      .toBe("https://acme.snowflakecomputing.com/api/v2/cortex/v1");
+    expect((SnowflakeCompletion as unknown as {
       _base_url_from_account_identifier(value: string): string;
     })._base_url_from_account_identifier("org-account")).toBe("https://org-account.snowflakecomputing.com/api/v2/cortex/v1");
     expect((SnowflakeCompletion as unknown as {
