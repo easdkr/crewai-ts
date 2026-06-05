@@ -22149,6 +22149,27 @@ describe("flow runtime", () => {
       intent_field: "intent",
       routes: ["research", "converse", "end"],
     });
+
+    class InferredRouterFlow extends Flow<ConversationState> {
+      static conversational = true;
+      static conversational_config = new ConversationConfig({
+        router: new RouterConfig(),
+      });
+
+      research() {
+        return "researched";
+      }
+    }
+
+    const inferredInitializer = decorateMethod(InferredRouterFlow, "research", listen("research") as unknown as Decorator);
+    const inferredFlow = new InferredRouterFlow();
+    inferredInitializer.call(inferredFlow);
+
+    expect(inferredFlow._effective_routes(InferredRouterFlow.conversational_config.router as RouterConfig)).toEqual([
+      "research",
+      "converse",
+      "end",
+    ]);
   });
 
   it("auto-enables experimental conversational router only for custom routes", async () => {
