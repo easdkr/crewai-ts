@@ -23414,6 +23414,122 @@ describe("standard decorators", () => {
     expect(prompts.some((prompt) => prompt.includes("Talking points: ask about launch risk"))).toBe(true);
   });
 
+  it("runs the crewAI-examples meta-quest knowledge CrewBase workflow deterministically", async () => {
+    const knowledgeDir = mkdtempSync(join(tmpdir(), "crewai-meta-quest-"));
+    const manualPath = join(knowledgeDir, "meta_quest_manual.pdf");
+    writeFileSync(manualPath, "fake meta quest manual pdf bytes", "utf8");
+    const prompts: string[] = [];
+
+    try {
+      const pdfSource = new PDFKnowledgeSource({
+        file_path: manualPath,
+        extractor: (_filePath, bytes) => [
+          "Meta Quest Manual",
+          `Manual bytes: ${bytes.toString("utf8")}`,
+          "Take a break every 30 minutes during extended Meta Quest sessions.",
+          "Adjust the headset fit before resuming play.",
+        ].join("\n"),
+      });
+
+      class MetaQuestKnowledge {
+        agents: Agent[] = [];
+        tasks: Task[] = [];
+        agents_config = {
+          meta_quest_expert: {
+            role: "Meta Quest Expert",
+            goal: "Provide the best possible answers to questions about Meta Quest",
+            backstory: [
+              "You're a seasoned expert in the world of Meta Quest.",
+              "You're known for your ability to provide the best possible answers to questions about this cutting-edge technology.",
+            ].join(" "),
+          },
+        };
+        tasks_config = {
+          answer_question_task: {
+            description: [
+              "Answer the user question with the most relevant information from the context and available knowledge sources.",
+              "Question: {question}",
+              "",
+              "Do not answer questions that are not related to the context or knowledge sources.",
+            ].join("\n"),
+            expected_output: "Best answer to the user question",
+          },
+        };
+
+        meta_quest_expert() {
+          const config = this.agents_config.meta_quest_expert;
+          return new Agent({
+            config,
+            role: config.role,
+            goal: config.goal,
+            backstory: config.backstory,
+            verbose: true,
+            llm: (messages) => {
+              const prompt = messages.at(-1)?.content ?? "";
+              prompts.push(prompt);
+              return prompt.includes("Take a break every 30 minutes")
+                ? "Take breaks every 30 minutes and refit the headset before resuming."
+                : "I can only answer Meta Quest manual questions.";
+            },
+          });
+        }
+
+        answer_question_task() {
+          const config = this.tasks_config.answer_question_task;
+          return new Task({
+            config,
+            description: config.description,
+            expected_output: config.expected_output,
+            agent: this.meta_quest_expert(),
+          });
+        }
+
+        crew() {
+          return new Crew({
+            agents: this.agents,
+            tasks: this.tasks,
+            process: Process.sequential,
+            verbose: true,
+            knowledge_sources: [pdfSource],
+          });
+        }
+      }
+
+      const DecoratedMetaQuestKnowledge = decorateClass(MetaQuestKnowledge, CrewBase as unknown as Decorator);
+      const initializers = [
+        decorateMethod(MetaQuestKnowledge, "meta_quest_expert", agent),
+        decorateMethod(MetaQuestKnowledge, "answer_question_task", task),
+        decorateMethod(MetaQuestKnowledge, "crew", crew),
+      ];
+      const project = new DecoratedMetaQuestKnowledge();
+      initializers.forEach((initializer) => {
+        initializer.call(project);
+      });
+
+      const crewInstance = project.crew();
+      expect(crewInstance.process).toBe(Process.sequential);
+      expect(crewInstance.knowledgeSources).toEqual([pdfSource]);
+      expect(project.agents.map((projectAgent: Agent) => projectAgent.role)).toEqual(["Meta Quest Expert"]);
+      expect(project.tasks.map((projectTask: Task) => projectTask.expected_output)).toEqual([
+        "Best answer to the user question",
+      ]);
+
+      const output = await crewInstance.kickoff({
+        inputs: {
+          question: "How often should I take breaks?",
+        },
+      });
+
+      expect(output.raw).toContain("Take breaks every 30 minutes");
+      expect(prompts[0]).toContain("Question: How often should I take breaks?");
+      expect(prompts[0]).toContain("Additional Information:");
+      expect(prompts[0]).toContain("Take a break every 30 minutes during extended Meta Quest sessions.");
+      expect(prompts[0]).toContain("Manual bytes: fake meta quest manual pdf bytes");
+    } finally {
+      rmSync(knowledgeDir, { recursive: true, force: true });
+    }
+  });
+
   it("infers names for directly awaited async task decorator factories", async () => {
     class AsyncTaskCrew {
       calls = 0;
