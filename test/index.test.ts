@@ -33117,6 +33117,10 @@ describe("LLM providers", () => {
   it("provides Snowflake Cortex completion provider normalization and Claude history guards", () => {
     expect(SNOWFLAKE_CORTEX_PATH).toBe("/api/v2/cortex/v1");
     expect(SNOWFLAKE_TOKEN_ENV_VARS).toEqual(["SNOWFLAKE_PAT", "SNOWFLAKE_TOKEN", "SNOWFLAKE_JWT"]);
+    expect(() => new SnowflakeCompletion({
+      model: "claude-3-5-sonnet",
+      api: "responses",
+    })).toThrow("supports only the Chat Completions API");
     expect((SnowflakeCompletion as unknown as {
       _normalize_snowflake_base_url(value: string): string;
     })._normalize_snowflake_base_url("acme.snowflakecomputing.com")).toBe("https://acme.snowflakecomputing.com/api/v2/cortex/v1");
