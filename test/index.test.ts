@@ -395,6 +395,7 @@ import {
   CacheTools,
   AddImageTool,
   BaseAgentTool,
+  AgentTools,
   build_schema_hint,
   CrewStructuredTool,
   EnvVar,
@@ -20090,6 +20091,21 @@ describe("core crew runtime", () => {
     expect(BaseAgentTool._getCoworker("[Researcher, Writer]")).toBe("Researcher");
     expect(tool._get_coworker(undefined, { coworker: "Analyst" })).toBe("Analyst");
     expect(tool.sanitize_agent_name("  \"Lead   Researcher\"  ")).toBe("lead researcher");
+  });
+
+  it("returns upstream agent-tool errors for unknown coworkers", () => {
+    const researcher = new Agent({
+      role: "researcher",
+      goal: "Research",
+      backstory: "Careful analyst",
+    });
+    const [, askTool] = new AgentTools({ agents: [researcher] }).tools();
+
+    expect(askTool?.run({
+      coworker: "writer",
+      question: "Do you know CrewAI?",
+      context: "Need an answer",
+    })).toBe("\nError executing tool. coworker mentioned not found, it must be one of the following options:\n- researcher\n");
   });
 
   it("preserves task tool override while adding delegation tools", async () => {
