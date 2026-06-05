@@ -12870,6 +12870,31 @@ describe("RAG configuration and factories", () => {
     });
   });
 
+  it("raises upstream Qdrant add_documents errors for empty document lists", async () => {
+    const collectionExists = vi.fn(() => false);
+    const asyncCollectionExists = vi.fn(async () => await Promise.resolve(false));
+    const syncClient = new QdrantClient({
+      collection_exists: collectionExists,
+      upsert: vi.fn(),
+      query_points: vi.fn(() => ({ points: [] })),
+    }, (text: string) => [text.length]);
+    const asyncClient = new QdrantClient({
+      aquery_points: async () => await Promise.resolve({ points: [] }),
+      collection_exists: asyncCollectionExists,
+      upsert: vi.fn(async () => {
+        await Promise.resolve();
+      }),
+    }, async (text: string) => await Promise.resolve([text.length]));
+
+    expect(() => {
+      syncClient.add_documents({ collection_name: "docs", documents: [] });
+    }).toThrow("Documents list cannot be empty");
+    await expect(asyncClient.aadd_documents({ collection_name: "docs", documents: [] }))
+      .rejects.toThrow("Documents list cannot be empty");
+    expect(collectionExists).not.toHaveBeenCalled();
+    expect(asyncCollectionExists).not.toHaveBeenCalled();
+  });
+
   it("uses upstream Qdrant collection create payload shape", () => {
     const createCollection = vi.fn();
     const getCollection = vi.fn(() => ({ name: "docs" }));
