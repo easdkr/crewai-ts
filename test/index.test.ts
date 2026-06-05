@@ -42041,6 +42041,29 @@ describe("runtime state", () => {
     }
   });
 
+  it("warns when flow_finished is emitted without a matching flow_started scope", () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      restoreEventScope([]);
+      setEventContextConfig({
+        emptyPopBehavior: MismatchBehavior.WARN,
+      });
+
+      crewaiEventBus.emit(null, new FlowFinishedEvent({
+        flowName: "BareFlow",
+        result: "ok",
+        state: {},
+      }));
+
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("flow_finished"));
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("Missing starting event"));
+    } finally {
+      warnSpy.mockRestore();
+      restoreEventScope([]);
+      setEventContextConfig(null);
+    }
+  });
+
   it("restores upstream triggering event scope after nested async failures", async () => {
     setTriggeringEventId(null);
 

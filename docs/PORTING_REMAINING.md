@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 1120 passing tests.
+- Test suite: 1121 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -171,7 +171,7 @@ This register is the source of truth for continuing porting work while parity sc
 - Crew async kickoff docs examples are release-gated for upstream direct input-list calls: `kickoff_for_each`, `kickoff_for_each_async`, and `akickoff_for_each` accept a plain list of input dictionaries as well as the TypeScript options object.
 - Crew for-each streaming output is release-gated for upstream kickoff result semantics: stream-mode `kickoffForEach`, `kickoffForEachAsync`, and `akickoffForEach` return one `CrewStreamingOutput` per input, preserve each per-input `CrewOutput` result, and aggregate consumed stream usage on the parent crew.
 - Crew kickoff interpolation is release-gated for upstream hyphenated input names: keys such as `interpolation-with-hyphens` interpolate through agent fields, task prompt text, and final task execution while repeated kickoffs re-render from original agent/task templates.
-- Flow event causal ordering is release-gated for listener chains, OR-condition listeners, router paths, parallel listeners, and repeated flow kickoffs: downstream method execution events preserve upstream `triggered_by_event_id` links to the exact method completion event that caused them without cross-run event-id leakage.
+- Flow event causal ordering is release-gated for listener chains, OR-condition listeners, router paths, parallel listeners, repeated flow kickoffs, and unmatched finish-event diagnostics: downstream method execution events preserve upstream `triggered_by_event_id` links to the exact method completion event that caused them without cross-run event-id leakage, and a bare `flow_finished` emits the upstream missing-start warning.
 - Flow ask listener integration is release-gated for upstream start-to-listen chains: a start method can return an `ask()` result, downstream listeners still execute, and the final flow output reflects the listener result while input history records the originating method.
 - Flow ask lifecycle events are release-gated for upstream interactive flows: `FlowStartedEvent` and `FlowFinishedEvent` still fire in order when a start method returns an `ask()` result, and the finished event carries that result.
 - Flow lifecycle event emission is release-gated for upstream panel-suppression semantics: `suppress_flow_events` / `suppressFlowEvents` suppresses panel-style presentation only, while `FlowStartedEvent`, `MethodExecutionStartedEvent`, and `MethodExecutionFinishedEvent` still emit for tracing/listeners.
