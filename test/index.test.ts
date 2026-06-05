@@ -22140,6 +22140,121 @@ describe("standard decorators", () => {
     expect(prompts.some((prompt) => prompt.includes("add the 1-3-1 structure"))).toBe(true);
   });
 
+  it("runs the crewAI-examples meeting assistant nested crew helpers deterministically", async () => {
+    type MeetingTask = { name: string; description: string };
+    type MeetingTaskList = { tasks: MeetingTask[] };
+    const transcript = "Finalize launch plan. Alice owns QA follow-up. Bob updates mobile dashboard.";
+    const prompts: string[] = [];
+    const meetingAnalyzer = new Agent({
+      role: "Meeting Transcript Analysis Agent",
+      goal: "Analyze the provided meeting transcript and extract important, actionable tasks or issues.",
+      backstory: "Expert in analyzing meeting transcripts and summarizing discussions into actionable tasks.",
+      llm: (messages) => {
+        const prompt = messages.at(-1)?.content ?? "";
+        prompts.push(prompt);
+        return JSON.stringify({
+          tasks: [
+            {
+              name: "QA follow-up",
+              description: "Alice should complete QA follow-up from the launch planning meeting.",
+            },
+            {
+              name: "Mobile dashboard update",
+              description: "Bob should update the mobile dashboard layout.",
+            },
+          ],
+        });
+      },
+    });
+    const analyzeMeeting = new Task({
+      description: [
+        "Analyze the provided meeting transcript and generate a set of detailed, well-organized issues.",
+        "Here is the meeting transcript for your reference:",
+        "{transcript}",
+      ].join("\n\n"),
+      expectedOutput: "A JSON list of issues with titles and bodies.",
+      agent: meetingAnalyzer,
+      output_pydantic: (raw) => JSON.parse(raw) as MeetingTaskList,
+    });
+    const meetingCrew = new Crew({
+      agents: [meetingAnalyzer],
+      tasks: [analyzeMeeting],
+      process: Process.sequential,
+    });
+    const trelloCards: Array<{ url: string; params: Record<string, string> }> = [];
+    const slackMessages: Array<{ channel: string; text: string }> = [];
+    const createTrelloCard = (taskTitle: string, taskDescription: string) => {
+      const params = {
+        key: "trello-key",
+        token: "trello-token",
+        idList: "trello-list",
+        name: taskTitle,
+        desc: taskDescription,
+      };
+      trelloCards.push({ url: "https://api.trello.com/1/cards", params });
+      return { statusCode: 200, params };
+    };
+    const saveTasksToTrello = (tasks: MeetingTask[]) => {
+      for (const task of tasks) {
+        if (task.name && task.description) {
+          createTrelloCard(task.name, task.description);
+        }
+      }
+    };
+    const sendMessageToChannel = (text: string) => {
+      const payload = { channel: "launch-channel", text };
+      slackMessages.push(payload);
+      return { ok: true, ...payload };
+    };
+
+    const output = await meetingCrew.kickoff({ inputs: { transcript } });
+    const tasks = (output.pydantic as MeetingTaskList).tasks;
+    saveTasksToTrello(tasks);
+    const slackResponse = sendMessageToChannel(`${String(tasks.length)} New tasks have been added to Trello!`);
+
+    expect(output.pydantic).toEqual({
+      tasks: [
+        {
+          name: "QA follow-up",
+          description: "Alice should complete QA follow-up from the launch planning meeting.",
+        },
+        {
+          name: "Mobile dashboard update",
+          description: "Bob should update the mobile dashboard layout.",
+        },
+      ],
+    });
+    expect(prompts).toHaveLength(1);
+    expect(prompts[0]).toContain(transcript);
+    expect(trelloCards).toEqual([
+      {
+        url: "https://api.trello.com/1/cards",
+        params: {
+          key: "trello-key",
+          token: "trello-token",
+          idList: "trello-list",
+          name: "QA follow-up",
+          desc: "Alice should complete QA follow-up from the launch planning meeting.",
+        },
+      },
+      {
+        url: "https://api.trello.com/1/cards",
+        params: {
+          key: "trello-key",
+          token: "trello-token",
+          idList: "trello-list",
+          name: "Mobile dashboard update",
+          desc: "Bob should update the mobile dashboard layout.",
+        },
+      },
+    ]);
+    expect(slackResponse).toEqual({
+      ok: true,
+      channel: "launch-channel",
+      text: "2 New tasks have been added to Trello!",
+    });
+  });
+
   it("runs the crewAI-examples game-builder CrewBase template deterministically", async () => {
     const prompts: string[] = [];
     const gameDesigns = {

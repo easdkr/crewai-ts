@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 1220 passing tests.
+- Test suite: 1221 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -24,6 +24,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
 - The 2026-06-05 external examples audit also promoted the deterministic `crewAI-examples` self-evaluation loop Flow shape: `@start("retry")` methods now run as initial starts and re-run when routers emit the retry event, while complete/max-retry listeners remain event-routed without live crews or file writes.
 - The same external examples audit promoted the deterministic `crewAI-examples` self-evaluation nested crew shape: `ShakespeareanXPostCrew` and `XPostReviewCrew` both attach a CharacterCounter-style tool, review output is parsed into `{ valid, feedback }`, failed posts feed actionable feedback into the next generation, and the successful retry meets the 200-280 character/no-emoji boundary without live LLMs, file writes, graph plotting, or pydantic runtime dependencies.
 - The same external examples audit promoted the deterministic `crewAI-examples` meeting assistant Flow shape: a start method loads transcript state, a crew-like listener populates tasks, and sibling listeners all observe the generated task state to simulate Trello, CSV, and Slack side effects without live integrations or file IO.
+- The same external examples audit promoted the deterministic `crewAI-examples` meeting assistant nested crew/helper shape: `MeetingAssistantCrew` returns structured `MeetingTaskList` output from transcript interpolation, Trello helper payloads preserve card name/description/list/auth params, and Slack helper payloads preserve channel/text notification boundaries without OpenAI, LangChain, requests, slack-sdk, dotenv, meeting note file reads, CSV writes, Trello, or Slack network calls.
 - The same external examples audit promoted the deterministic `crewAI-examples` write-a-book Flow shape: outline generation feeds async chapter fan-out with full serialized outline context, chapter results join back into ordered book state, and the final markdown save step is modeled without live crews or file IO.
 - The same external examples audit promoted the deterministic `crewAI-examples` email auto-responder Flow shape: `@start("wait_next_run")` polling filters already-checked emails, duplicate threads, and self-sent messages, formats remaining emails for a crew input, clears the queue, and models the wait interval without Gmail, LangChain, provider calls, or real sleeps.
 - The same external examples audit promoted the deterministic `crewAI-examples` job-posting CrewBase template shape: `@CrewBase` with agent/task/crew decorators now gates automatic agent/task collection, sequential crew construction, structured `output_json` task configuration, tool attachment, and kickoff input interpolation without live website search, Serper, file-read, or provider calls.
