@@ -34442,6 +34442,11 @@ describe("LLM providers", () => {
     ]);
   });
 
+  it("defaults missing Gemini usage metadata to zero total tokens", () => {
+    expect(GeminiCompletion.extract_token_usage({})).toEqual({ total_tokens: 0 });
+    expect(GeminiCompletion.extract_token_usage({ usage_metadata: null })).toEqual({ total_tokens: 0 });
+  });
+
   it("accumulates Gemini streaming chunks", () => {
     const gemini = new GeminiCompletion({ model: "gemini-2.5-pro" });
     const functionCallPart = {

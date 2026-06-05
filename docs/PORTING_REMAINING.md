@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 1167 passing tests.
+- Test suite: 1168 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -614,7 +614,7 @@ When more goal budget is available, continue from the behavioral parity audits b
   - Gemini streaming function-call accumulation now preserves the upstream raw part payload, including `thought_signature` metadata from thinking models, so downstream tool-call finalization can retain non-text model context.
   - Gemini message formatting now preserves upstream-style `raw_tool_call_parts` when present, falling back to JSON tool-call conversion otherwise.
   - Gemini completion shim now exposes the upstream-style `_extract_token_usage` alias for SDK usage translation compatibility.
-  - Gemini token usage extraction and streaming accumulation now handle SDK-like `usage_metadata` getter objects.
+  - Gemini token usage extraction and streaming accumulation now handle SDK-like `usage_metadata` getter objects and missing metadata defaults.
   - Multimodal LLM message file handling now converts `files` into deterministic inline/upload content blocks, native OpenAI/Azure/Anthropic/Bedrock/Gemini shims expose local provider file uploaders, and Bedrock maps inline files into Converse image/document blocks.
   - Streaming tool-call argument accumulation now preserves id/name/index and concatenates function argument deltas into upstream-style tool call payloads
   - Provider tool conversion helpers now reject non-dictionary tools and invalid `function` payloads with upstream-style errors while preserving OpenAI/direct schema extraction.
