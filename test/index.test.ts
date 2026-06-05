@@ -2864,6 +2864,24 @@ describe("environment, logging, and file store utilities", () => {
     expect(tool.run({ file_name: "readme.txt" })).toBe("No input files available.");
   });
 
+  it("preserves upstream ReadFileTool metadata, schema, and multi-file lookup semantics", () => {
+    const tool = new ReadFileTool();
+
+    expect(tool.name).toBe("read_file");
+    expect(tool.description).toContain("Read content from an input file");
+    expect(tool.args_schema.file_name).toMatchObject({ type: "string", required: true });
+
+    tool.set_files({
+      "file1.txt": new TextFile({ source: Buffer.from("content 1") }),
+      "file2.txt": new TextFile({ source: Buffer.from("content 2") }),
+      "data.json": new TextFile({ source: Buffer.from('{"key":"value"}'), content_type: "application/json" }),
+    });
+
+    expect(tool.run({ file_name: "file1.txt" })).toBe("content 1");
+    expect(tool.run({ file_name: "file2.txt", extra_arg: "ignored" })).toBe("content 2");
+    expect(tool.run({ file_name: "data.json" })).toBe('{"key":"value"}');
+  });
+
   it("extracts text from upstream PDF input files instead of returning base64", async () => {
     const tool = new ReadFileTool();
     const pdfBytes = makePdfWithText("CrewAI agents can read PDFs");
