@@ -573,13 +573,26 @@ export class AgentExecutor extends BaseAgentExecutor {
     if (!this.isPlanningEnabled()) {
       return;
     }
-    const description = typeof this.task === "object" && this.task !== null && "description" in this.task
-      ? String(this.task.description)
-      : this.kickoffInput || "Complete the requested task";
-    this.state.plan = description;
-    this.state.plan_ready = true;
-    if (this.state.todos.items.length === 0) {
-      this._create_todos_from_plan([new PlanStep({ stepNumber: 1, description })]);
+    try {
+      const planningHandler = this.task
+        ? new AgentReasoning({ agent: this.agent, task: this.task })
+        : new AgentReasoning({
+          agent: this.agent,
+          description: this.kickoffInput || "Complete the requested task",
+          expectedOutput: "Complete the task successfully",
+        });
+      const output = planningHandler.handle_agent_reasoning();
+      if (isPromiseLike(output)) {
+        throw new Error("AgentExecutor.generate_plan received an async planning result; use an async execution path instead.");
+      }
+      this.state.plan = output.plan.plan;
+      this.state.plan_ready = output.plan.ready;
+      if (this.state.plan_ready && output.plan.steps.length > 0) {
+        this._create_todos_from_plan(output.plan.steps);
+      }
+    } catch (error) {
+      const logger = (this.agent as unknown as { _logger?: { log?: (level: string, message: string) => void } } | null)?._logger;
+      logger?.log?.("error", `Error during planning: ${executorErrorMessage(error)}`);
     }
   }
 

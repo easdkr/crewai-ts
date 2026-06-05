@@ -14478,7 +14478,22 @@ describe("core crew runtime", () => {
     );
 
     const snakePlanningExecutor = new AgentExecutor({
-      agent: { planning_enabled: true } as unknown as Agent,
+      agent: {
+        role: "Planner",
+        goal: "Plan with snake case",
+        backstory: "Planner fixture",
+        planning_enabled: true,
+        llm: {
+          supports_function_calling: () => true,
+          call: () => JSON.stringify({
+            plan: "Collect evidence, then summarize.",
+            ready: true,
+            steps: [
+              { step_number: 1, description: "Collect evidence", tool_to_use: "Search" },
+            ],
+          }),
+        },
+      } as unknown as Agent,
       task: { description: "Plan with snake case" },
     });
     snakePlanningExecutor.generate_plan();
@@ -14516,7 +14531,23 @@ describe("core crew runtime", () => {
   it("stores AgentExecutor generated plans in state without mutating task descriptions", () => {
     const task = { description: "Research CrewAI", expected_output: "Concise summary" };
     const executor = new AgentExecutor({
-      agent: { planning_enabled: true } as unknown as Agent,
+      agent: {
+        role: "Researcher",
+        goal: "Find facts",
+        backstory: "Careful analyst",
+        planning_enabled: true,
+        llm: {
+          supports_function_calling: () => true,
+          call: () => JSON.stringify({
+            plan: "Search docs, then summarize.",
+            ready: true,
+            steps: [
+              { step_number: 1, description: "Search docs" },
+              { step_number: 2, description: "Summarize findings", depends_on: [1] },
+            ],
+          }),
+        },
+      } as unknown as Agent,
       task,
     });
 
@@ -14524,9 +14555,9 @@ describe("core crew runtime", () => {
     executor.generate_plan();
 
     expect(task.description).toBe("Research CrewAI");
-    expect(executor.state.plan).toBe("Research CrewAI");
+    expect(executor.state.plan).toBe("Search docs, then summarize.");
     expect(executor.state.plan_ready).toBe(true);
-    expect(executor.state.todos.items.map((todo) => todo.description)).toEqual(["Research CrewAI"]);
+    expect(executor.state.todos.items.map((todo) => todo.description)).toEqual(["Search docs", "Summarize findings"]);
   });
 
   it("injects AgentExecutor files from crew and task stores into user messages", async () => {
@@ -15194,6 +15225,81 @@ describe("core crew runtime", () => {
     expect(executor.state.messages.at(-1)?.role).toBe("user");
     expect(executor.state.messages.at(-1)?.content).toContain("**Current Step 1/1**");
     expect(executor.state.messages.at(-1)?.content).toContain("Suggested tool: Search Tool");
+  });
+
+  it("generates AgentExecutor todos from upstream AgentReasoning plans", () => {
+    const planningCalls: Array<{ messages: readonly LLMMessage[]; options?: LLMCallOptions }> = [];
+    const agentInstance = new Agent({
+      role: "Researcher",
+      goal: "Find facts",
+      backstory: "Careful analyst",
+      planningConfig: new PlanningConfig({ max_attempts: 1 }),
+      llm: {
+        supports_function_calling: () => true,
+        call(messages: readonly LLMMessage[], options?: LLMCallOptions) {
+          planningCalls.push({ messages, options });
+          return JSON.stringify({
+            plan: "Search docs, then summarize.",
+            ready: true,
+            steps: [
+              {
+                step_number: 1,
+                description: "Search CrewAI docs",
+                tool_to_use: "Search Tool",
+                depends_on: [],
+              },
+              {
+                step_number: 2,
+                description: "Summarize findings",
+                depends_on: [1],
+              },
+            ],
+          });
+        },
+      },
+    });
+    const task = {
+      description: "Research CrewAI",
+      expected_output: "Concise brief",
+    };
+    const executor = new AgentExecutor({ agent: agentInstance, task });
+
+    executor.generate_plan();
+
+    expect(executor.state.plan).toBe("Search docs, then summarize.");
+    expect(executor.state.plan_ready).toBe(true);
+    const dumpedTodos = executor.state.todos.items.map((todo) => todo.model_dump());
+    expect(typeof dumpedTodos[0]?.id).toBe("string");
+    expect(typeof dumpedTodos[1]?.id).toBe("string");
+    expect(dumpedTodos.map((todo) => ({
+      step_number: todo.step_number,
+      description: todo.description,
+      tool_to_use: todo.tool_to_use,
+      status: todo.status,
+      depends_on: todo.depends_on,
+      result: todo.result,
+    }))).toEqual([
+      {
+        step_number: 1,
+        description: "Search CrewAI docs",
+        tool_to_use: "Search Tool",
+        status: "pending",
+        depends_on: [],
+        result: null,
+      },
+      {
+        step_number: 2,
+        description: "Summarize findings",
+        tool_to_use: null,
+        status: "pending",
+        depends_on: [1],
+        result: null,
+      },
+    ]);
+    expect(task.description).toBe("Research CrewAI");
+    expect(planningCalls).toHaveLength(1);
+    expect(planningCalls[0]?.messages[1]?.content).toContain("Research CrewAI");
+    expect(planningCalls[0]?.options?.tools).toEqual([FUNCTION_SCHEMA]);
   });
 
   it("executes AgentExecutor planning todos through isolated StepExecutor context", async () => {

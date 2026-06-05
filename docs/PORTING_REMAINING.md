@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 1131 passing tests.
+- Test suite: 1132 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -231,7 +231,7 @@ This register is the source of truth for continuing porting work while parity sc
 - AgentExecutor file injection is release-gated for latest-upstream multimodal input semantics: object-style sync and async invokes merge crew-scoped files, task-scoped files, and explicit `inputs.files` into the last user message, with task files overriding crew files, explicit input files overriding stored files, and async injection using the async all-files store path.
 - AgentExecutor state message appending is release-gated for upstream helper semantics: `_append_message_to_state` appends role-formatted LLM messages to executor state and is also available on the CrewAgentExecutor compatibility surface.
 - AgentExecutor planning flag routing is release-gated for upstream plan-and-execute semantics: `generate_plan` and `check_todos_available` honor Python-style `planning_enabled` as well as TS `planningEnabled` before creating or routing todos.
-- AgentExecutor generated plans are release-gated for latest-upstream state-only planning semantics: repeated `generate_plan` calls store the plan on executor state and never mutate the shared `task.description`.
+- AgentExecutor generated plans are release-gated for latest-upstream planner-driven planning semantics: `generate_plan` runs `AgentReasoning`, stores the returned plan/readiness on executor state, converts structured ready plan steps into pending todos, and never mutates the shared `task.description`.
 - AgentExecutor plan-step conversion is release-gated for upstream planning semantics: `_create_todos_from_plan` converts structured plan steps into pending todos while preserving step numbers, descriptions, suggested tools, and dependencies.
 - AgentExecutor replan failure handling is release-gated for upstream recovery semantics: failed replanning keeps existing todos intact, records `Replan failed: ...`, and logs the planning error through the agent logger when available.
 - PlanningConfig construction is release-gated for upstream default, validation, and custom planning fields, including default null attempt/prompt/LLM/observe fields, default `max_steps=20`, default `reasoning_effort="medium"`, rejection of invalid reasoning effort levels, and string LLM identifiers preserved on explicit configs.
@@ -447,7 +447,7 @@ When more goal budget is available, continue from the behavioral parity audits b
 - `PlannerObserver.observe` now builds upstream-style observation prompts, preserves typed `StepObservation` parser responses, parses deterministic LLM JSON and provider object responses into `StepObservation`, and falls back conservatively when observation LLM calls fail.
 - `AgentExecutor.execute_todo_sequential` now executes planning-enabled todos through isolated `StepExecutor` context, records upstream-style step execution audit fields, and falls back to upstream-style todo prompt injection only when planning is disabled.
 - `AgentExecutor.execute_todos_parallel` now executes ready planning todos through isolated `StepExecutor` contexts, records upstream-style step execution audit fields, observes each completed step sequentially, records observation audit fields, and marks todos from the observation result.
-- `AgentExecutor.generate_plan` now has default-gate coverage for latest-upstream state-only planning: plan text and readiness live on executor state while repeated planning leaves the shared task description unchanged.
+- `AgentExecutor.generate_plan` now has default-gate coverage for latest-upstream planner-driven planning: `AgentReasoning` output populates executor plan state and ready structured steps become pending todos while the shared task description remains unchanged.
 - `AgentExecutor.handle_replan` / dynamic replan triggers now emit upstream-style `plan_replan_triggered` observation events with reason, replan count, completed-step preservation count, task, and agent context before regenerating pending todos.
 - `AgentExecutor.execute_tool_action` now records non-final tool observations and appends the upstream post-tool reasoning prompt before continuing.
 - `AgentExecutor.check_todo_completion` now requires ReAct tool actions to match the running todo's expected tool when one is specified, while still accepting final answers and todos without a specified tool.
