@@ -12562,6 +12562,22 @@ describe("RAG configuration and factories", () => {
     });
   });
 
+  it("raises upstream ChromaDB add_documents errors for empty document lists", async () => {
+    const syncClient = new ChromaDBClient({
+      get_or_create_collection: vi.fn(() => ({ upsert: vi.fn() })),
+    }, (texts: readonly string[]) => texts.map((text) => [text.length]));
+    const asyncClient = new ChromaDBClient(
+      new FakeAsyncChromaClient(),
+      (texts: readonly string[]) => texts.map((text) => [text.length]),
+    );
+
+    expect(() => {
+      syncClient.add_documents({ collection_name: "docs", documents: [] });
+    }).toThrow("Documents list cannot be empty");
+    await expect(asyncClient.aadd_documents({ collection_name: "docs", documents: [] }))
+      .rejects.toThrow("Documents list cannot be empty");
+  });
+
   it("uses upstream ChromaDB document id hashing and duplicate deduplication in add paths", () => {
     const collection = { upsert: vi.fn() };
     const client = new ChromaDBClient({
