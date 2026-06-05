@@ -29402,6 +29402,64 @@ describe("project config mapping", () => {
     expect(instance.seenStep).toContain("tool result");
   });
 
+  it("preserves CrewBase task callbacks receiving TaskOutput instances", async () => {
+    class CallbackCrewProject {
+      callbackCalled = false;
+      receivedOutput: TaskOutput | null = null;
+
+      taskCallback(output: TaskOutput) {
+        this.callbackCalled = true;
+        this.receivedOutput = output;
+      }
+
+      testTask() {
+        return new Task({
+          description: "Run callback task",
+          expectedOutput: "callback output",
+          agent: new Agent({
+            role: "Callback Agent",
+            goal: "Return a deterministic callback result",
+            backstory: "Keeps callback tests stable",
+            llm: () => "test result",
+          }),
+          callback: (output) => {
+            this.taskCallback(output);
+          },
+        });
+      }
+    }
+
+    const DecoratedCallbackCrewProject = decorateClass(CallbackCrewProject, CrewBase as unknown as Decorator);
+    const initializers = [
+      decorateMethod(CallbackCrewProject, "taskCallback", callback),
+      decorateMethod(CallbackCrewProject, "testTask", task),
+    ];
+    const instance = new DecoratedCallbackCrewProject();
+    initializers.forEach((initializer) => {
+      initializer.call(instance);
+    });
+    const taskInstance = instance.testTask();
+    const directOutput = new TaskOutput({
+      description: "Run callback task",
+      raw: "direct result",
+      agent: "Callback Agent",
+      outputFormat: OutputFormat.RAW,
+    });
+
+    await taskInstance.callback?.(directOutput);
+
+    expect(instance.callbackCalled).toBe(true);
+    expect(instance.receivedOutput).toBe(directOutput);
+
+    instance.callbackCalled = false;
+    instance.receivedOutput = null;
+    const executedOutput = await taskInstance.execute_sync();
+
+    expect(executedOutput.raw).toBe("test result");
+    expect(instance.callbackCalled).toBe(true);
+    expect(instance.receivedOutput).toBe(executedOutput);
+  });
+
   it("resolves outputJson decorator references in task config", () => {
     class JsonProject extends CrewProject {
       override tasksConfig = {
