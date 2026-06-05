@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 1163 passing tests.
+- Test suite: 1164 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -592,7 +592,7 @@ When more goal budget is available, continue from the behavioral parity audits b
   - native OpenAI/Azure/Anthropic/Bedrock support overrides for function calling, stop words, and multimodal capability where deterministic
   - OpenAI/Azure response-chain compatibility getters and reset methods (`last_response_id`, `last_reasoning_items`, `reset_chain`, `reset_reasoning_chain`)
   - OpenAI native completion shim now exposes upstream-style chat completions and Responses API request parameter builders, including built-in tools, custom tools, response format, stream usage options, instructions, includes, and reasoning fields
-  - OpenAI native completion shim now exposes upstream-style SDK response token usage extraction, Responses API result value-object helpers, parse-tool-output and auto-chain flags, explicit previous-response precedence, reasoning include de-duplication and input prepending, output parsing for function calls, built-in tool outputs, and reasoning items, and deterministic Responses streaming event accumulation, including cached prompt tokens and reasoning tokens
+  - OpenAI native completion shim now exposes upstream-style SDK response token usage extraction, Responses API result value-object helpers, parse-tool-output and auto-chain flags, explicit previous-response precedence, reasoning include de-duplication and input prepending, output parsing for function calls, built-in tool outputs, and reasoning items, and deterministic Responses streaming event accumulation, including omission of absent cached/reasoning token detail fields plus present cached prompt tokens and reasoning tokens
   - OpenAI Responses API parsing now handles SDK-like usage/detail getters and `model_dump` action objects for built-in computer-use outputs.
   - OpenAI native completion shim now explicitly exposes upstream-style provider alias methods on the provider class, including async calls, config serialization, capability checks, file uploaders, context windows, and response-chain reset/getters.
   - LiteLLM removal docs OpenAI-compatible migration is default-gated: object-style `create_llm({ model: "openai/llama3", base_url, api_key })` now preserves the custom endpoint/API key, strips the provider prefix to `llama3`, and keeps `is_litellm` false for Ollama/vLLM-style OpenAI-compatible endpoints.

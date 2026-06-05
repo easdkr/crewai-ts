@@ -32981,6 +32981,26 @@ describe("LLM providers", () => {
     })._extract_reasoning_items(response)).toEqual([reasoningItem]);
   });
 
+  it("omits OpenAI Responses cached and reasoning token fields when details are absent", () => {
+    const openai = new OpenAICompletion({ model: "gpt-4.1", api: "responses" });
+
+    expect((openai as unknown as {
+      _extract_responses_token_usage(response: unknown): Record<string, number>;
+    })._extract_responses_token_usage({
+      usage: {
+        input_tokens: 50,
+        output_tokens: 30,
+        total_tokens: 80,
+        input_tokens_details: null,
+        output_tokens_details: null,
+      },
+    })).toEqual({
+      prompt_tokens: 50,
+      completion_tokens: 30,
+      total_tokens: 80,
+    });
+  });
+
   it("models upstream OpenAI Responses API result defaults and helpers", () => {
     const empty = new ResponsesAPIResult({
       text: "Hello, world!",
