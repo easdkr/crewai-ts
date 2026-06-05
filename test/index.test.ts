@@ -23530,6 +23530,261 @@ describe("standard decorators", () => {
     }
   });
 
+  it("runs the crewAI-examples recruitment CrewBase workflow deterministically", async () => {
+    const prompts: string[] = [];
+    const serperTool = new StructuredTool({
+      name: "Serper Search",
+      description: "Search the web for candidate information",
+      func: ({ query }: { query: string }) => `Search result for ${query}`,
+    });
+    const scrapeWebsiteTool = new StructuredTool({
+      name: "Scrape Website",
+      description: "Scrape candidate profile pages",
+      func: ({ url }: { url: string }) => `Scraped profile from ${url}`,
+    });
+    const linkedInTool = new StructuredTool({
+      name: "Retrieve LinkedIn profiles",
+      description: "Retrieve LinkedIn profiles given a list of skills. Comma separated",
+      func: ({ skills }: { skills: string }) => [
+        "Person Profile",
+        "-------------",
+        "Avery Rails",
+        `Skills: ${skills}`,
+        "https://linkedin.example/avery",
+      ].join("\n"),
+    });
+
+    class RecruitmentCrew {
+      agents: Agent[] = [];
+      tasks: Task[] = [];
+      agents_config = {
+        researcher: {
+          role: "Job Candidate Researcher",
+          goal: "Find potential candidates for the job",
+          backstory: "Explores online resources to identify suitable candidates.",
+        },
+        matcher: {
+          role: "Candidate Matcher and Scorer",
+          goal: "Match the candidates to the best jobs and score them",
+          backstory: "Scores candidates against job positions and requirements.",
+        },
+        communicator: {
+          role: "Candidate Outreach Strategist",
+          goal: "Develop outreach strategies for the selected candidates",
+          backstory: "Creates effective outreach strategies and templates.",
+        },
+        reporter: {
+          role: "Candidate Reporting Specialist",
+          goal: "Report the best candidates to the recruiters",
+          backstory: "Compiles detailed reports for recruiters.",
+        },
+      };
+      tasks_config = {
+        research_candidates_task: {
+          description: [
+            "Conduct thorough research to find potential candidates for the specified job.",
+            "Utilize various online resources and databases to gather a comprehensive list of potential candidates.",
+            "Ensure that the candidates meet the job requirements provided.",
+            "",
+            "Job Requirements:",
+            "{job_requirements}",
+          ].join("\n"),
+          expected_output: "A list of 10 potential candidates with contact information and brief profiles.",
+        },
+        match_and_score_candidates_task: {
+          description: [
+            "Evaluate and match the candidates to the best job positions based on their qualifications and suitability.",
+            "Score each candidate to reflect their alignment with the job requirements.",
+            "Don't try to scrape people's linkedin, since you don't have access to it.",
+            "",
+            "Job Requirements:",
+            "{job_requirements}",
+          ].join("\n"),
+          expected_output: "A ranked list of candidates with detailed scores and justifications.",
+        },
+        outreach_strategy_task: {
+          description: [
+            "Develop a comprehensive strategy to reach out to the selected candidates.",
+            "Create effective outreach methods and templates that can engage the candidates.",
+            "",
+            "Job Requirements:",
+            "{job_requirements}",
+          ].join("\n"),
+          expected_output: "A detailed list of outreach methods and templates ready for implementation.",
+        },
+        report_candidates_task: {
+          description: [
+            "Compile a comprehensive report for recruiters on the best candidates to put forward.",
+            "Summarize the findings from the previous tasks and provide clear recommendations based on the job requirements.",
+          ].join("\n"),
+          expected_output: "A detailed report with the best candidates to pursue, formatted as markdown without code fences.",
+        },
+      };
+
+      createAgent(config: { role: string; goal: string; backstory: string }, tools: StructuredTool[] = []) {
+        return new Agent({
+          config,
+          role: config.role,
+          goal: config.goal,
+          backstory: config.backstory,
+          tools,
+          allow_delegation: false,
+          verbose: true,
+          llm: (messages) => {
+            const prompt = messages.at(-1)?.content ?? "";
+            prompts.push(prompt);
+            if (prompt.includes("Compile a comprehensive report")) {
+              return "Recruiter report: Avery Rails scored 94 with Rails, React, and outreach plan.";
+            }
+            if (prompt.includes("Develop a comprehensive strategy")) {
+              return "Outreach strategy: personalized Ruby on Rails and React message.";
+            }
+            if (prompt.includes("Evaluate and match the candidates")) {
+              return "Candidate scores: Avery Rails 94, Morgan React 88.";
+            }
+            return "Candidate research: Avery Rails, rails@example.com, Ruby on Rails and React profile.";
+          },
+        });
+      }
+
+      researcher() {
+        return this.createAgent(this.agents_config.researcher, [serperTool, scrapeWebsiteTool, linkedInTool]);
+      }
+
+      matcher() {
+        return this.createAgent(this.agents_config.matcher, [serperTool, scrapeWebsiteTool]);
+      }
+
+      communicator() {
+        return this.createAgent(this.agents_config.communicator, [serperTool, scrapeWebsiteTool]);
+      }
+
+      reporter() {
+        return this.createAgent(this.agents_config.reporter);
+      }
+
+      research_candidates_task() {
+        const config = this.tasks_config.research_candidates_task;
+        return new Task({
+          config,
+          description: config.description,
+          expected_output: config.expected_output,
+          agent: this.researcher(),
+        });
+      }
+
+      match_and_score_candidates_task() {
+        const config = this.tasks_config.match_and_score_candidates_task;
+        return new Task({
+          config,
+          description: config.description,
+          expected_output: config.expected_output,
+          agent: this.matcher(),
+        });
+      }
+
+      outreach_strategy_task() {
+        const config = this.tasks_config.outreach_strategy_task;
+        return new Task({
+          config,
+          description: config.description,
+          expected_output: config.expected_output,
+          agent: this.communicator(),
+        });
+      }
+
+      report_candidates_task() {
+        const config = this.tasks_config.report_candidates_task;
+        return new Task({
+          config,
+          description: config.description,
+          expected_output: config.expected_output,
+          agent: this.reporter(),
+          context: [
+            this.research_candidates_task(),
+            this.match_and_score_candidates_task(),
+            this.outreach_strategy_task(),
+          ],
+        });
+      }
+
+      crew() {
+        return new Crew({
+          agents: this.agents,
+          tasks: this.tasks,
+          process: Process.sequential,
+          verbose: 2,
+        });
+      }
+    }
+
+    const DecoratedRecruitmentCrew = decorateClass(RecruitmentCrew, CrewBase as unknown as Decorator);
+    const initializers = [
+      decorateMethod(RecruitmentCrew, "researcher", agent),
+      decorateMethod(RecruitmentCrew, "matcher", agent),
+      decorateMethod(RecruitmentCrew, "communicator", agent),
+      decorateMethod(RecruitmentCrew, "reporter", agent),
+      decorateMethod(RecruitmentCrew, "research_candidates_task", task),
+      decorateMethod(RecruitmentCrew, "match_and_score_candidates_task", task),
+      decorateMethod(RecruitmentCrew, "outreach_strategy_task", task),
+      decorateMethod(RecruitmentCrew, "report_candidates_task", task),
+      decorateMethod(RecruitmentCrew, "crew", crew),
+    ];
+    const project = new DecoratedRecruitmentCrew();
+    initializers.forEach((initializer) => {
+      initializer.call(project);
+    });
+
+    const jobRequirements = [
+      "title: Ruby on Rails and React Engineer",
+      "requirements: Ruby on Rails, React, SQL, Git",
+      "perks: remote work options",
+    ].join("\n");
+    const crewInstance = project.crew();
+    expect(crewInstance.process).toBe(Process.sequential);
+    expect(project.agents.map((projectAgent: Agent) => [projectAgent.role, projectAgent.allow_delegation])).toEqual([
+      ["Job Candidate Researcher", false],
+      ["Candidate Matcher and Scorer", false],
+      ["Candidate Outreach Strategist", false],
+      ["Candidate Reporting Specialist", false],
+    ]);
+    expect(project.researcher().tools.map((toolInstance) => toolInstance.name)).toEqual([
+      "serper_search",
+      "scrape_website",
+      "retrieve_linked_in_profiles",
+    ]);
+    expect(project.matcher().tools.map((toolInstance) => toolInstance.name)).toEqual([
+      "serper_search",
+      "scrape_website",
+    ]);
+    expect(project.reporter().tools).toEqual([]);
+    expect(project.tasks.map((projectTask: Task) => projectTask.name)).toEqual([
+      "research_candidates_task",
+      "match_and_score_candidates_task",
+      "outreach_strategy_task",
+      "report_candidates_task",
+    ]);
+    expect(project.report_candidates_task().context?.map((taskInstance) => taskInstance.name)).toEqual([
+      "research_candidates_task",
+      "match_and_score_candidates_task",
+      "outreach_strategy_task",
+    ]);
+
+    const output = await crewInstance.kickoff({ inputs: { job_requirements: jobRequirements } });
+
+    expect(output.raw).toContain("Recruiter report: Avery Rails scored 94");
+    expect(output.tasksOutput.map((taskOutput) => taskOutput.raw)).toEqual([
+      "Candidate research: Avery Rails, rails@example.com, Ruby on Rails and React profile.",
+      "Candidate scores: Avery Rails 94, Morgan React 88.",
+      "Outreach strategy: personalized Ruby on Rails and React message.",
+      "Recruiter report: Avery Rails scored 94 with Rails, React, and outreach plan.",
+    ]);
+    expect(prompts.some((prompt) => prompt.includes("Job Requirements:\ntitle: Ruby on Rails and React Engineer"))).toBe(true);
+    expect(prompts.some((prompt) => prompt.includes("Don't try to scrape people's linkedin"))).toBe(true);
+    expect(prompts.some((prompt) => prompt.includes("Candidate research: Avery Rails"))).toBe(true);
+    expect(prompts.some((prompt) => prompt.includes("Outreach strategy: personalized Ruby on Rails"))).toBe(true);
+  });
+
   it("infers names for directly awaited async task decorator factories", async () => {
     class AsyncTaskCrew {
       calls = 0;
