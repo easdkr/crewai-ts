@@ -13062,6 +13062,53 @@ describe("RAG configuration and factories", () => {
     });
   });
 
+  it("uses upstream Qdrant async search payload shape and result normalization", async () => {
+    const collectionExists = vi.fn(async () => await Promise.resolve(true));
+    const queryPoints = vi.fn(async () => await Promise.resolve({
+      points: [
+        { id: "doc-123", payload: { content: "Test content", source: "test" }, score: 0.95 },
+      ],
+    }));
+    const embeddingFunction = vi.fn(async (text: string) => await Promise.resolve([text.length, 0.2, 0.3]));
+    const client = new QdrantClient({
+      aquery_points: async () => await Promise.resolve({ points: [] }),
+      collection_exists: collectionExists,
+      query_points: queryPoints,
+    }, embeddingFunction);
+
+    await expect(client.asearch({
+      collection_name: "test_collection",
+      query: "test query",
+      limit: 5,
+      score_threshold: 0.8,
+      metadata_filter: { category: "tech", status: "published" },
+    })).resolves.toEqual([
+      {
+        id: "doc-123",
+        content: "Test content",
+        metadata: { source: "test" },
+        score: 0.975,
+      },
+    ]);
+
+    expect(collectionExists).toHaveBeenCalledWith("test_collection");
+    expect(embeddingFunction).toHaveBeenCalledWith("test query");
+    expect(queryPoints).toHaveBeenCalledWith({
+      collection_name: "test_collection",
+      query: [10, 0.2, 0.3],
+      limit: 5,
+      with_payload: true,
+      with_vectors: false,
+      score_threshold: 0.8,
+      query_filter: {
+        must: [
+          { key: "category", match: { value: "tech" } },
+          { key: "status", match: { value: "published" } },
+        ],
+      },
+    });
+  });
+
   it("deletes Qdrant collections with upstream existence checks", async () => {
     const syncCollectionExists = vi.fn()
       .mockReturnValueOnce(true)
