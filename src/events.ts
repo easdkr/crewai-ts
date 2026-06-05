@@ -4506,6 +4506,14 @@ export class TraceBatchManager {
     return this.isBatchInitialized();
   }
 
+  shouldFinalizeOnShutdown(): boolean {
+    return this.isBatchInitialized() && !this.deferSessionFinalization && !this.defer_session_finalization;
+  }
+
+  should_finalize_on_shutdown(): boolean {
+    return this.shouldFinalizeOnShutdown();
+  }
+
   waitForBatchInitialization(_timeout = 2.0): boolean {
     void _timeout;
     return this.currentBatch !== null;

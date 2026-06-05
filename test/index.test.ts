@@ -9799,6 +9799,27 @@ describe("telemetry compatibility", () => {
     });
   });
 
+  it("skips shutdown finalization for deferred session trace batches", () => {
+    const batchManager = new TraceBatchManager();
+    batchManager.initialize_batch(
+      { trace_id: "trace-sigint", privacy_level: "standard" },
+      { execution_type: "flow", flow_name: "ChatFlow" },
+    );
+    batchManager.defer_session_finalization = true;
+    batchManager.deferSessionFinalization = true;
+    const finalize = vi.spyOn(batchManager, "finalize_batch");
+
+    if (batchManager.should_finalize_on_shutdown()) {
+      batchManager.finalize_batch();
+    }
+
+    expect(finalize).not.toHaveBeenCalled();
+    batchManager.defer_session_finalization = false;
+    batchManager.deferSessionFinalization = false;
+    expect(batchManager.should_finalize_on_shutdown()).toBe(true);
+    finalize.mockRestore();
+  });
+
   it("claims flow trace batches for action events inside active flow context", () => {
     const listener = new TraceCollectionListener();
     const previousFlowId = currentFlowId.set("flow-test-id");
