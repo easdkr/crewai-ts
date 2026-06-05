@@ -24301,6 +24301,233 @@ describe("standard decorators", () => {
     expect(prompts.some((prompt) => prompt.includes("Activities: Brooklyn Bridge Park"))).toBe(true);
   });
 
+  it("runs the crewAI-examples trip-planner manual crew workflow deterministically", async () => {
+    const prompts: string[] = [];
+    const searchInternet = new StructuredTool({
+      name: "Search the internet",
+      description: "Useful to search the internet about a given topic and return relevant results",
+      func: ({ query }: { query: string }) => `Search result for ${query}`,
+    });
+    const scrapeWebsite = new StructuredTool({
+      name: "Scrape website content",
+      description: "Useful to scrape and summarize a website content",
+      func: ({ website }: { website: string }) => `Summary for ${website}`,
+    });
+    const makeCalculation = new StructuredTool({
+      name: "Make a calculation",
+      description: "Useful to perform mathematical calculations.",
+      func: ({ operation }: { operation: string }) => {
+        if (!/^[0-9+\-*/().% ]+$/.test(operation)) {
+          return "Error: Invalid characters in mathematical expression";
+        }
+        return "1200";
+      },
+    });
+
+    class TripAgents {
+      readonly llm = (messages: readonly LLMMessage[]) => {
+        const prompt = messages.at(-1)?.content ?? "";
+        prompts.push(prompt);
+        if (prompt.includes("Expand this guide into a full 7-day travel")) {
+          return "7-day itinerary: Lisbon hotels, restaurants, packing list, and a $1200 budget.";
+        }
+        if (prompt.includes("As a local expert on this city")) {
+          return "City guide: Lisbon hidden viewpoints, Fado venues, local customs, and daily tips.";
+        }
+        return "Chosen city report: Lisbon has mild weather, culture, food, and lower travel costs.";
+      };
+
+      city_selection_agent() {
+        return new Agent({
+          role: "City Selection Expert",
+          goal: "Select the best city based on weather, season, and prices",
+          backstory: "An expert in analyzing travel data to pick ideal destinations",
+          tools: [searchInternet, scrapeWebsite],
+          verbose: true,
+          llm: this.llm,
+        });
+      }
+
+      local_expert() {
+        return new Agent({
+          role: "Local Expert at this city",
+          goal: "Provide the BEST insights about the selected city",
+          backstory: "A knowledgeable local guide with extensive information about the city, its attractions and customs",
+          tools: [searchInternet, scrapeWebsite],
+          verbose: true,
+          llm: this.llm,
+        });
+      }
+
+      travel_concierge() {
+        return new Agent({
+          role: "Amazing Travel Concierge",
+          goal: "Create the most amazing travel itineraries with budget and packing suggestions for the city",
+          backstory: "Specialist in travel planning and logistics with decades of experience",
+          tools: [searchInternet, scrapeWebsite, makeCalculation],
+          verbose: true,
+          llm: this.llm,
+        });
+      }
+    }
+
+    class TripTasks {
+      identify_task(agentInstance: Agent, origin: string, cities: string, interests: string, range: string) {
+        return new Task({
+          description: [
+            "Analyze and select the best city for the trip based",
+            "on specific criteria such as weather patterns, seasonal",
+            "events, and travel costs.",
+            "",
+            "Your final answer must be a detailed report on the chosen city, and everything you found out",
+            "about it, including the actual flight costs, weather forecast and attractions.",
+            this.tip_section(),
+            "",
+            `Traveling from: ${origin}`,
+            `City Options: ${cities}`,
+            `Trip Date: ${range}`,
+            `Traveler Interests: ${interests}`,
+          ].join("\n"),
+          agent: agentInstance,
+          expected_output: "Detailed report on the chosen city including flight costs, weather forecast, and attractions",
+        });
+      }
+
+      gather_task(agentInstance: Agent, origin: string, interests: string, range: string) {
+        return new Task({
+          description: [
+            "As a local expert on this city you must compile an",
+            "in-depth guide for someone traveling there and wanting",
+            "to have THE BEST trip ever!",
+            "Gather information about key attractions, local customs, special events, and daily activity recommendations.",
+            "",
+            "The final answer must be a comprehensive city guide, rich in cultural insights and practical tips,",
+            "tailored to enhance the travel experience.",
+            this.tip_section(),
+            "",
+            `Trip Date: ${range}`,
+            `Traveling from: ${origin}`,
+            `Traveler Interests: ${interests}`,
+          ].join("\n"),
+          agent: agentInstance,
+          expected_output: "Comprehensive city guide including hidden gems, cultural hotspots, and practical travel tips",
+        });
+      }
+
+      plan_task(agentInstance: Agent, origin: string, interests: string, range: string) {
+        return new Task({
+          description: [
+            "Expand this guide into a full 7-day travel",
+            "itinerary with detailed per-day plans, including",
+            "weather forecasts, places to eat, packing suggestions,",
+            "and a budget breakdown.",
+            "",
+            "You MUST suggest actual places to visit, actual hotels",
+            "to stay and actual restaurants to go to.",
+            "",
+            "Your final answer MUST be a complete expanded travel plan, formatted as markdown.",
+            this.tip_section(),
+            "",
+            `Trip Date: ${range}`,
+            `Traveling from: ${origin}`,
+            `Traveler Interests: ${interests}`,
+          ].join("\n"),
+          agent: agentInstance,
+          expected_output: "Complete expanded travel plan with daily schedule, weather conditions, packing suggestions, and budget breakdown",
+        });
+      }
+
+      private tip_section() {
+        return "If you do your BEST WORK, I'll tip you $100!";
+      }
+    }
+
+    class TripCrew {
+      constructor(
+        private readonly origin: string,
+        private readonly cities: string,
+        private readonly dateRange: string,
+        private readonly interests: string,
+      ) {}
+
+      run() {
+        const agents = new TripAgents();
+        const tasks = new TripTasks();
+        const citySelectorAgent = agents.city_selection_agent();
+        const localExpertAgent = agents.local_expert();
+        const travelConciergeAgent = agents.travel_concierge();
+        const identifyTask = tasks.identify_task(
+          citySelectorAgent,
+          this.origin,
+          this.cities,
+          this.interests,
+          this.dateRange,
+        );
+        const gatherTask = tasks.gather_task(
+          localExpertAgent,
+          this.origin,
+          this.interests,
+          this.dateRange,
+        );
+        const planTask = tasks.plan_task(
+          travelConciergeAgent,
+          this.origin,
+          this.interests,
+          this.dateRange,
+        );
+        const crewInstance = new Crew({
+          agents: [citySelectorAgent, localExpertAgent, travelConciergeAgent],
+          tasks: [identifyTask, gatherTask, planTask],
+          verbose: true,
+        });
+        return { crewInstance, result: crewInstance.kickoff() };
+      }
+    }
+
+    const { crewInstance, result } = new TripCrew(
+      "Seoul, ICN",
+      "Lisbon, Porto, Barcelona",
+      "September 1-7, 2026",
+      "food, architecture, music",
+    ).run();
+
+    expect(crewInstance.process).toBe(Process.sequential);
+    expect(crewInstance.agents.map((agentInstance) => agentInstance.role)).toEqual([
+      "City Selection Expert",
+      "Local Expert at this city",
+      "Amazing Travel Concierge",
+    ]);
+    expect(crewInstance.agents[0]?.tools.map((toolInstance) => toolInstance.name)).toEqual([
+      "search_the_internet",
+      "scrape_website_content",
+    ]);
+    expect(crewInstance.agents[2]?.tools.map((toolInstance) => toolInstance.name)).toEqual([
+      "search_the_internet",
+      "scrape_website_content",
+      "make_a_calculation",
+    ]);
+    expect(crewInstance.tasks.map((taskInstance) => taskInstance.expected_output)).toEqual([
+      "Detailed report on the chosen city including flight costs, weather forecast, and attractions",
+      "Comprehensive city guide including hidden gems, cultural hotspots, and practical travel tips",
+      "Complete expanded travel plan with daily schedule, weather conditions, packing suggestions, and budget breakdown",
+    ]);
+
+    const output = await result;
+
+    expect(output.raw).toContain("7-day itinerary: Lisbon");
+    expect(output.tasksOutput.map((taskOutput) => taskOutput.raw)).toEqual([
+      "Chosen city report: Lisbon has mild weather, culture, food, and lower travel costs.",
+      "City guide: Lisbon hidden viewpoints, Fado venues, local customs, and daily tips.",
+      "7-day itinerary: Lisbon hotels, restaurants, packing list, and a $1200 budget.",
+    ]);
+    expect(prompts.some((prompt) => prompt.includes("Traveling from: Seoul, ICN"))).toBe(true);
+    expect(prompts.some((prompt) => prompt.includes("City Options: Lisbon, Porto, Barcelona"))).toBe(true);
+    expect(prompts.some((prompt) => prompt.includes("Trip Date: September 1-7, 2026"))).toBe(true);
+    expect(prompts.some((prompt) => prompt.includes("Traveler Interests: food, architecture, music"))).toBe(true);
+    expect(prompts.every((prompt) => prompt.includes("If you do your BEST WORK"))).toBe(true);
+    expect(prompts.some((prompt) => prompt.includes("City guide: Lisbon hidden viewpoints"))).toBe(true);
+  });
+
   it("infers names for directly awaited async task decorator factories", async () => {
     class AsyncTaskCrew {
       calls = 0;
