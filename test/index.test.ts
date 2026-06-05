@@ -25109,6 +25109,327 @@ describe("standard decorators", () => {
       .includes("NVIDIA NIM Enterprise Strategy"))).toBe(true);
   });
 
+  it("runs the crewAI-examples CrewAI-LangGraph email workflow deterministically", async () => {
+    type EmailRecord = {
+      id: string;
+      threadId: string;
+      snippet: string;
+      sender: string;
+    };
+    type EmailsState = {
+      checked_emails_ids: string[];
+      emails: EmailRecord[];
+      action_required_emails?: CrewOutput;
+    };
+    type NodeHandler = (state: EmailsState) => EmailsState | Promise<EmailsState>;
+    const visited: string[] = [];
+    const prompts: string[] = [];
+    const searchedQueries: string[] = [];
+    const slept: number[] = [];
+    const sourceEmails: EmailRecord[] = [
+      {
+        id: "email-1",
+        threadId: "thread-a",
+        snippet: "Can you review the enterprise rollout plan?",
+        sender: "customer@example.com",
+      },
+      {
+        id: "email-2",
+        threadId: "thread-a",
+        snippet: "Duplicate thread update",
+        sender: "customer@example.com",
+      },
+      {
+        id: "email-3",
+        threadId: "thread-b",
+        snippet: "Newsletter: weekly updates",
+        sender: "news@example.com",
+      },
+      {
+        id: "email-4",
+        threadId: "thread-c",
+        snippet: "Sent by the user",
+        sender: "me@example.com",
+      },
+    ];
+
+    class StateGraphShim {
+      private readonly nodes = new Map<string, NodeHandler>();
+      private readonly edges = new Map<string, string>();
+      private conditional: {
+        from: string;
+        router: (state: EmailsState) => string;
+        branches: Record<string, string>;
+      } | null = null;
+      private entryPoint = "";
+
+      add_node(name: string, handler: NodeHandler) {
+        this.nodes.set(name, handler);
+      }
+
+      add_edge(from: string, to: string) {
+        this.edges.set(from, to);
+      }
+
+      add_conditional_edges(from: string, router: (state: EmailsState) => string, branches: Record<string, string>) {
+        this.conditional = { from, router, branches };
+      }
+
+      set_entry_point(name: string) {
+        this.entryPoint = name;
+      }
+
+      compile() {
+        return {
+          invoke: async (initialState: Partial<EmailsState> = {}) => {
+            let state: EmailsState = {
+              checked_emails_ids: initialState.checked_emails_ids ?? [],
+              emails: initialState.emails ?? [],
+              action_required_emails: initialState.action_required_emails,
+            };
+            let current = this.entryPoint;
+            for (let step = 0; step < 4; step += 1) {
+              visited.push(current);
+              const handler = this.nodes.get(current);
+              if (!handler) {
+                throw new Error(`Missing node ${current}`);
+              }
+              state = await handler(state);
+              if (this.conditional?.from === current) {
+                current = this.conditional.branches[this.conditional.router(state)] ?? "";
+              } else {
+                current = this.edges.get(current) ?? "";
+              }
+              if (current === "wait_next_run" && visited.includes("wait_next_run")) {
+                break;
+              }
+            }
+            return state;
+          },
+        };
+      }
+    }
+
+    class Nodes {
+      constructor(private readonly myEmail: string) {}
+
+      check_email(state: EmailsState): EmailsState {
+        searchedQueries.push("after:newer_than:1d");
+        const checkedEmails = [...state.checked_emails_ids];
+        const thread: string[] = [];
+        const newEmails: EmailRecord[] = [];
+        for (const email of sourceEmails) {
+          if (!checkedEmails.includes(email.id) && !thread.includes(email.threadId) && !email.sender.includes(this.myEmail)) {
+            thread.push(email.threadId);
+            newEmails.push({
+              id: email.id,
+              threadId: email.threadId,
+              snippet: email.snippet,
+              sender: email.sender,
+            });
+          }
+        }
+        checkedEmails.push(...sourceEmails.map((email) => email.id));
+        return { ...state, emails: newEmails, checked_emails_ids: checkedEmails };
+      }
+
+      wait_next_run(state: EmailsState): EmailsState {
+        slept.push(180);
+        return state;
+      }
+
+      new_emails(state: EmailsState) {
+        return state.emails.length === 0 ? "end" : "continue";
+      }
+    }
+
+    class EmailFilterAgents {
+      email_filter_agent() {
+        return new Agent({
+          role: "Senior Email Analyst",
+          goal: "Filter out non-essential emails like newsletters and promotional content",
+          backstory: "Distinguishes important emails from spam, newsletters, and irrelevant content.",
+          verbose: true,
+          allow_delegation: false,
+          llm: (messages) => {
+            const prompt = messages.at(-1)?.content ?? "";
+            prompts.push(prompt);
+            return "- thread-a | customer@example.com";
+          },
+        });
+      }
+
+      email_action_agent() {
+        return new Agent({
+          role: "Email Action Specialist",
+          goal: "Identify action-required emails and compile a list of their IDs",
+          backstory: "Understands urgency and context from email threads.",
+          tools: [
+            new StructuredTool({ name: "Gmail Get Thread", description: "Get a Gmail thread", func: () => "thread body" }),
+            new StructuredTool({ name: "Tavily Search Results", description: "Search the web", func: () => "search result" }),
+          ],
+          verbose: true,
+          allow_delegation: false,
+          llm: (messages) => {
+            const prompt = messages.at(-1)?.content ?? "";
+            prompts.push(prompt);
+            return "thread-a summary: customer needs rollout review; sender customer@example.com";
+          },
+        });
+      }
+
+      email_response_writer() {
+        return new Agent({
+          role: "Email Response Writer",
+          goal: "Draft responses to action-required emails",
+          backstory: "Crafts concise and effective email responses.",
+          tools: [
+            new StructuredTool({ name: "Tavily Search Results", description: "Search the web", func: () => "search result" }),
+            new StructuredTool({ name: "Gmail Get Thread", description: "Get a Gmail thread", func: () => "thread body" }),
+            new StructuredTool({
+              name: "Create Draft",
+              description: "Create an email draft from pipe separated to, subject, message input.",
+              func: ({ data }: { data: string }) => `Draft created: ${data}`,
+            }),
+          ],
+          verbose: true,
+          allow_delegation: false,
+          llm: (messages) => {
+            const prompt = messages.at(-1)?.content ?? "";
+            prompts.push(prompt);
+            return "All responses have been drafted.";
+          },
+        });
+      }
+    }
+
+    class EmailFilterTasks {
+      filter_emails_task(agentInstance: Agent, emails: string) {
+        return new Task({
+          description: [
+            "Analyze a batch of emails and filter out non-essential ones such as newsletters, promotional content and notifications.",
+            "Make sure to filter for the messages actually directed at the user and avoid notifications.",
+            "",
+            "EMAILS",
+            "-------",
+            emails,
+            "",
+            "Your final answer MUST be a the relevant thread_ids and the sender, use bullet points.",
+          ].join("\n"),
+          expected_output: "Relevant thread ids and senders",
+          agent: agentInstance,
+        });
+      }
+
+      action_required_emails_task(agentInstance: Agent) {
+        return new Task({
+          description: [
+            "For each email thread, pull and analyze the complete threads using only the actual Thread ID.",
+            "Identify the main query or concerns that needs to be addressed in the response for each",
+          ].join("\n"),
+          expected_output: "Action-required email summaries",
+          agent: agentInstance,
+        });
+      }
+
+      draft_responses_task(agentInstance: Agent) {
+        return new Task({
+          description: [
+            "Based on the action-required emails identified, draft responses for each.",
+            "Use the tool provided to draft each of the responses.",
+            "When using the tool pass the following input:",
+            "- to (sender to be responded)",
+            "- subject",
+            "- message",
+            "You MUST create all drafts before sending your final answer.",
+          ].join("\n"),
+          expected_output: "Confirmation that all responses have been drafted",
+          agent: agentInstance,
+        });
+      }
+    }
+
+    class EmailFilterCrew {
+      private readonly filterAgent: Agent;
+      private readonly actionAgent: Agent;
+      private readonly writerAgent: Agent;
+
+      constructor() {
+        const agents = new EmailFilterAgents();
+        this.filterAgent = agents.email_filter_agent();
+        this.actionAgent = agents.email_action_agent();
+        this.writerAgent = agents.email_response_writer();
+      }
+
+      async kickoff(state: EmailsState): Promise<EmailsState> {
+        const tasks = new EmailFilterTasks();
+        const crewInstance = new Crew({
+          agents: [this.filterAgent, this.actionAgent, this.writerAgent],
+          tasks: [
+            tasks.filter_emails_task(this.filterAgent, this.format_emails(state.emails)),
+            tasks.action_required_emails_task(this.actionAgent),
+            tasks.draft_responses_task(this.writerAgent),
+          ],
+          verbose: true,
+        });
+        const result = await crewInstance.kickoff();
+        return { ...state, action_required_emails: result };
+      }
+
+      format_emails(emails: readonly EmailRecord[]) {
+        return emails.map((email) => [
+          `ID: ${email.id}`,
+          `- Thread ID: ${email.threadId}`,
+          `- Snippet: ${email.snippet}`,
+          `- From: ${email.sender}`,
+          "--------",
+        ].join("\n")).join("\n");
+      }
+    }
+
+    class WorkFlow {
+      readonly app: ReturnType<StateGraphShim["compile"]>;
+
+      constructor() {
+        const nodes = new Nodes("me@example.com");
+        const workflow = new StateGraphShim();
+        workflow.add_node("check_new_emails", (state) => nodes.check_email(state));
+        workflow.add_node("wait_next_run", (state) => nodes.wait_next_run(state));
+        workflow.add_node("draft_responses", (state) => new EmailFilterCrew().kickoff(state));
+        workflow.set_entry_point("check_new_emails");
+        workflow.add_conditional_edges("check_new_emails", (state) => nodes.new_emails(state), {
+          continue: "draft_responses",
+          end: "wait_next_run",
+        });
+        workflow.add_edge("draft_responses", "wait_next_run");
+        workflow.add_edge("wait_next_run", "check_new_emails");
+        this.app = workflow.compile();
+      }
+    }
+
+    const state = await new WorkFlow().app.invoke({});
+
+    expect(visited).toEqual(["check_new_emails", "draft_responses", "wait_next_run", "check_new_emails"]);
+    expect(searchedQueries).toEqual(["after:newer_than:1d", "after:newer_than:1d"]);
+    expect(slept).toEqual([180]);
+    expect(state.checked_emails_ids).toEqual([
+      "email-1",
+      "email-2",
+      "email-3",
+      "email-4",
+      "email-1",
+      "email-2",
+      "email-3",
+      "email-4",
+    ]);
+    expect(state.emails).toEqual([]);
+    expect(state.action_required_emails?.raw).toContain("All responses have been drafted.");
+    expect(prompts.some((prompt) => prompt.includes("ID: email-1"))).toBe(true);
+    expect(prompts.some((prompt) => prompt.includes("- Thread ID: thread-a"))).toBe(true);
+    expect(prompts.some((prompt) => prompt.includes("thread-a summary: customer needs rollout review"))).toBe(true);
+    expect(prompts.some((prompt) => prompt.includes("Use the tool provided to draft each of the responses."))).toBe(true);
+  });
+
   it("infers names for directly awaited async task decorator factories", async () => {
     class AsyncTaskCrew {
       calls = 0;
