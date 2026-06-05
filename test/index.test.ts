@@ -29922,6 +29922,44 @@ describe("tools", () => {
     expect(defaultTool.current_usage_count).toBe(0);
   });
 
+  it("tracks upstream BaseTool usage limits, unlimited runs, and reset aliases", () => {
+    class ProcessingTool extends BaseTool {
+      constructor(maxUsageCount: number | null = null) {
+        super({
+          name: "processing tool",
+          description: "Process text",
+          max_usage_count: maxUsageCount,
+        });
+      }
+
+      protected _run(args: Record<string, unknown>): string {
+        return `Processed ${String(args.inputText)}`;
+      }
+    }
+
+    const limitedTool = new ProcessingTool(2);
+    expect(limitedTool.run({ inputText: "test1" })).toBe("Processed test1");
+    expect(limitedTool.current_usage_count).toBe(1);
+    expect(limitedTool.run({ inputText: "test2" })).toBe("Processed test2");
+    expect(limitedTool.current_usage_count).toBe(2);
+    expect(limitedTool.has_reached_max_usage_count()).toBe(true);
+
+    limitedTool.reset_usage_count();
+    expect(limitedTool.current_usage_count).toBe(0);
+    expect(limitedTool.has_reached_max_usage_count()).toBe(false);
+    expect(limitedTool.run({ inputText: "test3" })).toBe("Processed test3");
+    expect(limitedTool.current_usage_count).toBe(1);
+
+    const unlimitedTool = new ProcessingTool();
+    for (let index = 0; index < 5; index += 1) {
+      expect(unlimitedTool.run({ inputText: `test${String(index)}` })).toBe(`Processed test${String(index)}`);
+      expect(unlimitedTool.current_usage_count).toBe(index + 1);
+    }
+    expect(unlimitedTool.max_usage_count).toBeNull();
+    expect(unlimitedTool.has_reached_max_usage_count()).toBe(false);
+    expect(() => new ProcessingTool(-1)).toThrow("max_usage_count must be a positive integer");
+  });
+
   it("preserves upstream tool cache_function defaults and aliases", () => {
     const noCache = () => false;
 
