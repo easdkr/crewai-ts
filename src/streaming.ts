@@ -152,7 +152,9 @@ export abstract class StreamingOutputBase<TResult> implements AsyncIterable<Stre
   }
 
   close(): void {
-    this.cancelled = true;
+    if (!this.completed) {
+      this.cancelled = true;
+    }
     this.completed = true;
   }
 

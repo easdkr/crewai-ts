@@ -44960,6 +44960,34 @@ describe("streaming output", () => {
     expect(runCount).toBe(0);
   });
 
+  it("keeps completed streaming outputs uncancelled when close is called again", async () => {
+    const crewOutput = new CrewOutput({ raw: "crew done" });
+    const crewStreaming = new CrewStreamingOutput(() => Promise.resolve(crewOutput));
+    const crewChunks: StreamChunk[] = [];
+
+    for await (const chunk of crewStreaming) {
+      crewChunks.push(chunk);
+    }
+    crewStreaming.close();
+    await crewStreaming.aclose();
+
+    expect(crewChunks.map((chunk) => chunk.content)).toEqual(["crew done"]);
+    expect(crewStreaming.is_completed).toBe(true);
+    expect(crewStreaming.is_cancelled).toBe(false);
+
+    const flowStreaming = new FlowStreamingOutput(() => Promise.resolve("flow done"));
+    const flowChunks: StreamChunk[] = [];
+
+    for await (const chunk of flowStreaming) {
+      flowChunks.push(chunk);
+    }
+    flowStreaming.close();
+
+    expect(flowChunks.map((chunk) => chunk.content)).toEqual(["flow done"]);
+    expect(flowStreaming.is_completed).toBe(true);
+    expect(flowStreaming.is_cancelled).toBe(false);
+  });
+
   it("exposes upstream-style streaming async iterator helpers", async () => {
     const streaming = new FlowStreamingOutput(async () => {
       await Promise.resolve();
