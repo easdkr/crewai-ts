@@ -24488,6 +24488,77 @@ describe("flow runtime", () => {
     expect(flow.state.seen).toBe(payload);
   });
 
+  it("runs the crewAI-examples self-evaluation retry start loop deterministically", async () => {
+    class SelfEvaluationFlow extends Flow<{
+      x_post: string;
+      feedback: string | null;
+      valid: boolean;
+      retry_count: number;
+      generated: string[];
+      saved: string[];
+      exits: string[];
+    }> {
+      constructor() {
+        super({
+          initialState: {
+            x_post: "",
+            feedback: null,
+            valid: false,
+            retry_count: 0,
+            generated: [],
+            saved: [],
+            exits: [],
+          },
+        });
+      }
+
+      generatePost() {
+        const post = `post-${String(this.state.retry_count)}:${this.state.feedback ?? "none"}`;
+        this.state.x_post = post;
+        this.state.generated.push(post);
+      }
+
+      evaluatePost() {
+        if (this.state.retry_count > 3) {
+          return "max_retry_exceeded";
+        }
+        this.state.valid = this.state.retry_count >= 1;
+        this.state.feedback = this.state.valid ? "approved" : "needs one revision";
+        this.state.retry_count += 1;
+        return this.state.valid ? "complete" : "retry";
+      }
+
+      saveResult() {
+        this.state.saved.push(this.state.x_post);
+      }
+
+      maxRetryExceededExit() {
+        this.state.exits.push(`${this.state.x_post}:${this.state.feedback ?? ""}`);
+      }
+    }
+
+    const initializers = [
+      decorateMethod(SelfEvaluationFlow, "generatePost", start("retry") as unknown as Decorator),
+      decorateMethod(SelfEvaluationFlow, "evaluatePost", router("generatePost") as unknown as Decorator),
+      decorateMethod(SelfEvaluationFlow, "saveResult", listen("complete") as unknown as Decorator),
+      decorateMethod(SelfEvaluationFlow, "maxRetryExceededExit", listen("max_retry_exceeded") as unknown as Decorator),
+    ];
+    const flow = new SelfEvaluationFlow();
+    initializers.forEach((initializer) => {
+      initializer.call(flow);
+    });
+
+    await expect(flow.kickoff()).resolves.toBeUndefined();
+
+    expect(flow.state.generated).toEqual([
+      "post-0:none",
+      "post-1:needs one revision",
+    ]);
+    expect(flow.state.retry_count).toBe(2);
+    expect(flow.state.saved).toEqual(["post-1:needs one revision"]);
+    expect(flow.state.exits).toEqual([]);
+  });
+
   it("exposes upstream Flow tracing disabled helper", () => {
     const previous = process.env.CREWAI_TRACING_DISABLED_MESSAGE_SHOWN;
     delete process.env.CREWAI_TRACING_DISABLED_MESSAGE_SHOWN;

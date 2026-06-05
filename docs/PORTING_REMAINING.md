@@ -14,12 +14,13 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 1189 passing tests.
+- Test suite: 1190 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
 - Subpath export parity: `total_missing=0`, `total_mismatched=0`.
 - The 2026-06-05 external examples audit promoted the deterministic `crewAI-examples` lead-score Flow shape into the local Flow concepts test: mixed method-reference/string conditions via `listen(or_(method, "event"))` and `router(method)` are release-gated without live crews, file IO, or provider calls.
+- The 2026-06-05 external examples audit also promoted the deterministic `crewAI-examples` self-evaluation loop Flow shape: `@start("retry")` methods now run as initial starts and re-run when routers emit the retry event, while complete/max-retry listeners remain event-routed without live crews or file writes.
 - A 2026-06-05 latest-upstream audit at `906cd9769d7e2125485bbc09e8d8ef5cb1c29805` found new Flow DSL export surfaces from `feat(flow): type DSL triggers as route-aware decorators`: `flow/dsl/_conditions`, `_human_feedback`, `_listen`, `_router`, `_start`, `_types`, `_utils`, plus `FlowTrigger` and `FlowMethodDecorator`. These are now covered by package subpath exports and deterministic root marker exports; latest-upstream root, class-method, and subpath parity all report `total_missing=0`.
 - The same latest-upstream conversation regression audit promoted two deterministic `test_flow_conversation.py` behaviors into the local gate: overriding inherited `conversation_start` without redecorating keeps the conversational start registered, and multi-turn `handle_turn` reruns the graph after a prior turn completes instead of returning stale method output.
 - The same latest-upstream FlowDefinition contract audit is now release-gated deterministically: Flow DSL condition dictionaries validate only `type` / `conditions` / `methods`, reject string-valued condition/method sequences and unknown keys, normalize upstream `methods` fragments into runtime condition lists, map `@start("event")`, callable listeners, string listeners, and nested `and_` / `or_` condition sugar into FlowDefinition fragments and runtime listener registries, classify `@start` methods with human-feedback `emit` as router-capable static method definitions, preserve loaded serialized diagnostics without duplicating generated contract diagnostics, keep dynamic-router string listeners plus static string listeners as valid permissive contracts, and report `router_without_trigger` when a loaded router has `start: false` without a listener.

@@ -2402,7 +2402,9 @@ export class Flow<TState extends object = Record<string, unknown>> {
         outputs.set(methodName, restoredMethodOutputs[index]);
       });
 
-      for (const entry of entries.filter((candidate) => candidate.kind === "start" && !candidate.condition)) {
+      const startEntries = entries.filter((candidate) => candidate.kind === "start");
+      const unconditionalStartEntries = startEntries.filter((candidate) => !candidate.condition);
+      for (const entry of (unconditionalStartEntries.length > 0 ? unconditionalStartEntries : startEntries)) {
         const name = String(entry.name);
         if (!skipCompletedMethods.has(name)) {
           queue.push({ name, input: inputs, triggeredByEventId: null });
