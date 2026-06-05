@@ -7,7 +7,7 @@ import { pathToFileURL } from "node:url";
 import { gzipSync } from "node:zlib";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { HTTPTransport as HookHTTPTransport } from "../src/llms-hooks-transport.js";
+import { AsyncHTTPTransport as HookAsyncHTTPTransport, HTTPTransport as HookHTTPTransport } from "../src/llms-hooks-transport.js";
 import {
   A2AClientConfig,
   A2AConfig,
@@ -43148,6 +43148,45 @@ describe("global hooks", () => {
       path: "/v1/chat?outbound=1",
       response: true,
     });
+  });
+
+  it("intercepts asynchronous LLM hook transport requests without using sync hooks", async () => {
+    const calls: string[] = [];
+    class TestInterceptor extends BaseInterceptor<{ path: string }, { path: string; response?: boolean }> {
+      on_outbound(message: { path: string }): { path: string } {
+        calls.push(`sync-outbound:${message.path}`);
+        return message;
+      }
+
+      on_inbound(message: { path: string; response?: boolean }): { path: string; response?: boolean } {
+        calls.push(`sync-inbound:${message.path}`);
+        return message;
+      }
+
+      override async aon_outbound(message: { path: string }): Promise<{ path: string }> {
+        calls.push(`async-outbound:${message.path}`);
+        await Promise.resolve();
+        return { path: `${message.path}?async=1` };
+      }
+
+      override async aon_inbound(message: { path: string; response?: boolean }): Promise<{ path: string; response?: boolean }> {
+        calls.push(`async-inbound:${message.path}`);
+        await Promise.resolve();
+        return { ...message, response: true };
+      }
+    }
+
+    const transport = new HookAsyncHTTPTransport(new TestInterceptor(), { timeout: 10 });
+
+    await expect(transport.handle_async_request({ path: "/v1/responses" })).resolves.toEqual({
+      path: "/v1/responses?async=1",
+      response: true,
+    });
+    expect(transport.kwargs).toEqual({ timeout: 10 });
+    expect(calls).toEqual([
+      "async-outbound:/v1/responses",
+      "async-inbound:/v1/responses?async=1",
+    ]);
   });
 
   it("exposes BaseInterceptor pydantic schema compatibility hooks", () => {

@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 1128 passing tests.
+- Test suite: 1129 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -671,7 +671,7 @@ When more goal budget is available, continue from the behavioral parity audits b
 - Added hooks compatibility behavior:
   - Filtered hook decorator factories now register upstream-style global wrappers for function hooks, preserve snake_case marker metadata, and apply sanitized tool/agent filters.
   - Filtered hook wrapper classes now expose upstream-style `__call__` aliases while preserving existing `call` helpers.
-  - LLM hook transport subpath now exports upstream-style synchronous `HTTPTransport.handle_request` alongside `AsyncHTTPTransport`.
+  - LLM hook transport subpath now exports upstream-style synchronous `HTTPTransport.handle_request` and asynchronous `AsyncHTTPTransport.handle_async_request`; both preserve constructor kwargs and route outbound/inbound traffic through the matching sync or async interceptor hooks.
   - `BaseInterceptor` now exposes upstream-style Pydantic schema and interceptor validation hooks for model compatibility.
 - Added planning compatibility behavior:
   - ReAct agent parser `_safe_repair_json` now handles upstream loose tool-input JSON cases such as markdown-prefixed inputs, trailing commas, single quotes, missing colons/commas, unclosed objects, unquoted string values, and trailing text.
