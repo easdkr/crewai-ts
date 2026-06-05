@@ -34552,6 +34552,30 @@ describe("LLM providers", () => {
     }]);
   });
 
+  it("keeps Gemini direct stop assignments synchronized with API stop sequences", () => {
+    const gemini = new GeminiCompletion({ model: "gemini-2.0-flash-001" });
+
+    gemini.stop = ["\nObservation:", "\nThought:"];
+    expect(gemini.stop_sequences).toEqual(["\nObservation:", "\nThought:"]);
+    expect(gemini.stop).toEqual(["\nObservation:", "\nThought:"]);
+    expect((gemini as unknown as {
+      _prepare_generation_config(): Record<string, unknown>;
+    })._prepare_generation_config()).toMatchObject({
+      stop_sequences: ["\nObservation:", "\nThought:"],
+    });
+
+    gemini.stop = "\nFinal Answer:";
+    expect(gemini.stop_sequences).toEqual(["\nFinal Answer:"]);
+    expect(gemini.stop).toEqual(["\nFinal Answer:"]);
+
+    gemini.stop = null;
+    expect(gemini.stop_sequences).toEqual([]);
+    expect(gemini.stop).toEqual([]);
+    expect((gemini as unknown as {
+      _prepare_generation_config(): Record<string, unknown>;
+    })._prepare_generation_config()).not.toHaveProperty("stop_sequences");
+  });
+
   it("accumulates Gemini streaming chunks", () => {
     const gemini = new GeminiCompletion({ model: "gemini-2.5-pro" });
     const functionCallPart = {

@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 1174 passing tests.
+- Test suite: 1175 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -617,6 +617,7 @@ When more goal budget is available, continue from the behavioral parity audits b
   - Gemini message formatting now preserves upstream-style `raw_tool_call_parts` when present, falling back to JSON tool-call conversion otherwise.
   - Gemini response-model generation config now selects upstream-style `response_json_schema` with property ordering for Gemini 2.x models and `response_schema` for Gemini 1.5 models.
   - Gemini tool-result message formatting now wraps non-object tool return values in upstream-style `functionResponse.response.result` fields.
+  - Gemini direct `stop` assignments now stay synchronized with API `stop_sequences`, including string and null assignments.
   - Gemini structured-output validation now preserves stop-word-like text inside JSON fields while regular stop-word truncation still applies to unstructured responses.
   - Gemini completion shim now exposes the upstream-style `_extract_token_usage` alias for SDK usage translation compatibility.
   - Gemini token usage extraction and streaming accumulation now handle SDK-like `usage_metadata` getter objects, missing metadata defaults, and absent thinking/cache token fields.
