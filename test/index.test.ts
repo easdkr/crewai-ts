@@ -12476,6 +12476,22 @@ describe("RAG configuration and factories", () => {
     );
   });
 
+  it("initializes ChromaDB default batch size like upstream", () => {
+    const client = new ChromaDBClient(new FakeChromaClient(), (texts: readonly string[]) => texts.map((text) => [text.length]));
+    const customClient = new ChromaDBClient(
+      new FakeChromaClient(),
+      (texts: readonly string[]) => texts.map((text) => [text.length]),
+      5,
+      0.6,
+      50,
+    );
+
+    expect(client.default_batch_size).toBe(100);
+    expect(client.defaultBatchSize).toBe(100);
+    expect(customClient.default_batch_size).toBe(50);
+    expect(customClient.defaultBatchSize).toBe(50);
+  });
+
   it("passes null ChromaDB metadatas when every added document omits metadata", () => {
     const collection = { upsert: vi.fn() };
     const getOrCreateCollection = vi.fn(() => collection);
