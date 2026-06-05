@@ -29922,6 +29922,50 @@ describe("tools", () => {
     expect(defaultTool.current_usage_count).toBe(0);
   });
 
+  it("preserves upstream tool cache_function defaults and aliases", () => {
+    const noCache = () => false;
+
+    class CustomCacheTool extends BaseTool {
+      constructor() {
+        super({
+          name: "custom cache",
+          description: "Custom cache policy",
+          cache_function: noCache,
+        });
+      }
+
+      protected _run(args: Record<string, unknown>): string {
+        return String(args.question);
+      }
+    }
+
+    class DefaultCacheTool extends BaseTool {
+      constructor() {
+        super({
+          name: "default cache",
+          description: "Default cache policy",
+        });
+      }
+
+      protected _run(args: Record<string, unknown>): string {
+        return String(args.question);
+      }
+    }
+
+    const customTool = new CustomCacheTool();
+    const defaultTool = new DefaultCacheTool();
+    const decoratedTool = createFunctionTool("decorator cache", {
+      description: "Decorator cache policy",
+    })(function decoratorCache(question: unknown): string {
+      return String(question);
+    });
+
+    expect(customTool.cache_function({}, "result")).toBe(false);
+    expect(customTool.cacheFunction).toBe(noCache);
+    expect(defaultTool.cache_function({}, "result")).toBe(true);
+    expect(decoratedTool.cache_function({}, "result")).toBe(true);
+  });
+
   it("preserves upstream decorator single-argument string calls", async () => {
     const greet = createFunctionTool("greet", {
       description: "Greet someone",

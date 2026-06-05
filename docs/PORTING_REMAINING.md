@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 1176 passing tests.
+- Test suite: 1177 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -418,7 +418,7 @@ When more goal budget is available, continue from the behavioral parity audits b
 ## Completed In Current Tool Behavior Pass
 
 - `BaseTool.run` / `arun` and decorator-created structured tools now mirror upstream schema validation for LLM-generated kwargs: when an `argsSchema` is present, validated execution receives only schema fields plus defaults, hallucinated extra keys are stripped before execution, and usage counts do not increment on validation errors.
-- `BaseTool.to_structured_tool` now has default-gate coverage for upstream cache-function passthrough: custom `cacheFunction` / `cache_function` handlers are preserved when converting a base tool into a structured tool.
+- Base tool cache policy now has default-gate coverage for upstream `cache_function` behavior: default base and decorator-created tools use a true cache predicate, snake_case custom `cache_function` constructor aliases are preserved, and `to_structured_tool` keeps custom `cacheFunction` / `cache_function` handlers during conversion.
 - Tool decorator final-answer semantics now have default-gate coverage for upstream `result_as_answer`: snake_case explicit final-answer flags and default `false` values are preserved through structured-tool conversion.
 - Tool decorator usage-limit semantics now have default-gate coverage for upstream `max_usage_count`: snake_case explicit limits initialize usage counters correctly, and default decorator tools remain unlimited.
 - Tool decorator single-argument invocation now mirrors upstream positional behavior for TS string inputs: helper-created structured tools with one schema field accept `run("value")` / `arun("value")` while strict `_parse_args` JSON validation remains unchanged.
