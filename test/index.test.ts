@@ -21811,6 +21811,159 @@ describe("standard decorators", () => {
     expect(prompts.some((prompt) => prompt.includes("Weekly Pay, Employee Meals, healthcare"))).toBe(true);
   });
 
+  it("runs the crewAI-examples game-builder CrewBase template deterministically", async () => {
+    const prompts: string[] = [];
+    const gameDesigns = {
+      example1_pacman: "Build a Pac-Man style maze game with pellets.",
+      example3_snake: "Build a browser Snake game with score tracking.",
+    };
+
+    class GameBuilderCrew {
+      agents: Agent[] = [];
+      tasks: Task[] = [];
+      agents_config = {
+        senior_engineer_agent: {
+          role: "Senior Engineer",
+          goal: "Implement the requested game",
+          backstory: "Writes clean game code",
+        },
+        qa_engineer_agent: {
+          role: "QA Engineer",
+          goal: "Review the game implementation",
+          backstory: "Finds defects in gameplay",
+        },
+        chief_qa_engineer_agent: {
+          role: "Chief QA Engineer",
+          goal: "Evaluate release readiness",
+          backstory: "Approves final game quality",
+        },
+      };
+      tasks_config = {
+        code_task: {
+          description: "Code this game: {game}",
+          expected_output: "Playable game code",
+        },
+        review_task: {
+          description: "Review this game implementation: {game}",
+          expected_output: "QA findings",
+        },
+        evaluate_task: {
+          description: "Evaluate whether this game is ready: {game}",
+          expected_output: "Final approval",
+        },
+      };
+
+      createAgent(config: { role: string; goal: string; backstory: string }, allowDelegation: boolean) {
+        return new Agent({
+          role: config.role,
+          goal: config.goal,
+          backstory: config.backstory,
+          allow_delegation: allowDelegation,
+          verbose: true,
+          llm: (messages) => {
+            const prompt = messages.at(-1)?.content ?? "";
+            prompts.push(`${config.role}:${prompt}`);
+            return `${config.role} handled ${prompt}`;
+          },
+        });
+      }
+
+      senior_engineer_agent() {
+        return this.createAgent(this.agents_config.senior_engineer_agent, false);
+      }
+
+      qa_engineer_agent() {
+        return this.createAgent(this.agents_config.qa_engineer_agent, false);
+      }
+
+      chief_qa_engineer_agent() {
+        return this.createAgent(this.agents_config.chief_qa_engineer_agent, true);
+      }
+
+      code_task() {
+        const config = this.tasks_config.code_task;
+        return new Task({
+          config,
+          description: config.description,
+          expected_output: config.expected_output,
+          agent: this.senior_engineer_agent(),
+        });
+      }
+
+      review_task() {
+        const config = this.tasks_config.review_task;
+        return new Task({
+          config,
+          description: config.description,
+          expected_output: config.expected_output,
+          agent: this.qa_engineer_agent(),
+        });
+      }
+
+      evaluate_task() {
+        const config = this.tasks_config.evaluate_task;
+        return new Task({
+          config,
+          description: config.description,
+          expected_output: config.expected_output,
+          agent: this.chief_qa_engineer_agent(),
+        });
+      }
+
+      crew() {
+        return new Crew({
+          agents: this.agents,
+          tasks: this.tasks,
+          process: Process.sequential,
+          verbose: true,
+        });
+      }
+    }
+
+    const DecoratedGameBuilderCrew = decorateClass(GameBuilderCrew, CrewBase as unknown as Decorator);
+    const project = new DecoratedGameBuilderCrew();
+    [
+      decorateMethod(GameBuilderCrew, "senior_engineer_agent", agent),
+      decorateMethod(GameBuilderCrew, "qa_engineer_agent", agent),
+      decorateMethod(GameBuilderCrew, "chief_qa_engineer_agent", agent),
+      decorateMethod(GameBuilderCrew, "code_task", task),
+      decorateMethod(GameBuilderCrew, "review_task", task),
+      decorateMethod(GameBuilderCrew, "evaluate_task", task),
+      decorateMethod(GameBuilderCrew, "crew", crew),
+    ].forEach((initializer) => {
+      initializer.call(project);
+    });
+
+    const crewInstance = project.crew();
+    expect(crewInstance.process).toBe(Process.sequential);
+    expect(project.agents.map((projectAgent: Agent) => [projectAgent.role, projectAgent.allow_delegation])).toEqual([
+      ["Senior Engineer", false],
+      ["QA Engineer", false],
+      ["Chief QA Engineer", true],
+    ]);
+    expect(project.tasks.map((projectTask: Task) => projectTask.name)).toEqual([
+      "code_task",
+      "review_task",
+      "evaluate_task",
+    ]);
+
+    const output = await crewInstance.kickoff({ inputs: { game: gameDesigns.example3_snake } });
+    expect(output.raw).toContain("Chief QA Engineer");
+    expect(prompts.some((prompt) => prompt.includes(gameDesigns.example3_snake))).toBe(true);
+
+    const trainCrew = project.crew();
+    const trainingDir = mkdtempSync(join(tmpdir(), "crewai-game-builder-"));
+    const trainingFile = join(trainingDir, "training");
+    try {
+      await trainCrew.train(1, trainingFile, { game: gameDesigns.example1_pacman });
+      expect(readFileSync(`${trainingFile}.pkl`, "utf8")).toBe("{}\n");
+      expect(prompts.some((prompt) => prompt.includes(gameDesigns.example1_pacman))).toBe(true);
+    } finally {
+      rmSync(trainingDir, { recursive: true, force: true });
+      rmSync(TRAINING_DATA_FILE, { force: true });
+    }
+  });
+
   it("infers names for directly awaited async task decorator factories", async () => {
     class AsyncTaskCrew {
       calls = 0;
