@@ -2009,7 +2009,7 @@
     "build": "tsup",
     "postbuild": "node --input-type=module -e \"import('./dist/index.js')\"",
     "check": "tsc --noEmit",
-    "demo:gemini": "npm run build && node examples/gemini-crew.mjs",
+    "demo:gemini": "npm run build && node scripts/run-gemini-demo.mjs",
     "lint": "eslint .",
     "smoke:pack": "node scripts/pack-smoke.mjs",
     "test": "vitest run",
