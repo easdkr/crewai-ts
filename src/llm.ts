@@ -1261,9 +1261,22 @@ export function createLLM(
     temperature: numberProperty(llmValue, "temperature"),
     max_tokens: numberProperty(llmValue, "max_tokens"),
     max_completion_tokens: numberProperty(llmValue, "max_completion_tokens"),
-    logprobs: numberProperty(llmValue, "logprobs"),
+    top_p: numberProperty(llmValue, "top_p"),
+    presence_penalty: numberProperty(llmValue, "presence_penalty"),
+    frequency_penalty: numberProperty(llmValue, "frequency_penalty"),
+    seed: numberProperty(llmValue, "seed"),
+    logprobs: booleanOrNumberProperty(llmValue, "logprobs"),
+    top_logprobs: numberProperty(llmValue, "top_logprobs"),
     timeout: numberProperty(llmValue, "timeout"),
   };
+  const stop = llmValue["stop"];
+  if (typeof stop === "string" || Array.isArray(stop)) {
+    options.stop = stop as string | readonly string[];
+  }
+  const responseFormat = llmValue["response_format"] ?? llmValue["responseFormat"];
+  if (responseFormat !== undefined) {
+    options.response_format = responseFormat;
+  }
   if (apiKey !== undefined) {
     options.api_key = apiKey;
   }
@@ -2581,7 +2594,16 @@ export class ConfiguredLLM extends BaseLLM {
   readonly max_tokens: number | null;
   readonly maxCompletionTokens: number | null;
   readonly max_completion_tokens: number | null;
-  readonly logprobs: number | null;
+  readonly topP: number | null;
+  readonly top_p: number | null;
+  readonly presencePenalty: number | null;
+  readonly presence_penalty: number | null;
+  readonly frequencyPenalty: number | null;
+  readonly frequency_penalty: number | null;
+  readonly seed: number | null;
+  readonly logprobs: boolean | number | null;
+  readonly topLogprobs: number | null;
+  readonly top_logprobs: number | null;
   readonly apiBase: string | null;
   readonly api_base: string | null;
 
@@ -2591,7 +2613,16 @@ export class ConfiguredLLM extends BaseLLM {
     max_tokens?: number | null;
     maxCompletionTokens?: number | null;
     max_completion_tokens?: number | null;
-    logprobs?: number | null;
+    topP?: number | null;
+    top_p?: number | null;
+    presencePenalty?: number | null;
+    presence_penalty?: number | null;
+    frequencyPenalty?: number | null;
+    frequency_penalty?: number | null;
+    seed?: number | null;
+    logprobs?: boolean | number | null;
+    topLogprobs?: number | null;
+    top_logprobs?: number | null;
     apiBase?: string | null;
     api_base?: string | null;
   }) {
@@ -2601,7 +2632,16 @@ export class ConfiguredLLM extends BaseLLM {
     this.max_tokens = this.maxTokens;
     this.maxCompletionTokens = options.maxCompletionTokens ?? options.max_completion_tokens ?? null;
     this.max_completion_tokens = this.maxCompletionTokens;
+    this.topP = options.topP ?? options.top_p ?? null;
+    this.top_p = this.topP;
+    this.presencePenalty = options.presencePenalty ?? options.presence_penalty ?? null;
+    this.presence_penalty = this.presencePenalty;
+    this.frequencyPenalty = options.frequencyPenalty ?? options.frequency_penalty ?? null;
+    this.frequency_penalty = this.frequencyPenalty;
+    this.seed = options.seed ?? null;
     this.logprobs = options.logprobs ?? null;
+    this.topLogprobs = options.topLogprobs ?? options.top_logprobs ?? null;
+    this.top_logprobs = this.topLogprobs;
     this.apiBase = options.apiBase ?? options.api_base ?? this.baseUrl;
     this.api_base = this.apiBase;
   }
@@ -2655,7 +2695,12 @@ export class ConfiguredLLM extends BaseLLM {
       ...(this.timeout === null ? {} : { timeout: this.timeout }),
       ...(this.maxTokens === null ? {} : { max_tokens: this.maxTokens }),
       ...(this.maxCompletionTokens === null ? {} : { max_completion_tokens: this.maxCompletionTokens }),
+      ...(this.topP === null ? {} : { top_p: this.topP }),
+      ...(this.presencePenalty === null ? {} : { presence_penalty: this.presencePenalty }),
+      ...(this.frequencyPenalty === null ? {} : { frequency_penalty: this.frequencyPenalty }),
+      ...(this.seed === null ? {} : { seed: this.seed }),
       ...(this.logprobs === null ? {} : { logprobs: this.logprobs }),
+      ...(this.topLogprobs === null ? {} : { top_logprobs: this.topLogprobs }),
       ...(this.apiBase === null ? {} : { api_base: this.apiBase }),
     };
   }
@@ -3501,6 +3546,11 @@ function stringifyLLMValue(value: Record<string, unknown>): string {
 function numberProperty(value: Record<string, unknown>, key: string): number | null {
   const property = value[key];
   return typeof property === "number" ? property : null;
+}
+
+function booleanOrNumberProperty(value: Record<string, unknown>, key: string): boolean | number | null {
+  const property = value[key];
+  return typeof property === "boolean" || typeof property === "number" ? property : null;
 }
 
 function recordOrNull(value: unknown): Record<string, unknown> | null {

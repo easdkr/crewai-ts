@@ -34542,6 +34542,62 @@ describe("LLM providers", () => {
       max_tokens: 100,
       api_base: "https://api.example.test",
     });
+    const withAllAttributes = create_llm({
+      model: "gpt-3.5-turbo",
+      timeout: 10,
+      temperature: 0.7,
+      top_p: 0.9,
+      stop: ["STOP", "END"],
+      max_tokens: 100,
+      presence_penalty: 0.1,
+      frequency_penalty: 0.1,
+      response_format: { type: "json_object" },
+      seed: 42,
+      logprobs: true,
+      top_logprobs: 5,
+      base_url: "https://api.openai.com/v1",
+      api_key: "sk-your-api-key-here",
+    });
+    expect(withAllAttributes).toBeInstanceOf(ConfiguredLLM);
+    expect((withAllAttributes as ConfiguredLLM).to_config_dict()).toMatchObject({
+      model: "gpt-3.5-turbo",
+      timeout: 10,
+      temperature: 0.7,
+      top_p: 0.9,
+      stop: ["STOP", "END"],
+      max_tokens: 100,
+      presence_penalty: 0.1,
+      frequency_penalty: 0.1,
+      response_format: { type: "json_object" },
+      seed: 42,
+      logprobs: true,
+      top_logprobs: 5,
+      base_url: "https://api.openai.com/v1",
+      api_key: "sk-your-api-key-here",
+    });
+    const directConstructor = new LLM({
+      model: "gpt-3.5-turbo",
+      top_p: 0.9,
+      presence_penalty: 0.1,
+      frequency_penalty: 0.1,
+      seed: 42,
+      logprobs: true,
+      top_logprobs: 5,
+    });
+    const agentWithDirectLLM = new Agent({
+      role: "test role",
+      goal: "test goal",
+      backstory: "test backstory",
+      llm: directConstructor,
+    });
+    expect(agentWithDirectLLM.llm).toMatchObject({
+      top_p: 0.9,
+      presence_penalty: 0.1,
+      frequency_penalty: 0.1,
+      seed: 42,
+      logprobs: true,
+      top_logprobs: 5,
+    });
     const stringifiedObject = create_llm({
       toString: () => "test/stringified-model",
     });
