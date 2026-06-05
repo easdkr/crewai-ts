@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 1185 passing tests.
+- Test suite: 1186 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -175,7 +175,7 @@ This register is the source of truth for continuing porting work while parity sc
 - BaseAgent key generation is release-gated for upstream identity semantics: agent keys are the MD5 digest of `role|goal|backstory` before input interpolation mutates those fields.
 - Task key generation is release-gated for upstream identity semantics: task keys are the MD5 digest of the original `description|expected_output` pair and remain stable after input interpolation and conversation-history injection.
 - Task execution duration is release-gated for upstream lifecycle semantics: fresh tasks expose null start/end/duration values, and duration is the exact second difference between assigned `end_time` and `start_time`.
-- Task interpolation is release-gated for upstream structured literal formatting: lists, dictionaries, nested structures, and empty lists interpolate to Python-style literal strings without losing nested scalar values.
+- Task interpolation is release-gated for upstream structured literal formatting and JSON preservation: lists, dictionaries, nested structures, and empty lists interpolate to Python-style literal strings without losing nested scalar values, while JSON object/array literals embedded in templates are not mistaken for variables when surrounding placeholders are replaced.
 - Task copy context semantics are release-gated for upstream behavior: unspecified context remains unspecified, explicit null remains null, and list context entries are remapped through task key mappings.
 - Task async futures are release-gated for upstream failure semantics: `execute_async(...).result()` rethrows core execution failures and `exception()` exposes the captured error.
 - ToolUsage input parsing and error events are release-gated for upstream malformed LLM argument recovery: Python literal booleans/nulls and single quotes, JSON5-style unquoted object keys, trailing commas in objects/arrays, nested structures, invalid-input event emission, and selection/validation error agent context are covered without adding a JSON5 runtime dependency.

@@ -37530,6 +37530,34 @@ describe("task interpolation", () => {
     expect(interpolateOnly("{flag}", { flag: false })).toBe("False");
   });
 
+  it("preserves upstream JSON structures while interpolating surrounding variables", () => {
+    const template = [
+      "Instructions for {agent}:",
+      "",
+      "Please return:",
+      "{\"name\": \"person's name\", \"age\": 25, \"skills\": [\"coding\", \"testing\"]}",
+      "",
+      "{agent} needs to process:",
+      "{",
+      "  \"config\": {",
+      "    \"nested\": {",
+      "      \"value\": 42",
+      "    },",
+      "    \"arrays\": [1, 2, {\"inner\": \"value\"}]",
+      "  }",
+      "}",
+    ].join("\n");
+
+    const result = interpolateOnly(template, { agent: "DataProcessor" });
+
+    expect(result).toContain("Instructions for DataProcessor:");
+    expect(result).toContain("DataProcessor needs to process:");
+    expect(result).toContain("{\"name\": \"person's name\", \"age\": 25, \"skills\": [\"coding\", \"testing\"]}");
+    expect(result).toContain("\"nested\": {");
+    expect(result).toContain("\"value\": 42");
+    expect(result).toContain("[1, 2, {\"inner\": \"value\"}]");
+  });
+
   it("preserves upstream literal formatting for structured interpolation values", () => {
     expect(interpolateOnly("Available items: {items}", { items: ["apple", "banana", "cherry"] }))
       .toBe("Available items: ['apple', 'banana', 'cherry']");
