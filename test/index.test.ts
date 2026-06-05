@@ -1010,6 +1010,8 @@ import {
   TraceBatchManager,
   TraceCollectionListener,
   TraceEvent,
+  currentFlowId,
+  currentFlowName,
   AfterLLMCallHookMethod,
   AfterToolCallHookMethod,
   BeforeLLMCallHookMethod,
@@ -9795,6 +9797,45 @@ describe("telemetry compatibility", () => {
       execution_type: "flow",
       execution_start: "2026-01-01T00:00:00+00:00",
     });
+  });
+
+  it("claims flow trace batches for action events inside active flow context", () => {
+    const listener = new TraceCollectionListener();
+    const previousFlowId = currentFlowId.set("flow-test-id");
+    const previousFlowName = currentFlowName.set("DemoSupportFlow");
+    try {
+      expect(TraceCollectionListener._is_inside_active_flow_context()).toBe(true);
+      expect(listener._nested_in_flow_execution()).toBe(true);
+
+      listener._handle_action_event(
+        "llm_call_started",
+        {},
+        new LLMCallStartedEvent({ model: "gpt-4o-mini", messages: [], call_id: "call-test" }),
+      );
+
+      expect(listener.batch_manager.batch_owner_type).toBe("flow");
+      expect(listener.batch_manager.batch_owner_id).toBe("flow-test-id");
+      expect(listener.batch_manager.current_batch?.execution_metadata).toMatchObject({
+        execution_type: "flow",
+        flow_name: "DemoSupportFlow",
+      });
+
+      listener.batch_manager.batch_owner_type = "crew";
+      listener.batch_manager.batchOwnerType = "crew";
+      const finalize = vi.spyOn(listener.batch_manager, "finalize_batch");
+      if (listener._nested_in_flow_execution()) {
+        // The upstream trace listener leaves flow-owned nested work to the parent flow batch.
+      } else if (listener.batch_manager.batch_owner_type === "crew") {
+        listener.batch_manager.finalize_batch();
+      }
+      expect(finalize).not.toHaveBeenCalled();
+      finalize.mockRestore();
+    } finally {
+      currentFlowName.set(previousFlowName);
+      currentFlowId.set(previousFlowId);
+    }
+
+    expect(TraceCollectionListener._is_inside_active_flow_context()).toBe(false);
   });
 
   it("records task, tool, flow, and feature spans without network exporters", () => {

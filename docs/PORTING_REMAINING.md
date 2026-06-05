@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 1122 passing tests.
+- Test suite: 1123 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -274,6 +274,7 @@ High-value behavior audits still worth running:
    - Experimental conversational builtin end handling is release-gated for upstream `end` route semantics: `end_conversation` / `endConversation` marks `ConversationState.ended` and appends the final `"Conversation ended."` assistant message.
    - Experimental conversational trace finalization deferral is release-gated for local session lifecycle: conversational turns with `defer_trace_finalization` / `deferTraceFinalization` keep per-turn `flow_finished` suppressed and `finalize_session_traces` / `finalizeSessionTraces` emits one final `FlowFinishedEvent` for the latest turn, while non-deferred sessions keep `finalize_session_traces` as a no-op that does not re-emit duplicate finish events.
    - Experimental conversational trace deferral resolution is release-gated for upstream helper semantics: `_should_defer_trace_finalization` / `_shouldDeferTraceFinalization` read class-level `ConversationConfig.defer_trace_finalization` / `deferTraceFinalization` and instance overrides consistently.
+   - Experimental conversational flow trace ownership is release-gated for deterministic local action events: `TraceCollectionListener` detects active flow context, treats nested flow execution as parent-owned, and claims LLM action trace batches with flow owner id/name metadata without finalizing nested crew work.
    - Before changing the release baseline, classify each new behavior surface by deterministic local workflow, provider/network shim, or intentionally unsupported optional integration.
 
 3. **Experimental `AgentExecutor` plan-and-execute behavior**

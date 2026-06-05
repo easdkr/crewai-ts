@@ -6,6 +6,8 @@ import {
   SCOPE_STARTING_EVENTS,
   VALID_EVENT_PAIRS,
   getEmissionSequence,
+  getCurrentFlowId,
+  getCurrentFlowName,
   getEnclosingParentId,
   getCurrentParentId,
   getLastEventId,
@@ -5919,12 +5921,61 @@ export class ConsoleFormatter {
 export const event_listener = EventListener.getInstance();
 
 export class TraceCollectionListener extends BaseEventListener {
+  readonly batchManager: TraceBatchManager;
+  readonly batch_manager: TraceBatchManager;
+
+  constructor(eventBus: EventBus = crewaiEventBus, batchManager = new TraceBatchManager()) {
+    super(eventBus);
+    this.batchManager = batchManager;
+    this.batch_manager = batchManager;
+  }
+
   setupListeners(_eventBus: EventBus): void {
     void _eventBus;
   }
 
   override setup_listeners(eventBus: EventBus): void {
     this.setupListeners(eventBus);
+  }
+
+  static _isInsideActiveFlowContext(): boolean {
+    return getCurrentFlowId() !== null;
+  }
+
+  static _is_inside_active_flow_context(): boolean {
+    return TraceCollectionListener._isInsideActiveFlowContext();
+  }
+
+  _nestedInFlowExecution(): boolean {
+    return TraceCollectionListener._isInsideActiveFlowContext();
+  }
+
+  _nested_in_flow_execution(): boolean {
+    return this._nestedInFlowExecution();
+  }
+
+  _handleActionEvent(_eventType: string, _source: unknown, event: BaseEvent): void {
+    void event;
+    if (!TraceCollectionListener._isInsideActiveFlowContext()) {
+      return;
+    }
+    const flowId = getCurrentFlowId();
+    const flowName = getCurrentFlowName();
+    this.batchManager.batchOwnerType = "flow";
+    this.batchManager.batch_owner_type = "flow";
+    this.batchManager.batchOwnerId = flowId;
+    this.batchManager.batch_owner_id = flowId;
+    this.batchManager.initializeBatch(
+      {},
+      {
+        execution_type: "flow",
+        flow_name: flowName,
+      },
+    );
+  }
+
+  _handle_action_event(eventType: string, source: unknown, event: BaseEvent): void {
+    this._handleActionEvent(eventType, source, event);
   }
 }
 
