@@ -29060,6 +29060,127 @@ describe("flow runtime", () => {
     expect(flow.state.error).toBe("");
   });
 
+  it("runs the crewAI-examples QA Agent notebook Flow deterministically", async () => {
+    type QAState = {
+      question: string;
+      improved_question: string;
+      answer: string;
+      rewriteMessages: Array<{ model: string; temperature: number; content: string }>;
+      crewInputs: Array<{ question: string; tools: string[] }>;
+    };
+    const urls = [
+      "https://lilianweng.github.io/posts/2023-06-23-agent/",
+      "https://lilianweng.github.io/posts/2023-03-15-prompt-engineering/",
+      "https://lilianweng.github.io/posts/2023-10-25-adv-attack-llm/",
+    ];
+    const fakeRewriteClient = {
+      chat: {
+        completions: {
+          create({ model, messages, temperature }: {
+            model: string;
+            messages: Array<{ role: string; content: string }>;
+            temperature: number;
+          }) {
+            const sections = messages[0]?.content.split("-------") ?? [];
+            return {
+              choices: [{
+                message: {
+                  content: `Improved: ${sections[1]?.trim() ?? ""}`,
+                },
+              }],
+              model,
+              temperature,
+            };
+          },
+        },
+      },
+    };
+
+    class QAFlow extends Flow<QAState> {
+      constructor() {
+        super({
+          initialState: {
+            question: "What does Lilian Weng say about the types of agent memory?",
+            improved_question: "",
+            answer: "",
+            rewriteMessages: [],
+            crewInputs: [],
+          },
+        });
+      }
+
+      rewriteQuestion() {
+        const content = `Look at the input and try to reason about the underlying semantic intent / meaning.
+            Here is the initial question:
+            -------
+            ${this.state.question}
+            -------
+            Formulate an improved question:`;
+        const response = fakeRewriteClient.chat.completions.create({
+          model: "openai:gpt-4o-mini",
+          messages: [{ role: "system", content }],
+          temperature: 0.3,
+        });
+        this.state.rewriteMessages.push({
+          model: response.model,
+          temperature: response.temperature,
+          content,
+        });
+        this.state.improved_question = response.choices[0]?.message.content ?? "";
+      }
+
+      answerQuestion() {
+        this.state.crewInputs.push({
+          question: this.state.improved_question,
+          tools: urls.map((url) => `WebsiteSearchTool:${url}`),
+        });
+        const result = new CrewOutput({
+          raw: `Answer from retrieved blog context: ${this.state.improved_question}`,
+        });
+        this.state.answer = result.raw;
+        return result;
+      }
+    }
+
+    const rewriteQuestionRef = Object.getOwnPropertyDescriptor(
+      QAFlow.prototype,
+      "rewriteQuestion",
+    )?.value as () => unknown;
+    const initializers = [
+      decorateMethod(QAFlow, "rewriteQuestion", start() as unknown as Decorator),
+      decorateMethod(QAFlow, "answerQuestion", listen(rewriteQuestionRef) as unknown as Decorator),
+    ];
+    const flow = new QAFlow();
+    initializers.forEach((initializer) => {
+      initializer.call(flow);
+    });
+
+    const result = await flow.kickoff();
+
+    expect(result).toBeInstanceOf(CrewOutput);
+    expect((result as CrewOutput).raw).toBe(
+      "Answer from retrieved blog context: Improved: What does Lilian Weng say about the types of agent memory?",
+    );
+    expect(flow.state.improved_question).toBe(
+      "Improved: What does Lilian Weng say about the types of agent memory?",
+    );
+    expect(flow.state.answer).toBe((result as CrewOutput).raw);
+    expect(flow.state.rewriteMessages).toEqual([
+      {
+        model: "openai:gpt-4o-mini",
+        temperature: 0.3,
+        content: flow.state.rewriteMessages[0]?.content,
+      },
+    ]);
+    expect(flow.state.rewriteMessages[0]?.content).toContain("Formulate an improved question:");
+    expect(flow.state.crewInputs).toEqual([
+      {
+        question: "Improved: What does Lilian Weng say about the types of agent memory?",
+        tools: urls.map((url) => `WebsiteSearchTool:${url}`),
+      },
+    ]);
+  });
+
   it("exposes upstream Flow tracing disabled helper", () => {
     const previous = process.env.CREWAI_TRACING_DISABLED_MESSAGE_SHOWN;
     delete process.env.CREWAI_TRACING_DISABLED_MESSAGE_SHOWN;
