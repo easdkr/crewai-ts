@@ -1,70 +1,51 @@
-# crewai-ts
+# @crewai-ts/core
 
-TypeScript port of CrewAI.
+[![npm version](https://img.shields.io/npm/v/@crewai-ts/core.svg)](https://www.npmjs.com/package/@crewai-ts/core)
+[![license](https://img.shields.io/npm/l/@crewai-ts/core.svg)](./LICENSE)
+[![types](https://img.shields.io/npm/types/@crewai-ts/core.svg)](https://www.npmjs.com/package/@crewai-ts/core)
 
-## Current port surface
+An **unofficial** TypeScript port of [CrewAI](https://github.com/crewAIInc/crewAI) — build
+multi-agent workflows with agents, tasks, crews, and flows using a native TypeScript API.
 
-- `Agent`, `Task`, `ConditionalTask`, `Crew`
-- `LiteAgent` and `LiteAgentOutput` compatibility layer for direct agent execution
-- `Flow` with standard TS `@start`, `@listen`, `@router`, `or_`, `and_`, `ask()` input providers, and `@humanFeedback`
-- sequential `Crew.kickoff({ inputs })`
-- `TaskOutput` and `CrewOutput`
-- standard TS decorators: `@agent`, `@task`, `@crew`, `@beforeKickoff`, `@afterKickoff`, `@outputJson`, `@outputPydantic`, `@start`, `@listen`, `@router`
-- `CrewProject` YAML/object config loading for `agentsConfig` and `tasksConfig`
-- `BaseTool` / `StructuredTool` with argument validation, usage limits, tool-call execution, and task-level tool overrides
-- automatic `read_file` tool for named task, crew, and agent input files
-- tool result caching with `cacheFunction` and shareable `InMemoryToolCache`
-- crew `cache: false` control for disabling library tool result caching
-- sequential process async task scheduling, including sync barriers and CrewAI-style async validation
-- typed `crewaiEventBus` lifecycle events for crew kickoff, task execution, tool usage, and failures
-- agent and crew `stepCallback` hooks for tool/final agent steps
-- crew-level `taskCallback` hooks after task callbacks, with duplicate callback suppression
-- global before/after LLM and tool call hooks
-- security `Fingerprint` / `SecurityConfig` on agents, crews, and tasks
-- checkpoint `CheckpointConfig`, filesystem `JsonProvider`, and SQLite `SqliteProvider`
-- state `EventRecord` / `EventNode` graph for event relationship tracking
-- state `RuntimeState` checkpoint serialization, restore, lineage, and fork helpers
-- crew `outputLogFile` task execution logs in text or JSON files
-- crew `executionLogs` and `taskExecutionOutputJsonFiles` for per-task audit records
-- crew `replay(taskRef, inputs?)` from a task id, name, index, or task object
-- `Memory` / `MemoryScope` with recall/save tools injected into crews when memory is enabled
-- `Knowledge` sources (`StringKnowledgeSource`, `TextFileKnowledgeSource`, `JSONKnowledgeSource`, `CSVKnowledgeSource`) with agent and crew context injection
-- hierarchical process with manager agent/manager LLM validation and coworker delegation tools
-- sequential `allowDelegation` agents with coworker delegate/question tools
-- function or object LLM providers with tool-call options, string model registry, and token usage aggregation
-- iterative agent tool-use loop with `maxIter` and `resultAsAnswer` support
-- agent `maxRetryLimit` retries around task execution failures
-- agent `maxExecutionTime` timeout enforcement for task execution
-- agent `useSystemPrompt` control for models that do not accept system-role messages
-- deprecated CrewAI agent compatibility fields: `allowCodeExecution`, `codeExecutionMode`, `respectContextWindow`, `multimodal`
-- agent `systemTemplate`, `promptTemplate`, and `responseTemplate` prompt rendering
-- agent `injectDate` / `dateFormat` prompt injection
-- callable agent `guardrail` with retry-limit enforcement
-- agent-level `PlanningConfig`, `planning`, and legacy `reasoning` compatibility
-- agent and crew `maxRpm` throttling for LLM calls
-- `kickoffForEach` / `kickoffForEachAsync` batch execution with aggregate usage metrics
-- crew-level planning that injects per-task execution plans before kickoff
-- CrewAI-style default task context aggregation from previous task outputs
-- task `outputFile` writing with input interpolation and safe path validation
-- task `inputFiles` / `input_files` text file prompt injection
-- task `outputConverter` / `converter_cls` hooks for structured output conversion
-- structured task interpolation for strings, numbers, booleans, arrays, objects, and `null`
-- single or ordered multiple task `guardrails` with retry support
-- task `humanInput` feedback loops with injectable providers
-- task execution counters: `usedTools`, `toolsErrors`, `delegations`, `promptContext`, `processedByAgents`
-- task `allowCrewaiTriggerContext` support for `crewai_trigger_payload` kickoff inputs
-- `ConditionalTask` skip logic based on the previous task output
-- basic `stream: true` crew and flow outputs via `CrewStreamingOutput` / `FlowStreamingOutput`
+The package mirrors CrewAI's runtime semantics (sequential and hierarchical processes,
+delegation, planning, memory, knowledge, checkpoints, and streaming) while staying
+idiomatic to TypeScript. It ships both **ESM and CommonJS** builds with full type
+declarations, and provides Python-style snake_case aliases for common async entry points
+to ease migration from the Python library.
 
-Decorators store only library-private metadata. They do not use
-`reflect-metadata`, parameter decorators, or Nest metadata, so Nest applications
-should consume this package as a normal TypeScript library and keep Nest DI
-separate.
+> **Unofficial project.** This is a community port and is **not affiliated with, endorsed
+> by, or maintained by crewAI, Inc.** "CrewAI" belongs to its respective owner. The original
+> CrewAI is MIT-licensed (Copyright © crewAI, Inc.); this port retains that notice — see
+> [License](#license).
 
-CrewAI Python-style snake_case aliases are available for common async entry
-points, including `kickoff_async`, `kickoff_for_each`,
-`kickoff_for_each_async`, `akickoff_for_each`, `resume_async`, `from_pending`,
-and `from_state`.
+## Installation
+
+```bash
+npm install @crewai-ts/core
+```
+
+```bash
+pnpm add @crewai-ts/core
+# or
+yarn add @crewai-ts/core
+```
+
+## Requirements
+
+- **Node.js >= 22** (the build targets `node22` and uses `node:sqlite` for the SQLite checkpoint provider)
+- Works in both ESM (`import`) and CommonJS (`require`) projects — types are resolved per module system.
+
+```ts
+// ESM
+import { Agent, Crew, Task } from "@crewai-ts/core";
+```
+
+```js
+// CommonJS
+const { Agent, Crew, Task } = require("@crewai-ts/core");
+```
+
+## Quick start
 
 ```ts
 import { Agent, Crew, Process, Task, agent, crew, task } from "@crewai-ts/core";
@@ -103,6 +84,117 @@ const batchResults = await new ResearchCrew().crew().kickoffForEach({
   inputs: [{ topic: "CrewAI" }, { topic: "TypeScript" }],
 });
 ```
+
+> Decorators store only library-private metadata. They do not use `reflect-metadata`,
+> parameter decorators, or Nest metadata, so Nest applications should consume this package
+> as a normal TypeScript library and keep Nest DI separate.
+
+CrewAI Python-style snake_case aliases are available for common async entry points,
+including `kickoff_async`, `kickoff_for_each`, `kickoff_for_each_async`,
+`akickoff_for_each`, `resume_async`, `from_pending`, and `from_state`.
+
+## Table of contents
+
+- [Features](#features)
+- [Streaming](#streaming)
+- [LiteAgent](#liteagent)
+- [Hooks](#hooks)
+- [Security](#security)
+- [Checkpoints](#checkpoints)
+- [Tools](#tools)
+- [LLM providers](#llm-providers)
+- [Agent planning](#agent-planning)
+- [Flows](#flows)
+- [Task output files](#task-output-files)
+- [Task input files](#task-input-files)
+- [Conditional tasks](#conditional-tasks)
+- [Human input](#human-input)
+- [Crew planning](#crew-planning)
+- [Memory](#memory)
+- [Knowledge](#knowledge)
+- [YAML-backed project config](#yaml-backed-project-config)
+- [Development](#development)
+- [License](#license)
+
+## Features
+
+**Agents, tasks, and crews**
+
+- `Agent`, `Task`, `ConditionalTask`, `Crew`, `TaskOutput`, and `CrewOutput`
+- `LiteAgent` and `LiteAgentOutput` compatibility layer for direct agent execution
+- sequential `Crew.kickoff({ inputs })` and sequential process async task scheduling, including sync barriers and CrewAI-style async validation
+- hierarchical process with manager agent / manager LLM validation and coworker delegation tools
+- sequential `allowDelegation` agents with coworker delegate / question tools
+- `kickoffForEach` / `kickoffForEachAsync` batch execution with aggregate usage metrics
+- crew `replay(taskRef, inputs?)` from a task id, name, index, or task object
+- crew-level planning that injects per-task execution plans before kickoff
+- CrewAI-style default task context aggregation from previous task outputs
+
+**Decorators and project config**
+
+- standard TS decorators: `@agent`, `@task`, `@crew`, `@beforeKickoff`, `@afterKickoff`, `@outputJson`, `@outputPydantic`, `@start`, `@listen`, `@router`
+- `CrewProject` YAML / object config loading for `agentsConfig` and `tasksConfig`
+
+**Agent execution controls**
+
+- iterative agent tool-use loop with `maxIter` and `resultAsAnswer` support
+- agent `maxRetryLimit` retries around task execution failures
+- agent `maxExecutionTime` timeout enforcement for task execution
+- agent and crew `maxRpm` throttling for LLM calls
+- agent `useSystemPrompt` control for models that do not accept system-role messages
+- agent `systemTemplate`, `promptTemplate`, and `responseTemplate` prompt rendering
+- agent `injectDate` / `dateFormat` prompt injection
+- callable agent `guardrail` with retry-limit enforcement
+- agent-level `PlanningConfig`, `planning`, and legacy `reasoning` compatibility
+- deprecated CrewAI agent compatibility fields: `allowCodeExecution`, `codeExecutionMode`, `respectContextWindow`, `multimodal`
+
+**Tasks**
+
+- task `outputFile` writing with input interpolation and safe path validation
+- task `inputFiles` / `input_files` text file prompt injection, plus an automatic `read_file` tool for named task, crew, and agent input files
+- task `outputConverter` / `converter_cls` hooks for structured output conversion
+- structured task interpolation for strings, numbers, booleans, arrays, objects, and `null`
+- single or ordered multiple task `guardrails` with retry support
+- task `humanInput` feedback loops with injectable providers
+- task execution counters: `usedTools`, `toolsErrors`, `delegations`, `promptContext`, `processedByAgents`
+- task `allowCrewaiTriggerContext` support for `crewai_trigger_payload` kickoff inputs
+- `ConditionalTask` skip logic based on the previous task output
+
+**Tools**
+
+- `BaseTool` / `StructuredTool` with argument validation, usage limits, tool-call execution, and task-level tool overrides
+- tool result caching with `cacheFunction` and shareable `InMemoryToolCache`
+- crew `cache: false` control for disabling library tool result caching
+
+**LLM providers**
+
+- function or object LLM providers with tool-call options, string model registry, and token usage aggregation
+
+**Flows**
+
+- `Flow` with standard TS `@start`, `@listen`, `@router`, `or_`, `and_`, `ask()` input providers, and `@humanFeedback`
+- basic `stream: true` crew and flow outputs via `CrewStreamingOutput` / `FlowStreamingOutput`
+
+**Events and hooks**
+
+- typed `crewaiEventBus` lifecycle events for crew kickoff, task execution, tool usage, and failures
+- agent and crew `stepCallback` hooks for tool / final agent steps
+- crew-level `taskCallback` hooks after task callbacks, with duplicate callback suppression
+- global before / after LLM and tool call hooks
+
+**Memory and knowledge**
+
+- `Memory` / `MemoryScope` with recall / save tools injected into crews when memory is enabled
+- `Knowledge` sources (`StringKnowledgeSource`, `TextFileKnowledgeSource`, `JSONKnowledgeSource`, `CSVKnowledgeSource`) with agent and crew context injection
+
+**State, security, and checkpoints**
+
+- security `Fingerprint` / `SecurityConfig` on agents, crews, and tasks
+- checkpoint `CheckpointConfig`, filesystem `JsonProvider`, and SQLite `SqliteProvider`
+- state `EventRecord` / `EventNode` graph for event relationship tracking
+- state `RuntimeState` checkpoint serialization, restore, lineage, and fork helpers
+- crew `outputLogFile` task execution logs in text or JSON files
+- crew `executionLogs` and `taskExecutionOutputJsonFiles` for per-task audit records
 
 ## Streaming
 
@@ -684,9 +776,23 @@ class ResearchCrew extends CrewProject {
 }
 ```
 
-## Scripts
+## Development
 
-- `npm run build` builds ESM output and declarations.
-- `npm run check` runs TypeScript in no-emit mode.
-- `npm test` runs Vitest.
-- `npm run lint` runs ESLint.
+This repo is built with [tsup](https://tsup.egoist.dev/) (ESM + CJS + type declarations)
+and tested with [Vitest](https://vitest.dev/).
+
+```bash
+npm run build   # build ESM + CJS output and declarations
+npm run check   # type-check in no-emit mode
+npm test        # run the Vitest suite
+npm run lint    # run ESLint
+```
+
+## License
+
+[MIT](./LICENSE) © June
+
+This project is an unofficial TypeScript port of [CrewAI](https://github.com/crewAIInc/crewAI)
+(Copyright © crewAI, Inc.), which is distributed under the MIT License. It is not affiliated
+with or endorsed by crewAI, Inc. As required by the MIT License, the original copyright and
+permission notice are retained in [LICENSE](./LICENSE).
