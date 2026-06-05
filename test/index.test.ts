@@ -33013,6 +33013,23 @@ describe("LLM providers", () => {
     expect(withReasoning.has_reasoning()).toBe(true);
   });
 
+  it("initializes OpenAI Responses parse tool output flags like upstream", () => {
+    const defaultClient = new OpenAICompletion({
+      model: "gpt-4o",
+      api: "responses",
+    });
+    const parsingClient = new OpenAICompletion({
+      model: "gpt-4o",
+      api: "responses",
+      parse_tool_outputs: true,
+    });
+
+    expect(defaultClient.parse_tool_outputs).toBe(false);
+    expect(defaultClient.parseToolOutputs).toBe(false);
+    expect(parsingClient.parse_tool_outputs).toBe(true);
+    expect(parsingClient.parseToolOutputs).toBe(true);
+  });
+
   it("extracts OpenAI Responses API built-in tool outputs", () => {
     const openai = new OpenAICompletion({ model: "gpt-4.1", api: "responses" });
     class ComputerAction {
