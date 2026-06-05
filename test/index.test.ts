@@ -37920,6 +37920,52 @@ describe("tools", () => {
     expect(output.raw).toContain("task tool");
     expect(output.raw).not.toContain("agent tool");
   });
+
+  it("preserves delegation tools when task tools override agent tools", () => {
+    const agentTool = new StructuredTool({
+      name: "Test Tool",
+      description: "Agent-level tool",
+      func: () => "agent tool",
+    });
+    const taskTool = new StructuredTool({
+      name: "Another Test Tool",
+      description: "Task-level tool",
+      func: () => "task tool",
+    });
+    const researcher = new Agent({
+      role: "Researcher",
+      goal: "Find facts",
+      backstory: "Careful analyst",
+      allow_delegation: true,
+      tools: [agentTool],
+    });
+    const writer = new Agent({
+      role: "Writer",
+      goal: "Write the final answer",
+      backstory: "Clear writer",
+    });
+    const taskInstance = new Task({
+      description: "Write a test task",
+      expected_output: "Test output",
+      agent: researcher,
+      tools: [taskTool],
+    });
+    const crewInstance = new Crew({
+      agents: [researcher, writer],
+      tasks: [taskInstance],
+      process: Process.sequential,
+    });
+
+    const preparedTools = crewInstance.prepareTools(researcher, taskInstance, taskInstance.tools);
+    const preparedToolNames = preparedTools.map((tool) => tool.name);
+
+    expect(preparedToolNames).toContain("another_test_tool");
+    expect(preparedToolNames).not.toContain("test_tool");
+    expect(preparedToolNames).toContain("delegate_work_to_coworker");
+    expect(preparedToolNames).toContain("ask_question_to_coworker");
+    expect(researcher.tools.map((tool) => tool.name)).toEqual(["test_tool"]);
+    expect(taskInstance.tools.map((tool) => tool.name)).toEqual(["another_test_tool"]);
+  });
 });
 
 describe("LLM providers", () => {

@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 1225 passing tests.
+- Test suite: 1226 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -222,6 +222,7 @@ This register is the source of truth for continuing porting work while parity sc
 - Sequential crew async context validation is release-gated for upstream barrier semantics: async tasks cannot depend on earlier async tasks without an intervening sync task, while sync-barrier context chains remain valid.
 - Crew config validation is release-gated for upstream malformed config behavior: wrong-key, agents-only, tasks-only, and empty agents/tasks configs fail before setup.
 - Hierarchical manager delegation tools are release-gated for upstream coworker scoping, manager validation, generated manager verbosity, and tool descriptions: manager agents cannot be included in the regular agents list or carry their own tools, generated manager agents inherit crew verbose settings, assigned-task delegation exposes only that task's agent, unassigned tasks expose all crew agents, and manager tool descriptions use the upstream "specific task/question" coworker wording.
+- Sequential delegation tool precedence is release-gated for upstream `test_task_tools_override_agent_tools_with_allow_delegation`: task tools replace same-named agent tools during task execution preparation while delegate-work and ask-question coworker tools are still injected, without mutating the original agent or task tool lists.
 - LLM selection guide hierarchy is release-gated for deterministic configuration boundaries: documented manager, agent, and function-calling LLM choices preserve distinct model/temperature settings and generated hierarchical managers receive the manager/function-calling models without triggering live provider calls.
 - Hierarchical delegation coworker matching is release-gated for upstream role normalization: coworker inputs match agent roles despite case and surrounding whitespace differences, bracketed coworker strings such as `[Researcher]` route through manager delegation/question tools, and original roles are preserved in tool descriptions.
 - AgentTools unknown-coworker errors now have default-gate coverage for upstream message shape: missing coworkers return the newline-delimited `coworker mentioned not found` guidance with the available coworker list.
