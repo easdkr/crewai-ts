@@ -33642,6 +33642,23 @@ describe("LLM providers", () => {
     expect(AnthropicCompletion._extract_anthropic_token_usage({})).toEqual({ total_tokens: 0 });
   });
 
+  it("defaults missing Anthropic cache token fields to zero", () => {
+    expect(AnthropicCompletion._extract_anthropic_token_usage({
+      usage: {
+        input_tokens: 40,
+        output_tokens: 20,
+        cache_read_input_tokens: null,
+        cache_creation_input_tokens: null,
+      },
+    })).toEqual({
+      input_tokens: 40,
+      output_tokens: 20,
+      total_tokens: 60,
+      cached_prompt_tokens: 0,
+      cache_creation_tokens: 0,
+    });
+  });
+
   it("extracts Anthropic tool uses and structured output from response content", () => {
     const response = {
       content: [

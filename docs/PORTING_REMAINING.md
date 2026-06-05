@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 1165 passing tests.
+- Test suite: 1166 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -605,7 +605,7 @@ When more goal budget is available, continue from the behavioral parity audits b
   - Anthropic completion shim now exposes upstream-style request parameter builders with system prompts, stop sequences, thinking config, thinking-block preservation across formatted assistant turns, custom tool conversion, single-tool forcing, and tool-search injection/deferred loading
   - Anthropic completion shim now converts upstream standard `image_url` data-URI blocks into Anthropic `image` source blocks for user/tool/assistant content lists.
   - Anthropic completion shim now exposes upstream-style SDK response token usage extraction, tool-use/structured-output response extraction, deterministic streaming event accumulation, and tool-result block execution helpers, including cache read and cache creation token fields
-  - Anthropic completion usage extraction now handles SDK-like usage getter objects for cache read/create token metadata.
+  - Anthropic completion usage extraction now handles SDK-like usage getter objects for cache read/create token metadata and defaults absent cache token fields to zero.
   - Bedrock completion shim now exposes upstream-style Converse request body builders, including Bedrock message content blocks, system prompts, inference config, raw OpenAI-style function tool conversion, multimodal image/document file blocks for Claude 3/4 models, toolConfig conversion, guardrail config, and additional model request/response fields
   - Bedrock completion shim now exposes upstream-style document/video content-type format mapping helpers for multimodal payload preparation.
   - Bedrock completion shim now exposes upstream-style client error classification for common AWS Bedrock error codes.
