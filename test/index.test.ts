@@ -29942,6 +29942,43 @@ describe("tools", () => {
     expect(addTool.has_reached_max_usage_count()).toBe(false);
   });
 
+  it("invokes upstream structured tool functions exactly once per direct call", () => {
+    let callCount = 0;
+    const callHistory: string[] = [];
+    const countingTool = StructuredTool.from_function(
+      function countCalls(param: unknown): string {
+        callCount += 1;
+        callHistory.push(`Call #${String(callCount)} with param: ${String(param)}`);
+        return `Result from call #${String(callCount)}: ${String(param)}`;
+      },
+      {
+        name: "direct test tool",
+        description: "Tool to test direct invoke method",
+        args_schema: { param: { type: "string", required: true } },
+      },
+    );
+
+    expect(countingTool.invoke({ param: "test_value" })).toBe("Result from call #1: test_value");
+    expect(callCount).toBe(1);
+    expect(callHistory).toEqual(["Call #1 with param: test_value"]);
+
+    const sideEffects: string[] = [];
+    const sideEffectTool = StructuredTool.from_function(
+      function performSideEffect(action: unknown): string {
+        sideEffects.push(`SIDE_EFFECT: ${String(action)} executed at call`);
+        return `Action ${String(action)} completed`;
+      },
+      {
+        name: "side effect tool",
+        description: "Tool with observable side effects",
+        args_schema: { action: { type: "string", required: true } },
+      },
+    );
+
+    expect(sideEffectTool.invoke({ action: "write_file" })).toBe("Action write_file completed");
+    expect(sideEffects).toEqual(["SIDE_EFFECT: write_file executed at call"]);
+  });
+
   it("infers upstream default values from function parameters", () => {
     function summarize(requiredParam: unknown, optionalParam = "default", nullableParam = null, maxResults = 10, includeSources = true): string {
       return [
