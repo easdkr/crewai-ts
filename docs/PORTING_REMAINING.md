@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 1126 passing tests.
+- Test suite: 1127 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -553,6 +553,7 @@ When more goal budget is available, continue from the behavioral parity audits b
 - `toSerializable` now mirrors upstream BaseModel serialization by honoring `modelDump` / `model_dump` output before object entry serialization, with recursive exclude handling and upstream-style Python repr output when max-depth truncation is reached.
   - `Flow.kickoff` / `kickoffAsync` now support upstream-style `restore_from_state_id` / `restoreFromStateId` fork hydration from persisted state without reusing the source flow ID, silently fall back to default kickoff when the restore source is missing, and reject conflicting checkpoint restores.
   - `Flow.kickoff` / `kickoffAsync` now reload persisted state from `inputs.id` before applying non-id input overrides, matching upstream default-value override semantics.
+  - The latest-upstream `inputs.id` deprecation migration guide is release-gated deterministically: deprecated `inputs.id` hydration resumes and writes under the supplied flow id, while `restore_from_state_id` hydrates from the source snapshot, preserves that source record, and writes under a fresh `state.id`.
   - Persisted Flow resume now skips pre-completed methods and continues downstream listeners, matching upstream listener resumability semantics.
   - Platform integration token context now has default-gate coverage for upstream env fallback, context precedence, empty token preservation, nested scope restoration, and exception restoration.
   - `Flow.plot` now emits `flow_plot` and writes an interactive HTML visualization through the existing flow structure renderer.

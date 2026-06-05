@@ -26953,6 +26953,65 @@ describe("flow runtime", () => {
     });
   });
 
+  it("keeps inputs.id resume lineage separate from restore_from_state_id fork lineage", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "crewai-ts-flow-id-migration-"));
+    const persistence = new JsonFlowPersistence(directory);
+    const snapshot = {
+      counter: 1,
+      events: ["seed"],
+    };
+    await persistence.saveState("resume-source", "seed", { id: "resume-source", ...snapshot });
+    await persistence.saveState("fork-source", "seed", { id: "fork-source", ...snapshot });
+
+    class MigrationLineageFlow extends Flow<{ id: string; counter: number; events: string[] }> {
+      constructor() {
+        super({
+          initialState: { id: "initial-flow", counter: 0, events: [] },
+          persistence,
+        });
+      }
+
+      run() {
+        this.state.counter += 1;
+        this.state.events.push(`run:${this.state.id}:${String(this.state.counter)}`);
+        return this.state.counter;
+      }
+    }
+
+    const initializer = decorateMethod(MigrationLineageFlow, "run", start() as unknown as Decorator);
+    const initialize = (flow: MigrationLineageFlow) => {
+      initializer.call(flow);
+    };
+
+    const resumed = new MigrationLineageFlow();
+    initialize(resumed);
+    await resumed.kickoff({ inputs: { id: "resume-source" } });
+
+    expect(resumed.state.id).toBe("resume-source");
+    await expect(persistence.loadState("resume-source")).resolves.toMatchObject({
+      id: "resume-source",
+      counter: 2,
+      events: ["seed", "run:resume-source:2"],
+    });
+
+    const forked = new MigrationLineageFlow();
+    initialize(forked);
+    await forked.kickoff({ restore_from_state_id: "fork-source" });
+
+    expect(forked.state.id).not.toBe("fork-source");
+    expect(forked.state.id).not.toBe("initial-flow");
+    await expect(persistence.loadState("fork-source")).resolves.toMatchObject({
+      id: "fork-source",
+      counter: 1,
+      events: ["seed"],
+    });
+    await expect(persistence.loadState(forked.state.id)).resolves.toMatchObject({
+      id: forked.state.id,
+      counter: 2,
+      events: ["seed", `run:${forked.state.id}:2`],
+    });
+  });
+
   it("falls back to default kickoff when restore_from_state_id is missing", async () => {
     const directory = mkdtempSync(join(tmpdir(), "crewai-ts-flow-missing-restore-"));
     const persistence = new JsonFlowPersistence(directory);
