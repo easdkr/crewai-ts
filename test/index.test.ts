@@ -14814,6 +14814,44 @@ describe("core crew runtime", () => {
     expect(seenPrompts[1]).toContain("Context:\nIdea 1: message snapshots");
   });
 
+  it("does not interpolate agent or task templates when kickoff has no inputs", async () => {
+    const prompts: string[] = [];
+    const agentInstance = new Agent({
+      role: "{topic} Researcher",
+      goal: "Express hot takes on {topic}.",
+      backstory: "You have a lot of experience with {topic}.",
+      llm: (messages) => {
+        const prompt = messages.map((message) => `${message.role}:${message.content}`).join("\n");
+        prompts.push(prompt);
+        return `done: ${prompt}`;
+      },
+    });
+    const taskInstance = new Task({
+      description: "Give me an analysis around {topic}.",
+      expected_output: "{points} bullet points about {topic}.",
+      agent: agentInstance,
+    });
+    const crewInstance = new Crew({ agents: [agentInstance], tasks: [taskInstance] });
+
+    const noInputOutput = await crewInstance.kickoff();
+
+    expect(noInputOutput.raw).toContain("Role: {topic} Researcher");
+    expect(noInputOutput.raw).toContain("Task: Give me an analysis around {topic}.");
+    expect(noInputOutput.raw).toContain("Expected output: {points} bullet points about {topic}.");
+    expect(agentInstance.role).toBe("{topic} Researcher");
+    expect(agentInstance.goal).toBe("Express hot takes on {topic}.");
+    expect(agentInstance.backstory).toBe("You have a lot of experience with {topic}.");
+    expect(taskInstance.description).toBe("Give me an analysis around {topic}.");
+    expect(taskInstance.expected_output).toBe("{points} bullet points about {topic}.");
+
+    const inputOutput = await crewInstance.kickoff({ inputs: { topic: "AI agents", points: 5 } });
+
+    expect(inputOutput.raw).toContain("Role: AI agents Researcher");
+    expect(inputOutput.raw).toContain("Task: Give me an analysis around AI agents.");
+    expect(inputOutput.raw).toContain("Expected output: 5 bullet points about AI agents.");
+    expect(prompts).toHaveLength(2);
+  });
+
   it("supports CrewAI snake_case kickoff aliases", async () => {
     const agentInstance = new Agent({
       role: "Researcher",

@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 1224 passing tests.
+- Test suite: 1225 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -65,6 +65,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
 - The latest-upstream native-provider failure audit is now release-gated deterministically: supported native provider factory failures raise an upstream-shaped `Error importing native provider ...` error instead of silently falling back or leaking a raw SDK initialization exception.
 - The latest-upstream Crew kickoff input audit is now release-gated deterministically: `kickoff`, `kickoff_async`, and `akickoff` accept upstream-style direct input dictionaries as well as the TypeScript `{ inputs }` options object, preserving task interpolation in both sync and native async paths.
 - The latest-upstream Crew kickoff file-input audit is now release-gated deterministically: `kickoff`, `kickoff_async`, and `akickoff` accept upstream-style positional `input_files` alongside direct input dictionaries and pass those files through to task prompts in sync and native async paths.
+- The latest-upstream `test_crew_does_not_interpolate_without_inputs` audit is now release-gated deterministically: no-input crew kickoff leaves agent role/goal/backstory and task description/expected-output templates untouched, while a later input kickoff interpolates the same templates normally without live provider calls.
 - The latest-upstream hierarchical manager copy audit is now release-gated deterministically: copied crews expose `manager_agent`, assign copied manager agents a fresh public `id`, and preserve the original manager role and goal for kickoff-for-each/hierarchical reuse.
 - The latest-upstream ReAct parser diagnostic audit is now release-gated deterministically: missing `Action:` and missing `Action Input:` chunks raise the upstream retry diagnostics, while mixed valid/invalid parser chunks preserve `AgentAction`, `AgentFinish`, and parser-error classification.
 - The latest-upstream Agent LLM attribute audit is now release-gated deterministically: direct `LLM(...)` construction and object-style `create_llm` preserve upstream generation parameters including `top_p`, penalties, `seed`, boolean `logprobs`, `top_logprobs`, `stop`, and `response_format` through Agent assignment and config serialization.
