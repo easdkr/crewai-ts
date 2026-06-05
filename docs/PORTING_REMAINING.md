@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 1125 passing tests.
+- Test suite: 1126 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -170,6 +170,7 @@ This register is the source of truth for continuing porting work while parity sc
 - Crew tool caching is release-gated for upstream shared-cache semantics: identical tool/input calls across different agents hit the shared crew `CacheHandler` with the same cache key.
 - Crew for-each input validation is release-gated for upstream runtime semantics: each `kickoffForEach` input must be a dict/Mapping-like object, so non-mapping values fail with the upstream TypeError instead of being interpolated as indexed strings.
 - Crew async kickoff docs examples are release-gated for upstream direct input-list calls: `kickoff_for_each`, `kickoff_for_each_async`, and `akickoff_for_each` accept a plain list of input dictionaries as well as the TypeScript options object.
+- Quickstart Flow + crew docs shape is release-gated deterministically: a `@start()` method accepts the upstream trigger payload, stores `state.topic`, a listener runs a crew-like kickoff with `{ inputs: { topic } }`, stores `CrewOutput.raw` in `state.report`, and a final listener returns the report-path summary without live tools or file IO.
 - Crew for-each streaming output is release-gated for upstream kickoff result semantics: stream-mode `kickoffForEach`, `kickoffForEachAsync`, and `akickoffForEach` return one `CrewStreamingOutput` per input, preserve each per-input `CrewOutput` result, and aggregate consumed stream usage on the parent crew.
 - Crew kickoff interpolation is release-gated for upstream hyphenated input names: keys such as `interpolation-with-hyphens` interpolate through agent fields, task prompt text, and final task execution while repeated kickoffs re-render from original agent/task templates.
 - Flow event causal ordering is release-gated for listener chains, OR-condition listeners, router paths, parallel listeners, repeated flow kickoffs, and unmatched finish-event diagnostics: downstream method execution events preserve upstream `triggered_by_event_id` links to the exact method completion event that caused them without cross-run event-id leakage, and a bare `flow_finished` emits the upstream missing-start warning.

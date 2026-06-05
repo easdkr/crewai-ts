@@ -23479,6 +23479,57 @@ describe("flow runtime", () => {
     });
   });
 
+  it("runs the quickstart Flow plus crew state handoff shape deterministically", async () => {
+    class ResearchCrew {
+      crew() {
+        return {
+          kickoff: ({ inputs }: { inputs: { topic: string } }) => new CrewOutput({
+            raw: `Report about ${inputs.topic}`,
+          }),
+        };
+      }
+    }
+
+    class LatestAiFlow extends Flow<{ id: string; topic: string; report: string; events: string[] }> {
+      constructor() {
+        super({ initialState: { id: "quickstart-flow", topic: "", report: "", events: [] } });
+      }
+
+      prepareTopic(crewaiTriggerPayload: { topic?: string } | null = null) {
+        this.state.topic = crewaiTriggerPayload?.topic ?? "AI Agents";
+        this.state.events.push(`topic:${this.state.topic}`);
+      }
+
+      runResearch() {
+        const result = new ResearchCrew().crew().kickoff({ inputs: { topic: this.state.topic } });
+        this.state.report = result.raw;
+        this.state.events.push("research");
+      }
+
+      summarize() {
+        this.state.events.push("summary");
+        return "Report path: output/report.md";
+      }
+    }
+
+    [
+      decorateMethod(LatestAiFlow, "prepareTopic", start() as unknown as Decorator),
+      decorateMethod(LatestAiFlow, "runResearch", listen("prepareTopic") as unknown as Decorator),
+      decorateMethod(LatestAiFlow, "summarize", listen("runResearch") as unknown as Decorator),
+    ].forEach((initializer) => {
+      initializer.call(new LatestAiFlow());
+    });
+
+    const flow = new LatestAiFlow();
+    await expect(flow.kickoff({ inputs: { topic: "TypeScript agents" } })).resolves.toBe("Report path: output/report.md");
+    expect(flow.state).toEqual({
+      id: "quickstart-flow",
+      topic: "TypeScript agents",
+      report: "Report about TypeScript agents",
+      events: ["topic:TypeScript agents", "research", "summary"],
+    });
+  });
+
   it("builds Flow.flow_definition caches per subclass like upstream", () => {
     class ParentFlow extends Flow {
       begin() {
