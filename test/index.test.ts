@@ -33600,6 +33600,10 @@ describe("LLM providers", () => {
 
       expect(() => new SnowflakeCompletion({ model: "claude-3-5-sonnet" })).toThrow("Snowflake token is required");
 
+      process.env.SNOWFLAKE_PAT = "test-pat";
+      expect(() => new SnowflakeCompletion({ model: "claude-3-5-sonnet" })).toThrow("Snowflake account URL is required");
+      delete process.env.SNOWFLAKE_PAT;
+
       process.env.SNOWFLAKE_JWT = "jwt-token";
       process.env.SNOWFLAKE_ACCOUNT_IDENTIFIER = "org-env";
       const jwtBacked = new SnowflakeCompletion({ model: "claude-3-5-sonnet" });
