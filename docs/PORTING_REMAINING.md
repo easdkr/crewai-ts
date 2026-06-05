@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 1136 passing tests.
+- Test suite: 1137 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -28,6 +28,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
 - The latest-upstream LiteLLM/OpenAI GPT-5 stop-parameter audit is now release-gated deterministically: GPT-5-family fallback params omit API `stop` while preserving client-side stop-word truncation, and non-GPT-5 fallback params still include supported stop sequences.
 - The latest-upstream Ollama provider message-format audit is now release-gated deterministically: `format_messages_for_provider` appends the upstream-required empty user message only when an Ollama conversation ends with an assistant turn, while leaving user-ended conversations unchanged.
 - The latest-upstream native-provider fallback audit is now release-gated deterministically for non-native provider prefixes: `groq/...` and `together/...` keep the original model string and route through the LiteLLM-compatible `ConfiguredLLM` path instead of pretending to use a native SDK.
+- The latest-upstream native-provider failure audit is now release-gated deterministically: supported native provider factory failures raise an upstream-shaped `Error importing native provider ...` error instead of silently falling back or leaking a raw SDK initialization exception.
 - The latest-upstream non-streaming tool-call response audit is now release-gated deterministically: sync and async non-streaming handlers preserve raw `tool_calls` for executor-managed execution even when the assistant message also contains text and no `available_functions` map is provided.
 - The latest-upstream ChromaDB utility audit is now release-gated deterministically: collection-name sanitization covers long, short, special-character, IPv4, empty, null, and whitespace-only names; document preparation preserves list-metadata semantics and generated 64-character content hashes; and batch slicing returns `null` metadata only when every sliced metadata object is empty.
 - The latest-upstream ChromaDB collection payload audit is now release-gated deterministically: sync and async `create_collection` / `get_or_create_collection` preserve upstream all-params payloads, default `hnsw:space` metadata is added only when metadata is omitted, and caller-provided metadata is no longer merged with the default metric.

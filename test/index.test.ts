@@ -574,6 +574,8 @@ import {
   strip_cache_breakpoint,
   clearLLMProviders,
   registerLLMProvider,
+  registerLLMProviderFactory,
+  unregisterLLMProviderFactory,
   unregisterLLMProvider,
   sanitizeToolName,
   safe_tool_conversion,
@@ -34642,6 +34644,19 @@ describe("LLM providers", () => {
     expect(() => {
       llm._validate_call_params();
     }).not.toThrow();
+  });
+
+  it("raises an upstream-shaped native provider import error when a supported provider factory fails", () => {
+    registerLLMProviderFactory("openai", () => {
+      throw new Error("Native provider initialization failed");
+    });
+    try {
+      expect(() => create_llm("gpt-4o")).toThrow(
+        "Error importing native provider 'openai': Native provider initialization failed",
+      );
+    } finally {
+      unregisterLLMProviderFactory("openai");
+    }
   });
 
   it("detects upstream-style multimodal support on configured LLM models", () => {

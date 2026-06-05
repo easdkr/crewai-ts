@@ -2676,6 +2676,10 @@ export function registerLLMProviderFactory(
   registeredProviderFactories.set(canonicalLLMProvider(provider), factory);
 }
 
+export function unregisterLLMProviderFactory(provider: string): void {
+  registeredProviderFactories.delete(canonicalLLMProvider(provider));
+}
+
 export function unregisterLLMProvider(model: string): void {
   registeredProviders.delete(model);
 }
@@ -2691,7 +2695,15 @@ export function resolveLLMProvider(model: string): LLMClient | null {
 function createConfiguredLLM(options: ConstructorParameters<typeof ConfiguredLLM>[0]): LLMClient {
   const provider = typeof options.provider === "string" ? canonicalLLMProvider(options.provider) : null;
   const factory = provider ? registeredProviderFactories.get(provider) : undefined;
-  return factory ? factory(options) : new ConfiguredLLM(options);
+  if (!factory) {
+    return new ConfiguredLLM(options);
+  }
+  try {
+    return factory(options);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`Error importing native provider '${provider ?? "unknown"}': ${message}`, { cause: error });
+  }
 }
 
 export async function callLLM(
