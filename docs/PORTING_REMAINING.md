@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 1175 passing tests.
+- Test suite: 1176 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -393,7 +393,7 @@ When more goal budget is available, continue from the behavioral parity audits b
 - `EventBus` now mirrors upstream shutdown flag behavior: setting `_shutting_down` suppresses both `emit` and `aemit` delivery, while `shutdown()` marks the bus as shutting down before flushing and clearing handlers.
 - `EventBus` handler failure handling is release-gated: sync and async handler exceptions do not surface as uncaught errors and do not prevent later handlers for the same event from running.
 - `EventBus` class-based handler registration is release-gated for upstream `bus.on(EventClass)` usage: handlers registered with event constructors run for matching event instances alongside string event-type handlers.
-- System signal events are release-gated for upstream adapter semantics: `SIGNAL_EVENT_TYPES` lists all supported signal event classes, `signal_event_adapter.validate_python` / `validatePython` restores signal payloads by discriminated `type`, invalid signal types are rejected, and signal events expose `model_dump` / `modelDump` round-trip serialization.
+- System signal events are release-gated for upstream adapter/decorator semantics: `SIGNAL_EVENT_TYPES` lists all supported signal event classes, `signal_event_adapter.validate_python` / `validatePython` restores signal payloads by discriminated `type`, invalid signal types are rejected, signal events expose `model_dump` / `modelDump` round-trip serialization, and `on_signal` registers handlers for all supported signal events while returning the original handler.
 - Environment context events are release-gated for upstream adapter semantics: `ENV_CONTEXT_EVENT_TYPES` lists all supported environment event classes, and `env_context_event_adapter.validate_python` / `validatePython` restores payloads by discriminated `type` while rejecting unknown environment event types.
 - `CrewContext` / `get_crew_context` now mirror upstream crew-context metadata behavior with a local deterministic scope shim: no active scope returns `null`, active scopes expose `id` and `key`, and nested/exception paths restore the previous context.
 - `Crew.kickoff` / `akickoff` now run inside the crew context scope, so task callbacks see the active crew id/key and concurrent `kickoffForEachAsync` executions do not leak context between crew copies.

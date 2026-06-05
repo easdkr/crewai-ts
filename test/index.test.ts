@@ -379,6 +379,7 @@ import {
   SigIntEvent,
   SigTermEvent,
   SigTStpEvent,
+  on_signal,
   signal_event_adapter,
   SignalType,
   StepObservation,
@@ -5433,6 +5434,27 @@ describe("orchestration lifecycle events", () => {
     expect(signal_event_adapter.validate_python({ type: "SIGTSTP" })).toBeInstanceOf(SigTStpEvent);
     expect(signal_event_adapter.validate_python({ type: "SIGCONT" })).toBeInstanceOf(SigContEvent);
     expect(() => signal_event_adapter.validate_python({ type: "SIGKILL" })).toThrow("Unsupported signal event type");
+  });
+
+  it("registers upstream on_signal handlers for every system signal event", () => {
+    const received: string[] = [];
+    const handler = (_source: unknown, event: InstanceType<(typeof SIGNAL_EVENT_TYPES)[number]>) => {
+      received.push(event.type);
+    };
+
+    try {
+      expect(on_signal(handler)).toBe(handler);
+
+      for (const eventClass of SIGNAL_EVENT_TYPES) {
+        crewaiEventBus.emit("system", new eventClass());
+      }
+
+      expect(received).toEqual(["SIGTERM", "SIGINT", "SIGHUP", "SIGTSTP", "SIGCONT"]);
+    } finally {
+      for (const eventClass of SIGNAL_EVENT_TYPES) {
+        crewaiEventBus.off(new eventClass().type, handler);
+      }
+    }
   });
 });
 
