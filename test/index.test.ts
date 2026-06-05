@@ -30199,6 +30199,31 @@ describe("tools", () => {
     expect(events.filter((event) => event instanceof ToolUsageFinishedEvent)).toEqual([]);
   });
 
+  it("checks upstream ToolUsage limits without incrementing counters", () => {
+    const limitedTool = new StructuredTool({
+      name: "Limited Tool",
+      description: "Limited usage",
+      maxUsageCount: 2,
+      func: ({ input_text }) => `Processed ${String(input_text)}`,
+    });
+    const usage = new ToolUsage({
+      tools: [limitedTool],
+      toolsHandler: new ToolsHandler(),
+    });
+
+    expect(usage._check_usage_limit(limitedTool, "Limited Tool")).toBeNull();
+    expect(limitedTool.current_usage_count).toBe(0);
+
+    limitedTool.current_usage_count += 1;
+    expect(usage._check_usage_limit(limitedTool, "Limited Tool")).toBeNull();
+    expect(limitedTool.current_usage_count).toBe(1);
+
+    limitedTool.current_usage_count += 1;
+    expect(usage._check_usage_limit(limitedTool, "Limited Tool"))
+      .toContain("has reached its usage limit of 2 times");
+    expect(limitedTool.current_usage_count).toBe(2);
+  });
+
   it("exposes upstream ToolUsage helper methods for selection, parsing, format reminders, and fingerprints", async () => {
     const seen: Array<ToolValidateInputErrorEvent | ToolSelectionErrorEvent> = [];
     crewaiEventBus.on("tool_validate_input_error", (_source, event) => {
