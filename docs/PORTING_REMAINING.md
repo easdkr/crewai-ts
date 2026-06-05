@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 1223 passing tests.
+- Test suite: 1224 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -70,6 +70,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
 - The latest-upstream Agent LLM attribute audit is now release-gated deterministically: direct `LLM(...)` construction and object-style `create_llm` preserve upstream generation parameters including `top_p`, penalties, `seed`, boolean `logprobs`, `top_logprobs`, `stop`, and `response_format` through Agent assignment and config serialization.
 - The latest-upstream structured-tool direct invocation audit is now release-gated deterministically: `CrewStructuredTool.invoke` / local `StructuredTool.invoke` calls the underlying function exactly once per direct call, preserving call counts and side effects without duplicate execution.
 - The latest-upstream project callback TaskOutput audit is now release-gated deterministically: CrewBase task methods preserve callbacks that receive the exact `TaskOutput` instance for both direct callback invocation and `execute_sync` task execution.
+- The latest-upstream `test_task_output_includes_messages` audit is now release-gated deterministically: sequential crew task outputs retain the agent execution message snapshots for each task, preserve context handoff in the second task prompt, and include those messages in `TaskOutput.model_dump()` without live provider calls.
 - The latest-upstream task interpolation edge-case audit is now release-gated deterministically: literal `{}` / `[]` templates remain untouched, numeric placeholders preserve stringified integer/float values, and boolean placeholders render with upstream Python-style `True` / `False` casing.
 - The latest-upstream streaming cancellation audit is now release-gated deterministically: completed `CrewStreamingOutput` / `FlowStreamingOutput` instances remain uncancelled when `close()` / `aclose()` is called again, while pre-completion cleanup still marks early exits as cancelled.
 - The latest-upstream streaming exception audit is now release-gated deterministically: `CrewStreamingOutput` and `FlowStreamingOutput` propagate run errors during async iteration, mark the stream completed, and keep the same error visible through `result`.

@@ -14744,6 +14744,76 @@ describe("core crew runtime", () => {
     expect(output.tasksOutput[0]?.agent).toBe("Researcher");
   });
 
+  it("includes agent execution messages on each TaskOutput", async () => {
+    const seenPrompts: string[] = [];
+    const researcher = new Agent({
+      role: "Researcher",
+      goal: "Analyze AI ideas",
+      backstory: "Careful technology researcher",
+      allow_delegation: false,
+      llm: (messages) => {
+        const prompt = messages.at(-1)?.content ?? "";
+        seenPrompts.push(prompt);
+        if (prompt.includes("Summarize the ideas")) {
+          return "Summary: deterministic agents need task output message history.";
+        }
+        return "Idea 1: message snapshots\nIdea 2: context handoff\nIdea 3: replayable task outputs";
+      },
+    });
+    const ideasTask = new Task({
+      description: "Give me a list of 3 interesting ideas about AI.",
+      expected_output: "Bullet point list of 3 ideas.",
+      agent: researcher,
+    });
+    const summaryTask = new Task({
+      description: "Summarize the ideas from the previous task.",
+      expected_output: "A summary of the ideas.",
+      agent: researcher,
+    });
+    const crewInstance = new Crew({
+      agents: [researcher],
+      tasks: [ideasTask, summaryTask],
+      process: Process.sequential,
+    });
+
+    const output = await crewInstance.kickoff();
+
+    expect(output.tasksOutput).toHaveLength(2);
+    const ideasOutput = output.tasksOutput[0];
+    const summaryOutput = output.tasksOutput[1];
+    if (!ideasOutput || !summaryOutput) {
+      throw new Error("Expected two task outputs");
+    }
+    const messageContent = (message: unknown) => {
+      if (!message || typeof message !== "object" || !("content" in message)) {
+        return "";
+      }
+      const content = (message as { content?: unknown }).content;
+      return typeof content === "string" || typeof content === "number" || typeof content === "boolean" ? String(content) : "";
+    };
+    const messageRole = (message: unknown) => {
+      if (!message || typeof message !== "object" || !("role" in message)) {
+        return "";
+      }
+      const role = (message as { role?: unknown }).role;
+      return typeof role === "string" || typeof role === "number" || typeof role === "boolean" ? String(role) : "";
+    };
+    expect(ideasOutput.messages.map(messageRole)).toContain("system");
+    expect(ideasOutput.messages.map(messageRole)).toContain("user");
+    expect(ideasOutput.messages.map(messageContent).join("\n")).toContain("Role: Researcher");
+    expect(ideasOutput.messages.map(messageContent).join("\n")).toContain("Give me a list of 3 interesting ideas about AI.");
+    expect(summaryOutput.messages.map(messageRole)).toContain("system");
+    expect(summaryOutput.messages.map(messageRole)).toContain("user");
+    expect(summaryOutput.messages.map(messageContent).join("\n")).toContain("Goal: Analyze AI ideas");
+    expect(summaryOutput.messages.map(messageContent).join("\n")).toContain("Summarize the ideas from the previous task.");
+    expect(messageContent(summaryOutput.messages.at(-1))).toContain("Idea 1: message snapshots");
+    expect(ideasTask.output?.messages).toEqual(ideasOutput.messages);
+    expect(summaryTask.output?.messages).toEqual(summaryOutput.messages);
+    expect(ideasOutput.model_dump()).toEqual(expect.objectContaining({ messages: ideasOutput.messages }));
+    expect(summaryOutput.model_dump()).toEqual(expect.objectContaining({ messages: summaryOutput.messages }));
+    expect(seenPrompts[1]).toContain("Context:\nIdea 1: message snapshots");
+  });
+
   it("supports CrewAI snake_case kickoff aliases", async () => {
     const agentInstance = new Agent({
       role: "Researcher",
