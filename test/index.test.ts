@@ -28143,6 +28143,43 @@ describe("flow runtime", () => {
     expect((finished as FlowFinishedEvent).result).toBe("done");
   });
 
+  it("emits flow and method execution events when flow panel events are suppressed", async () => {
+    class QuietFlow extends Flow {
+      suppress_flow_events = true;
+
+      begin() {
+        return "ok";
+      }
+    }
+
+    const initializer = decorateMethod(QuietFlow, "begin", start() as unknown as Decorator);
+    const flow = new QuietFlow();
+    initializer.call(flow);
+    const flowStarted: string[] = [];
+    const methodsStarted: string[] = [];
+    const methodsFinished: string[] = [];
+    const unsubscribe = [
+      crewaiEventBus.on("flow_started", (_source, event) => {
+        flowStarted.push(event.flow_name);
+      }),
+      crewaiEventBus.on("method_execution_started", (_source, event) => {
+        methodsStarted.push(event.method_name);
+      }),
+      crewaiEventBus.on("method_execution_finished", (_source, event) => {
+        methodsFinished.push(event.method_name);
+      }),
+    ];
+
+    await flow.kickoff();
+    unsubscribe.forEach((off) => {
+      off();
+    });
+
+    expect(flowStarted).toEqual(["QuietFlow"]);
+    expect(methodsStarted).toEqual(["begin"]);
+    expect(methodsFinished).toEqual(["begin"]);
+  });
+
   it("emits method and flow failure events", async () => {
     class FailedFlow extends Flow {
       begin() {
