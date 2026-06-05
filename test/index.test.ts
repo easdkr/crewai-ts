@@ -23627,6 +23627,46 @@ describe("flow runtime", () => {
     });
   });
 
+  it("connects FlowDefinition router events only to direct OR string conditions", () => {
+    const stringConditionDefinition = FlowDefinition.from_dict({
+      schema: "crewai.flow/v1",
+      name: "RouterToStringFlow",
+      methods: {
+        init: { start: true },
+        decide: { listen: "init", router: true, emit: ["event_a", "event_b"] },
+        handleEither: { listen: { or: ["event_a", "event_b"] } },
+        handleBOnly: { listen: "event_b" },
+      },
+    });
+
+    const stringConditionRouterEdges = buildFlowStructure(stringConditionDefinition)
+      .edges.filter((edge) => edge.is_router_event);
+
+    expect(stringConditionRouterEdges).toHaveLength(3);
+    expect(stringConditionRouterEdges.filter((edge) => edge.target === "handleEither")).toHaveLength(2);
+    expect(stringConditionRouterEdges.filter((edge) => edge.target === "handleBOnly")).toHaveLength(1);
+
+    const andConditionDefinition = FlowDefinition.from_dict({
+      schema: "crewai.flow/v1",
+      name: "RouterAndConditionFlow",
+      methods: {
+        init: { start: true },
+        decide: { listen: "init", router: true, emit: ["event_a"] },
+        step1: { listen: "event_a" },
+        step2And: { listen: { and: ["event_a", "step1"] } },
+        step3Or: { listen: { or: [{ and: ["event_a", "step1"] }, "event_a"] } },
+      },
+    });
+
+    const andConditionTargets = buildFlowStructure(andConditionDefinition)
+      .edges.filter((edge) => edge.is_router_event)
+      .map((edge) => edge.target);
+
+    expect(andConditionTargets).toContain("step1");
+    expect(andConditionTargets).toContain("step3Or");
+    expect(andConditionTargets).not.toContain("step2And");
+  });
+
   it("warns instead of erroring for orphaned static FlowDefinition router triggers", () => {
     const definition = FlowDefinition.from_dict({
       schema: "crewai.flow/v1",
