@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 1159 passing tests.
+- Test suite: 1160 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -142,7 +142,7 @@ This register is the source of truth for continuing porting work while parity sc
 - Azure `api: "responses"` is modeled as a deterministic shim over the OpenAI Responses adapter: endpoint-to-`/openai/v1/` base URL normalization, Responses request preparation, response-chain state delegation, config fields, and call/acall routing are release-gated without creating Azure SDK clients or making live calls.
 - OpenAI Responses structured-output formatting is release-gated with deterministic schema-provider fixtures: local model-like schemas are converted to the flat `text.format` JSON schema shape expected by upstream Responses API requests.
 - OpenAI Responses PDF multimodal formatting is release-gated for upstream `crewai-files` handoff: PDF inputs are converted into `input_file` data URLs for concrete GPT models, including direct Agent `input_files`, without live OpenAI SDK calls.
-- OpenAI Responses result value-object behavior is release-gated deterministically: `ResponsesAPIResult` initializes empty tool/reasoning buckets, preserves response ids, and exposes upstream `has_tool_outputs` / `has_reasoning` helpers with camelCase aliases; `parse_tool_outputs` defaults to `false` and preserves explicit `true` on Responses clients.
+- OpenAI Responses result value-object behavior is release-gated deterministically: `ResponsesAPIResult` initializes empty tool/reasoning buckets, preserves response ids, and exposes upstream `has_tool_outputs` / `has_reasoning` helpers with camelCase aliases; `parse_tool_outputs` and `auto_chain` default to `false`, preserve explicit `true`, and auto-chain starts with no previous response id.
 - OpenAI SDK client parameter resolution is deterministic and release-gated: explicit `base_url` wins over `api_base`, which wins over `OPENAI_BASE_URL`, and `client_params` can override the assembled SDK params without constructing a live client.
 - OpenAI/Azure Responses reasoning-chain state is release-gated for upstream empty-state behavior: `last_reasoning_items` is `null` until reasoning items are captured and returns `null` again after reset.
 - Provider-agnostic prompt-cache breakpoints are release-gated with deterministic OpenAI and Anthropic formatting tests: markers are stripped from wire payloads without mutating caller messages, Anthropic system/stable user blocks receive ephemeral cache control, assistant markers are ignored, and volatile tool-result carrier messages are not stamped.
@@ -592,7 +592,7 @@ When more goal budget is available, continue from the behavioral parity audits b
   - native OpenAI/Azure/Anthropic/Bedrock support overrides for function calling, stop words, and multimodal capability where deterministic
   - OpenAI/Azure response-chain compatibility getters and reset methods (`last_response_id`, `last_reasoning_items`, `reset_chain`, `reset_reasoning_chain`)
   - OpenAI native completion shim now exposes upstream-style chat completions and Responses API request parameter builders, including built-in tools, custom tools, response format, stream usage options, instructions, includes, and reasoning fields
-  - OpenAI native completion shim now exposes upstream-style SDK response token usage extraction, Responses API result value-object helpers, parse-tool-output flags, output parsing for function calls, built-in tool outputs, and reasoning items, and deterministic Responses streaming event accumulation, including cached prompt tokens and reasoning tokens
+  - OpenAI native completion shim now exposes upstream-style SDK response token usage extraction, Responses API result value-object helpers, parse-tool-output and auto-chain flags, output parsing for function calls, built-in tool outputs, and reasoning items, and deterministic Responses streaming event accumulation, including cached prompt tokens and reasoning tokens
   - OpenAI Responses API parsing now handles SDK-like usage/detail getters and `model_dump` action objects for built-in computer-use outputs.
   - OpenAI native completion shim now explicitly exposes upstream-style provider alias methods on the provider class, including async calls, config serialization, capability checks, file uploaders, context windows, and response-chain reset/getters.
   - LiteLLM removal docs OpenAI-compatible migration is default-gated: object-style `create_llm({ model: "openai/llama3", base_url, api_key })` now preserves the custom endpoint/API key, strips the provider prefix to `llama3`, and keeps `is_litellm` false for Ollama/vLLM-style OpenAI-compatible endpoints.
