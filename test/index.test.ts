@@ -30627,6 +30627,25 @@ describe("tools", () => {
     expect(calls).toBe(1);
   });
 
+  it("keeps direct BaseTool string input compatible with upstream positional calls", () => {
+    class SimpleTool extends BaseTool {
+      constructor() {
+        super({
+          name: "simple",
+          description: "A simple tool",
+        });
+      }
+
+      protected _run(args: Record<string, unknown>): string {
+        return String(args.input);
+      }
+    }
+
+    const toolInstance = new SimpleTool();
+    expect(toolInstance.run("What is life?")).toBe("What is life?");
+    expect(toolInstance.current_usage_count).toBe(1);
+  });
+
   it("exports upstream CrewStructuredTool and EnvVar runtime values", async () => {
     function multiply(a: unknown, b: unknown): number {
       return Number(a) * Number(b);
