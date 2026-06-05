@@ -9,7 +9,7 @@ export default defineConfig(
     languageOptions: {
       parserOptions: {
         project: "./tsconfig.eslint.json",
-        tsconfigRootDir: "/Users/june/workspace/personal/crewai-ts",
+        tsconfigRootDir: import.meta.dirname,
       },
     },
   },
