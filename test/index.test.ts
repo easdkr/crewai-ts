@@ -12444,6 +12444,38 @@ describe("RAG configuration and factories", () => {
     expect(asyncDeleteCollection).toHaveBeenCalledWith({ name: "async_docs" });
   });
 
+  it("uses upstream ChromaDB reset calls and lifecycle client boundary errors", async () => {
+    const syncReset = vi.fn();
+    const asyncReset = vi.fn();
+    const syncClient = new ChromaDBClient({
+      reset: syncReset,
+    }, (texts: readonly string[]) => texts.map((text) => [text.length]));
+    const asyncClient = new ChromaDBClient({
+      async reset() {
+        await Promise.resolve();
+        asyncReset();
+      },
+    }, (texts: readonly string[]) => texts.map((text) => [text.length]));
+
+    syncClient.reset();
+    await asyncClient.areset();
+
+    expect(syncReset).toHaveBeenCalledTimes(1);
+    expect(asyncReset).toHaveBeenCalledTimes(1);
+    expect(() => {
+      asyncClient.delete_collection({ collection_name: "docs" });
+    }).toThrow("Synchronous method delete_collection() requires a ClientAPI. Use adelete_collection() for AsyncClientAPI.");
+    await expect(syncClient.adelete_collection({ collection_name: "docs" })).rejects.toThrow(
+      "Asynchronous method adelete_collection() requires an AsyncClientAPI. Use delete_collection() for ClientAPI.",
+    );
+    expect(() => {
+      asyncClient.reset();
+    }).toThrow("Synchronous method reset() requires a ClientAPI. Use areset() for AsyncClientAPI.");
+    await expect(syncClient.areset()).rejects.toThrow(
+      "Asynchronous method areset() requires an AsyncClientAPI. Use reset() for ClientAPI.",
+    );
+  });
+
   it("passes null ChromaDB metadatas when every added document omits metadata", () => {
     const collection = { upsert: vi.fn() };
     const getOrCreateCollection = vi.fn(() => collection);

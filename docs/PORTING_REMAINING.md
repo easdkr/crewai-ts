@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 1152 passing tests.
+- Test suite: 1153 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -46,6 +46,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
 - The latest-upstream ChromaDB search audit is now release-gated deterministically: sync optional search params and async search calls use upstream query payload shapes (`query_texts`, `n_results`, `where`, `where_document`, ordered `include`) and score-threshold filtering preserves only matching converted results.
 - The latest-upstream ChromaDB batch-add audit is now release-gated deterministically: default and explicit batch sizes split sync and async `add_documents` / `aadd_documents` upserts into upstream-shaped `ids`, `documents`, and `metadatas` payloads without live ChromaDB clients.
 - The latest-upstream ChromaDB empty-add audit is now release-gated deterministically: sync and async `add_documents` / `aadd_documents` reject empty document lists with the upstream-shaped `Documents list cannot be empty` error before touching collection clients.
+- The latest-upstream ChromaDB lifecycle client-boundary audit is now release-gated deterministically: sync and async `reset()` calls hit upstream-shaped SDK reset methods, while delete/reset methods reject wrong sync or async clients with upstream-shaped guidance.
 - The latest-upstream Qdrant batch-add audit is now release-gated deterministically: default and explicit batch sizes split sync and async `add_documents` / `aadd_documents` upserts into upstream-shaped `collection_name` and flattened point payloads with generated vectors and metadata.
 - The latest-upstream Qdrant empty-add audit is now release-gated deterministically: sync and async `add_documents` / `aadd_documents` reject empty document lists with the upstream-shaped `Documents list cannot be empty` error before checking collection existence.
 - The latest-upstream Qdrant missing-collection audit is now release-gated deterministically: sync and async add/search calls fail with `Collection '...' does not exist` before upsert or query payloads are sent.
@@ -362,6 +363,7 @@ When more goal budget is available, continue from the behavioral parity audits b
 - `ChromaDBClient.search` / `asearch` now apply upstream collection-metadata distance metrics when converting Chroma distances into result scores.
 - `ChromaDBClient.create_collection` / `get_or_create_collection` and async counterparts now use upstream SDK payload shapes without forwarding wrapper-only `collection_name` fields.
 - `ChromaDBClient.delete_collection` / `adelete_collection` now use upstream SDK payload shapes and pass only the sanitized `name` field.
+- `ChromaDBClient.reset` / `areset` and delete/reset client boundary errors are release-gated for upstream sync and async client shapes.
 - `QdrantClient.create_collection` / `get_or_create_collection` and async counterparts now use upstream SDK payload filtering, including default deterministic vector params and supported collection options without forwarding wrapper-only fields.
 - `QdrantClient.add_documents` / `aadd_documents` now use upstream point payload semantics by flattening document metadata beside `content` instead of nesting it under a `metadata` object.
 - `QdrantClient.search` / `asearch` now use upstream SDK query payloads with embedding arrays, `with_payload`, `with_vectors`, `query_filter`, and upstream score/result normalization.
