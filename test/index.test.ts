@@ -33529,6 +33529,9 @@ describe("LLM providers", () => {
       const patBacked = new SnowflakeCompletion({ model: "claude-3-5-sonnet" });
       expect(patBacked.api_key).toBe("pat-token");
       expect(patBacked.account_url).toBe("https://account-url.snowflakecomputing.com/api/v2/cortex/v1");
+
+      const emptyKeyBacked = new SnowflakeCompletion({ model: "claude-3-5-sonnet", api_key: "" });
+      expect(emptyKeyBacked.api_key).toBe("pat-token");
     } finally {
       if (previousPat === undefined) delete process.env.SNOWFLAKE_PAT;
       else process.env.SNOWFLAKE_PAT = previousPat;
