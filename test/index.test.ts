@@ -21964,6 +21964,129 @@ describe("standard decorators", () => {
     }
   });
 
+  it("runs the crewAI-examples markdown-validator CrewBase workflow deterministically", async () => {
+    const prompts: string[] = [];
+    const markdownValidationTool = new StructuredTool({
+      name: "markdown_validation_tool",
+      description: "A tool to review files for markdown syntax errors.",
+      func: (input) => {
+        const filePathValue = (input as { file_path?: unknown }).file_path;
+        const filePath = typeof filePathValue === "string" ? filePathValue : "";
+        if (!existsSync(filePath)) {
+          return "Error: The provided file path does not exist.";
+        }
+        const content = readFileSync(filePath, "utf8");
+        return content.includes("\t")
+          ? `File: ${filePath}, Line: 1, Rule: MD010 (no-hard-tabs) - Hard tabs`
+          : "No markdown validation issues found.";
+      },
+    });
+
+    class MarkDownValidatorCrew {
+      agents: Agent[] = [];
+      tasks: Task[] = [];
+      agents_config = {
+        Requirements_Manager: {
+          role: "Requirements Manager",
+          goal: "Validate markdown syntax for {filename}",
+          backstory: "Checks markdown files before release",
+        },
+      };
+      tasks_config = {
+        syntax_review_task: {
+          description: "{query} Use markdown_validation_tool on {filename}.",
+          expected_output: "Markdown validation report",
+        },
+      };
+
+      RequirementsManager() {
+        const config = this.agents_config.Requirements_Manager;
+        return new Agent({
+          role: config.role,
+          goal: config.goal,
+          backstory: config.backstory,
+          tools: [markdownValidationTool],
+          allow_delegation: false,
+          verbose: false,
+          llm: (messages) => {
+            const prompt = messages.at(-1)?.content ?? "";
+            prompts.push(prompt);
+            return `Final Recommendations: ${prompt}`;
+          },
+        });
+      }
+
+      syntax_review_task() {
+        const config = this.tasks_config.syntax_review_task;
+        return new Task({
+          config,
+          description: config.description,
+          expected_output: config.expected_output,
+          agent: this.RequirementsManager(),
+        });
+      }
+
+      crew() {
+        return new Crew({
+          agents: this.agents,
+          tasks: this.tasks,
+          process: Process.sequential,
+          verbose: false,
+        });
+      }
+    }
+
+    const DecoratedMarkDownValidatorCrew = decorateClass(MarkDownValidatorCrew, CrewBase as unknown as Decorator);
+    const createProject = () => {
+      const project = new DecoratedMarkDownValidatorCrew();
+      [
+        decorateMethod(MarkDownValidatorCrew, "RequirementsManager", agent),
+        decorateMethod(MarkDownValidatorCrew, "syntax_review_task", task),
+        decorateMethod(MarkDownValidatorCrew, "crew", crew),
+      ].forEach((initializer) => {
+        initializer.call(project);
+      });
+      return project;
+    };
+    const runMarkdownValidation = async (filename: string | null) => {
+      const inputs = {
+        query: "Please provide the markdown file to analyze:",
+        filename,
+      };
+      if (!inputs.filename) {
+        throw new Error("Error: No markdown file provided. Please provide a file path as a command-line argument.");
+      }
+      return await createProject().crew().kickoff({ inputs });
+    };
+
+    const markdownDir = mkdtempSync(join(tmpdir(), "crewai-markdown-validator-"));
+    const validMarkdown = join(markdownDir, "valid.md");
+    const invalidMarkdown = join(markdownDir, "invalid.md");
+    writeFileSync(validMarkdown, "# Release Notes\n\n- Ready\n", "utf8");
+    writeFileSync(invalidMarkdown, "# Release Notes\n\n\tIndented with a tab\n", "utf8");
+    try {
+      const project = createProject();
+      const crewInstance = project.crew();
+      expect(crewInstance.process).toBe(Process.sequential);
+      expect(project.agents.map((projectAgent: Agent) => [projectAgent.role, projectAgent.allow_delegation])).toEqual([
+        ["Requirements Manager", false],
+      ]);
+      expect(project.RequirementsManager().tools.map((toolInstance) => toolInstance.name)).toEqual([
+        "markdown_validation_tool",
+      ]);
+      expect(markdownValidationTool.invoke({ file_path: validMarkdown })).toBe("No markdown validation issues found.");
+      expect(markdownValidationTool.invoke({ file_path: invalidMarkdown })).toContain("MD010");
+      await expect(runMarkdownValidation(null)).rejects.toThrow("No markdown file provided");
+
+      const output = await runMarkdownValidation(validMarkdown);
+      expect(output.raw).toContain("Final Recommendations");
+      expect(prompts.some((prompt) => prompt.includes("Please provide the markdown file to analyze:"))).toBe(true);
+      expect(prompts.some((prompt) => prompt.includes(validMarkdown))).toBe(true);
+    } finally {
+      rmSync(markdownDir, { recursive: true, force: true });
+    }
+  });
+
   it("infers names for directly awaited async task decorator factories", async () => {
     class AsyncTaskCrew {
       calls = 0;
