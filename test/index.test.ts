@@ -25606,6 +25606,80 @@ describe("flow runtime", () => {
     });
   });
 
+  it("preserves async terminal flow human feedback method output", async () => {
+    class AsyncFinalReviewFlow extends Flow {
+      async generate() {
+        await Promise.resolve();
+        return { asyncData: "value", computed: 42 };
+      }
+    }
+
+    const initializers = [
+      decorateMethod(AsyncFinalReviewFlow, "generate", humanFeedback({
+        message: "Review async content:",
+        emit: ["approved", "rejected"],
+        defaultOutcome: "approved",
+        provider: {
+          requestFeedback: () => "",
+        },
+      }) as unknown as Decorator),
+      decorateMethod(AsyncFinalReviewFlow, "generate", start() as unknown as Decorator),
+    ];
+    const flow = new AsyncFinalReviewFlow();
+    initializers.forEach((initializer) => {
+      initializer.call(flow);
+    });
+
+    await expect(flow.kickoff_async()).resolves.toEqual({ asyncData: "value", computed: 42 });
+    expect(flow.lastHumanFeedback).toMatchObject({
+      output: { asyncData: "value", computed: 42 },
+      feedback: "",
+      outcome: "approved",
+    });
+    expect(flow.methodOutputs).toEqual([{ asyncData: "value", computed: 42 }]);
+    expect(flow.executionTrace[0]).toMatchObject({
+      methodName: "generate",
+      output: { asyncData: "value", computed: 42 },
+      routerPath: "approved",
+    });
+  });
+
+  it("preserves null terminal flow human feedback method output", async () => {
+    class NullFinalReviewFlow extends Flow {
+      process() {
+        return null;
+      }
+    }
+
+    const initializers = [
+      decorateMethod(NullFinalReviewFlow, "process", humanFeedback({
+        message: "Review null output:",
+        emit: ["approved", "rejected"],
+        provider: {
+          requestFeedback: () => "looks approved",
+        },
+      }) as unknown as Decorator),
+      decorateMethod(NullFinalReviewFlow, "process", start() as unknown as Decorator),
+    ];
+    const flow = new NullFinalReviewFlow();
+    initializers.forEach((initializer) => {
+      initializer.call(flow);
+    });
+
+    await expect(flow.kickoff()).resolves.toBeNull();
+    expect(flow.lastHumanFeedback).toMatchObject({
+      output: null,
+      feedback: "looks approved",
+      outcome: "approved",
+    });
+    expect(flow.methodOutputs).toEqual([null]);
+    expect(flow.executionTrace[0]).toMatchObject({
+      methodName: "process",
+      output: null,
+      routerPath: "approved",
+    });
+  });
+
   it("validates human feedback routing configuration before decoration", () => {
     expect(() => humanFeedback({
       message: "Review",
