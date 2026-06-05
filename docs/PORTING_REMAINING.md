@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 1184 passing tests.
+- Test suite: 1185 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -423,7 +423,7 @@ When more goal budget is available, continue from the behavioral parity audits b
 - Tool decorator final-answer semantics now have default-gate coverage for upstream `result_as_answer`: snake_case explicit final-answer flags and default `false` values are preserved through structured-tool conversion.
 - Tool decorator usage-limit semantics now have default-gate coverage for upstream `max_usage_count`: snake_case explicit limits initialize usage counters correctly, and default decorator tools remain unlimited.
 - Direct `BaseTool` usage-limit semantics now mirror upstream local behavior: snake_case `max_usage_count` limits count successful non-cached runs, unlimited tools continue incrementing usage counters, invalid negative limits raise the upstream positive-integer error, and `reset_usage_count` / `has_reached_max_usage_count` aliases reset and report limit state.
-- `BaseTool.run` now has default-gate coverage for async `_run` results: promise-like tool outputs are settled before cache writes and usage-finished events, while later cache hits return the stored value without incrementing usage or reinvoking the tool.
+- `BaseTool.run` / `arun` now have default-gate coverage for async execution: promise-like `_run` outputs are settled before cache writes and usage-finished events, later cache hits return the stored value without incrementing usage or reinvoking the tool, and concurrent `arun` calls can all enter async `_arun` before completion while preserving per-call results and usage counts.
 - Direct `BaseTool.run("value")` string input now has default-gate coverage for upstream positional compatibility: schema-less base tools receive the value through the normalized `input` field and still update usage counters.
 - Tool decorator single-argument invocation now mirrors upstream positional behavior for TS string inputs: helper-created structured tools with one schema field accept `run("value")` / `arun("value")` while strict `_parse_args` JSON validation remains unchanged.
 - Tool dictionary resolution now preserves upstream snake_case usage counters: `_resolve_tool_dict` carries `max_usage_count` and `current_usage_count` into the structured tool instead of dropping them during conversion.

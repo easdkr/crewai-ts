@@ -30634,6 +30634,53 @@ describe("tools", () => {
     expect(asyncEcho.current_usage_count).toBe(1);
   });
 
+  it("allows upstream async BaseTool arun calls to progress concurrently", async () => {
+    const releases: Array<() => void> = [];
+    let active = 0;
+    let maxActive = 0;
+
+    class SlowAsyncTool extends BaseTool {
+      constructor() {
+        super({
+          name: "slow async",
+          description: "Simulates async I/O",
+          argsSchema: {
+            task_id: { type: "number", required: true },
+          },
+        });
+      }
+
+      protected _run(args: Record<string, unknown>): string {
+        return `Task ${String(args.task_id)} done`;
+      }
+
+      protected override async _arun(args: Record<string, unknown>): Promise<string> {
+        active += 1;
+        maxActive = Math.max(maxActive, active);
+        await new Promise<void>((resolve) => {
+          releases.push(resolve);
+        });
+        active -= 1;
+        return `Task ${String(args.task_id)} done`;
+      }
+    }
+
+    const tool = new SlowAsyncTool();
+    const results = Promise.all([
+      tool.arun({ task_id: 1 }),
+      tool.arun({ task_id: 2 }),
+      tool.arun({ task_id: 3 }),
+    ]);
+
+    await Promise.resolve();
+    expect(maxActive).toBe(3);
+    releases.splice(0).forEach((release) => {
+      release();
+    });
+    await expect(results).resolves.toEqual(["Task 1 done", "Task 2 done", "Task 3 done"]);
+    expect(tool.current_usage_count).toBe(3);
+  });
+
   it("settles async BaseTool run results before writing cache and usage events", async () => {
     let calls = 0;
     class AsyncRunTool extends BaseTool {
