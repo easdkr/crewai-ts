@@ -2957,6 +2957,37 @@ describe("lock utilities", () => {
     expect(operations.indexOf("w:start")).toBeGreaterThan(operations.indexOf("r2:end"));
   });
 
+  it("releases upstream RWLock read and write contexts after exceptions", async () => {
+    const rwLock = new RWLock();
+
+    await expect(rwLock.r_locked(() => {
+      expect(rwLock.activeReaders).toBe(1);
+      throw new Error("read failed");
+    })).rejects.toThrow("read failed");
+    expect(rwLock.activeReaders).toBe(0);
+    await expect(rwLock.w_locked(() => "write after read failure")).resolves.toBe("write after read failure");
+
+    await expect(rwLock.w_locked(() => {
+      expect(rwLock.hasWriter).toBe(true);
+      throw new Error("write failed");
+    })).rejects.toThrow("write failed");
+    expect(rwLock.hasWriter).toBe(false);
+    await expect(rwLock.r_locked(() => "read after write failure")).resolves.toBe("read after write failure");
+
+    await rwLock.r_acquire();
+    expect(rwLock.activeReaders).toBe(1);
+    rwLock.r_release();
+    await rwLock.w_acquire();
+    expect(rwLock.hasWriter).toBe(true);
+    rwLock.w_release();
+    expect(() => {
+      rwLock.r_release();
+    }).toThrow("Cannot release read lock that is not held.");
+    expect(() => {
+      rwLock.w_release();
+    }).toThrow("Cannot release write lock that is not held.");
+  });
+
   it("serializes named lock sections and releases after exceptions", async () => {
     const operations: string[] = [];
 

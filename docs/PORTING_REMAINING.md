@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 1187 passing tests.
+- Test suite: 1188 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -163,6 +163,7 @@ This register is the source of truth for continuing porting work while parity sc
 - `PickleHandler` remains a deterministic JSON-backed `.pkl` shim in the TypeScript runtime, but mirrors upstream corrupted-load behavior by surfacing a `pickle data was truncated` error instead of silently resetting damaged persistence files.
 - Import utility behavior is release-gated for upstream optional-dependency edge cases: nested module attribute resolution, empty malformed import paths, missing module package-name extraction, missing attribute messages, and chained import-error causes are covered with deterministic Node module fixtures.
 - Lock-store behavior is release-gated as a deterministic named-lock shim: upstream-style `crewai:` hashed lock names are stable, contended acquisition can time out with the normalized lock name, timed-out waiters do not poison later acquisitions, and custom lock backends can be installed then cleared back to the default named-lock backend.
+- `RWLock` behavior is release-gated for upstream context-manager safety: read/write contexts release locks when callbacks throw, manual read/write acquire-release aliases work, and invalid releases raise clear lock-not-held errors.
 - MCP transports may use the installed JS SDK shape, but release tests should continue to rely on local/fake clients and error classification rather than live MCP servers.
 - MCP native tool discovery is release-gated with deterministic fake-client behavior: empty or fully filtered tool lists warn and return no clients, and unexpected discovery failures are wrapped with a clear native MCP discovery error. Live MCP servers remain outside the default gate.
 - MCP native tool execution is release-gated for upstream fresh-client semantics: parallel invocations of the same native MCP tool create, connect, call, and disconnect distinct client instances rather than sharing execution state.
