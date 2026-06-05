@@ -21383,6 +21383,27 @@ describe("flow runtime", () => {
       { role: "user", content: "Answer" },
       { role: "user", content: "Follow-up" },
     ]);
+
+    class PlainChatFlow extends Flow<{
+      id: string;
+      messages: Array<Record<string, unknown>>;
+      last_intent: string | null;
+    }> {
+      constructor() {
+        super({
+          initialState: {
+            id: "plain-chat",
+            messages: [],
+            last_intent: "ORDER",
+          },
+        });
+      }
+    }
+
+    const plainFlow = new PlainChatFlow();
+    prepare_conversational_turn(plainFlow, { user_message: "hello" });
+    expect(plainFlow.state.last_intent).toBeNull();
+    expect(get_conversation_messages(plainFlow)).toEqual([{ role: "user", content: "hello" }]);
   });
 
   it("runs experimental conversational Flow turns through kickoff helpers", async () => {

@@ -238,6 +238,12 @@ export function prepareConversationalTurn(
   const config = options.config ?? null;
   const intents = options.intents ?? config?.defaultIntents ?? null;
   const intentLlm = options.intentLlm ?? options.intent_llm ?? config?.intentLlm ?? null;
+  const constructor = readRecord(flow).constructor;
+  const staticConfig = readRecord(constructor).conversational_config ?? readRecord(constructor).conversationalConfig ?? null;
+  const hasRouterConfig = Boolean(readRecord(config).router ?? readRecord(staticConfig).router);
+  if (!hasRouterConfig) {
+    setStateField(flow, "last_intent", null);
+  }
   if (intents && intents.length > 0) {
     if (intentLlm === null) {
       throw new Error("intent_llm is required when intents are provided");
