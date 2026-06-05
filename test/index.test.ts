@@ -32981,6 +32981,38 @@ describe("LLM providers", () => {
     })._extract_reasoning_items(response)).toEqual([reasoningItem]);
   });
 
+  it("models upstream OpenAI Responses API result defaults and helpers", () => {
+    const empty = new ResponsesAPIResult({
+      text: "Hello, world!",
+      response_id: "resp_123",
+    });
+
+    expect(empty.text).toBe("Hello, world!");
+    expect(empty.response_id).toBe("resp_123");
+    expect(empty.web_search_results).toEqual([]);
+    expect(empty.file_search_results).toEqual([]);
+    expect(empty.code_interpreter_results).toEqual([]);
+    expect(empty.computer_use_results).toEqual([]);
+    expect(empty.reasoning_summaries).toEqual([]);
+    expect(empty.function_calls).toEqual([]);
+    expect(empty.has_tool_outputs()).toBe(false);
+    expect(empty.hasToolOutputs()).toBe(false);
+    expect(empty.has_reasoning()).toBe(false);
+    expect(empty.hasReasoning()).toBe(false);
+
+    const withWeb = new ResponsesAPIResult({
+      text: "Test",
+      web_search_results: [{ id: "ws_1", status: "completed", type: "web_search_call" }],
+    });
+    const withReasoning = new ResponsesAPIResult({
+      text: "Test",
+      reasoning_summaries: [{ id: "r_1", type: "reasoning", summary: [] }],
+    });
+
+    expect(withWeb.has_tool_outputs()).toBe(true);
+    expect(withReasoning.has_reasoning()).toBe(true);
+  });
+
   it("extracts OpenAI Responses API built-in tool outputs", () => {
     const openai = new OpenAICompletion({ model: "gpt-4.1", api: "responses" });
     class ComputerAction {
