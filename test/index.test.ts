@@ -964,6 +964,7 @@ import {
   clearNamedLocks,
   getLockName,
   lock,
+  setLockBackend,
   parseToml,
   parseAgentOutput,
   readToml,
@@ -2977,6 +2978,37 @@ describe("lock utilities", () => {
     await held;
     await expect(lock("timeout-test", () => "recovered", { timeout: 1 })).resolves.toBe("recovered");
     clearNamedLocks();
+  });
+
+  it("uses custom lock backends and restores the default named-lock backend", async () => {
+    clearNamedLocks();
+    const calls: Array<{ name: string; timeout: number }> = [];
+    try {
+      setLockBackend(async (name, fn, options) => {
+        calls.push({ name, timeout: options.timeout });
+        return await fn();
+      });
+
+      await expect(lock("custom_test", () => "custom", { timeout: 5 })).resolves.toBe("custom");
+      expect(calls).toEqual([{ name: "custom_test", timeout: 5 }]);
+
+      setLockBackend(null);
+      let releaseHeldLock!: () => void;
+      const held = lock("custom_test", () => new Promise<void>((resolve) => {
+        releaseHeldLock = resolve;
+      }));
+
+      await delay(1);
+      await expect(lock("custom_test", () => "blocked", { timeout: 1 })).rejects.toThrow(
+        `Failed to acquire lock '${getLockName("custom_test")}' (timeout=1ms).`,
+      );
+
+      releaseHeldLock();
+      await held;
+    } finally {
+      setLockBackend(null);
+      clearNamedLocks();
+    }
   });
 });
 

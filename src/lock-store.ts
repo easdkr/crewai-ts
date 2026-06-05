@@ -5,16 +5,27 @@ type LockState = {
   held: boolean;
 };
 
+export type LockBackend = <T>(
+  name: string,
+  fn: () => T | Promise<T>,
+  options: { timeout: number },
+) => T | Promise<T>;
+
 const locks = new Map<string, LockState>();
 const defaultTimeout = 120_000;
+let customBackend: LockBackend | null = null;
 
 export async function lock<T>(
   name: string,
   fn: () => T | Promise<T>,
   options: { timeout?: number } = {},
 ): Promise<T> {
+  const timeout = options.timeout ?? defaultTimeout;
+  if (customBackend) {
+    return await customBackend(name, fn, { timeout });
+  }
   const key = lockKey(name);
-  const release = await acquireNamedLock(key, options.timeout ?? defaultTimeout);
+  const release = await acquireNamedLock(key, timeout);
   try {
     return await fn();
   } finally {
@@ -24,6 +35,12 @@ export async function lock<T>(
 
 export const withLock = lock;
 export const with_lock = withLock;
+
+export function setLockBackend(backend: LockBackend | null): void {
+  customBackend = backend;
+}
+
+export const set_lock_backend = setLockBackend;
 
 export function clearNamedLocks(): void {
   locks.clear();

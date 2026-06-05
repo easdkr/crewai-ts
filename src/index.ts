@@ -1983,8 +1983,11 @@ export {
   getLockName,
   get_lock_name,
   lock,
+  setLockBackend,
+  set_lock_backend,
   withLock,
   with_lock,
+  type LockBackend,
 } from "./lock-store.js";
 export {
   Memory,
