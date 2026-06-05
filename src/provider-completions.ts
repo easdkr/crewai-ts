@@ -2484,6 +2484,8 @@ export class SnowflakeCompletion extends OpenAICompletion {
   }
 }
 
+registerLLMProviderFactory("gemini", (options) => new GeminiCompletion(options));
+registerLLMProviderFactory("google", (options) => new GeminiCompletion({ ...options, provider: "gemini" }));
 registerLLMProviderFactory("snowflake", (options) => new SnowflakeCompletion(options as SnowflakeCompletionOptions));
 
 export const AzureCompletionParams = Object.freeze({ kind: "AzureCompletionParams" });

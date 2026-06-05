@@ -35334,6 +35334,29 @@ describe("LLM providers", () => {
     await expect(fromString?.call([{ role: "user", content: "hello" }])).resolves.toBe("delegated");
   });
 
+  it("routes upstream-style Gemini provider aliases through native Gemini completion", () => {
+    const googleGemini20 = create_llm("google/gemini-2.0-flash-001");
+    expect(googleGemini20).toBeInstanceOf(GeminiCompletion);
+    expect((googleGemini20 as GeminiCompletion).model).toBe("gemini-2.0-flash-001");
+    expect((googleGemini20 as GeminiCompletion).provider).toBe("gemini");
+    expect((googleGemini20 as GeminiCompletion).is_gemini_2_0).toBe(true);
+
+    const prefixedGemini20 = create_llm("gemini/gemini-2.0-flash-001");
+    expect(prefixedGemini20).toBeInstanceOf(GeminiCompletion);
+    expect((prefixedGemini20 as GeminiCompletion).model).toBe("gemini-2.0-flash-001");
+    expect((prefixedGemini20 as GeminiCompletion).is_gemini_2_0).toBe(true);
+
+    const googleGemini25 = create_llm("google/gemini-2.5-flash");
+    expect(googleGemini25).toBeInstanceOf(GeminiCompletion);
+    expect((googleGemini25 as GeminiCompletion).model).toBe("gemini-2.5-flash");
+    expect((googleGemini25 as GeminiCompletion).is_gemini_2_0).toBe(true);
+
+    const googleGemini15 = create_llm("google/gemini-1.5-pro");
+    expect(googleGemini15).toBeInstanceOf(GeminiCompletion);
+    expect((googleGemini15 as GeminiCompletion).model).toBe("gemini-1.5-pro");
+    expect((googleGemini15 as GeminiCompletion).is_gemini_2_0).toBe(false);
+  });
+
   it("resolves upstream-style native provider aliases, constants, and model patterns", () => {
     expect(canonical_llm_provider("claude")).toBe("anthropic");
     expect(canonical_llm_provider("google")).toBe("gemini");
