@@ -23583,6 +23583,29 @@ describe("flow runtime", () => {
     ]));
   });
 
+  it("omits source and signature metadata from FlowDefinition-only visualization nodes", () => {
+    const definition = FlowDefinition.from_dict({
+      schema: "crewai.flow/v1",
+      name: "MetadataOnlyFlow",
+      methods: {
+        begin: { start: true },
+        finish: { listen: "begin" },
+      },
+    });
+
+    const structure = buildFlowStructure(definition);
+
+    for (const node of Object.values(structure.nodes)) {
+      expect(node.class_name).toBe("MetadataOnlyFlow");
+      expect(node).not.toHaveProperty("source_code");
+      expect(node).not.toHaveProperty("source_lines");
+      expect(node).not.toHaveProperty("source_start_line");
+      expect(node).not.toHaveProperty("source_file");
+      expect(node).not.toHaveProperty("method_signature");
+      expect(node).not.toHaveProperty("class_signature");
+    }
+  });
+
   it("exposes upstream static FlowDefinition visualization router event aliases", () => {
     const definition = FlowDefinition.from_dict({
       schema: "crewai.flow/v1",

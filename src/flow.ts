@@ -1096,7 +1096,7 @@ export type FlowNodeMetadata = {
   trigger_condition_type?: FlowCondition["type"] | null;
   trigger_methods?: readonly string[];
   trigger_condition?: FlowCondition;
-  method_signature: FlowMethodSignature;
+  method_signature?: FlowMethodSignature;
   source_code?: string;
   class_name?: string;
   class_signature?: string;
@@ -4346,16 +4346,16 @@ export function buildFlowStructure(instanceOrConstructor: object | FlowMetadataT
   const className = loadedDefinition?.name ?? (typeof instanceOrConstructor === "function"
     ? instanceOrConstructor.name
     : instanceOrConstructor.constructor.name);
-  const classSignature = className ? `class ${className}` : undefined;
+  const classSignature = !loadedDefinition && className ? `class ${className}` : undefined;
 
   for (const method of structure.methods) {
     const methodValue = getMethodValue(instanceOrConstructor, method.name);
     const metadata: FlowNodeMetadata = {
       type: method.type,
-      method_signature: extractMethodSignature(methodValue, method.name),
+      ...(loadedDefinition ? {} : { method_signature: extractMethodSignature(methodValue, method.name) }),
       ...(className ? { class_name: className } : {}),
       ...(classSignature ? { class_signature: classSignature } : {}),
-      ...(typeof methodValue === "function" ? { source_code: Function.prototype.toString.call(methodValue) } : {}),
+      ...(!loadedDefinition && typeof methodValue === "function" ? { source_code: Function.prototype.toString.call(methodValue) } : {}),
     };
     if (method.type === "router" || method.type === "start_router") {
       const routerPaths = loadedDefinition || method.hasHumanFeedback
