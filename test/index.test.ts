@@ -36006,6 +36006,51 @@ describe("task input files", () => {
     expect(prompts[1]).not.toContain("crew file content");
   });
 
+  it("accepts upstream positional input files with direct crew kickoff inputs", async () => {
+    const buildCrew = (prompts: string[]) => {
+      const agentInstance = new Agent({
+        role: "Reader",
+        goal: "Read files",
+        backstory: "Careful reader",
+        llm: (messages) => {
+          prompts.push(messages.at(-1)?.content ?? "");
+          return "done";
+        },
+      });
+      return new Crew({
+        agents: [agentInstance],
+        tasks: [
+          new Task({
+            description: "Read {topic}",
+            expectedOutput: "Summary",
+            agent: agentInstance,
+          }),
+        ],
+      });
+    };
+
+    const inputFiles = {
+      brief: {
+        filename: "brief.txt",
+        content: "positional file content",
+      },
+    };
+    const kickoffPrompts: string[] = [];
+    const kickoffAsyncPrompts: string[] = [];
+    const akickoffPrompts: string[] = [];
+
+    await buildCrew(kickoffPrompts).kickoff({ topic: "CrewAI" }, inputFiles);
+    await buildCrew(kickoffAsyncPrompts).kickoff_async({ topic: "TypeScript" }, inputFiles);
+    await buildCrew(akickoffPrompts).akickoff({ topic: "Agents" }, inputFiles);
+
+    expect(kickoffPrompts[0]).toContain("Read CrewAI");
+    expect(kickoffPrompts[0]).toContain('"brief" (brief.txt, text/plain)');
+    expect(kickoffAsyncPrompts[0]).toContain("Read TypeScript");
+    expect(kickoffAsyncPrompts[0]).toContain("positional file content");
+    expect(akickoffPrompts[0]).toContain("Read Agents");
+    expect(akickoffPrompts[0]).toContain("positional file content");
+  });
+
   it("passes crew kickoff input files to multimodal LLM messages", async () => {
     class CapturingMultimodalLLM extends BaseLLM {
       capturedMessages: readonly LLMMessage[] = [];

@@ -761,8 +761,8 @@ export class Crew extends FlowTrackable {
     }
   }
 
-  async kickoff(options: KickoffInput = {}): Promise<CrewOutput> {
-    const normalizedOptions = normalizeKickoffOptions(options);
+  async kickoff(options: KickoffInput = {}, inputFiles?: TaskInputFiles | null): Promise<CrewOutput> {
+    const normalizedOptions = normalizeKickoffOptions(options, inputFiles);
     if (this.stream) {
       return new CrewStreamingOutput(async () => await this.withStreamDisabled(async () => await this.kickoff(normalizedOptions))) as unknown as CrewOutput;
     }
@@ -803,16 +803,16 @@ export class Crew extends FlowTrackable {
     });
   }
 
-  async kickoffAsync(options: KickoffInput = {}): Promise<CrewOutput> {
-    return await this.kickoff(options);
+  async kickoffAsync(options: KickoffInput = {}, inputFiles?: TaskInputFiles | null): Promise<CrewOutput> {
+    return await this.kickoff(options, inputFiles);
   }
 
-  async kickoff_async(options: KickoffInput = {}): Promise<CrewOutput> {
-    return await this.kickoffAsync(options);
+  async kickoff_async(options: KickoffInput = {}, inputFiles?: TaskInputFiles | null): Promise<CrewOutput> {
+    return await this.kickoffAsync(options, inputFiles);
   }
 
-  async akickoff(options: KickoffInput = {}): Promise<CrewOutput> {
-    const normalizedOptions = normalizeKickoffOptions(options);
+  async akickoff(options: KickoffInput = {}, inputFiles?: TaskInputFiles | null): Promise<CrewOutput> {
+    const normalizedOptions = normalizeKickoffOptions(options, inputFiles);
     if (this.stream) {
       return new CrewStreamingOutput(async () => await this.withStreamDisabled(async () => await this.akickoff(normalizedOptions))) as unknown as CrewOutput;
     }
@@ -3033,14 +3033,20 @@ function validateKickoffForEachInputs(inputs: readonly unknown[]): readonly Inpu
   return inputs as readonly InputValues[];
 }
 
-function normalizeKickoffOptions(options: KickoffInput | null | undefined): KickoffOptions {
+function normalizeKickoffOptions(
+  options: KickoffInput | null | undefined,
+  inputFiles?: TaskInputFiles | null,
+): KickoffOptions {
   if (!options) {
-    return {};
+    return inputFiles ? { inputFiles } : {};
   }
+  const withInputFiles = (normalized: KickoffOptions): KickoffOptions => inputFiles
+    ? { ...normalized, inputFiles }
+    : normalized;
   if ("inputs" in options || "inputFiles" in options || "input_files" in options) {
-    return options;
+    return withInputFiles(options);
   }
-  return { inputs: options };
+  return withInputFiles({ inputs: options });
 }
 
 function normalizeKickoffForEachOptions(options: KickoffForEachInput): KickoffForEachOptions {
