@@ -24559,6 +24559,78 @@ describe("flow runtime", () => {
     expect(flow.state.exits).toEqual([]);
   });
 
+  it("runs the crewAI-examples meeting assistant sibling-listener workflow deterministically", async () => {
+    type MeetingTask = { name: string; description: string };
+
+    class MeetingAssistantFlow extends Flow<{
+      transcript: string;
+      tasks: MeetingTask[];
+      trello: MeetingTask[];
+      csvRows: string[][];
+      slackMessages: string[];
+    }> {
+      constructor() {
+        super({
+          initialState: {
+            transcript: "Meeting transcript goes here",
+            tasks: [],
+            trello: [],
+            csvRows: [],
+            slackMessages: [],
+          },
+        });
+      }
+
+      loadMeetingNotes() {
+        this.state.transcript = "Discuss launch plan and follow-up owners.";
+      }
+
+      generateTasksFromMeetingTranscript() {
+        this.state.tasks = [
+          { name: "Launch plan", description: this.state.transcript },
+          { name: "Owner follow-up", description: "Assign each open item" },
+        ];
+      }
+
+      addTasksToTrello() {
+        this.state.trello.push(...this.state.tasks);
+      }
+
+      saveNewTasksToCsv() {
+        this.state.csvRows.push(["Name", "Description"]);
+        for (const task of this.state.tasks) {
+          this.state.csvRows.push([task.name, task.description]);
+        }
+      }
+
+      sendSlackNotification() {
+        this.state.slackMessages.push(`${String(this.state.tasks.length)} New tasks have been added to Trello!`);
+      }
+    }
+
+    const initializers = [
+      decorateMethod(MeetingAssistantFlow, "loadMeetingNotes", start() as unknown as Decorator),
+      decorateMethod(MeetingAssistantFlow, "generateTasksFromMeetingTranscript", listen("loadMeetingNotes") as unknown as Decorator),
+      decorateMethod(MeetingAssistantFlow, "addTasksToTrello", listen("generateTasksFromMeetingTranscript") as unknown as Decorator),
+      decorateMethod(MeetingAssistantFlow, "saveNewTasksToCsv", listen("generateTasksFromMeetingTranscript") as unknown as Decorator),
+      decorateMethod(MeetingAssistantFlow, "sendSlackNotification", listen("generateTasksFromMeetingTranscript") as unknown as Decorator),
+    ];
+    const flow = new MeetingAssistantFlow();
+    initializers.forEach((initializer) => {
+      initializer.call(flow);
+    });
+
+    await expect(flow.kickoff()).resolves.toBeUndefined();
+
+    expect(flow.state.trello).toEqual(flow.state.tasks);
+    expect(flow.state.csvRows).toEqual([
+      ["Name", "Description"],
+      ["Launch plan", "Discuss launch plan and follow-up owners."],
+      ["Owner follow-up", "Assign each open item"],
+    ]);
+    expect(flow.state.slackMessages).toEqual(["2 New tasks have been added to Trello!"]);
+  });
+
   it("exposes upstream Flow tracing disabled helper", () => {
     const previous = process.env.CREWAI_TRACING_DISABLED_MESSAGE_SHOWN;
     delete process.env.CREWAI_TRACING_DISABLED_MESSAGE_SHOWN;
