@@ -27143,6 +27143,42 @@ describe("flow runtime", () => {
     expect(flow.state.events.at(-1)).toBe("route:4");
   });
 
+  it("fires OR listeners once across parallel starts", async () => {
+    class ParallelOrFlow extends Flow<{ fireCount: number }> {
+      constructor() {
+        super({ initialState: { fireCount: 0 } });
+      }
+
+      async fastStart() {
+        await Promise.resolve();
+        return "fast";
+      }
+
+      async slowStart() {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        return "slow";
+      }
+
+      handleEither() {
+        this.state.fireCount += 1;
+      }
+    }
+
+    const initializers = [
+      decorateMethod(ParallelOrFlow, "fastStart", start() as unknown as Decorator),
+      decorateMethod(ParallelOrFlow, "slowStart", start() as unknown as Decorator),
+      decorateMethod(ParallelOrFlow, "handleEither", listen(or_("fastStart", "slowStart")) as unknown as Decorator),
+    ];
+    const flow = new ParallelOrFlow();
+    initializers.forEach((initializer) => {
+      initializer.call(flow);
+    });
+
+    await flow.kickoff_async();
+
+    expect(flow.state.fireCount).toBe(1);
+  });
+
   it("fires OR self-listening flow methods only once", async () => {
     class OrSelfListenFlow extends Flow<{ callCount: number }> {
       constructor() {

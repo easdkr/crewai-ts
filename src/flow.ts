@@ -2391,7 +2391,7 @@ export class Flow<TState extends object = Record<string, unknown>> {
           if (
             !entry.condition
             || skipCompletedMethods.has(name)
-            || (!isFlatOrCondition(entry.condition) && queue.some((candidate) => candidate.name === name))
+            || shouldSuppressPendingDuplicate(entry.condition, name, queue, null)
           ) {
             continue;
           }
@@ -2454,7 +2454,7 @@ export class Flow<TState extends object = Record<string, unknown>> {
             if (
               !entry.condition
               || skipCompletedMethods.has(name)
-              || (!isFlatOrCondition(entry.condition) && queue.some((candidate) => candidate.name === name))
+              || shouldSuppressPendingDuplicate(entry.condition, name, queue, methodEntry?.kind ?? null)
             ) {
               continue;
             }
@@ -3824,7 +3824,7 @@ function enqueueSatisfiedListeners(
     const name = String(entry.name);
     if (
       !entry.condition
-      || (!isFlatOrCondition(entry.condition) && queue.some((candidate) => candidate.name === name))
+      || shouldSuppressPendingDuplicate(entry.condition, name, queue, null)
     ) {
       continue;
     }
@@ -5821,6 +5821,18 @@ function conditionIncludesTrigger(condition: FlowCondition, triggerName: string)
 
 function isFlatOrCondition(condition: FlowCondition): boolean {
   return condition.type === "OR" && condition.conditions.every((nested) => typeof nested === "string");
+}
+
+function shouldSuppressPendingDuplicate(
+  condition: FlowCondition,
+  listenerName: string,
+  queue: readonly FlowExecutionQueueItem[],
+  triggerKind: FlowMethodKind | null,
+): boolean {
+  if (!queue.some((candidate) => candidate.name === listenerName)) {
+    return false;
+  }
+  return !isFlatOrCondition(condition) || triggerKind === "start" || triggerKind === "router";
 }
 
 function flowConditionLabels(condition: FlowCondition | null): string[] {
