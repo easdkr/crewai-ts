@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 1148 passing tests.
+- Test suite: 1149 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -38,6 +38,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
 - The latest-upstream project callback TaskOutput audit is now release-gated deterministically: CrewBase task methods preserve callbacks that receive the exact `TaskOutput` instance for both direct callback invocation and `execute_sync` task execution.
 - The latest-upstream task interpolation edge-case audit is now release-gated deterministically: literal `{}` / `[]` templates remain untouched, numeric placeholders preserve stringified integer/float values, and boolean placeholders render with upstream Python-style `True` / `False` casing.
 - The latest-upstream streaming cancellation audit is now release-gated deterministically: completed `CrewStreamingOutput` / `FlowStreamingOutput` instances remain uncancelled when `close()` / `aclose()` is called again, while pre-completion cleanup still marks early exits as cancelled.
+- The latest-upstream streaming exception audit is now release-gated deterministically: `CrewStreamingOutput` and `FlowStreamingOutput` propagate run errors during async iteration, mark the stream completed, and keep the same error visible through `result`.
 - The latest-upstream non-streaming tool-call response audit is now release-gated deterministically: sync and async non-streaming handlers preserve raw `tool_calls` for executor-managed execution even when the assistant message also contains text and no `available_functions` map is provided.
 - The latest-upstream ChromaDB utility audit is now release-gated deterministically: collection-name sanitization covers long, short, special-character, IPv4, empty, null, and whitespace-only names; document preparation preserves list-metadata semantics and generated 64-character content hashes; and batch slicing returns `null` metadata only when every sliced metadata object is empty.
 - The latest-upstream ChromaDB collection payload audit is now release-gated deterministically: sync and async `create_collection` / `get_or_create_collection` preserve upstream all-params payloads, default `hnsw:space` metadata is added only when metadata is omitted, and caller-provided metadata is no longer merged with the default metric.

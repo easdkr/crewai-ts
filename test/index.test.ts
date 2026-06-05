@@ -45069,6 +45069,39 @@ describe("streaming output", () => {
     expect(flowStreaming.is_cancelled).toBe(false);
   });
 
+  it("propagates upstream streaming execution errors during iteration", async () => {
+    const crewStreaming = new CrewStreamingOutput(async () => {
+      await Promise.resolve();
+      throw new Error("Test error");
+    });
+    const flowStreaming = new FlowStreamingOutput(async () => {
+      await Promise.resolve();
+      throw new Error("Flow stream error");
+    });
+
+    const collectCrew = async () => {
+      const chunks: StreamChunk[] = [];
+      for await (const chunk of crewStreaming) {
+        chunks.push(chunk);
+      }
+      return chunks;
+    };
+    const collectFlow = async () => {
+      const chunks: StreamChunk[] = [];
+      for await (const chunk of flowStreaming) {
+        chunks.push(chunk);
+      }
+      return chunks;
+    };
+
+    await expect(collectCrew()).rejects.toThrow("Test error");
+    await expect(collectFlow()).rejects.toThrow("Flow stream error");
+    expect(crewStreaming.is_completed).toBe(true);
+    expect(flowStreaming.is_completed).toBe(true);
+    expect(() => crewStreaming.result).toThrow("Test error");
+    expect(() => flowStreaming.result).toThrow("Flow stream error");
+  });
+
   it("exposes upstream-style streaming async iterator helpers", async () => {
     const streaming = new FlowStreamingOutput(async () => {
       await Promise.resolve();
