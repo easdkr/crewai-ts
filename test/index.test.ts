@@ -30575,6 +30575,33 @@ describe("tools", () => {
     expect(asyncEcho.current_usage_count).toBe(1);
   });
 
+  it("settles async BaseTool run results before writing cache and usage events", async () => {
+    let calls = 0;
+    class AsyncRunTool extends BaseTool {
+      constructor() {
+        super({
+          name: "async run",
+          description: "Async run",
+          argsSchema: {
+            value: { type: "string", required: true },
+          },
+        });
+      }
+
+      protected async _run(args: Record<string, unknown>): Promise<string> {
+        calls += 1;
+        return await Promise.resolve(`async:${String(args.value)}`);
+      }
+    }
+
+    const toolInstance = new AsyncRunTool();
+    await expect(toolInstance.run({ value: "CrewAI" })).resolves.toBe("async:CrewAI");
+    expect(toolInstance.current_usage_count).toBe(1);
+    expect(toolInstance.run({ value: "CrewAI" })).toBe("async:CrewAI");
+    expect(toolInstance.current_usage_count).toBe(1);
+    expect(calls).toBe(1);
+  });
+
   it("exports upstream CrewStructuredTool and EnvVar runtime values", async () => {
     function multiply(a: unknown, b: unknown): number {
       return Number(a) * Number(b);
