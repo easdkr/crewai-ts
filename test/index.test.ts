@@ -22882,6 +22882,119 @@ describe("standard decorators", () => {
     }
   });
 
+  it("runs the crewAI-examples starter-template manual crew workflow deterministically", async () => {
+    const prompts: string[] = [];
+
+    class CustomAgents {
+      readonly OpenAIGPT35Agent1 = (messages: readonly LLMMessage[]) => {
+        const prompt = messages.at(-1)?.content ?? "";
+        prompts.push(prompt);
+        return "Task 1 completed with both variables.";
+      };
+      readonly OpenAIGPT35Agent2 = (messages: readonly LLMMessage[]) => {
+        const prompt = messages.at(-1)?.content ?? "";
+        prompts.push(prompt);
+        return "Task 2 used the task 1 result.";
+      };
+
+      agent_1_name() {
+        return new Agent({
+          role: "Define agent 1 role here",
+          backstory: "Define agent 1 backstory here",
+          goal: "Define agent 1 goal here",
+          allow_delegation: false,
+          verbose: true,
+          llm: this.OpenAIGPT35Agent1,
+        });
+      }
+
+      agent_2_name() {
+        return new Agent({
+          role: "Define agent 2 role here",
+          backstory: "Define agent 2 backstory here",
+          goal: "Define agent 2 goal here",
+          allow_delegation: false,
+          verbose: true,
+          llm: this.OpenAIGPT35Agent2,
+        });
+      }
+    }
+
+    class CustomTasks {
+      private tip_section() {
+        return "If you do your BEST WORK, I'll give you a $10,000 commission!";
+      }
+
+      task_1_name(agentInstance: Agent, var1: string, var2: string) {
+        return new Task({
+          description: [
+            "Do something as part of task 1",
+            "",
+            this.tip_section(),
+            "",
+            "Make sure to use the most recent data as possible.",
+            "",
+            `Use this variable: ${var1}`,
+            `And also this variable: ${var2}`,
+          ].join("\n"),
+          expected_output: "The expected output of the task",
+          agent: agentInstance,
+        });
+      }
+
+      task_2_name(agentInstance: Agent) {
+        return new Task({
+          description: [
+            "Take the input from task 1 and do something with it.",
+            "",
+            this.tip_section(),
+            "",
+            "Make sure to do something else.",
+          ].join("\n"),
+          expected_output: "The expected output of the task",
+          agent: agentInstance,
+        });
+      }
+    }
+
+    class CustomCrew {
+      constructor(private readonly var1: string, private readonly var2: string) {}
+
+      run() {
+        const agents = new CustomAgents();
+        const tasks = new CustomTasks();
+        const customAgent1 = agents.agent_1_name();
+        const customAgent2 = agents.agent_2_name();
+        const customTask1 = tasks.task_1_name(customAgent1, this.var1, this.var2);
+        const customTask2 = tasks.task_2_name(customAgent2);
+        const crewInstance = new Crew({
+          agents: [customAgent1, customAgent2],
+          tasks: [customTask1, customTask2],
+          verbose: true,
+        });
+        return { crewInstance, result: crewInstance.kickoff() };
+      }
+    }
+
+    const { crewInstance, result } = new CustomCrew("market research", "landing page copy").run();
+    expect(crewInstance.process).toBe(Process.sequential);
+    expect(crewInstance.agents.map((agentInstance) => [agentInstance.role, agentInstance.allow_delegation])).toEqual([
+      ["Define agent 1 role here", false],
+      ["Define agent 2 role here", false],
+    ]);
+    expect(crewInstance.tasks.map((taskInstance) => taskInstance.expected_output)).toEqual([
+      "The expected output of the task",
+      "The expected output of the task",
+    ]);
+
+    const output = await result;
+
+    expect(output.raw).toContain("Task 2 used the task 1 result.");
+    expect(prompts.some((prompt) => prompt.includes("Use this variable: market research"))).toBe(true);
+    expect(prompts.some((prompt) => prompt.includes("And also this variable: landing page copy"))).toBe(true);
+    expect(prompts.every((prompt) => prompt.includes("If you do your BEST WORK"))).toBe(true);
+  });
+
   it("infers names for directly awaited async task decorator factories", async () => {
     class AsyncTaskCrew {
       calls = 0;
