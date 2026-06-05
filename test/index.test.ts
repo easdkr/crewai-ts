@@ -21598,6 +21598,219 @@ describe("standard decorators", () => {
     expect(cache_handler).toBe(cacheHandler);
   });
 
+  it("runs the crewAI-examples job-posting CrewBase template deterministically", async () => {
+    const researchRoleRequirementsSchema = {
+      skills: ["string"],
+      experience: ["string"],
+      qualities: ["string"],
+    };
+    const webSearchTool = new StructuredTool({
+      name: "Website Search",
+      description: "Search company websites",
+      func: () => "website result",
+    });
+    const serperTool = new StructuredTool({
+      name: "Serper Search",
+      description: "Search the web",
+      func: () => "search result",
+    });
+    const fileReadTool = new StructuredTool({
+      name: "Read Job Description Example",
+      description: "A tool to read the job description example file.",
+      func: () => "job description example",
+    });
+    const prompts: string[] = [];
+
+    class JobPostingCrew {
+      agents: Agent[] = [];
+      tasks: Task[] = [];
+      agents_config = {
+        research_agent: {
+          role: "Research Agent",
+          goal: "Research {company_domain} and {hiring_needs}",
+          backstory: "Find culture and role evidence",
+        },
+        writer_agent: {
+          role: "Writer Agent",
+          goal: "Draft a job posting for {hiring_needs}",
+          backstory: "Turn research into a practical posting",
+        },
+        review_agent: {
+          role: "Review Agent",
+          goal: "Review the posting for {specific_benefits}",
+          backstory: "Edit for completeness",
+        },
+      };
+      tasks_config = {
+        research_company_culture_task: {
+          description: "Research company culture for {company_domain}: {company_description}",
+          expected_output: "Culture notes",
+        },
+        research_role_requirements_task: {
+          description: "Research role requirements for {hiring_needs}",
+          expected_output: "Structured role requirements",
+        },
+        draft_job_posting_task: {
+          description: "Draft a posting with {specific_benefits}",
+          expected_output: "Draft posting",
+        },
+        review_and_edit_job_posting_task: {
+          description: "Review and edit the posting",
+          expected_output: "Final posting",
+        },
+        industry_analysis_task: {
+          description: "Analyze the industry for {company_domain}",
+          expected_output: "Industry analysis",
+        },
+      };
+
+      createAgent(config: { role: string; goal: string; backstory: string }, tools: StructuredTool[]) {
+        return new Agent({
+          role: config.role,
+          goal: config.goal,
+          backstory: config.backstory,
+          tools,
+          verbose: true,
+          llm: (messages) => {
+            const prompt = messages.at(-1)?.content ?? "";
+            prompts.push(prompt);
+            return JSON.stringify({
+              skills: ["production coordination"],
+              experience: ["TV production"],
+              qualities: ["clear communication"],
+              raw: `${config.role}: ${prompt}`,
+            });
+          },
+        });
+      }
+
+      research_agent() {
+        return this.createAgent(this.agents_config.research_agent, [webSearchTool, serperTool]);
+      }
+
+      writer_agent() {
+        return this.createAgent(this.agents_config.writer_agent, [webSearchTool, serperTool, fileReadTool]);
+      }
+
+      review_agent() {
+        return this.createAgent(this.agents_config.review_agent, [webSearchTool, serperTool, fileReadTool]);
+      }
+
+      research_company_culture_task() {
+        const config = this.tasks_config.research_company_culture_task;
+        return new Task({
+          config,
+          description: config.description,
+          expected_output: config.expected_output,
+          agent: this.research_agent(),
+        });
+      }
+
+      research_role_requirements_task() {
+        const config = this.tasks_config.research_role_requirements_task;
+        return new Task({
+          config,
+          description: config.description,
+          expected_output: config.expected_output,
+          agent: this.research_agent(),
+          output_json: true,
+          response_model: researchRoleRequirementsSchema,
+        });
+      }
+
+      draft_job_posting_task() {
+        const config = this.tasks_config.draft_job_posting_task;
+        return new Task({
+          config,
+          description: config.description,
+          expected_output: config.expected_output,
+          agent: this.writer_agent(),
+        });
+      }
+
+      review_and_edit_job_posting_task() {
+        const config = this.tasks_config.review_and_edit_job_posting_task;
+        return new Task({
+          config,
+          description: config.description,
+          expected_output: config.expected_output,
+          agent: this.review_agent(),
+        });
+      }
+
+      industry_analysis_task() {
+        const config = this.tasks_config.industry_analysis_task;
+        return new Task({
+          config,
+          description: config.description,
+          expected_output: config.expected_output,
+          agent: this.research_agent(),
+        });
+      }
+
+      crew() {
+        return new Crew({
+          agents: this.agents,
+          tasks: this.tasks,
+          process: Process.sequential,
+          verbose: 2,
+        });
+      }
+    }
+
+    const DecoratedJobPostingCrew = decorateClass(JobPostingCrew, CrewBase as unknown as Decorator);
+    const project = new DecoratedJobPostingCrew();
+    [
+      decorateMethod(JobPostingCrew, "research_agent", agent),
+      decorateMethod(JobPostingCrew, "writer_agent", agent),
+      decorateMethod(JobPostingCrew, "review_agent", agent),
+      decorateMethod(JobPostingCrew, "research_company_culture_task", task),
+      decorateMethod(JobPostingCrew, "research_role_requirements_task", task),
+      decorateMethod(JobPostingCrew, "draft_job_posting_task", task),
+      decorateMethod(JobPostingCrew, "review_and_edit_job_posting_task", task),
+      decorateMethod(JobPostingCrew, "industry_analysis_task", task),
+      decorateMethod(JobPostingCrew, "crew", crew),
+    ].forEach((initializer) => {
+      initializer.call(project);
+    });
+
+    const crewInstance = project.crew();
+    expect(crewInstance.process).toBe(Process.sequential);
+    expect(project.agents.map((projectAgent: Agent) => projectAgent.role)).toEqual([
+      "Research Agent",
+      "Writer Agent",
+      "Review Agent",
+    ]);
+    expect(project.tasks.map((projectTask: Task) => projectTask.name)).toEqual([
+      "research_company_culture_task",
+      "research_role_requirements_task",
+      "draft_job_posting_task",
+      "review_and_edit_job_posting_task",
+      "industry_analysis_task",
+    ]);
+    expect(project.research_role_requirements_task().output_json).toBe(true);
+    expect(project.research_role_requirements_task().response_model).toBe(researchRoleRequirementsSchema);
+    expect(project.writer_agent().tools.map((toolInstance) => toolInstance.name)).toEqual([
+      "website_search",
+      "serper_search",
+      "read_job_description_example",
+    ]);
+
+    const output = await crewInstance.kickoff({
+      inputs: {
+        company_domain: "careers.wbd.com",
+        company_description: "A media and entertainment company",
+        hiring_needs: "Production Assistant in Los Angeles",
+        specific_benefits: "Weekly Pay, Employee Meals, healthcare",
+      },
+    });
+
+    expect(output.raw).toContain("Review Agent");
+    expect(prompts.some((prompt) => prompt.includes("careers.wbd.com"))).toBe(true);
+    expect(prompts.some((prompt) => prompt.includes("Production Assistant in Los Angeles"))).toBe(true);
+    expect(prompts.some((prompt) => prompt.includes("Weekly Pay, Employee Meals, healthcare"))).toBe(true);
+  });
+
   it("infers names for directly awaited async task decorator factories", async () => {
     class AsyncTaskCrew {
       calls = 0;
