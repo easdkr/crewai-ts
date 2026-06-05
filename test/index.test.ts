@@ -33049,6 +33049,22 @@ describe("LLM providers", () => {
     expect(chainedClient.lastResponseId).toBeNull();
   });
 
+  it("prefers explicit OpenAI Responses previous response ids over auto-chain state", () => {
+    const openai = new OpenAICompletion({
+      model: "gpt-4o",
+      api: "responses",
+      auto_chain: true,
+      previous_response_id: "resp_explicit_456",
+    });
+    (openai as unknown as { responseChainId: string }).responseChainId = "resp_auto_123";
+
+    expect((openai as unknown as {
+      _prepare_responses_params(messages: LLMMessage[]): Record<string, unknown>;
+    })._prepare_responses_params([{ role: "user", content: "test" }])).toMatchObject({
+      previous_response_id: "resp_explicit_456",
+    });
+  });
+
   it("extracts OpenAI Responses API built-in tool outputs", () => {
     const openai = new OpenAICompletion({ model: "gpt-4.1", api: "responses" });
     class ComputerAction {
