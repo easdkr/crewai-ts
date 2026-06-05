@@ -24050,6 +24050,257 @@ describe("standard decorators", () => {
     expect(prompts.some((prompt) => prompt.includes("Filings analysis: AMZN 10-K and 10-Q"))).toBe(true);
   });
 
+  it("runs the crewAI-examples surprise-trip CrewBase workflow deterministically", async () => {
+    const prompts: string[] = [];
+    const itinerarySchema = {
+      name: "string",
+      day_plans: [{
+        date: "string",
+        activities: [{
+          name: "string",
+          location: "string",
+          description: "string",
+          date: "string",
+          cousine: "string",
+          why_its_suitable: "string",
+          reviews: ["string"],
+          rating: "number",
+        }],
+        restaurants: ["string"],
+        flight: "string",
+      }],
+      hotel: "string",
+    };
+    const serperTool = new StructuredTool({
+      name: "Serper Search",
+      description: "Search destination information",
+      func: ({ query }: { query: string }) => `Travel search result for ${query}`,
+    });
+    const scrapeWebsiteTool = new StructuredTool({
+      name: "Scrape Website",
+      description: "Scrape travel and restaurant pages",
+      func: ({ url }: { url: string }) => `Scraped travel page ${url}`,
+    });
+
+    class SurpriseTravelCrew {
+      agents: Agent[] = [];
+      tasks: Task[] = [];
+      agents_config = {
+        personalized_activity_planner: {
+          role: "Activity Planner",
+          goal: "Research and find cool things to do at the destination",
+          backstory: "Creates personalized itineraries for traveler preferences and demographics.",
+        },
+        restaurant_scout: {
+          role: "Restaurant Scout",
+          goal: "Find highly-rated restaurants and dining experiences at the destination",
+          backstory: "Finds culinary experiences, scenic locations, and entertaining activities.",
+        },
+        itinerary_compiler: {
+          role: "Itinerary Compiler",
+          goal: "Compile all researched information into a comprehensive day-by-day itinerary",
+          backstory: "Organizes flight, hotel, activity, and dining information into a coherent plan.",
+        },
+      };
+      tasks_config = {
+        personalized_activity_planning_task: {
+          description: [
+            "Research and find cool things to do at {destination}.",
+            "Focus on activities and events that match the traveler's interests and age group.",
+            "Utilize internet search tools and recommendation engines to gather the information.",
+            "",
+            "Traveler's information:",
+            "",
+            "- origin: {origin}",
+            "- destination: {destination}",
+            "- age of the traveler: {age}",
+            "- hotel localtion: {hotel_location}",
+            "- flight infromation: {flight_information}",
+            "- how long is the trip: {trip_duration}",
+          ].join("\n"),
+          expected_output: "A list of recommended activities and events for each day of the trip.",
+        },
+        restaurant_scenic_location_scout_task: {
+          description: [
+            "Find highly-rated restaurants and dining experiences at {destination}.",
+            "Recommend scenic locations and fun activities that align with the traveler's preferences.",
+            "Use internet search tools, restaurant review sites, and travel guides.",
+            "Make sure to find a variety of options to suit different tastes and budgets, and ratings for them.",
+            "",
+            "Traveler's information:",
+            "",
+            "- origin: {origin}",
+            "- destination: {destination}",
+            "- age of the traveler: {age}",
+            "- hotel localtion: {hotel_location}",
+            "- flight infromation: {flight_information}",
+            "- how long is the trip: {trip_duration}",
+          ].join("\n"),
+          expected_output: "A list of recommended restaurants, scenic locations, and fun activities for each day of the trip.",
+        },
+        itinerary_compilation_task: {
+          description: [
+            "Compile all researched information into a comprehensive day-by-day itinerary for the trip to {destination}.",
+            "Ensure the itinerary integrates flights, hotel information, and all planned activities and dining experiences.",
+            "Use text formatting and document creation tools to organize the information.",
+          ].join("\n"),
+          expected_output: "A detailed itinerary document with flights, hotel details, activities, restaurants, and scenic locations.",
+        },
+      };
+
+      createAgent(config: { role: string; goal: string; backstory: string }, tools: StructuredTool[]) {
+        return new Agent({
+          config,
+          role: config.role,
+          goal: config.goal,
+          backstory: config.backstory,
+          tools,
+          allow_delegation: false,
+          verbose: true,
+          llm: (messages) => {
+            const prompt = messages.at(-1)?.content ?? "";
+            prompts.push(prompt);
+            if (prompt.includes("Compile all researched information")) {
+              return JSON.stringify({
+                name: "Brooklyn Beats Surprise",
+                day_plans: [{
+                  date: "June 30th, 2024",
+                  activities: [{
+                    name: "Brooklyn Bridge Park walk",
+                    location: "Brooklyn",
+                    description: "A scenic outdoor activity near the hotel.",
+                    date: "June 30th, 2024",
+                    cousine: "American",
+                    why_its_suitable: "Fits a 31-year-old traveler who wants local scenery.",
+                    reviews: ["Great skyline views"],
+                    rating: 4.8,
+                  }],
+                  restaurants: ["Juliana's Pizza"],
+                  flight: "GOL 1234, leaving at June 30th, 2024, 10:00",
+                }],
+                hotel: "Brooklyn",
+              });
+            }
+            if (prompt.includes("Find highly-rated restaurants")) {
+              return "Restaurants: Juliana's Pizza in Brooklyn, rating 4.8, scenic walk nearby.";
+            }
+            return "Activities: Brooklyn Bridge Park and Dumbo photo walk for a 31-year-old traveler.";
+          },
+        });
+      }
+
+      personalized_activity_planner() {
+        return this.createAgent(this.agents_config.personalized_activity_planner, [serperTool, scrapeWebsiteTool]);
+      }
+
+      restaurant_scout() {
+        return this.createAgent(this.agents_config.restaurant_scout, [serperTool, scrapeWebsiteTool]);
+      }
+
+      itinerary_compiler() {
+        return this.createAgent(this.agents_config.itinerary_compiler, [serperTool]);
+      }
+
+      personalized_activity_planning_task() {
+        const config = this.tasks_config.personalized_activity_planning_task;
+        return new Task({
+          config,
+          description: config.description,
+          expected_output: config.expected_output,
+          agent: this.personalized_activity_planner(),
+        });
+      }
+
+      restaurant_scenic_location_scout_task() {
+        const config = this.tasks_config.restaurant_scenic_location_scout_task;
+        return new Task({
+          config,
+          description: config.description,
+          expected_output: config.expected_output,
+          agent: this.restaurant_scout(),
+        });
+      }
+
+      itinerary_compilation_task() {
+        const config = this.tasks_config.itinerary_compilation_task;
+        return new Task({
+          config,
+          description: config.description,
+          expected_output: config.expected_output,
+          agent: this.itinerary_compiler(),
+          output_json: true,
+          response_model: itinerarySchema,
+        });
+      }
+
+      crew() {
+        return new Crew({
+          agents: this.agents,
+          tasks: this.tasks,
+          process: Process.sequential,
+          verbose: 2,
+        });
+      }
+    }
+
+    const DecoratedSurpriseTravelCrew = decorateClass(SurpriseTravelCrew, CrewBase as unknown as Decorator);
+    const initializers = [
+      decorateMethod(SurpriseTravelCrew, "personalized_activity_planner", agent),
+      decorateMethod(SurpriseTravelCrew, "restaurant_scout", agent),
+      decorateMethod(SurpriseTravelCrew, "itinerary_compiler", agent),
+      decorateMethod(SurpriseTravelCrew, "personalized_activity_planning_task", task),
+      decorateMethod(SurpriseTravelCrew, "restaurant_scenic_location_scout_task", task),
+      decorateMethod(SurpriseTravelCrew, "itinerary_compilation_task", task),
+      decorateMethod(SurpriseTravelCrew, "crew", crew),
+    ];
+    const project = new DecoratedSurpriseTravelCrew();
+    initializers.forEach((initializer) => {
+      initializer.call(project);
+    });
+
+    const crewInstance = project.crew();
+    expect(crewInstance.process).toBe(Process.sequential);
+    expect(project.agents.map((projectAgent: Agent) => [projectAgent.role, projectAgent.allow_delegation])).toEqual([
+      ["Activity Planner", false],
+      ["Restaurant Scout", false],
+      ["Itinerary Compiler", false],
+    ]);
+    expect(project.personalized_activity_planner().tools.map((toolInstance) => toolInstance.name)).toEqual([
+      "serper_search",
+      "scrape_website",
+    ]);
+    expect(project.itinerary_compiler().tools.map((toolInstance) => toolInstance.name)).toEqual(["serper_search"]);
+    expect(project.tasks.map((projectTask: Task) => projectTask.name)).toEqual([
+      "personalized_activity_planning_task",
+      "restaurant_scenic_location_scout_task",
+      "itinerary_compilation_task",
+    ]);
+    expect(project.itinerary_compilation_task().output_json).toBe(true);
+    expect(project.itinerary_compilation_task().response_model).toBe(itinerarySchema);
+
+    const output = await crewInstance.kickoff({
+      inputs: {
+        origin: "Sao Paulo, GRU",
+        destination: "New York, JFK",
+        age: 31,
+        hotel_location: "Brooklyn",
+        flight_information: "GOL 1234, leaving at June 30th, 2024, 10:00",
+        trip_duration: "14 days",
+      },
+    });
+
+    expect(output.raw).toContain("Brooklyn Beats Surprise");
+    expect(output.tasksOutput.at(-1)?.json_dict).toMatchObject({
+      name: "Brooklyn Beats Surprise",
+      hotel: "Brooklyn",
+    });
+    expect(prompts.some((prompt) => prompt.includes("- origin: Sao Paulo, GRU"))).toBe(true);
+    expect(prompts.some((prompt) => prompt.includes("- destination: New York, JFK"))).toBe(true);
+    expect(prompts.some((prompt) => prompt.includes("- age of the traveler: 31"))).toBe(true);
+    expect(prompts.some((prompt) => prompt.includes("Restaurants: Juliana's Pizza"))).toBe(true);
+    expect(prompts.some((prompt) => prompt.includes("Activities: Brooklyn Bridge Park"))).toBe(true);
+  });
+
   it("infers names for directly awaited async task decorator factories", async () => {
     class AsyncTaskCrew {
       calls = 0;
