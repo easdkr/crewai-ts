@@ -22255,6 +22255,168 @@ describe("standard decorators", () => {
     });
   });
 
+  it("runs the crewAI-examples write-a-book nested crews deterministically", async () => {
+    type ChapterOutline = { title: string; description: string };
+    type BookOutline = { chapters: ChapterOutline[] };
+    type Chapter = { title: string; content: string };
+    const prompts: string[] = [];
+    const searchTool = new StructuredTool({
+      name: "Serper Search",
+      description: "Search for book research sources.",
+      func: (query: string) => `search:${query}`,
+    });
+    const outlineResearcher = new Agent({
+      role: "Research Agent",
+      goal: "Gather comprehensive information about {topic} for a book outline.",
+      backstory: "A seasoned researcher.",
+      tools: [searchTool],
+      llm: (messages) => {
+        const prompt = messages.at(-1)?.content ?? "";
+        prompts.push(`outline-research:${prompt}`);
+        return "Key points about deterministic CrewAI flows and TypeScript orchestration.";
+      },
+    });
+    const outliner = new Agent({
+      role: "Book Outlining Agent",
+      goal: "Generate a sequential book outline about {topic}.",
+      backstory: "A skilled organizer.",
+      llm: (messages) => {
+        const prompt = messages.at(-1)?.content ?? "";
+        prompts.push(`outline:${prompt}`);
+        return JSON.stringify({
+          chapters: [
+            { title: "Flow Foundations", description: "Explain starts, listeners, and routers." },
+            { title: "Crew Handoffs", description: "Show how crews produce structured chapter data." },
+          ],
+        });
+      },
+    });
+    const outlineCrew = new Crew({
+      agents: [outlineResearcher, outliner],
+      tasks: [
+        new Task({
+          description: [
+            "Research the provided topic of {topic}.",
+            "Here is some additional information about the author's desired goal for the book:",
+            "{goal}",
+          ].join("\n"),
+          expectedOutput: "A set of key points.",
+          agent: outlineResearcher,
+        }),
+        new Task({
+          description: [
+            "Create a book outline with chapters in sequential order based on the research findings.",
+            "Here is some additional information about the author's desired goal for the book:",
+            "{goal}",
+          ].join("\n"),
+          expectedOutput: "An outline of chapters.",
+          agent: outliner,
+          output_pydantic: (raw) => JSON.parse(raw) as BookOutline,
+        }),
+      ],
+      process: Process.sequential,
+    });
+    const chapterResearcher = new Agent({
+      role: "Research Agent",
+      goal: "Gather comprehensive information about {topic} and {chapter_title}.",
+      backstory: "An experienced chapter researcher.",
+      tools: [searchTool],
+      llm: (messages) => {
+        const prompt = messages.at(-1)?.content ?? "";
+        prompts.push(`chapter-research:${prompt}`);
+        return "Additional chapter research with examples and constraints.";
+      },
+    });
+    const chapterWriter = new Agent({
+      role: "Chapter Writer",
+      goal: "Write a well-structured chapter in markdown.",
+      backstory: "An exceptional technical writer.",
+      llm: (messages) => {
+        const prompt = messages.at(-1)?.content ?? "";
+        prompts.push(`chapter-write:${prompt}`);
+        const title = prompt.match(/title of the chapter: (.+)/)?.[1]?.trim() ?? "Chapter";
+        return JSON.stringify({
+          title,
+          content: `# ${title}\n\nThis chapter uses the full outline and goal to explain ${title}.`,
+        });
+      },
+    });
+    const makeChapterCrew = () => new Crew({
+      agents: [chapterResearcher, chapterWriter],
+      tasks: [
+        new Task({
+          description: [
+            "Research the provided chapter topic, title, and outline.",
+            "Here is the outline description for the chapter:",
+            "{chapter_description}",
+            "Here is the outline of the entire book:",
+            "{book_outline}",
+          ].join("\n"),
+          expectedOutput: "Additional chapter insights.",
+          agent: chapterResearcher,
+        }),
+        new Task({
+          description: [
+            "Write a well-structured chapter based on the chapter title, goal, and outline description.",
+            "Here is the topic for the book: {topic}",
+            "Here is the title of the chapter: {chapter_title}",
+            "Here is the outline description for the chapter:",
+            "{chapter_description}",
+            "Here is the outline of the entire book:",
+            "{book_outline}",
+          ].join("\n"),
+          expectedOutput: "A markdown-formatted chapter.",
+          agent: chapterWriter,
+          output_pydantic: (raw) => JSON.parse(raw) as Chapter,
+        }),
+      ],
+      process: Process.sequential,
+    });
+
+    const outlineOutput = await outlineCrew.kickoff({
+      inputs: {
+        topic: "CrewAI TypeScript flows",
+        goal: "Teach deterministic orchestration.",
+      },
+    });
+    const outline = outlineOutput.pydantic as BookOutline;
+    const serializedOutline = outline.chapters.map((chapter) => JSON.stringify(chapter));
+    const chapters = await Promise.all(outline.chapters.map(async (chapter) => {
+      const output = await makeChapterCrew().kickoff({
+        inputs: {
+          goal: "Teach deterministic orchestration.",
+          topic: "CrewAI TypeScript flows",
+          chapter_title: chapter.title,
+          chapter_description: chapter.description,
+          book_outline: serializedOutline,
+        },
+      });
+      return output.pydantic as Chapter;
+    }));
+
+    expect(outline).toEqual({
+      chapters: [
+        { title: "Flow Foundations", description: "Explain starts, listeners, and routers." },
+        { title: "Crew Handoffs", description: "Show how crews produce structured chapter data." },
+      ],
+    });
+    expect(chapters).toEqual([
+      {
+        title: "Flow Foundations",
+        content: "# Flow Foundations\n\nThis chapter uses the full outline and goal to explain Flow Foundations.",
+      },
+      {
+        title: "Crew Handoffs",
+        content: "# Crew Handoffs\n\nThis chapter uses the full outline and goal to explain Crew Handoffs.",
+      },
+    ]);
+    expect(outlineResearcher.tools.map((toolInstance) => toolInstance.name)).toEqual(["serper_search"]);
+    expect(chapterResearcher.tools.map((toolInstance) => toolInstance.name)).toEqual(["serper_search"]);
+    expect(prompts.some((prompt) => prompt.includes("Teach deterministic orchestration."))).toBe(true);
+    expect(prompts.filter((prompt) => prompt.includes(JSON.stringify(outline.chapters[0])))).toHaveLength(4);
+    expect(prompts.filter((prompt) => prompt.includes(JSON.stringify(outline.chapters[1])))).toHaveLength(4);
+  });
+
   it("runs the crewAI-examples game-builder CrewBase template deterministically", async () => {
     const prompts: string[] = [];
     const gameDesigns = {
