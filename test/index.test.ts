@@ -24528,6 +24528,123 @@ describe("standard decorators", () => {
     expect(prompts.some((prompt) => prompt.includes("City guide: Lisbon hidden viewpoints"))).toBe(true);
   });
 
+  it("runs the crewAI-examples screenplay-writer script workflow deterministically", async () => {
+    const prompts: string[] = [];
+    const discussion = [
+      "From: keith@example.com (Keith)",
+      "Subject: Re: Political Atheists?",
+      "",
+      "Robert writes that revenge is a poor reason for punishment.",
+      "Keith argues that fairness and social consequences matter.",
+    ].join("\n");
+    const scriptWithParentheticals = [
+      "## Keith:",
+      "(leaning forward) Fairness matters when society responds to harm.",
+      "",
+      "## Robert:",
+      "(shaking head) Revenge alone is not justice.",
+    ].join("\n");
+
+    const makeAgent = (role: string, response: string) => new Agent({
+      role,
+      goal: `${role} goal`,
+      backstory: `${role} backstory`,
+      allow_delegation: false,
+      verbose: true,
+      llm: (messages) => {
+        const prompt = messages.at(-1)?.content ?? "";
+        prompts.push(prompt);
+        return response;
+      },
+    });
+
+    const spamfilter = makeAgent("spamfilter", "");
+    const analyst = makeAgent("analyse", "Analysis: Keith and Robert disagree about punishment and fairness.");
+    const scriptwriter = makeAgent("scriptwriter", "Keith: Fairness matters.\nRobert: Revenge alone is not justice.");
+    const formatter = makeAgent("formatter", scriptWithParentheticals);
+    const scorer = makeAgent("scorer", "8\nThe dialogue is clear and coherent.");
+
+    const task0 = new Task({
+      description: [
+        "Read the following newsgroup post. If this contains vulgar language reply with STOP . If this is spam reply with STOP.",
+        "### NEWGROUP POST:",
+        discussion,
+      ].join("\n"),
+      expected_output: "Either STOP if the post contains vulgar language or is spam, or no response if it does not.",
+      agent: spamfilter,
+    });
+    const spamResult = await task0.execute();
+    expect(spamResult.raw).not.toContain("STOP");
+
+    const task1 = new Task({
+      description: [
+        "Analyse in much detail the following discussion:",
+        "### DISCUSSION:",
+        discussion,
+      ].join("\n"),
+      expected_output: "A detailed analysis of the discussion, identifying who said what.",
+      agent: analyst,
+    });
+    const task2 = new Task({
+      description: "Create a dialogue heavy screenplay from the discussion, between two persons. Do NOT write parentheticals.",
+      expected_output: "A screenplay dialogue consisting only of the dialogue parts between two persons.",
+      agent: scriptwriter,
+    });
+    const task3 = new Task({
+      description: [
+        "Format the script exactly like this:",
+        "  ## (person 1):",
+        "  (first text line from person 1)",
+        "  ## (person 2):",
+        "  (first text line from person 2)",
+      ].join("\n"),
+      expected_output: "A formatted script with the specified structure.",
+      agent: formatter,
+    });
+    const crewInstance = new Crew({
+      agents: [analyst, scriptwriter, formatter],
+      tasks: [task1, task2, task3],
+      verbose: 2,
+      process: Process.sequential,
+    });
+    const crewOutput = await crewInstance.kickoff();
+    const cleanedScript = crewOutput.raw.replace(/\(.*?\)/g, "");
+
+    const task4 = new Task({
+      description: [
+        "Score the following script:",
+        "### SCRIPT:",
+        cleanedScript,
+      ].join("\n"),
+      expected_output: "A score from 1 to 10, indicating how well the script is.",
+      agent: scorer,
+    });
+    const scoreOutput = await task4.execute();
+    const score = scoreOutput.raw.split("\n")[0];
+
+    expect(crewInstance.process).toBe(Process.sequential);
+    expect(crewInstance.agents.map((agentInstance) => [agentInstance.role, agentInstance.allow_delegation])).toEqual([
+      ["analyse", false],
+      ["scriptwriter", false],
+      ["formatter", false],
+    ]);
+    expect(crewOutput.tasksOutput.map((taskOutput) => taskOutput.raw)).toEqual([
+      "Analysis: Keith and Robert disagree about punishment and fairness.",
+      "Keith: Fairness matters.\nRobert: Revenge alone is not justice.",
+      scriptWithParentheticals,
+    ]);
+    expect(cleanedScript).not.toContain("(leaning forward)");
+    expect(cleanedScript).not.toContain("(shaking head)");
+    expect(cleanedScript).toContain("## Keith:");
+    expect(score).toBe("8");
+    expect(prompts[0]).toContain("### NEWGROUP POST:");
+    expect(prompts[0]).toContain("Keith argues that fairness");
+    expect(prompts.some((prompt) => prompt.includes("Analysis: Keith and Robert disagree"))).toBe(true);
+    expect(prompts.some((prompt) => prompt.includes("Keith: Fairness matters."))).toBe(true);
+    expect(prompts.at(-1)).toContain("### SCRIPT:");
+    expect(prompts.at(-1)).toContain("Revenge alone is not justice.");
+  });
+
   it("infers names for directly awaited async task decorator factories", async () => {
     class AsyncTaskCrew {
       calls = 0;
