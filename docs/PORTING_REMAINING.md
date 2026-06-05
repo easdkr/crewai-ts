@@ -14,12 +14,13 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 1218 passing tests.
+- Test suite: 1219 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
 - Subpath export parity: `total_missing=0`, `total_mismatched=0`.
 - The 2026-06-05 external examples audit promoted the deterministic `crewAI-examples` lead-score Flow shape into the local Flow concepts test: mixed method-reference/string conditions via `listen(or_(method, "event"))` and `router(method)` are release-gated without live crews, file IO, or provider calls.
+- The same external examples audit promoted the deterministic `crewAI-examples` lead-score nested crew shape: `LeadScoreCrew` evaluates each candidate with job description and additional feedback into structured score/reason output, top candidates are sorted and selected, and `LeadResponseCrew` generates proceed/reject follow-up emails based on `proceed_with_candidate` without CSV reads, live LLMs, interactive human input, output directories, or email file writes.
 - The 2026-06-05 external examples audit also promoted the deterministic `crewAI-examples` self-evaluation loop Flow shape: `@start("retry")` methods now run as initial starts and re-run when routers emit the retry event, while complete/max-retry listeners remain event-routed without live crews or file writes.
 - The same external examples audit promoted the deterministic `crewAI-examples` meeting assistant Flow shape: a start method loads transcript state, a crew-like listener populates tasks, and sibling listeners all observe the generated task state to simulate Trello, CSV, and Slack side effects without live integrations or file IO.
 - The same external examples audit promoted the deterministic `crewAI-examples` write-a-book Flow shape: outline generation feeds async chapter fan-out with full serialized outline context, chapter results join back into ordered book state, and the final markdown save step is modeled without live crews or file IO.

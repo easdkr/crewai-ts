@@ -21896,6 +21896,139 @@ describe("standard decorators", () => {
     expect(blogCrew.usageMetrics.successfulRequests).toBe(12);
   });
 
+  it("runs the crewAI-examples lead-score nested crews deterministically", async () => {
+    type Candidate = { id: string; name: string; bio: string };
+    type CandidateScore = { candidate_id: string; score: number; reason: string };
+    const jobDescription = "Build reliable TypeScript agent workflows.";
+    const candidates: Candidate[] = [
+      { id: "c-1", name: "Ava Example", bio: "TypeScript platform engineer with workflow experience." },
+      { id: "c-2", name: "Ben Example", bio: "Generalist marketer interested in automation." },
+      { id: "c-3", name: "Cy Example", bio: "Agent orchestration engineer with customer support projects." },
+      { id: "c-4", name: "Dee Example", bio: "Early career frontend developer." },
+    ];
+    const scorePrompts: string[] = [];
+    const responsePrompts: string[] = [];
+    const parseCandidateScore = (raw: string) => JSON.parse(raw) as CandidateScore;
+    const scoreByCandidate = new Map<string, CandidateScore>([
+      ["c-1", { candidate_id: "c-1", score: 87, reason: "Strong TypeScript and workflow fit." }],
+      ["c-2", { candidate_id: "c-2", score: 42, reason: "Limited engineering match." }],
+      ["c-3", { candidate_id: "c-3", score: 91, reason: "Direct agent orchestration experience." }],
+      ["c-4", { candidate_id: "c-4", score: 63, reason: "Promising but less experienced." }],
+    ]);
+    const scoreAgent = new Agent({
+      role: "Senior HR Evaluation Expert",
+      goal: "Analyze candidates against the job description and return a specific score.",
+      backstory: "Experienced in evaluating skills, experience, culture fit, and growth potential.",
+      llm: (messages) => {
+        const prompt = messages.at(-1)?.content ?? "";
+        scorePrompts.push(prompt);
+        const candidateId = prompt.match(/Candidate ID: (.+)/)?.[1]?.trim() ?? "";
+        return JSON.stringify(scoreByCandidate.get(candidateId));
+      },
+      verbose: true,
+    });
+    const scoreTask = new Task({
+      description: [
+        "Evaluate a candidate's bio based on the provided job description.",
+        "Candidate ID: {candidate_id}",
+        "Name: {name}",
+        "Bio:\n{bio}",
+        "JOB DESCRIPTION\n{job_description}",
+        "ADDITIONAL INSTRUCTIONS\n{additional_instructions}",
+      ].join("\n"),
+      expectedOutput: "A very specific score from 1 to 100 for the candidate, with detailed reasoning.",
+      agent: scoreAgent,
+      output_pydantic: parseCandidateScore,
+    });
+    const scoreCrew = new Crew({
+      agents: [scoreAgent],
+      tasks: [scoreTask],
+      process: Process.sequential,
+    });
+    const candidateScores = await Promise.all(candidates.map(async (candidate) => {
+      const result = await scoreCrew.kickoff_async({
+        inputs: {
+          candidate_id: candidate.id,
+          name: candidate.name,
+          bio: candidate.bio,
+          job_description: jobDescription,
+          additional_instructions: "Prefer production agent workflow experience.",
+        },
+      });
+      return result.pydantic as CandidateScore;
+    }));
+    const hydratedCandidates = candidates
+      .map((candidate) => ({
+        ...candidate,
+        ...(candidateScores.find((score) => score.candidate_id === candidate.id) as CandidateScore),
+      }))
+      .sort((left, right) => right.score - left.score);
+    const topCandidateIds = new Set(hydratedCandidates.slice(0, 3).map((candidate) => candidate.id));
+    const responseAgent = new Agent({
+      role: "HR Coordinator",
+      goal: "Compose personalized follow-up emails based on whether the candidate is being pursued.",
+      backstory: "Sarah from CrewAI writes clear candidate correspondence.",
+      allowDelegation: false,
+      llm: (messages) => {
+        const prompt = messages.at(-1)?.content ?? "";
+        responsePrompts.push(prompt);
+        const name = prompt.match(/Name: (.+)/)?.[1]?.trim() ?? "Candidate";
+        return prompt.includes("PROCEEDING WITH CANDIDATE: True")
+          ? `Hi ${name}, please share availability for a Zoom call.`
+          : `Hi ${name}, thank you for applying. We are pursuing other candidates.`;
+      },
+      verbose: true,
+    });
+    const responseTask = new Task({
+      description: [
+        "Compose personalized follow-up emails for candidates who applied to a specific job.",
+        "Candidate ID: {candidate_id}",
+        "Name: {name}",
+        "Bio:\n{bio}",
+        "PROCEEDING WITH CANDIDATE: {proceed_with_candidate}",
+      ].join("\n"),
+      expectedOutput: "A personalized email based on the candidate's information.",
+      agent: responseAgent,
+      verbose: true,
+    });
+    const responseCrew = new Crew({
+      agents: [responseAgent],
+      tasks: [responseTask],
+      process: Process.sequential,
+    });
+    const emailOutputs = await Promise.all(hydratedCandidates.map(async (candidate) => {
+      const result = await responseCrew.kickoff_async({
+        inputs: {
+          candidate_id: candidate.id,
+          name: candidate.name,
+          bio: candidate.bio,
+          proceed_with_candidate: topCandidateIds.has(candidate.id),
+        },
+      });
+      return [candidate.id, result.raw] as const;
+    }));
+
+    expect(candidateScores).toEqual([
+      { candidate_id: "c-1", score: 87, reason: "Strong TypeScript and workflow fit." },
+      { candidate_id: "c-2", score: 42, reason: "Limited engineering match." },
+      { candidate_id: "c-3", score: 91, reason: "Direct agent orchestration experience." },
+      { candidate_id: "c-4", score: 63, reason: "Promising but less experienced." },
+    ]);
+    expect(hydratedCandidates.map((candidate) => candidate.id)).toEqual(["c-3", "c-1", "c-4", "c-2"]);
+    expect(scorePrompts).toHaveLength(4);
+    expect(scorePrompts.every((prompt) => prompt.includes(jobDescription))).toBe(true);
+    expect(scorePrompts.every((prompt) => prompt.includes("Prefer production agent workflow experience."))).toBe(true);
+    expect(responseAgent.allowDelegation).toBe(false);
+    expect(emailOutputs).toEqual([
+      ["c-3", "Hi Cy Example, please share availability for a Zoom call."],
+      ["c-1", "Hi Ava Example, please share availability for a Zoom call."],
+      ["c-4", "Hi Dee Example, please share availability for a Zoom call."],
+      ["c-2", "Hi Ben Example, thank you for applying. We are pursuing other candidates."],
+    ]);
+    expect(responsePrompts.filter((prompt) => prompt.includes("PROCEEDING WITH CANDIDATE: True"))).toHaveLength(3);
+    expect(responsePrompts.filter((prompt) => prompt.includes("PROCEEDING WITH CANDIDATE: False"))).toHaveLength(1);
+  });
+
   it("runs the crewAI-examples game-builder CrewBase template deterministically", async () => {
     const prompts: string[] = [];
     const gameDesigns = {
