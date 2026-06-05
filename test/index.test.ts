@@ -34533,6 +34533,25 @@ describe("LLM providers", () => {
     expect(gemini15Config).not.toHaveProperty("response_json_schema");
   });
 
+  it("wraps non-object Gemini tool results in function response result fields", () => {
+    const gemini = new GeminiCompletion({ model: "gemini-2.0-flash-001" });
+
+    const [contents] = (gemini as unknown as {
+      _format_messages_for_gemini(messages: Array<LLMMessage & Record<string, unknown>>): [Record<string, unknown>[], string | null];
+    })._format_messages_for_gemini([
+      { role: "tool", content: "30000", name: "sum_numbers", tool_call_id: "call_1" },
+      { role: "tool", content: "\"done\"", name: "string_tool", tool_call_id: "call_2" },
+    ]);
+
+    expect(contents).toEqual([{
+      role: "user",
+      parts: [
+        { functionResponse: { name: "sum_numbers", response: { result: 30000 } } },
+        { functionResponse: { name: "string_tool", response: { result: "done" } } },
+      ],
+    }]);
+  });
+
   it("accumulates Gemini streaming chunks", () => {
     const gemini = new GeminiCompletion({ model: "gemini-2.5-pro" });
     const functionCallPart = {
