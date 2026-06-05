@@ -28858,6 +28858,208 @@ describe("flow runtime", () => {
     ]);
   });
 
+  it("runs the crewAI-examples coding-assistant notebook retry Flow deterministically", async () => {
+    type CodeSolution = { prefix: string; imports: string; code: string };
+    type CodeGenState = {
+      question: string;
+      generation: CodeSolution | null;
+      error: string;
+      context: string;
+      checks: string[];
+      fixInputs: Array<{
+        error: string;
+        question: string;
+        explanation: string;
+        imports: string;
+        code: string;
+        context: string;
+      }>;
+      generations: string[];
+    };
+    const scriptedSolutions: CodeSolution[] = [
+      {
+        prefix: "First attempt",
+        imports: "throw new Error('missing import')",
+        code: "return 'unreached';",
+      },
+      {
+        prefix: "Fixed imports",
+        imports: "const answer = 'rag';",
+        code: "throw new Error('bad block')",
+      },
+      {
+        prefix: "Working solution",
+        imports: "const answer = 'rag';",
+        code: "return answer;",
+      },
+    ];
+
+    class CodeGenFlow extends Flow<CodeGenState> {
+      constructor() {
+        super({
+          initialState: {
+            question: "How do I build a RAG chain in LCEL?",
+            generation: null,
+            error: "",
+            context: "LCEL documentation excerpt",
+            checks: [],
+            fixInputs: [],
+            generations: [],
+          },
+        });
+      }
+
+      checkCode() {
+        const codeSolution = this.state.generation;
+        if (!codeSolution) {
+          throw new Error("Code generation has not run.");
+        }
+        const importFailure = codeSolution.imports.match(/throw new Error\('([^']+)'\)/);
+        if (importFailure) {
+          const message = importFailure[1] ?? "import failed";
+          this.state.error = message;
+          this.state.checks.push(`import_failed:${message}`);
+          return "code_failed";
+        }
+        const codeFailure = codeSolution.code.match(/throw new Error\('([^']+)'\)/);
+        if (codeFailure) {
+          const message = codeFailure[1] ?? "code failed";
+          this.state.error = message;
+          this.state.checks.push(`code_failed:${message}`);
+          return "code_failed";
+        }
+        this.state.error = "";
+        this.state.checks.push("success");
+        return "success";
+      }
+
+      runCrew(step: "generate" | "fix") {
+        const solution = scriptedSolutions.shift();
+        if (!solution) {
+          throw new Error("No scripted solution remains.");
+        }
+        this.state.generations.push(`${step}:${solution.prefix}`);
+        return new CrewOutput({ raw: solution.prefix, pydantic: solution });
+      }
+
+      fixCode() {
+        if (this.state.error !== "") {
+          const previous = this.state.generation;
+          if (!previous) {
+            throw new Error("Cannot fix before initial generation.");
+          }
+          this.state.fixInputs.push({
+            error: this.state.error,
+            question: this.state.question,
+            explanation: previous.prefix,
+            imports: previous.imports,
+            code: previous.code,
+            context: this.state.context,
+          });
+          const result = this.runCrew("fix");
+          this.state.generation = result.pydantic as CodeSolution;
+          this.state.error = "";
+        }
+      }
+
+      generateCode() {
+        const result = this.runCrew("generate");
+        this.state.generation = result.pydantic as CodeSolution;
+        this.state.error = "";
+      }
+
+      runCheck() {
+        const result = this.checkCode();
+        if (result !== "success") {
+          return "fix_code";
+        }
+        return undefined;
+      }
+
+      runFix() {
+        this.fixCode();
+      }
+
+      reRunCheck() {
+        const result = this.checkCode();
+        if (result !== "success") {
+          return "refix_code";
+        }
+        return undefined;
+      }
+
+      reRunFix() {
+        this.fixCode();
+      }
+
+      reReRunCheck() {
+        this.checkCode();
+      }
+    }
+
+    const generateCodeRef = Object.getOwnPropertyDescriptor(
+      CodeGenFlow.prototype,
+      "generateCode",
+    )?.value as () => unknown;
+    const runFixRef = Object.getOwnPropertyDescriptor(
+      CodeGenFlow.prototype,
+      "runFix",
+    )?.value as () => unknown;
+    const reRunFixRef = Object.getOwnPropertyDescriptor(
+      CodeGenFlow.prototype,
+      "reRunFix",
+    )?.value as () => unknown;
+    const initializers = [
+      decorateMethod(CodeGenFlow, "generateCode", start() as unknown as Decorator),
+      decorateMethod(CodeGenFlow, "runCheck", router(generateCodeRef) as unknown as Decorator),
+      decorateMethod(CodeGenFlow, "runFix", listen("fix_code") as unknown as Decorator),
+      decorateMethod(CodeGenFlow, "reRunCheck", router(runFixRef) as unknown as Decorator),
+      decorateMethod(CodeGenFlow, "reRunFix", listen("refix_code") as unknown as Decorator),
+      decorateMethod(CodeGenFlow, "reReRunCheck", listen(reRunFixRef) as unknown as Decorator),
+    ];
+    const flow = new CodeGenFlow();
+    initializers.forEach((initializer) => {
+      initializer.call(flow);
+    });
+
+    await expect(flow.kickoff()).resolves.toBeUndefined();
+
+    expect(flow.state.generations).toEqual([
+      "generate:First attempt",
+      "fix:Fixed imports",
+      "fix:Working solution",
+    ]);
+    expect(flow.state.checks).toEqual([
+      "import_failed:missing import",
+      "code_failed:bad block",
+      "success",
+    ]);
+    expect(flow.state.fixInputs).toEqual([
+      {
+        error: "missing import",
+        question: "How do I build a RAG chain in LCEL?",
+        explanation: "First attempt",
+        imports: "throw new Error('missing import')",
+        code: "return 'unreached';",
+        context: "LCEL documentation excerpt",
+      },
+      {
+        error: "bad block",
+        question: "How do I build a RAG chain in LCEL?",
+        explanation: "Fixed imports",
+        imports: "const answer = 'rag';",
+        code: "throw new Error('bad block')",
+        context: "LCEL documentation excerpt",
+      },
+    ]);
+    expect(flow.state.generation).toEqual({
+      prefix: "Working solution",
+      imports: "const answer = 'rag';",
+      code: "return answer;",
+    });
+    expect(flow.state.error).toBe("");
+  });
+
   it("exposes upstream Flow tracing disabled helper", () => {
     const previous = process.env.CREWAI_TRACING_DISABLED_MESSAGE_SHOWN;
     delete process.env.CREWAI_TRACING_DISABLED_MESSAGE_SHOWN;
