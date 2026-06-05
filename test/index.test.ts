@@ -22322,6 +22322,398 @@ describe("standard decorators", () => {
     expect(prompts.some((prompt) => prompt.includes("enterprise AI automation"))).toBe(true);
   });
 
+  it("runs the crewAI-examples landing-page generator multi-crew workflow deterministically", async () => {
+    const prompts: string[] = [];
+    const processedComponents: string[] = [];
+    const searchInternet = new StructuredTool({
+      name: "Search the internet",
+      description: "Search the internet about a topic",
+      func: () => "search result",
+    });
+    const scrapeWebsite = new StructuredTool({
+      name: "Scrape website content",
+      description: "Scrape and summarize website content",
+      func: () => "website summary",
+    });
+    const learnLandingPageOptions = new StructuredTool({
+      name: "Learn landing page options",
+      description: "Learn the templates at your disposal",
+      func: () => JSON.stringify({ keynote: ["Hero.jsx", "Pricing.jsx"] }),
+    });
+    const copyTemplate = new StructuredTool({
+      name: "Copy landing page template to project folder",
+      description: "Copy a landing page template to the project folder",
+      func: () => "Template copied",
+    });
+    const writeFileTool = new StructuredTool({
+      name: "Write File with content",
+      description: "Write a file to a given path with content",
+      func: () => "File written",
+    });
+    const readFileTool = new StructuredTool({
+      name: "read_file",
+      description: "Read files in workdir",
+      func: () => "file contents",
+    });
+    const listDirectoryTool = new StructuredTool({
+      name: "list_directory",
+      description: "List files in workdir",
+      func: () => "Hero.jsx",
+    });
+
+    class ExpandIdeaCrew {
+      agents: Agent[] = [];
+      tasks: Task[] = [];
+      agents_config = {
+        senior_idea_analyst: {
+          role: "Senior Idea Analyst",
+          goal: "Expand {idea}",
+          backstory: "Researches early product ideas",
+        },
+        senior_strategist: {
+          role: "Senior Strategist",
+          goal: "Refine landing page strategy",
+          backstory: "Creates a sharper positioning strategy",
+        },
+      };
+      tasks_config = {
+        expand_idea_task: {
+          description: "Expand this idea: {idea}",
+          expected_output: "Expanded idea",
+        },
+        refine_idea_task: {
+          description: "Refine the expanded idea",
+          expected_output: "Refined idea",
+        },
+      };
+
+      createAgent(config: { role: string; goal: string; backstory: string }) {
+        return new Agent({
+          role: config.role,
+          goal: config.goal,
+          backstory: config.backstory,
+          allow_delegation: false,
+          tools: [searchInternet, scrapeWebsite],
+          verbose: true,
+          llm: (messages) => {
+            const prompt = messages.at(-1)?.content ?? "";
+            prompts.push(`${config.role}:${prompt}`);
+            return `Expanded landing page idea for ${prompt}`;
+          },
+        });
+      }
+
+      senior_idea_analyst_agent() {
+        return this.createAgent(this.agents_config.senior_idea_analyst);
+      }
+
+      senior_strategist_agent() {
+        return this.createAgent(this.agents_config.senior_strategist);
+      }
+
+      expand_idea() {
+        const config = this.tasks_config.expand_idea_task;
+        return new Task({
+          config,
+          description: config.description,
+          expected_output: config.expected_output,
+          agent: this.senior_idea_analyst_agent(),
+        });
+      }
+
+      refine_idea() {
+        const config = this.tasks_config.refine_idea_task;
+        return new Task({
+          config,
+          description: config.description,
+          expected_output: config.expected_output,
+          agent: this.senior_strategist_agent(),
+        });
+      }
+
+      crew() {
+        return new Crew({
+          agents: this.agents,
+          tasks: this.tasks,
+          process: Process.sequential,
+          verbose: true,
+        });
+      }
+    }
+
+    class ChooseTemplateCrew {
+      agents: Agent[] = [];
+      tasks: Task[] = [];
+      agents_config = {
+        senior_react_engineer: {
+          role: "Senior React Engineer",
+          goal: "Choose landing page components for {idea}",
+          backstory: "Knows React and landing page templates",
+        },
+      };
+      tasks_config = {
+        choose_template_task: {
+          description: "Choose template components for {idea}",
+          expected_output: "Component path list",
+        },
+        update_page_task: {
+          description: "Update the chosen page shell",
+          expected_output: "Updated page shell",
+        },
+      };
+
+      senior_react_engineer_agent() {
+        const config = this.agents_config.senior_react_engineer;
+        return new Agent({
+          role: config.role,
+          goal: config.goal,
+          backstory: config.backstory,
+          allow_delegation: false,
+          tools: [
+            searchInternet,
+            scrapeWebsite,
+            learnLandingPageOptions,
+            copyTemplate,
+            writeFileTool,
+            readFileTool,
+            listDirectoryTool,
+          ],
+          verbose: true,
+          llm: (messages) => {
+            const prompt = messages.at(-1)?.content ?? "";
+            prompts.push(`${config.role}:${prompt}`);
+            return "['./Hero.jsx', './Pricing.jsx', '../unsafe.jsx', './bad/name.jsx', 42]";
+          },
+        });
+      }
+
+      choose_template() {
+        const config = this.tasks_config.choose_template_task;
+        return new Task({
+          config,
+          description: config.description,
+          expected_output: config.expected_output,
+          agent: this.senior_react_engineer_agent(),
+        });
+      }
+
+      update_page() {
+        const config = this.tasks_config.update_page_task;
+        return new Task({
+          config,
+          description: config.description,
+          expected_output: config.expected_output,
+          agent: this.senior_react_engineer_agent(),
+        });
+      }
+
+      crew() {
+        return new Crew({
+          agents: this.agents,
+          tasks: this.tasks,
+          process: Process.sequential,
+          verbose: true,
+        });
+      }
+    }
+
+    class CreateContentCrew {
+      agents: Agent[] = [];
+      tasks: Task[] = [];
+      agents_config = {
+        senior_content_editor: {
+          role: "Senior Content Editor",
+          goal: "Update {component} for the expanded idea",
+          backstory: "Edits component copy and content",
+        },
+      };
+      tasks_config = {
+        component_content_task: {
+          description: "Create content for {component} from {expanded_idea}",
+          expected_output: "Component content",
+        },
+        update_component_task: {
+          description: "Update {component} with {file_content}",
+          expected_output: "Updated component",
+        },
+        qa_component_task: {
+          description: "QA {component}",
+          expected_output: "QA result",
+        },
+      };
+
+      senior_content_editor_agent() {
+        const config = this.agents_config.senior_content_editor;
+        return new Agent({
+          role: config.role,
+          goal: config.goal,
+          backstory: config.backstory,
+          allow_delegation: false,
+          verbose: true,
+          llm: (messages) => {
+            const prompt = messages.at(-1)?.content ?? "";
+            prompts.push(`${config.role}:${prompt}`);
+            return `Updated component from ${prompt}`;
+          },
+        });
+      }
+
+      create_content() {
+        const config = this.tasks_config.component_content_task;
+        return new Task({
+          config,
+          description: config.description,
+          expected_output: config.expected_output,
+          agent: this.senior_content_editor_agent(),
+        });
+      }
+
+      update_component() {
+        const config = this.tasks_config.update_component_task;
+        return new Task({
+          config,
+          description: config.description,
+          expected_output: config.expected_output,
+          agent: this.senior_content_editor_agent(),
+        });
+      }
+
+      qa_component() {
+        const config = this.tasks_config.qa_component_task;
+        return new Task({
+          config,
+          description: config.description,
+          expected_output: config.expected_output,
+          agent: this.senior_content_editor_agent(),
+        });
+      }
+
+      crew() {
+        return new Crew({
+          agents: this.agents,
+          tasks: this.tasks,
+          process: Process.sequential,
+          verbose: true,
+        });
+      }
+    }
+
+    const decorateCrewProject = <T extends new () => object>(
+      constructor: T,
+      methodDecorators: Array<[keyof InstanceType<T> & string, Decorator]>,
+    ) => {
+      const DecoratedProject = decorateClass(constructor, CrewBase as unknown as Decorator);
+      const initializers = methodDecorators.map(([methodName, methodDecorator]) =>
+        decorateMethod(constructor, methodName, methodDecorator),
+      );
+      return () => {
+        const project = new DecoratedProject() as InstanceType<T>;
+        initializers.forEach((initializer) => {
+          initializer.call(project);
+        });
+        return project;
+      };
+    };
+    const createExpandIdeaCrew = decorateCrewProject(ExpandIdeaCrew, [
+      ["senior_idea_analyst_agent", agent],
+      ["senior_strategist_agent", agent],
+      ["expand_idea", task],
+      ["refine_idea", task],
+      ["crew", crew],
+    ]);
+    const createChooseTemplateCrew = decorateCrewProject(ChooseTemplateCrew, [
+      ["senior_react_engineer_agent", agent],
+      ["choose_template", task],
+      ["update_page", task],
+      ["crew", crew],
+    ]);
+    const createCreateContentCrew = decorateCrewProject(CreateContentCrew, [
+      ["senior_content_editor_agent", agent],
+      ["create_content", task],
+      ["update_component", task],
+      ["qa_component", task],
+      ["crew", crew],
+    ]);
+
+    class LandingPageCrew {
+      constructor(private readonly idea: string, private readonly workdir: string) {}
+
+      async run() {
+        const expandedIdea = await this.runExpandIdeaCrew(this.idea);
+        const componentsPathsList = await this.runChooseTemplateCrew(expandedIdea);
+        await this.runCreateContentCrew(componentsPathsList, expandedIdea);
+        return componentsPathsList;
+      }
+
+      async runExpandIdeaCrew(idea: string) {
+        const output = await createExpandIdeaCrew().crew().kickoff({ inputs: { idea } });
+        return output.raw;
+      }
+
+      async runChooseTemplateCrew(expandedIdea: string) {
+        const output = await createChooseTemplateCrew().crew().kickoff({ inputs: { idea: expandedIdea } });
+        const components = output.raw.replace(/\n/g, "").replace(/ /g, "").replace(/```/g, "").replace(/\\/g, "");
+        try {
+          return JSON.parse(components.replace(/'/g, "\"")) as unknown[];
+        } catch {
+          return [];
+        }
+      }
+
+      async runCreateContentCrew(components: unknown[], expandedIdea: string) {
+        for (const componentPath of components) {
+          if (typeof componentPath !== "string") {
+            continue;
+          }
+          const filename = componentPath.split("./").at(-1) ?? "";
+          if (!/^[a-zA-Z0-9._-]+$/.test(filename) || filename.includes("..") || filename.includes("/")) {
+            continue;
+          }
+          const filePath = join(this.workdir, filename);
+          if (!existsSync(filePath)) {
+            continue;
+          }
+          const fileContent = readFileSync(filePath, "utf8");
+          processedComponents.push(componentPath);
+          await createCreateContentCrew().crew().kickoff({
+            inputs: {
+              component: componentPath,
+              expanded_idea: expandedIdea,
+              file_content: fileContent,
+            },
+          });
+        }
+      }
+    }
+
+    const workdir = mkdtempSync(join(tmpdir(), "crewai-landing-page-"));
+    writeFileSync(join(workdir, "Hero.jsx"), "export function Hero() { return <section />; }", "utf8");
+    writeFileSync(join(workdir, "Pricing.jsx"), "export function Pricing() { return <section />; }", "utf8");
+    try {
+      const chooseProject = createChooseTemplateCrew();
+      const chooseCrew = chooseProject.crew();
+      expect(chooseCrew.process).toBe(Process.sequential);
+      expect(chooseProject.senior_react_engineer_agent().tools.map((toolInstance) => toolInstance.name)).toEqual([
+        "search_the_internet",
+        "scrape_website_content",
+        "learn_landing_page_options",
+        "copy_landing_page_template_to_project_folder",
+        "write_file_with_content",
+        "read_file",
+        "list_directory",
+      ]);
+
+      const components = await new LandingPageCrew("AI onboarding landing page", workdir).run();
+      expect(components).toEqual(["./Hero.jsx", "./Pricing.jsx", "../unsafe.jsx", "./bad/name.jsx", 42]);
+      expect(processedComponents).toEqual(["./Hero.jsx", "./Pricing.jsx"]);
+      expect(prompts.some((prompt) => prompt.includes("AI onboarding landing page"))).toBe(true);
+      expect(prompts.some((prompt) => prompt.includes("Hero.jsx"))).toBe(true);
+      expect(prompts.some((prompt) => prompt.includes("Pricing.jsx"))).toBe(true);
+    } finally {
+      rmSync(workdir, { recursive: true, force: true });
+    }
+  });
+
   it("infers names for directly awaited async task decorator factories", async () => {
     class AsyncTaskCrew {
       calls = 0;
