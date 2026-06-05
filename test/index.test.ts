@@ -22995,6 +22995,225 @@ describe("standard decorators", () => {
     expect(prompts.every((prompt) => prompt.includes("If you do your BEST WORK"))).toBe(true);
   });
 
+  it("runs the crewAI-examples instagram-post two-crew workflow deterministically", async () => {
+    const prompts: string[] = [];
+    const scrapeWebsite = new StructuredTool({
+      name: "Scrape website content",
+      description: "Scrape and summarize website content",
+      func: () => "\nScrapped Content: Product page summary\n",
+    });
+    const searchInternet = new StructuredTool({
+      name: "Search internet",
+      description: "Search the internet about a given topic",
+      func: () => "\nSearch result: Product competitors\n",
+    });
+    const searchInstagram = new StructuredTool({
+      name: "Search instagram",
+      description: "Search instagram posts about a given topic",
+      func: () => "\nSearch result: Instagram examples\n",
+    });
+
+    class MarketingAnalysisAgents {
+      readonly llm = (messages: readonly LLMMessage[]) => {
+        const prompt = messages.at(-1)?.content ?? "";
+        prompts.push(prompt);
+        if (prompt.includes("Craft an engaging Instagram post copy")) {
+          return "Copy option 1: automate your launch with CrewAI.";
+        }
+        if (prompt.includes("MUST take the most amazing photo")) {
+          return "Photo option 1: a crisp creative operations dashboard at sunrise.";
+        }
+        if (prompt.includes("Review the photos")) {
+          return "Reviewed photo option: approved sunrise dashboard concept.";
+        }
+        return "Marketing analysis complete.";
+      };
+
+      product_competitor_agent() {
+        return new Agent({
+          role: "Lead Market Analyst",
+          goal: "Conduct amazing analysis of the products and competitors.",
+          backstory: "Dissects online business landscapes.",
+          tools: [scrapeWebsite, searchInternet],
+          allow_delegation: false,
+          llm: this.llm,
+          verbose: true,
+        });
+      }
+
+      strategy_planner_agent() {
+        return new Agent({
+          role: "Chief Marketing Strategist",
+          goal: "Synthesize insights into marketing strategies.",
+          backstory: "Crafts bespoke strategies that drive success.",
+          tools: [scrapeWebsite, searchInternet, searchInstagram],
+          llm: this.llm,
+          verbose: true,
+        });
+      }
+
+      creative_content_creator_agent() {
+        return new Agent({
+          role: "Creative Content Creator",
+          goal: "Develop compelling Instagram ad copies.",
+          backstory: "Turns marketing strategies into engaging stories.",
+          tools: [scrapeWebsite, searchInternet, searchInstagram],
+          llm: this.llm,
+          verbose: true,
+        });
+      }
+
+      senior_photographer_agent() {
+        return new Agent({
+          role: "Senior Photographer",
+          goal: "Describe amazing photographs for Instagram ads.",
+          backstory: "Captures emotions and compelling messages.",
+          tools: [scrapeWebsite, searchInternet, searchInstagram],
+          allow_delegation: false,
+          llm: this.llm,
+          verbose: true,
+        });
+      }
+
+      chief_creative_diretor_agent() {
+        return new Agent({
+          role: "Chief Creative Director",
+          goal: "Review and approve the best creative direction.",
+          backstory: "Keeps campaign content aligned with product goals.",
+          tools: [scrapeWebsite, searchInternet, searchInstagram],
+          llm: this.llm,
+          verbose: true,
+        });
+      }
+    }
+
+    class MarketingAnalysisTasks {
+      product_analysis(agentInstance: Agent, productWebsite: string, productDetails: string) {
+        return new Task({
+          description: [
+            `Analyze the given product website: ${productWebsite}.`,
+            `Extra details provided by the customer: ${productDetails}.`,
+            "Focus on identifying unique features, benefits, and the overall narrative presented.",
+            "It's currenlty 2024.",
+          ].join("\n"),
+          expected_output: "Product analysis",
+          agent: agentInstance,
+        });
+      }
+
+      competitor_analysis(agentInstance: Agent, productWebsite: string, productDetails: string) {
+        return new Task({
+          description: [
+            `Explore competitor of: ${productWebsite}.`,
+            `Extra details provided by the customer: ${productDetails}.`,
+            `Your final report MUST include BOTH all context about ${productWebsite}`,
+          ].join("\n"),
+          expected_output: "Competitor analysis",
+          agent: agentInstance,
+        });
+      }
+
+      campaign_development(agentInstance: Agent, productWebsite: string, productDetails: string) {
+        return new Task({
+          description: [
+            `You're creating a targeted marketing campaign for: ${productWebsite}.`,
+            `Extra details provided by the customer: ${productDetails}.`,
+            "Your final answer MUST be ideas that will resonate with the audience.",
+          ].join("\n"),
+          expected_output: "Campaign ideas",
+          agent: agentInstance,
+        });
+      }
+
+      instagram_ad_copy(agentInstance: Agent) {
+        return new Task({
+          description: [
+            "Craft an engaging Instagram post copy.",
+            "Your final answer MUST be 3 options for an ad copy for instagram.",
+          ].join("\n"),
+          expected_output: "Instagram copy options",
+          agent: agentInstance,
+        });
+      }
+
+      take_photograph_task(agentInstance: Agent, copy: string, productWebsite: string, productDetails: string) {
+        return new Task({
+          description: [
+            "You are working on a new campaign for a super important customer,",
+            "and you MUST take the most amazing photo ever for an instagram post",
+            `regarding the product, you have the following copy:\n${copy}`,
+            `This is the product you are working with: ${productWebsite}.`,
+            `Extra details provided by the customer: ${productDetails}.`,
+          ].join("\n"),
+          expected_output: "Photo concepts",
+          agent: agentInstance,
+        });
+      }
+
+      review_photo(agentInstance: Agent, productWebsite: string, productDetails: string) {
+        return new Task({
+          description: [
+            "Review the photos you got from the senior photographer.",
+            `This is the product you are working with: ${productWebsite}.`,
+            `Extra details provided by the customer: ${productDetails}.`,
+          ].join("\n"),
+          expected_output: "Reviewed photo concepts",
+          agent: agentInstance,
+        });
+      }
+    }
+
+    const productWebsite = "https://example.com/product";
+    const productDetails = "AI workflow automation for launch teams";
+    const agents = new MarketingAnalysisAgents();
+    const tasks = new MarketingAnalysisTasks();
+
+    const productCompetitorAgent = agents.product_competitor_agent();
+    const strategyPlannerAgent = agents.strategy_planner_agent();
+    const creativeAgent = agents.creative_content_creator_agent();
+    const copyCrew = new Crew({
+      agents: [productCompetitorAgent, strategyPlannerAgent, creativeAgent],
+      tasks: [
+        tasks.product_analysis(productCompetitorAgent, productWebsite, productDetails),
+        tasks.competitor_analysis(productCompetitorAgent, productWebsite, productDetails),
+        tasks.campaign_development(strategyPlannerAgent, productWebsite, productDetails),
+        tasks.instagram_ad_copy(creativeAgent),
+      ],
+      verbose: true,
+    });
+    expect(copyCrew.process).toBe(Process.sequential);
+    expect(productCompetitorAgent.tools.map((toolInstance) => toolInstance.name)).toEqual([
+      "scrape_website_content",
+      "search_internet",
+    ]);
+    expect(strategyPlannerAgent.tools.map((toolInstance) => toolInstance.name)).toEqual([
+      "scrape_website_content",
+      "search_internet",
+      "search_instagram",
+    ]);
+
+    const adCopy = await copyCrew.kickoff();
+
+    const seniorPhotographer = agents.senior_photographer_agent();
+    const chiefCreativeDirector = agents.chief_creative_diretor_agent();
+    const imageCrew = new Crew({
+      agents: [seniorPhotographer, chiefCreativeDirector],
+      tasks: [
+        tasks.take_photograph_task(seniorPhotographer, adCopy.raw, productWebsite, productDetails),
+        tasks.review_photo(chiefCreativeDirector, productWebsite, productDetails),
+      ],
+      verbose: true,
+    });
+    const image = await imageCrew.kickoff();
+
+    expect(adCopy.raw).toContain("Copy option 1");
+    expect(image.raw).toContain("Reviewed photo option");
+    expect(prompts.some((prompt) => prompt.includes(productWebsite))).toBe(true);
+    expect(prompts.some((prompt) => prompt.includes(productDetails))).toBe(true);
+    expect(prompts.some((prompt) => prompt.includes("Copy option 1: automate your launch with CrewAI."))).toBe(true);
+    expect(seniorPhotographer.allow_delegation).toBe(false);
+  });
+
   it("infers names for directly awaited async task decorator factories", async () => {
     class AsyncTaskCrew {
       calls = 0;
