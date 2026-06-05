@@ -12895,6 +12895,46 @@ describe("RAG configuration and factories", () => {
     expect(asyncCollectionExists).not.toHaveBeenCalled();
   });
 
+  it("raises upstream Qdrant errors when add or search targets a missing collection", async () => {
+    const upsert = vi.fn();
+    const queryPoints = vi.fn(() => ({ points: [] }));
+    const asyncUpsert = vi.fn(async () => {
+      await Promise.resolve();
+    });
+    const asyncQueryPoints = vi.fn(async () => await Promise.resolve({ points: [] }));
+    const syncClient = new QdrantClient({
+      collection_exists: vi.fn(() => false),
+      upsert,
+      query_points: queryPoints,
+    }, (text: string) => [text.length]);
+    const asyncClient = new QdrantClient({
+      aquery_points: asyncQueryPoints,
+      collection_exists: async () => await Promise.resolve(false),
+      upsert: asyncUpsert,
+    }, async (text: string) => await Promise.resolve([text.length]));
+
+    expect(() => {
+      syncClient.add_documents({
+        collection_name: "missing_collection",
+        documents: [{ content: "Test document" }],
+      });
+    }).toThrow("Collection 'missing_collection' does not exist");
+    expect(() => {
+      syncClient.search({ collection_name: "missing_collection", query: "test query" });
+    }).toThrow("Collection 'missing_collection' does not exist");
+    await expect(asyncClient.aadd_documents({
+      collection_name: "missing_collection",
+      documents: [{ content: "Test document" }],
+    })).rejects.toThrow("Collection 'missing_collection' does not exist");
+    await expect(asyncClient.asearch({ collection_name: "missing_collection", query: "test query" }))
+      .rejects.toThrow("Collection 'missing_collection' does not exist");
+
+    expect(upsert).not.toHaveBeenCalled();
+    expect(queryPoints).not.toHaveBeenCalled();
+    expect(asyncUpsert).not.toHaveBeenCalled();
+    expect(asyncQueryPoints).not.toHaveBeenCalled();
+  });
+
   it("uses upstream Qdrant collection create payload shape", () => {
     const createCollection = vi.fn();
     const getCollection = vi.fn(() => ({ name: "docs" }));
