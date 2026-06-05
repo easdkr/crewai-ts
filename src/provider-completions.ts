@@ -1471,11 +1471,63 @@ export class GeminiCompletion extends ConfiguredLLM {
   }
 
   override call(messages: readonly LLMMessage[], options?: LLMCallOptions): Promise<LLMResponse> {
-    return super.call(messages, options);
+    if (this.useVertexai) {
+      return super.call(messages, options);
+    }
+
+    const apiKey = this.apiKey ?? process.env.GOOGLE_API_KEY ?? process.env.GEMINI_API_KEY ?? null;
+    if (!apiKey) {
+      throw new Error("Gemini API key required. Set GEMINI_API_KEY or GOOGLE_API_KEY, or pass api_key.");
+    }
+
+    const [contents, systemInstruction] = this.formatMessagesForGemini(messages);
+    const tools = (options?.tools ?? null) as readonly Tool[] | null;
+    const generationConfig = this.prepareGenerationConfig(
+      systemInstruction,
+      tools,
+      options?.responseModel ?? null,
+    );
+    const requestBody = readObject(generationConfig);
+    const generationConfigBody = { ...generationConfig };
+    delete generationConfigBody.system_instruction;
+    delete generationConfigBody.tools;
+    delete generationConfigBody.safety_settings;
+    const model = this.model.replace(/^(?:gemini|google)\//, "");
+    const baseUrl = this.baseUrl ?? "https://generativelanguage.googleapis.com/v1beta";
+    const requestInit: RequestInit = {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents,
+        ...(Object.keys(generationConfigBody).length > 0 ? { generationConfig: generationConfigBody } : {}),
+        ...("system_instruction" in requestBody ? { system_instruction: requestBody.system_instruction } : {}),
+        ...("tools" in requestBody ? { tools: requestBody.tools } : {}),
+        ...("safety_settings" in requestBody ? { safety_settings: requestBody.safety_settings } : {}),
+      }),
+    };
+    if (options?.signal) {
+      requestInit.signal = options.signal;
+    }
+
+    return fetch(
+      `${baseUrl.replace(/\/$/, "")}/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`,
+      requestInit,
+    ).then(async (response) => {
+      const body = await response.json();
+      if (!response.ok) {
+        const error = readObject(readObject(body).error);
+        throw new Error(scalarToString(error.message) ?? `Gemini request failed with HTTP ${response.status.toString()}.`);
+      }
+      return await this.processResponseWithTools(
+        body,
+        contents,
+        (options?.availableFunctions ?? options?.available_functions ?? null) as Record<string, LLMAvailableFunction> | null,
+      ) as LLMResponse;
+    });
   }
 
   override async acall(messages: LLMMessageInput, options?: LLMCallOptions): Promise<LLMResponse> {
-    return await super.acall(messages, options);
+    return await this.call(this.formatMessages(messages), options);
   }
 
   override supportsFunctionCalling(): boolean {

@@ -1896,7 +1896,7 @@ export class Agent {
     if (typeof llm !== "string") {
       return createLLMClient(llm);
     }
-    const provider = resolveLLMProvider(llm);
+    const provider = resolveLLMProvider(llm) ?? createLLM(llm);
     if (!provider) {
       throw new Error(`No LLM provider registered for model '${llm}'.`);
     }
@@ -1910,7 +1910,7 @@ export class Agent {
     if (typeof config.llm !== "string") {
       return createLLMClient(config.llm);
     }
-    return resolveLLMProvider(config.llm) ?? null;
+    return resolveLLMProvider(config.llm) ?? createLLM(config.llm);
   }
 
   private async preparePromptWithPlanning(prompt: string, tools: readonly Tool[]): Promise<string> {

@@ -39032,7 +39032,10 @@ describe("LLM providers", () => {
 
   it("exposes upstream Bedrock and Gemini provider aliases directly on provider classes", async () => {
     const bedrock = new BedrockCompletion({ model: "anthropic.claude-3-5-sonnet-20241022-v2:0" });
-    const gemini = new GeminiCompletion({ model: "gemini-2.5-flash" });
+    const gemini = new GeminiCompletion({ model: "gemini-2.5-flash", apiKey: "gemini-key" });
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response(JSON.stringify({
+      candidates: [{ content: { parts: [{ text: "demo ok" }] } }],
+    })));
 
     for (const methodName of [
       "acall",
@@ -39054,7 +39057,11 @@ describe("LLM providers", () => {
     expect(gemini.format_text_content("hello")).toEqual({ text: "hello" });
     expect(gemini.to_config_dict()).toMatchObject({ model: "gemini-2.5-flash", provider: "gemini" });
     await expect(bedrock.acall([{ role: "user", content: "hello" }])).rejects.toThrow("No LLM provider registered");
-    await expect(gemini.acall([{ role: "user", content: "hello" }])).rejects.toThrow("No LLM provider registered");
+    await expect(gemini.acall([{ role: "user", content: "hello" }])).resolves.toBe("demo ok");
+    expect(fetchSpy).toHaveBeenCalledWith(expect.stringContaining("gemini-2.5-flash:generateContent?key=gemini-key"), expect.objectContaining({
+      method: "POST",
+    }));
+    fetchSpy.mockRestore();
   });
 
   it("rejects interceptors on provider shims that do not support interceptor transport", () => {
@@ -41878,6 +41885,18 @@ describe("LLM providers", () => {
       provider: "gemini",
       model: "gemini-2.5-pro",
       originalModel: "gemini/gemini-2.5-pro",
+      useNative: true,
+    });
+    expect(BaseLLM.resolve_llm_model_spec("gemini/gemini-3.1-pro-preview")).toEqual({
+      provider: "gemini",
+      model: "gemini-3.1-pro-preview",
+      originalModel: "gemini/gemini-3.1-pro-preview",
+      useNative: true,
+    });
+    expect(BaseLLM.resolve_llm_model_spec("gemini-3.5-flash")).toEqual({
+      provider: "gemini",
+      model: "gemini-3.5-flash",
+      originalModel: "gemini-3.5-flash",
       useNative: true,
     });
 

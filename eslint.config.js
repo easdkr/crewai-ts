@@ -14,6 +14,6 @@ export default defineConfig(
     },
   },
   {
-    ignores: ["dist", "node_modules", "coverage"],
+    ignores: ["dist", "node_modules", "coverage", "examples"],
   },
 );
