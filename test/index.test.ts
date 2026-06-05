@@ -13139,6 +13139,14 @@ describe("RAG configuration and factories", () => {
     );
   });
 
+  it("raises upstream Qdrant search mismatch errors for async clients", () => {
+    const asyncClient = new QdrantClient(new FakeAsyncQdrantClient(), (text: string) => [text.length]);
+
+    expect(() => {
+      asyncClient.search({ collection_name: "docs", query: "CrewAI" });
+    }).toThrow("Method search() requires a QdrantClient. Use asearch() for AsyncQdrantClient.");
+  });
+
   it("raises upstream Qdrant add delete and reset mismatch errors for wrong clients", async () => {
     const syncClient = new QdrantClient(new FakeQdrantClient(), (text: string) => [text.length]);
     const asyncClient = new QdrantClient(new FakeAsyncQdrantClient(), (text: string) => [text.length]);
