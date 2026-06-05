@@ -24645,6 +24645,71 @@ describe("standard decorators", () => {
     expect(prompts.at(-1)).toContain("Revenge alone is not justice.");
   });
 
+  it("runs the crewAI-examples Azure model integration deterministically", async () => {
+    const prompts: string[] = [];
+    const env: Partial<Record<"AZURE_OPENAI_VERSION" | "AZURE_OPENAI_DEPLOYMENT" | "AZURE_OPENAI_ENDPOINT" | "AZURE_OPENAI_KEY", string>> = {
+      AZURE_OPENAI_VERSION: "2023-07-01-preview",
+      AZURE_OPENAI_DEPLOYMENT: "gpt35",
+      AZURE_OPENAI_ENDPOINT: "https://example.openai.azure.com/",
+      AZURE_OPENAI_KEY: "test-key",
+    };
+
+    class AzureChatOpenAIShim {
+      constructor(readonly options: {
+        openai_api_version: string;
+        azure_deployment: string;
+        azure_endpoint: string;
+        api_key: string | undefined;
+      }) {}
+
+      invoke(messages: readonly LLMMessage[]) {
+        const prompt = messages.at(-1)?.content ?? "";
+        prompts.push(prompt);
+        return `Azure ${this.options.azure_deployment} trend report: autonomous AI evaluation workflows.`;
+      }
+    }
+
+    const defaultLlm = new AzureChatOpenAIShim({
+      openai_api_version: env.AZURE_OPENAI_VERSION ?? "2023-07-01-preview",
+      azure_deployment: env.AZURE_OPENAI_DEPLOYMENT ?? "gpt35",
+      azure_endpoint: env.AZURE_OPENAI_ENDPOINT ?? "https://<your-endpoint>.openai.azure.com/",
+      api_key: env.AZURE_OPENAI_KEY,
+    });
+    const researcher = new Agent({
+      role: "Senior Researcher",
+      goal: "Discover groundbreaking technologies",
+      verbose: true,
+      llm: (messages) => defaultLlm.invoke(messages),
+      backstory: "A curious mind fascinated by cutting-edge innovation and the potential to change the world.",
+    });
+    const researchTask = new Task({
+      description: "Identify the next big trend in AI",
+      expected_output: "5 paragraphs on the next big AI trend",
+      agent: researcher,
+    });
+    const techCrew = new Crew({
+      agents: [researcher],
+      tasks: [researchTask],
+      process: Process.sequential,
+    });
+
+    const output = await techCrew.kickoff();
+
+    expect(defaultLlm.options).toEqual({
+      openai_api_version: "2023-07-01-preview",
+      azure_deployment: "gpt35",
+      azure_endpoint: "https://example.openai.azure.com/",
+      api_key: "test-key",
+    });
+    expect(techCrew.process).toBe(Process.sequential);
+    expect(techCrew.agents.map((agentInstance) => agentInstance.role)).toEqual(["Senior Researcher"]);
+    expect(techCrew.tasks.map((taskInstance) => taskInstance.expected_output)).toEqual([
+      "5 paragraphs on the next big AI trend",
+    ]);
+    expect(output.raw).toContain("Azure gpt35 trend report");
+    expect(prompts[0]).toContain("Identify the next big trend in AI");
+  });
+
   it("infers names for directly awaited async task decorator factories", async () => {
     class AsyncTaskCrew {
       calls = 0;
