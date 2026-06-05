@@ -8783,6 +8783,15 @@ describe("agent utility helpers", () => {
     expect(parsedFinish).toMatchObject({ output: "Complete" });
     expect(() => parseAgentOutput("Thought: I should search")).toThrow(OutputParserError);
 
+    expect(() => parseAgentOutput([
+      "Thought: Let's find the temperature",
+      "Action Input: what is the temperature in SF?",
+    ].join("\n"))).toThrow("Invalid Format: I missed the 'Action:' after 'Thought:'.");
+    expect(() => parseAgentOutput([
+      "Thought: Let's find the temperature",
+      "Action: search",
+    ].join("\n"))).toThrow("I missed the 'Action Input:' after 'Action:'.");
+
     const seenArgs: Record<string, unknown>[] = [];
     const search = new StructuredTool({
       name: "Search Tool",
@@ -8812,6 +8821,43 @@ describe("agent utility helpers", () => {
 
     expect(seenArgs).toEqual([{ query: "CrewAI" }]);
     expect(output).toBe("final answer");
+  });
+
+  it("keeps upstream parser integration behavior across valid and invalid ReAct chunks", () => {
+    const chunks = [
+      [
+        "Thought: Let's find the temperature",
+        "Action: search",
+        "Action Input: what is the temperature in SF?",
+      ].join("\n"),
+      [
+        "Thought: I found the information",
+        "Final Answer: The temperature is 100 degrees",
+      ].join("\n"),
+      [
+        "Thought: Missing action",
+        "Action Input: invalid",
+      ].join("\n"),
+      [
+        "Thought: Missing action input",
+        "Action: invalid",
+      ].join("\n"),
+    ];
+
+    const results = chunks.map((chunk) => {
+      try {
+        return parseAgentOutput(chunk);
+      } catch (error) {
+        return error;
+      }
+    });
+
+    expect(results[0]).toBeInstanceOf(AgentAction);
+    expect(results[1]).toBeInstanceOf(AgentFinish);
+    expect(results[2]).toBeInstanceOf(OutputParserError);
+    expect(results[3]).toBeInstanceOf(OutputParserError);
+    expect((results[0] as AgentAction).toolInput).toBe("what is the temperature in SF?");
+    expect((results[1] as AgentFinish).output).toBe("The temperature is 100 degrees");
   });
 
   it("repairs upstream parser edge cases for incomplete JSON and unbalanced quoted tool input", () => {
