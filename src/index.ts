@@ -679,6 +679,7 @@ export {
   knowledge_reset,
   type CrewOptions,
   type KickoffForEachOptions,
+  type KickoffInput,
   type KickoffOptions,
   type ReplayTaskRef,
   type ResetMemoriesCommandType,

@@ -51,6 +51,8 @@ export type KickoffOptions = {
   input_files?: TaskInputFiles;
 };
 
+export type KickoffInput = KickoffOptions | InputValues;
+
 export type KickoffForEachOptions = {
   inputs: readonly InputValues[];
   inputFiles?: TaskInputFiles;
@@ -757,13 +759,14 @@ export class Crew extends FlowTrackable {
     }
   }
 
-  async kickoff(options: KickoffOptions = {}): Promise<CrewOutput> {
+  async kickoff(options: KickoffInput = {}): Promise<CrewOutput> {
+    const normalizedOptions = normalizeKickoffOptions(options);
     if (this.stream) {
-      return new CrewStreamingOutput(async () => await this.withStreamDisabled(async () => await this.kickoff(options))) as unknown as CrewOutput;
+      return new CrewStreamingOutput(async () => await this.withStreamDisabled(async () => await this.kickoff(normalizedOptions))) as unknown as CrewOutput;
     }
     return await withCrewContext({ crew: this }, async () => {
-      let inputs = { ...(options.inputs ?? {}) };
-      let inputFiles = options.inputFiles ?? options.input_files;
+      let inputs = { ...(normalizedOptions.inputs ?? {}) };
+      let inputFiles = normalizedOptions.inputFiles ?? normalizedOptions.input_files;
       const beforeUsage = this.calculateUsageMetrics();
       this.executionLogs = [];
       this.taskOutputStorageHandler?.reset();
@@ -798,21 +801,22 @@ export class Crew extends FlowTrackable {
     });
   }
 
-  async kickoffAsync(options: KickoffOptions = {}): Promise<CrewOutput> {
+  async kickoffAsync(options: KickoffInput = {}): Promise<CrewOutput> {
     return await this.kickoff(options);
   }
 
-  async kickoff_async(options: KickoffOptions = {}): Promise<CrewOutput> {
+  async kickoff_async(options: KickoffInput = {}): Promise<CrewOutput> {
     return await this.kickoffAsync(options);
   }
 
-  async akickoff(options: KickoffOptions = {}): Promise<CrewOutput> {
+  async akickoff(options: KickoffInput = {}): Promise<CrewOutput> {
+    const normalizedOptions = normalizeKickoffOptions(options);
     if (this.stream) {
-      return new CrewStreamingOutput(async () => await this.withStreamDisabled(async () => await this.akickoff(options))) as unknown as CrewOutput;
+      return new CrewStreamingOutput(async () => await this.withStreamDisabled(async () => await this.akickoff(normalizedOptions))) as unknown as CrewOutput;
     }
     return await withCrewContext({ crew: this }, async () => {
-      let inputs = { ...(options.inputs ?? {}) };
-      let inputFiles = options.inputFiles ?? options.input_files;
+      let inputs = { ...(normalizedOptions.inputs ?? {}) };
+      let inputFiles = normalizedOptions.inputFiles ?? normalizedOptions.input_files;
       const beforeUsage = this.calculateUsageMetrics();
       this.executionLogs = [];
       this.taskOutputStorageHandler?.reset();
@@ -3025,6 +3029,16 @@ function validateKickoffForEachInputs(inputs: readonly unknown[]): readonly Inpu
     }
   }
   return inputs as readonly InputValues[];
+}
+
+function normalizeKickoffOptions(options: KickoffInput | null | undefined): KickoffOptions {
+  if (!options) {
+    return {};
+  }
+  if ("inputs" in options || "inputFiles" in options || "input_files" in options) {
+    return options;
+  }
+  return { inputs: options };
 }
 
 function normalizeKickoffForEachOptions(options: KickoffForEachInput): KickoffForEachOptions {

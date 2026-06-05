@@ -10276,6 +10276,35 @@ describe("crew execution utilities", () => {
       .resolves.toEqual(["0:slow", "1:fast"]);
   });
 
+  it("accepts upstream-style direct crew kickoff inputs", async () => {
+    const buildCrew = () => {
+      const agentInstance = new Agent({
+        role: "Researcher",
+        goal: "Research {topic}",
+        backstory: "Deterministic worker",
+        llm: (messages) => messages.at(-1)?.content ?? "",
+      });
+      return new Crew({
+        agents: [agentInstance],
+        tasks: [
+          new Task({
+            description: "Research {topic}",
+            expectedOutput: "A concise brief about {topic}",
+            agent: agentInstance,
+          }),
+        ],
+      });
+    };
+
+    const kickoffOutput = await buildCrew().kickoff({ topic: "CrewAI" });
+    const kickoffAsyncOutput = await buildCrew().kickoff_async({ topic: "TypeScript" });
+    const akickoffOutput = await buildCrew().akickoff({ topic: "Agents" });
+
+    expect(kickoffOutput.raw).toContain("CrewAI");
+    expect(kickoffAsyncOutput.raw).toContain("TypeScript");
+    expect(akickoffOutput.raw).toContain("Agents");
+  });
+
   it("runs upstream-style async for-each on crew copies and aggregates usage", async () => {
     const reset = vi.fn();
     const copyCalls: string[] = [];
