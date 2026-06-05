@@ -29301,6 +29301,191 @@ describe("flow runtime", () => {
     expect(state.messages.at(-1)?.content).toContain("short-term, long-term, and reflection memory");
   });
 
+  it("runs the crewAI-examples coding-assistant LangGraph evaluation workflow deterministically", () => {
+    type CodeSolution = { prefix: string; imports: string; code: string };
+    type GraphState = {
+      messages: Array<[string, string]>;
+      generation: CodeSolution | null;
+      error: "yes" | "no";
+      iterations: number;
+    };
+    const maxIterations = 3;
+    const scriptedSolutions: CodeSolution[] = [
+      {
+        prefix: "Initial",
+        imports: "IMPORT_FAIL",
+        code: "return 'no';",
+      },
+      {
+        prefix: "Retry",
+        imports: "const answer = 'ok';",
+        code: "EXECUTION_FAIL",
+      },
+      {
+        prefix: "Final",
+        imports: "const answer = 'ok';",
+        code: "return answer;",
+      },
+    ];
+    const events: string[] = [];
+
+    function checkImport(solution: CodeSolution) {
+      return { key: "import_check", score: solution.imports === "IMPORT_FAIL" ? 0 : 1 };
+    }
+
+    function checkExecution(solution: CodeSolution) {
+      return { key: "code_execution_check", score: solution.code === "EXECUTION_FAIL" ? 0 : 1 };
+    }
+
+    function generate(state: GraphState): Partial<GraphState> {
+      events.push(`generate:${String(state.iterations)}:${state.error}`);
+      const messages = [...state.messages];
+      if (state.error === "yes") {
+        messages.push([
+          "user",
+          "Now, try again. Invoke the code tool to structure the output with a prefix, imports, and code block:",
+        ]);
+      }
+      const codeSolution = scriptedSolutions.shift();
+      if (!codeSolution) {
+        throw new Error("No scripted solution remains.");
+      }
+      messages.push([
+        "assistant",
+        `${codeSolution.prefix} \n Imports: ${codeSolution.imports} \n Code: ${codeSolution.code}`,
+      ]);
+      return {
+        generation: codeSolution,
+        messages,
+        iterations: state.iterations + 1,
+      };
+    }
+
+    function codeCheck(state: GraphState): Partial<GraphState> {
+      const codeSolution = state.generation;
+      if (!codeSolution) {
+        throw new Error("Missing generated solution.");
+      }
+      const importCheck = checkImport(codeSolution);
+      if (importCheck.score === 0) {
+        events.push("check:import_failed");
+        return {
+          generation: codeSolution,
+          iterations: state.iterations,
+          error: "yes",
+          messages: [
+            ...state.messages,
+            ["user", "Your solution failed the import test: import failure"],
+          ],
+        };
+      }
+      const executionCheck = checkExecution(codeSolution);
+      if (executionCheck.score === 0) {
+        events.push("check:execution_failed");
+        return {
+          generation: codeSolution,
+          iterations: state.iterations,
+          error: "yes",
+          messages: [
+            ...state.messages,
+            ["user", "Your solution failed the code execution test: execution failure"],
+          ],
+        };
+      }
+      events.push("check:success");
+      return {
+        generation: codeSolution,
+        iterations: state.iterations,
+        messages: state.messages,
+        error: "no",
+      };
+    }
+
+    function decideToFinish(state: GraphState) {
+      if (state.error === "no" || state.iterations === maxIterations) {
+        events.push("decision:end");
+        return "end";
+      }
+      events.push("decision:generate");
+      return "generate";
+    }
+
+    function runGraph(initialState: GraphState) {
+      let state = initialState;
+      for (let step = 0; step < maxIterations; step += 1) {
+        state = { ...state, ...generate(state) };
+        state = { ...state, ...codeCheck(state) };
+        if (decideToFinish(state) === "end") {
+          return state;
+        }
+      }
+      return state;
+    }
+
+    function passRate(rows: Array<Record<"import_check" | "execution_check", number>>, key: "import_check" | "execution_check") {
+      const raw = rows.reduce((sum, row) => sum + row[key], 0) / rows.length * 100;
+      return Math.round(raw * 100) / 100;
+    }
+
+    const finalState = runGraph({
+      messages: [["user", "How do I build a RAG chain in LCEL?"]],
+      generation: null,
+      error: "no",
+      iterations: 0,
+    });
+    const lgRows = [
+      { import_check: 1, execution_check: 0 },
+      { import_check: 1, execution_check: 1 },
+      { import_check: 0, execution_check: 0 },
+    ];
+    const caRows = [
+      {
+        import_check: checkImport(finalState.generation as CodeSolution).score,
+        execution_check: checkExecution(finalState.generation as CodeSolution).score,
+      },
+      { import_check: 1, execution_check: 1 },
+      { import_check: 1, execution_check: 0 },
+    ];
+    const comparison = [
+      {
+        Metric: "Import Check Pass Rate",
+        LangGraph: passRate(lgRows, "import_check"),
+        CrewAI: passRate(caRows, "import_check"),
+      },
+      {
+        Metric: "Execution Check Pass Rate",
+        LangGraph: passRate(lgRows, "execution_check"),
+        CrewAI: passRate(caRows, "execution_check"),
+      },
+    ];
+
+    expect(events).toEqual([
+      "generate:0:no",
+      "check:import_failed",
+      "decision:generate",
+      "generate:1:yes",
+      "check:execution_failed",
+      "decision:generate",
+      "generate:2:yes",
+      "check:success",
+      "decision:end",
+    ]);
+    expect(finalState).toMatchObject({
+      error: "no",
+      iterations: 3,
+      generation: {
+        prefix: "Final",
+        imports: "const answer = 'ok';",
+        code: "return answer;",
+      },
+    });
+    expect(finalState.messages.filter(([role]) => role === "user")).toHaveLength(5);
+    expect(comparison).toEqual([
+      { Metric: "Import Check Pass Rate", LangGraph: 66.67, CrewAI: 100 },
+      { Metric: "Execution Check Pass Rate", LangGraph: 33.33, CrewAI: 66.67 },
+    ]);
+  });
+
   it("exposes upstream Flow tracing disabled helper", () => {
     const previous = process.env.CREWAI_TRACING_DISABLED_MESSAGE_SHOWN;
     delete process.env.CREWAI_TRACING_DISABLED_MESSAGE_SHOWN;
