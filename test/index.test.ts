@@ -26780,6 +26780,63 @@ describe("flow runtime", () => {
     expect(flow.methodExecutionCounts.get("repeatStart")).toBe(2);
   });
 
+  it("activates only the router event returned by a conditional router", async () => {
+    class ConditionalRouterFlow extends Flow<{ events: string[]; condition: string }> {
+      constructor() {
+        super({
+          initialState: { events: [], condition: "take_event_b" },
+        });
+      }
+
+      begin() {
+        this.state.events.push("begin");
+      }
+
+      decisionPoint() {
+        this.state.events.push("decision_point");
+        if (this.state.condition === "take_event_a") {
+          return "event_a";
+        }
+        if (this.state.condition === "take_event_b") {
+          return "event_b";
+        }
+        return "event_c";
+      }
+
+      handleEventA() {
+        this.state.events.push("handle_event_a");
+      }
+
+      handleEventB() {
+        this.state.events.push("handle_event_b");
+      }
+
+      handleEventC() {
+        this.state.events.push("handle_event_c");
+      }
+    }
+
+    const initializers = [
+      decorateMethod(ConditionalRouterFlow, "begin", start() as unknown as Decorator),
+      decorateMethod(ConditionalRouterFlow, "decisionPoint", router("begin") as unknown as Decorator),
+      decorateMethod(ConditionalRouterFlow, "handleEventA", listen("event_a") as unknown as Decorator),
+      decorateMethod(ConditionalRouterFlow, "handleEventB", listen("event_b") as unknown as Decorator),
+      decorateMethod(ConditionalRouterFlow, "handleEventC", listen("event_c") as unknown as Decorator),
+    ];
+    const flow = new ConditionalRouterFlow();
+    initializers.forEach((initializer) => {
+      initializer.call(flow);
+    });
+
+    await flow.kickoff();
+
+    expect(flow.state.events).toContain("begin");
+    expect(flow.state.events).toContain("decision_point");
+    expect(flow.state.events).toContain("handle_event_b");
+    expect(flow.state.events).not.toContain("handle_event_a");
+    expect(flow.state.events).not.toContain("handle_event_c");
+  });
+
   it("fires cyclic OR listeners on every router loop iteration", async () => {
     class CyclicOrFlow extends Flow<{ events: string[]; iteration: number }> {
       constructor() {
