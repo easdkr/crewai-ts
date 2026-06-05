@@ -33065,6 +33065,21 @@ describe("LLM providers", () => {
     });
   });
 
+  it("does not duplicate OpenAI Responses reasoning include entries", () => {
+    const openai = new OpenAICompletion({
+      model: "gpt-4o",
+      api: "responses",
+      auto_chain_reasoning: true,
+      include: ["reasoning.encrypted_content"],
+    });
+
+    const params = (openai as unknown as {
+      _prepare_responses_params(messages: LLMMessage[]): Record<string, unknown>;
+    })._prepare_responses_params([{ role: "user", content: "test" }]);
+
+    expect(params.include).toEqual(["reasoning.encrypted_content"]);
+  });
+
   it("extracts OpenAI Responses API built-in tool outputs", () => {
     const openai = new OpenAICompletion({ model: "gpt-4.1", api: "responses" });
     class ComputerAction {
