@@ -22087,6 +22087,241 @@ describe("standard decorators", () => {
     }
   });
 
+  it("runs the crewAI-examples marketing strategy CrewBase workflow deterministically", async () => {
+    const marketStrategySchema = {
+      name: "string",
+      tatics: ["string"],
+      channels: ["string"],
+      KPIs: ["string"],
+    };
+    const campaignIdeaSchema = {
+      name: "string",
+      description: "string",
+      audience: "string",
+      channel: "string",
+    };
+    const copySchema = {
+      title: "string",
+      body: "string",
+    };
+    const serperTool = new StructuredTool({
+      name: "Serper Dev Tool",
+      description: "Search the web for market evidence",
+      func: () => "search evidence",
+    });
+    const scrapeWebsiteTool = new StructuredTool({
+      name: "Scrape Website Tool",
+      description: "Scrape a customer website",
+      func: () => "website evidence",
+    });
+    const prompts: string[] = [];
+
+    class MarketingPostsCrew {
+      agents: Agent[] = [];
+      tasks: Task[] = [];
+      agents_config = {
+        lead_market_analyst: {
+          role: "Lead Market Analyst",
+          goal: "Research {customer_domain}",
+          backstory: "Find market and customer signals",
+        },
+        chief_marketing_strategist: {
+          role: "Chief Marketing Strategist",
+          goal: "Create a strategy for {project_description}",
+          backstory: "Turns research into a marketing strategy",
+        },
+        creative_content_creator: {
+          role: "Creative Content Creator",
+          goal: "Create campaign ideas and copy",
+          backstory: "Writes concise marketing copy",
+        },
+      };
+      tasks_config = {
+        research_task: {
+          description: "Research the customer domain: {customer_domain}",
+          expected_output: "Market research notes",
+        },
+        project_understanding_task: {
+          description: "Understand this project: {project_description}",
+          expected_output: "Project understanding",
+        },
+        marketing_strategy_task: {
+          description: "Create a market strategy for {customer_domain}",
+          expected_output: "Structured market strategy",
+        },
+        campaign_idea_task: {
+          description: "Create a campaign idea for {project_description}",
+          expected_output: "Structured campaign idea",
+        },
+        copy_creation_task: {
+          description: "Create final copy using the strategy and campaign idea",
+          expected_output: "Structured copy",
+        },
+      };
+
+      createAgent(config: { role: string; goal: string; backstory: string }, tools: StructuredTool[] = []) {
+        return new Agent({
+          role: config.role,
+          goal: config.goal,
+          backstory: config.backstory,
+          tools,
+          verbose: true,
+          memory: false,
+          llm: (messages) => {
+            const prompt = messages.at(-1)?.content ?? "";
+            prompts.push(`${config.role}:${prompt}`);
+            if (config.role === "Creative Content Creator") {
+              return JSON.stringify({
+                name: "Automation Awareness",
+                description: "Campaign for AI operations leaders",
+                audience: "Enterprise decision makers",
+                channel: "LinkedIn",
+                title: "Scale agentic marketing",
+                body: "CrewAI helps teams automate repeatable campaign work.",
+              });
+            }
+            return JSON.stringify({
+              name: "Enterprise Automation Strategy",
+              tatics: ["case studies", "webinars"],
+              channels: ["LinkedIn", "customer stories"],
+              KPIs: ["qualified leads", "demo requests"],
+            });
+          },
+        });
+      }
+
+      lead_market_analyst() {
+        return this.createAgent(this.agents_config.lead_market_analyst, [serperTool, scrapeWebsiteTool]);
+      }
+
+      chief_marketing_strategist() {
+        return this.createAgent(this.agents_config.chief_marketing_strategist, [serperTool, scrapeWebsiteTool]);
+      }
+
+      creative_content_creator() {
+        return this.createAgent(this.agents_config.creative_content_creator);
+      }
+
+      research_task() {
+        const config = this.tasks_config.research_task;
+        return new Task({
+          config,
+          description: config.description,
+          expected_output: config.expected_output,
+          agent: this.lead_market_analyst(),
+        });
+      }
+
+      project_understanding_task() {
+        const config = this.tasks_config.project_understanding_task;
+        return new Task({
+          config,
+          description: config.description,
+          expected_output: config.expected_output,
+          agent: this.chief_marketing_strategist(),
+        });
+      }
+
+      marketing_strategy_task() {
+        const config = this.tasks_config.marketing_strategy_task;
+        return new Task({
+          config,
+          description: config.description,
+          expected_output: config.expected_output,
+          agent: this.chief_marketing_strategist(),
+          output_json: true,
+          response_model: marketStrategySchema,
+        });
+      }
+
+      campaign_idea_task() {
+        const config = this.tasks_config.campaign_idea_task;
+        return new Task({
+          config,
+          description: config.description,
+          expected_output: config.expected_output,
+          agent: this.creative_content_creator(),
+          output_json: true,
+          response_model: campaignIdeaSchema,
+        });
+      }
+
+      copy_creation_task() {
+        const config = this.tasks_config.copy_creation_task;
+        return new Task({
+          config,
+          description: config.description,
+          expected_output: config.expected_output,
+          agent: this.creative_content_creator(),
+          context: [this.marketing_strategy_task(), this.campaign_idea_task()],
+          output_json: true,
+          response_model: copySchema,
+        });
+      }
+
+      crew() {
+        return new Crew({
+          agents: this.agents,
+          tasks: this.tasks,
+          process: Process.sequential,
+          verbose: true,
+        });
+      }
+    }
+
+    const DecoratedMarketingPostsCrew = decorateClass(MarketingPostsCrew, CrewBase as unknown as Decorator);
+    const project = new DecoratedMarketingPostsCrew();
+    [
+      decorateMethod(MarketingPostsCrew, "lead_market_analyst", agent),
+      decorateMethod(MarketingPostsCrew, "chief_marketing_strategist", agent),
+      decorateMethod(MarketingPostsCrew, "creative_content_creator", agent),
+      decorateMethod(MarketingPostsCrew, "research_task", task),
+      decorateMethod(MarketingPostsCrew, "project_understanding_task", task),
+      decorateMethod(MarketingPostsCrew, "marketing_strategy_task", task),
+      decorateMethod(MarketingPostsCrew, "campaign_idea_task", task),
+      decorateMethod(MarketingPostsCrew, "copy_creation_task", task),
+      decorateMethod(MarketingPostsCrew, "crew", crew),
+    ].forEach((initializer) => {
+      initializer.call(project);
+    });
+
+    const crewInstance = project.crew();
+    expect(crewInstance.process).toBe(Process.sequential);
+    expect(project.agents.map((projectAgent: Agent) => projectAgent.role)).toEqual([
+      "Lead Market Analyst",
+      "Chief Marketing Strategist",
+      "Creative Content Creator",
+    ]);
+    expect(project.lead_market_analyst().tools.map((toolInstance) => toolInstance.name)).toEqual([
+      "serper_dev_tool",
+      "scrape_website_tool",
+    ]);
+    expect(project.tasks.map((projectTask: Task) => projectTask.name)).toEqual([
+      "research_task",
+      "project_understanding_task",
+      "marketing_strategy_task",
+      "campaign_idea_task",
+      "copy_creation_task",
+    ]);
+    expect(project.marketing_strategy_task().response_model).toBe(marketStrategySchema);
+    expect(project.campaign_idea_task().response_model).toBe(campaignIdeaSchema);
+    expect(project.copy_creation_task().context?.map((contextTask) => contextTask.name)).toEqual([
+      "marketing_strategy_task",
+      "campaign_idea_task",
+    ]);
+
+    const output = await crewInstance.kickoff({
+      inputs: {
+        customer_domain: "crewai.com",
+        project_description: "Create a marketing campaign for enterprise AI automation.",
+      },
+    });
+
+    expect(output.raw).toContain("Scale agentic marketing");
+    expect(prompts.some((prompt) => prompt.includes("crewai.com"))).toBe(true);
+    expect(prompts.some((prompt) => prompt.includes("enterprise AI automation"))).toBe(true);
+  });
+
   it("infers names for directly awaited async task decorator factories", async () => {
     class AsyncTaskCrew {
       calls = 0;
