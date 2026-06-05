@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 1166 passing tests.
+- Test suite: 1167 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -609,7 +609,7 @@ When more goal budget is available, continue from the behavioral parity audits b
   - Bedrock completion shim now exposes upstream-style Converse request body builders, including Bedrock message content blocks, system prompts, inference config, raw OpenAI-style function tool conversion, multimodal image/document file blocks for Claude 3/4 models, toolConfig conversion, guardrail config, and additional model request/response fields
   - Bedrock completion shim now exposes upstream-style document/video content-type format mapping helpers for multimodal payload preparation.
   - Bedrock completion shim now exposes upstream-style client error classification for common AWS Bedrock error codes.
-  - Bedrock completion shim now exposes upstream-style Converse token usage extraction/tracking, tool-use/structured-output response extraction, deterministic Converse streaming event accumulation, and tool-result follow-up message helpers, including cache read token fields
+  - Bedrock completion shim now exposes upstream-style Converse token usage extraction/tracking, tool-use/structured-output response extraction, deterministic Converse streaming event accumulation, and tool-result follow-up message helpers, including cache read token fields and missing cache-token defaults
   - Gemini completion shim with upstream-style message formatting, generation config builders, raw OpenAI-style function tool conversion, function-call and structured-output response extraction/direct execution, deterministic streaming chunk accumulation, config, context-window, multimodal/text-formatting, token-usage extraction, response text extraction, property ordering, and content conversion helpers
   - Gemini streaming function-call accumulation now preserves the upstream raw part payload, including `thought_signature` metadata from thinking models, so downstream tool-call finalization can retain non-text model context.
   - Gemini message formatting now preserves upstream-style `raw_tool_call_parts` when present, falling back to JSON tool-call conversion otherwise.

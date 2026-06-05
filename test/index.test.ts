@@ -34051,6 +34051,19 @@ describe("LLM providers", () => {
     });
   });
 
+  it("defaults missing Bedrock cache token fields to zero", () => {
+    expect(BedrockCompletion.extract_bedrock_token_usage({
+      inputTokens: 60,
+      outputTokens: 30,
+      totalTokens: 90,
+    })).toEqual({
+      prompt_tokens: 60,
+      completion_tokens: 30,
+      total_tokens: 90,
+      cached_prompt_tokens: 0,
+    });
+  });
+
   it("maps Bedrock document and video content types", () => {
     const bedrock = new BedrockCompletion({ model: "anthropic.claude-3-5-sonnet-20241022-v2:0" });
 
