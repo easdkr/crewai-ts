@@ -34496,6 +34496,43 @@ describe("LLM providers", () => {
     expect(gemini._apply_stop_words("I need to search.\nObservation: Found results")).toBe("I need to search.");
   });
 
+  it("selects Gemini response schema config by model family", () => {
+    const responseModel = {
+      model_json_schema: () => ({
+        type: "object",
+        properties: {
+          name: { type: "string", description: "The name" },
+          age: { type: "integer", description: "The age" },
+          email: { type: "string", description: "The email" },
+        },
+      }),
+    };
+    const gemini20Config = (new GeminiCompletion({ model: "gemini-2.0-flash-001" }) as unknown as {
+      _prepare_generation_config(
+        systemInstruction?: string | null,
+        tools?: StructuredTool[] | null,
+        responseModel?: unknown,
+      ): Record<string, unknown>;
+    })._prepare_generation_config(null, null, responseModel);
+    const gemini15Config = (new GeminiCompletion({ model: "gemini-1.5-pro" }) as unknown as {
+      _prepare_generation_config(
+        systemInstruction?: string | null,
+        tools?: StructuredTool[] | null,
+        responseModel?: unknown,
+      ): Record<string, unknown>;
+    })._prepare_generation_config(null, null, responseModel);
+
+    expect(gemini20Config.response_mime_type).toBe("application/json");
+    expect(gemini20Config.response_json_schema).toMatchObject({
+      type: "object",
+      propertyOrdering: ["name", "age", "email"],
+    });
+    expect(gemini20Config).not.toHaveProperty("response_schema");
+    expect(gemini15Config.response_mime_type).toBe("application/json");
+    expect(gemini15Config.response_schema).toBe(responseModel);
+    expect(gemini15Config).not.toHaveProperty("response_json_schema");
+  });
+
   it("accumulates Gemini streaming chunks", () => {
     const gemini = new GeminiCompletion({ model: "gemini-2.5-pro" });
     const functionCallPart = {
