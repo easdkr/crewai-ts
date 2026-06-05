@@ -13020,6 +13020,32 @@ describe("RAG configuration and factories", () => {
     expect(getCollection).toHaveBeenCalledWith("new_docs");
   });
 
+  it("raises upstream Qdrant create errors when collections already exist", async () => {
+    const syncCreateCollection = vi.fn();
+    const syncClient = new QdrantClient({
+      collection_exists: vi.fn(() => true),
+      create_collection: syncCreateCollection,
+      query_points: vi.fn(() => ({ points: [] })),
+    });
+    const asyncCreateCollection = vi.fn(async () => {
+      await Promise.resolve();
+    });
+    const asyncClient = new QdrantClient({
+      aquery_points: async () => await Promise.resolve({ points: [] }),
+      collection_exists: async () => await Promise.resolve(true),
+      create_collection: asyncCreateCollection,
+    });
+
+    expect(() => {
+      syncClient.create_collection({ collection_name: "test_collection" });
+    }).toThrow("Collection 'test_collection' already exists");
+    await expect(asyncClient.acreate_collection({ collection_name: "test_collection" }))
+      .rejects.toThrow("Collection 'test_collection' already exists");
+
+    expect(syncCreateCollection).not.toHaveBeenCalled();
+    expect(asyncCreateCollection).not.toHaveBeenCalled();
+  });
+
   it("uses upstream Qdrant search payload shape and result normalization", () => {
     const queryPoints = vi.fn(() => ({
       points: [
