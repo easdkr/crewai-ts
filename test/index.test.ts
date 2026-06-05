@@ -34467,6 +34467,35 @@ describe("LLM providers", () => {
     });
   });
 
+  it("preserves Gemini structured output fields that contain stop words", () => {
+    const gemini = new GeminiCompletion({
+      model: "gemini-2.0-flash-001",
+      stop_sequences: ["Observation:", "Final Answer:", "Action:"],
+    });
+    const observationModel = {
+      name: "AgentObservation",
+      model_validate(value: unknown) {
+        const record = value as Record<string, unknown>;
+        return {
+          action_taken: String(record.action_taken),
+          observation_result: String(record.observation_result),
+          final_answer: String(record.final_answer),
+        };
+      },
+    };
+
+    expect(gemini._validate_structured_output(`{
+      "action_taken": "Action: Searched the database",
+      "observation_result": "Observation: Found 5 relevant results",
+      "final_answer": "Final Answer: The data shows positive growth"
+    }`, observationModel)).toEqual({
+      action_taken: "Action: Searched the database",
+      observation_result: "Observation: Found 5 relevant results",
+      final_answer: "Final Answer: The data shows positive growth",
+    });
+    expect(gemini._apply_stop_words("I need to search.\nObservation: Found results")).toBe("I need to search.");
+  });
+
   it("accumulates Gemini streaming chunks", () => {
     const gemini = new GeminiCompletion({ model: "gemini-2.5-pro" });
     const functionCallPart = {
