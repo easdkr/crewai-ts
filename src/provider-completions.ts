@@ -84,8 +84,8 @@ export type AnthropicCompletionOptions = BaseLLMOptions & {
   timeout?: number | null;
   max_retries?: number;
   maxRetries?: number;
-  max_tokens?: number;
-  maxTokens?: number;
+  max_tokens?: number | null;
+  maxTokens?: number | null;
   top_p?: number | null;
   topP?: number | null;
   stream?: boolean;
@@ -2484,6 +2484,8 @@ export class SnowflakeCompletion extends OpenAICompletion {
   }
 }
 
+registerLLMProviderFactory("anthropic", (options) => new AnthropicCompletion(options));
+registerLLMProviderFactory("bedrock", (options) => new BedrockCompletion(options));
 registerLLMProviderFactory("gemini", (options) => new GeminiCompletion(options));
 registerLLMProviderFactory("google", (options) => new GeminiCompletion({ ...options, provider: "gemini" }));
 registerLLMProviderFactory("snowflake", (options) => new SnowflakeCompletion(options as SnowflakeCompletionOptions));

@@ -35317,7 +35317,7 @@ describe("LLM providers", () => {
       AWS_DEFAULT_REGION: "us-east-1",
     });
     expect((bedrockEnv as ConfiguredLLM).to_config_dict()).toMatchObject({
-      model: "bedrock/amazon.nova-pro-v1:0",
+      model: "amazon.nova-pro-v1:0",
       provider: "bedrock",
       api_key: null,
     });
@@ -35355,6 +35355,29 @@ describe("LLM providers", () => {
     expect(googleGemini15).toBeInstanceOf(GeminiCompletion);
     expect((googleGemini15 as GeminiCompletion).model).toBe("gemini-1.5-pro");
     expect((googleGemini15 as GeminiCompletion).is_gemini_2_0).toBe(false);
+  });
+
+  it("routes upstream-style Anthropic and Bedrock provider aliases through native completions", () => {
+    const anthropic = create_llm("anthropic/claude-3-5-sonnet-20241022");
+    expect(anthropic).toBeInstanceOf(AnthropicCompletion);
+    expect((anthropic as AnthropicCompletion).model).toBe("claude-3-5-sonnet-20241022");
+    expect((anthropic as AnthropicCompletion).provider).toBe("anthropic");
+    expect((anthropic as AnthropicCompletion).supports_tools).toBe(true);
+
+    const claudeAlias = create_llm("claude/claude-3-haiku-20240307");
+    expect(claudeAlias).toBeInstanceOf(AnthropicCompletion);
+    expect((claudeAlias as AnthropicCompletion).model).toBe("claude-3-haiku-20240307");
+    expect((claudeAlias as AnthropicCompletion).provider).toBe("anthropic");
+
+    const bedrock = create_llm("bedrock/amazon.nova-pro-v1:0");
+    expect(bedrock).toBeInstanceOf(BedrockCompletion);
+    expect((bedrock as BedrockCompletion).model).toBe("amazon.nova-pro-v1:0");
+    expect((bedrock as BedrockCompletion).provider).toBe("bedrock");
+
+    const awsAlias = create_llm("aws/anthropic.claude-3-5-sonnet-20241022-v2:0");
+    expect(awsAlias).toBeInstanceOf(BedrockCompletion);
+    expect((awsAlias as BedrockCompletion).model).toBe("anthropic.claude-3-5-sonnet-20241022-v2:0");
+    expect((awsAlias as BedrockCompletion).provider).toBe("bedrock");
   });
 
   it("resolves upstream-style native provider aliases, constants, and model patterns", () => {
@@ -35426,7 +35449,7 @@ describe("LLM providers", () => {
       ANTHROPIC_API_KEY: "anthropic-key",
     });
     expect((claudeEnv as ConfiguredLLM).to_config_dict()).toMatchObject({
-      model: "claude/claude-opus-4-0",
+      model: "claude-opus-4-0",
       provider: "anthropic",
       api_key: "anthropic-key",
       is_litellm: false,

@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 1172 passing tests.
+- Test suite: 1173 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -602,6 +602,7 @@ When more goal budget is available, continue from the behavioral parity audits b
   - Azure completion shim now reads upstream-style credential scopes from `AZURE_CREDENTIAL_SCOPES` when no non-empty scopes are configured explicitly.
   - Azure completion shim now explicitly exposes upstream-style provider alias methods on the provider class, including sync/async calls, close, config serialization, capability checks, context windows, and response-chain reset/getters.
   - Anthropic, Bedrock, and Gemini native completion shims now explicitly expose upstream-style provider alias methods on provider classes for async calls, config serialization, capability checks, file uploaders, context windows, and text formatting where applicable.
+  - Anthropic and Bedrock native provider detection now routes `anthropic/...` / `claude/...` and `bedrock/...` / `aws/...` model aliases through their native completion shims.
   - Anthropic completion shim now exposes upstream-style request parameter builders with system prompts, stop sequences, thinking config, thinking-block preservation across formatted assistant turns, custom tool conversion, single-tool forcing, and tool-search injection/deferred loading
   - Anthropic completion shim now converts upstream standard `image_url` data-URI blocks into Anthropic `image` source blocks for user/tool/assistant content lists.
   - Anthropic completion shim now exposes upstream-style SDK response token usage extraction, tool-use/structured-output response extraction, deterministic streaming event accumulation, and tool-result block execution helpers, including cache read and cache creation token fields
