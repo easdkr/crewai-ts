@@ -6077,6 +6077,17 @@ export class TraceCollectionListener extends BaseEventListener {
     return this._nestedInFlowExecution();
   }
 
+  shouldFinalizeBatchForOwner(): boolean {
+    if (this._nestedInFlowExecution()) {
+      return false;
+    }
+    return (this.batchManager.batchOwnerType ?? this.batchManager.batch_owner_type) === "crew";
+  }
+
+  _should_finalize_batch_for_owner(): boolean {
+    return this.shouldFinalizeBatchForOwner();
+  }
+
   _handleActionEvent(_eventType: string, _source: unknown, event: BaseEvent): void {
     void event;
     if (!TraceCollectionListener._isInsideActiveFlowContext()) {

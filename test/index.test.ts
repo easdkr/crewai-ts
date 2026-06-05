@@ -9823,9 +9823,7 @@ describe("telemetry compatibility", () => {
       listener.batch_manager.batch_owner_type = "crew";
       listener.batch_manager.batchOwnerType = "crew";
       const finalize = vi.spyOn(listener.batch_manager, "finalize_batch");
-      if (listener._nested_in_flow_execution()) {
-        // The upstream trace listener leaves flow-owned nested work to the parent flow batch.
-      } else if (listener.batch_manager.batch_owner_type === "crew") {
+      if (listener._should_finalize_batch_for_owner()) {
         listener.batch_manager.finalize_batch();
       }
       expect(finalize).not.toHaveBeenCalled();
@@ -9836,6 +9834,13 @@ describe("telemetry compatibility", () => {
     }
 
     expect(TraceCollectionListener._is_inside_active_flow_context()).toBe(false);
+
+    listener.batch_manager.batch_owner_type = "flow";
+    listener.batch_manager.batchOwnerType = "flow";
+    expect(listener._should_finalize_batch_for_owner()).toBe(false);
+    listener.batch_manager.batch_owner_type = "crew";
+    listener.batch_manager.batchOwnerType = "crew";
+    expect(listener._should_finalize_batch_for_owner()).toBe(true);
   });
 
   it("finalizes backend trace batches once and clears sent event buffers", async () => {
