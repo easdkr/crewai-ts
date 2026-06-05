@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 1113 passing tests.
+- Test suite: 1116 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -261,7 +261,7 @@ High-value behavior audits still worth running:
    - Latest NVIDIA Nemotron docs are covered as deterministic provider metadata: the documented `nvidia_nim/nvidia/nvidia-nemotron-3-ultra-550b-a55b` model string is in the NIM model list, and hosted NIM accepts both `NVIDIA_NIM_API_KEY` and the documented `NVIDIA_API_KEY` env alias.
    - Flow DSL definition extraction is covered with a deterministic `buildFlowDefinition` / `build_flow_definition` shim over TS decorator metadata, including `@start("event")` condition sugar, callable and string listeners, nested conditions, state/config snapshots, human-feedback routing metadata, explicit router emits, and dynamic routers with no static emit contract.
    - Flow runtime OR-listener rearming is covered for latest upstream: `_rearm_or_listeners_for_trigger` clears only fired OR listeners whose condition includes the router-emitted trigger and mutates the optional `rearmable` set like upstream.
-   - Experimental conversational Flow turn helpers are release-gated for deterministic local turns: `handle_turn` / `handleTurn` route through kickoff, `user_message` / `session_id` merge into inputs and state, runtime method tracking resets for each conversational turn, direct kickoff re-runs the graph, and `handle_turn` appends returned assistant strings when the handler did not already append one.
+   - Experimental conversational Flow turn helpers are release-gated for deterministic local turns: `handle_turn` / `handleTurn` route through kickoff, `user_message` / `session_id` merge into inputs and state, runtime method tracking resets for each conversational turn, direct kickoff re-runs the graph, `handle_turn` appends returned assistant strings when the handler did not already append one, and `chat` / `chat()` runs an injectable REPL loop over `handle_turn`, stringifies raw outputs, rejects non-conversational flows, and finalizes session traces while restoring deferral state.
    - Experimental conversational agent-result helpers are release-gated for deterministic local state updates: `append_agent_result` / `appendAgentResult` records private/public events, appends per-agent thread messages, keeps private scratch out of shared history, and promotes explicit public or `visible_agent_outputs` agent results to assistant messages.
    - Experimental conversational Flow state defaults are release-gated for upstream opt-in semantics: `class C extends Flow { static conversational = true }` now starts with a `ConversationState`, and `_create_initial_state` preserves that state shape while assigning an id.
    - Experimental conversational built-in runtime graph wiring is release-gated for upstream mixin semantics: conversational flows automatically get `conversation_start`, `route_conversation`, `converse_turn`, `end_conversation`, and `answer_from_history_turn` runtime metadata when user-defined start/router/listener wiring does not already cover the same edge, and user start methods run before the built-in router on each turn.

@@ -1102,6 +1102,26 @@ export type FlowNodeMetadata = {
   class_signature?: string;
 };
 
+export type FlowChatOptions = {
+  session_id?: string | null;
+  sessionId?: string | null;
+  prompt?: string;
+  assistant_prefix?: string;
+  assistantPrefix?: string;
+  exit_commands?: readonly string[];
+  exitCommands?: readonly string[];
+  input_fn?: (prompt: string) => MaybePromise<string>;
+  inputFn?: (prompt: string) => MaybePromise<string>;
+  output_fn?: (message: string) => void;
+  outputFn?: (message: string) => void;
+  skip_empty?: boolean;
+  skipEmpty?: boolean;
+  defer_trace_finalization?: boolean;
+  deferTraceFinalization?: boolean;
+  handle_turn_options?: Omit<FlowKickoffOptions, "userMessage" | "user_message">;
+  handleTurnOptions?: Omit<FlowKickoffOptions, "userMessage" | "user_message">;
+};
+
 export type FlowVisualizationEdge = {
   source: string;
   target: string;
@@ -1848,6 +1868,67 @@ export class Flow<TState extends object = Record<string, unknown>> {
     options: Omit<FlowKickoffOptions, "userMessage" | "user_message"> = {},
   ): Promise<unknown> {
     return await this.handleTurn(message, options);
+  }
+
+  async chat(options: FlowChatOptions = {}): Promise<void> {
+    if (!isConversationalFlowConstructor(this.constructor)) {
+      throw new Error("Flow.chat() is only available on conversational flows");
+    }
+
+    const prompt = options.prompt ?? "\nYou: ";
+    const assistantPrefix = options.assistant_prefix ?? options.assistantPrefix ?? "\nAssistant: ";
+    const exitCommands = options.exit_commands ?? options.exitCommands ?? ["exit", "quit"];
+    const inputFn = options.input_fn ?? options.inputFn ?? defaultChatInput;
+    const outputFn = options.output_fn ?? options.outputFn ?? ((message: string) => {
+      console.log(message);
+    });
+    const skipEmpty = options.skip_empty ?? options.skipEmpty ?? true;
+    const deferTraceFinalization = options.defer_trace_finalization ?? options.deferTraceFinalization ?? true;
+    const sessionId = options.session_id ?? options.sessionId ?? null;
+    const handleTurnOptions = options.handle_turn_options ?? options.handleTurnOptions ?? {};
+    const exitSet = new Set(exitCommands.map((command) => command.toLowerCase()));
+    const record = this as unknown as Record<string, unknown>;
+    const previousSnake = record.defer_trace_finalization;
+    const previousCamel = record.deferTraceFinalization;
+
+    if (deferTraceFinalization) {
+      record.defer_trace_finalization = true;
+      record.deferTraceFinalization = true;
+    }
+
+    try {
+      for (;;) {
+        let message: string;
+        try {
+          message = (await inputFn(prompt)).trim();
+        } catch (error) {
+          if (isChatInputInterrupt(error)) {
+            outputFn("");
+            break;
+          }
+          throw error;
+        }
+
+        if (exitSet.has(message.toLowerCase())) {
+          break;
+        }
+        if (skipEmpty && message.length === 0) {
+          continue;
+        }
+
+        const result = await this.handleTurn(message, {
+          ...handleTurnOptions,
+          ...(sessionId === null ? {} : { session_id: sessionId }),
+        });
+        outputFn(`${assistantPrefix}${stringifyFlowHelperValue(result)}`);
+      }
+    } finally {
+      this.finalizeSessionTraces();
+      if (deferTraceFinalization) {
+        record.defer_trace_finalization = previousSnake;
+        record.deferTraceFinalization = previousCamel;
+      }
+    }
   }
 
   async _replayRecordedEvents(): Promise<void> {
@@ -6007,11 +6088,32 @@ function stringifyFlowHelperValue(value: unknown): string {
   ) {
     return value.toString();
   }
+  if (isRecord(value) && typeof value.raw === "string") {
+    return value.raw;
+  }
   try {
     return JSON.stringify(value);
   } catch {
     return Object.prototype.toString.call(value);
   }
+}
+
+async function defaultChatInput(prompt: string): Promise<string> {
+  const readline = await import("node:readline/promises");
+  const interfaceInstance = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+  try {
+    return await interfaceInstance.question(prompt);
+  } finally {
+    interfaceInstance.close();
+  }
+}
+
+function isChatInputInterrupt(error: unknown): boolean {
+  return isRecord(error)
+    && (error.name === "EOFError" || error.name === "KeyboardInterrupt" || error.name === "AbortError");
 }
 
 type FlowCheckpointEntity = {

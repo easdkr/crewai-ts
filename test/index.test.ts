@@ -21277,6 +21277,148 @@ describe("flow runtime", () => {
     ]);
   });
 
+  it("runs experimental conversational chat loops over handle_turn and finalizes the session", async () => {
+    class ChatLoopFlow extends Flow<{
+      id: string;
+      messages: Array<Record<string, unknown>>;
+      current_user_message: string | null;
+      last_user_message: string | null;
+      last_intent: string | null;
+      turns: number;
+    }> {
+      static conversational = true;
+      static conversational_config = new ConversationConfig({ defer_trace_finalization: false });
+
+      constructor() {
+        super({
+          initialState: {
+            id: "initial",
+            messages: [],
+            current_user_message: null,
+            last_user_message: null,
+            last_intent: null,
+            turns: 0,
+          },
+        });
+      }
+
+      begin() {
+        return "ready";
+      }
+
+      route() {
+        return "work";
+      }
+
+      doWork() {
+        this.state.turns += 1;
+        const reply = `worked: ${String(this.state.current_user_message)}`;
+        this.append_assistant_message(reply);
+        return reply;
+      }
+    }
+
+    const initializers = [
+      decorateMethod(ChatLoopFlow, "begin", start() as unknown as Decorator),
+      decorateMethod(ChatLoopFlow, "route", router("begin") as unknown as Decorator),
+      decorateMethod(ChatLoopFlow, "doWork", listen("work") as unknown as Decorator),
+    ];
+    const flow = new ChatLoopFlow();
+    initializers.forEach((initializer) => {
+      initializer.call(flow);
+    });
+    const inputs = ["first", "", "second", "quit"];
+    const prompts: string[] = [];
+    const outputs: string[] = [];
+    const finalizeSpy = vi.spyOn(flow, "finalizeSessionTraces").mockImplementation(() => undefined);
+
+    await flow.chat({
+      session_id: "session-1",
+      input_fn(prompt) {
+        prompts.push(prompt);
+        return inputs.shift() ?? "quit";
+      },
+      output_fn: (message) => {
+        outputs.push(message);
+      },
+    });
+
+    expect(flow.state.turns).toBe(2);
+    expect(flow.state.id).toBe("session-1");
+    expect(prompts).toEqual(["\nYou: ", "\nYou: ", "\nYou: ", "\nYou: "]);
+    expect(outputs).toEqual([
+      "\nAssistant: worked: first",
+      "\nAssistant: worked: second",
+    ]);
+    expect(finalizeSpy).toHaveBeenCalledOnce();
+    expect((flow as unknown as { defer_trace_finalization?: unknown }).defer_trace_finalization).toBeUndefined();
+    finalizeSpy.mockRestore();
+  });
+
+  it("stringifies experimental conversational chat output like conversation helpers", async () => {
+    class RawResult {
+      raw = "raw assistant output";
+    }
+
+    class RawChatFlow extends Flow<ConversationState> {
+      static conversational = true;
+
+      constructor() {
+        super({ initialState: new ConversationState() });
+      }
+
+      begin() {
+        return "ready";
+      }
+
+      route() {
+        return "work";
+      }
+
+      doWork() {
+        return new RawResult();
+      }
+    }
+
+    const initializers = [
+      decorateMethod(RawChatFlow, "begin", start() as unknown as Decorator),
+      decorateMethod(RawChatFlow, "route", router("begin") as unknown as Decorator),
+      decorateMethod(RawChatFlow, "doWork", listen("work") as unknown as Decorator),
+    ];
+    const flow = new RawChatFlow();
+    initializers.forEach((initializer) => {
+      initializer.call(flow);
+    });
+    const inputs = ["first", "quit"];
+    const outputs: string[] = [];
+    const finalizeSpy = vi.spyOn(flow, "finalizeSessionTraces").mockImplementation(() => undefined);
+
+    await flow.chat({
+      input_fn: () => inputs.shift() ?? "quit",
+      output_fn: (message) => {
+        outputs.push(message);
+      },
+    });
+
+    expect(outputs).toEqual(["\nAssistant: raw assistant output"]);
+    expect(finalizeSpy).toHaveBeenCalledOnce();
+    finalizeSpy.mockRestore();
+  });
+
+  it("rejects chat loops on non-conversational flows", async () => {
+    class PlainFlow extends Flow {
+      begin() {
+        return "done";
+      }
+    }
+
+    const initializer = decorateMethod(PlainFlow, "begin", start() as unknown as Decorator);
+    const flow = new PlainFlow();
+    initializer.call(flow);
+
+    await expect(flow.chat({ input_fn: () => "quit" })).rejects.toThrow("conversational flows");
+  });
+
   it("records experimental conversational agent results with visibility controls", () => {
     class AgentResultFlow extends Flow<ConversationState> {
       static conversational = true;
