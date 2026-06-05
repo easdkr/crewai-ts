@@ -22417,6 +22417,261 @@ describe("standard decorators", () => {
     expect(prompts.filter((prompt) => prompt.includes(JSON.stringify(outline.chapters[1])))).toHaveLength(4);
   });
 
+  it("runs the crewAI-examples email auto-responder CrewBase and draft tool deterministically", async () => {
+    const prompts: string[] = [];
+    const draftPayloads: Array<{ to: string[]; subject: string; message: string; apiResource: string }> = [];
+    const getThreadTool = new StructuredTool({
+      name: "Gmail Get Thread",
+      description: "Get a Gmail thread using a shared API resource.",
+      func: ({ threadId }: { threadId: string }) => `thread:${threadId}`,
+    });
+    const tavilyTool = new StructuredTool({
+      name: "Tavily Search Results",
+      description: "Search for response context.",
+      func: (query: string) => `search:${query}`,
+    });
+    const serperTool = new StructuredTool({
+      name: "Serper Search",
+      description: "Search for email filtering context.",
+      func: (query: string) => `serper:${query}`,
+    });
+    const createDraft = (data: string) => {
+      const [email, subject, message] = data.split("|");
+      const payload = { to: [email], subject, message, apiResource: "gmail-api-resource" };
+      draftPayloads.push(payload);
+      return `\nDraft created: ${JSON.stringify(payload)}\n`;
+    };
+    const createDraftTool = new StructuredTool({
+      name: "Create Draft",
+      description: "Create a Gmail draft from pipe-separated email, subject, and message fields.",
+      func: ({ data }: { data: string }) => createDraft(data),
+    });
+
+    class EmailFilterCrew {
+      agents: Agent[] = [];
+      tasks: Task[] = [];
+      agents_config = {
+        email_filter_agent: {
+          role: "Senior Email Analyst",
+          goal: "Filter out non-essential emails like newsletters and promotional content",
+          backstory: "Distinguishes important emails from spam, newsletters, and irrelevant content.",
+        },
+        email_action_agent: {
+          role: "Email Action Specialist",
+          goal: "Identify action-required emails and compile a list of their IDs",
+          backstory: "Understands urgency and context from email threads.",
+        },
+        email_response_writer: {
+          role: "Email Response Writer",
+          goal: "Draft responses to action-required emails",
+          backstory: "Crafts concise and effective email responses.",
+        },
+      };
+      tasks_config = {
+        filter_emails: {
+          description: [
+            "Analyze a batch of emails and filter out non-essential ones such as newsletters and promotional content.",
+            "EMAILS",
+            "-------",
+            "{emails}",
+            "Your final answer MUST be a the relevant thread_ids and the sender, use bullet points.",
+          ].join("\n"),
+          expected_output: "Relevant thread ids and senders",
+        },
+        action_required_emails: {
+          description: "For each email thread, pull and analyze the complete threads using only the actual Thread ID.",
+          expected_output: "Action-required email summaries",
+        },
+        draft_responses: {
+          description: [
+            "Based on the action-required emails identified, draft responses for each.",
+            "Use the tool provided to draft each of the responses.",
+            "When using the tool pass the following input:",
+            "- to (sender to be responded)",
+            "- subject",
+            "- message",
+          ].join("\n"),
+          expected_output: "Confirmation that all responses have been drafted",
+        },
+      };
+
+      email_filter_agent() {
+        const config = this.agents_config.email_filter_agent;
+        return new Agent({
+          config,
+          role: config.role,
+          goal: config.goal,
+          backstory: config.backstory,
+          tools: [serperTool],
+          verbose: true,
+          allow_delegation: true,
+          llm: (messages) => {
+            const prompt = messages.at(-1)?.content ?? "";
+            prompts.push(`filter:${prompt}`);
+            return "- thread-a | lead@example.com\n- thread-c | finance@example.com";
+          },
+        });
+      }
+
+      email_action_agent() {
+        const config = this.agents_config.email_action_agent;
+        return new Agent({
+          config,
+          role: config.role,
+          goal: config.goal,
+          backstory: config.backstory,
+          tools: [getThreadTool, tavilyTool],
+          verbose: true,
+          llm: (messages) => {
+            const prompt = messages.at(-1)?.content ?? "";
+            prompts.push(`action:${prompt}`);
+            return "thread-a needs rollout review; thread-c needs a budget answer.";
+          },
+        });
+      }
+
+      email_response_writer() {
+        const config = this.agents_config.email_response_writer;
+        return new Agent({
+          config,
+          role: config.role,
+          goal: config.goal,
+          backstory: config.backstory,
+          tools: [tavilyTool, getThreadTool, createDraftTool],
+          verbose: true,
+          llm: (messages) => {
+            const prompt = messages.at(-1)?.content ?? "";
+            prompts.push(`writer:${prompt}`);
+            const first = createDraft("lead@example.com|Re: Launch review|Thanks, I will review the launch notes today.");
+            const second = createDraft("finance@example.com|Re: Budget answer|Thanks, I will send the budget answer this afternoon.");
+            return `All responses have been drafted.${first}${second}`;
+          },
+        });
+      }
+
+      filter_emails_task() {
+        const config = this.tasks_config.filter_emails;
+        return new Task({
+          config,
+          description: config.description,
+          expected_output: config.expected_output,
+          agent: this.email_filter_agent(),
+        });
+      }
+
+      action_required_emails_task() {
+        const config = this.tasks_config.action_required_emails;
+        return new Task({
+          config,
+          description: config.description,
+          expected_output: config.expected_output,
+          agent: this.email_action_agent(),
+        });
+      }
+
+      draft_responses_task() {
+        const config = this.tasks_config.draft_responses;
+        return new Task({
+          config,
+          description: config.description,
+          expected_output: config.expected_output,
+          agent: this.email_response_writer(),
+        });
+      }
+
+      crew() {
+        return new Crew({
+          agents: this.agents,
+          tasks: this.tasks,
+          process: Process.sequential,
+          verbose: true,
+        });
+      }
+    }
+
+    const DecoratedEmailFilterCrew = decorateClass(EmailFilterCrew, CrewBase as unknown as Decorator);
+    const emailCrew = new DecoratedEmailFilterCrew();
+    [
+      decorateMethod(EmailFilterCrew, "email_filter_agent", agent),
+      decorateMethod(EmailFilterCrew, "email_action_agent", agent),
+      decorateMethod(EmailFilterCrew, "email_response_writer", agent),
+      decorateMethod(EmailFilterCrew, "filter_emails_task", task),
+      decorateMethod(EmailFilterCrew, "action_required_emails_task", task),
+      decorateMethod(EmailFilterCrew, "draft_responses_task", task),
+      decorateMethod(EmailFilterCrew, "crew", crew),
+    ].forEach((initializer) => {
+      initializer.call(emailCrew);
+    });
+
+    const result = await emailCrew.crew().kickoff({
+      inputs: {
+        emails: [
+          "ID: email-1",
+          "- Thread ID: thread-a",
+          "- Snippet: Please review the launch notes",
+          "- From: lead@example.com",
+          "--------",
+          "ID: email-4",
+          "- Thread ID: thread-c",
+          "- Snippet: Need a budget answer",
+          "- From: finance@example.com",
+          "--------",
+        ].join("\n"),
+      },
+    });
+
+    expect(emailCrew.agents.map((agentInstance) => agentInstance.role)).toEqual([
+      "Senior Email Analyst",
+      "Email Action Specialist",
+      "Email Response Writer",
+    ]);
+    expect(emailCrew.tasks.map((taskInstance) => taskInstance.description.split("\n")[0])).toEqual([
+      "Analyze a batch of emails and filter out non-essential ones such as newsletters and promotional content.",
+      "For each email thread, pull and analyze the complete threads using only the actual Thread ID.",
+      "Based on the action-required emails identified, draft responses for each.",
+    ]);
+    expect(emailCrew.agents[0]?.allowDelegation).toBe(true);
+    expect(emailCrew.agents[0]?.tools.map((toolInstance) => toolInstance.name)).toEqual(["serper_search"]);
+    expect(emailCrew.agents[1]?.tools.map((toolInstance) => toolInstance.name)).toEqual([
+      "gmail_get_thread",
+      "tavily_search_results",
+    ]);
+    expect(emailCrew.agents[2]?.tools.map((toolInstance) => toolInstance.name)).toEqual([
+      "tavily_search_results",
+      "gmail_get_thread",
+      "create_draft",
+    ]);
+    expect(prompts[0]).toContain("ID: email-1");
+    expect(prompts[0]).toContain("- Thread ID: thread-c");
+    expect(prompts[1]).toContain("- thread-a | lead@example.com");
+    expect(prompts[2]).toContain("thread-a needs rollout review");
+    expect(prompts[2]).toContain("Use the tool provided to draft each of the responses.");
+    expect(draftPayloads).toEqual([
+      {
+        to: ["lead@example.com"],
+        subject: "Re: Launch review",
+        message: "Thanks, I will review the launch notes today.",
+        apiResource: "gmail-api-resource",
+      },
+      {
+        to: ["finance@example.com"],
+        subject: "Re: Budget answer",
+        message: "Thanks, I will send the budget answer this afternoon.",
+        apiResource: "gmail-api-resource",
+      },
+    ]);
+    expect(result.raw).toContain("All responses have been drafted.");
+    expect(createDraftTool.invoke(JSON.stringify({ data: "owner@example.com|Re: Roadmap|Thanks for the update." }))).toContain(
+      "Draft created",
+    );
+    expect(draftPayloads.at(-1)).toEqual({
+      to: ["owner@example.com"],
+      subject: "Re: Roadmap",
+      message: "Thanks for the update.",
+      apiResource: "gmail-api-resource",
+    });
+  });
+
   it("runs the crewAI-examples game-builder CrewBase template deterministically", async () => {
     const prompts: string[] = [];
     const gameDesigns = {
