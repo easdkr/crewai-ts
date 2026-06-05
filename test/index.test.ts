@@ -34447,6 +34447,26 @@ describe("LLM providers", () => {
     expect(GeminiCompletion.extract_token_usage({ usage_metadata: null })).toEqual({ total_tokens: 0 });
   });
 
+  it("defaults missing Gemini thinking and cache token fields to zero", () => {
+    expect(GeminiCompletion.extract_token_usage({
+      usage_metadata: {
+        prompt_token_count: 80,
+        candidates_token_count: 40,
+        total_token_count: 120,
+        thoughts_token_count: null,
+        cached_content_token_count: null,
+      },
+    })).toEqual({
+      prompt_token_count: 80,
+      candidates_token_count: 40,
+      completion_tokens: 40,
+      total_token_count: 120,
+      total_tokens: 120,
+      cached_prompt_tokens: 0,
+      reasoning_tokens: 0,
+    });
+  });
+
   it("accumulates Gemini streaming chunks", () => {
     const gemini = new GeminiCompletion({ model: "gemini-2.5-pro" });
     const functionCallPart = {
