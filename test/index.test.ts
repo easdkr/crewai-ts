@@ -32895,6 +32895,26 @@ describe("LLM providers", () => {
     })._extract_openai_token_usage({})).toEqual({ total_tokens: 0 });
   });
 
+  it("omits OpenAI cached and reasoning token fields when details are absent", () => {
+    const openai = new OpenAICompletion({ model: "gpt-4o" });
+
+    expect((openai as unknown as {
+      _extract_openai_token_usage(response: unknown): Record<string, number>;
+    })._extract_openai_token_usage({
+      usage: {
+        prompt_tokens: 50,
+        completion_tokens: 30,
+        total_tokens: 80,
+        prompt_tokens_details: null,
+        completion_tokens_details: null,
+      },
+    })).toEqual({
+      prompt_tokens: 50,
+      completion_tokens: 30,
+      total_tokens: 80,
+    });
+  });
+
   it("extracts OpenAI Responses API usage, function calls, and reasoning items", () => {
     const openai = new OpenAICompletion({ model: "gpt-4.1", api: "responses" });
     class ResponsesUsageDetails {
