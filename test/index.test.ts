@@ -21811,6 +21811,91 @@ describe("standard decorators", () => {
     expect(prompts.some((prompt) => prompt.includes("Weekly Pay, Employee Meals, healthcare"))).toBe(true);
   });
 
+  it("runs the crewAI-examples industry-specialized agents notebook deterministically", async () => {
+    const prompts: string[] = [];
+    const searchTool = new StructuredTool({
+      name: "Serper Search",
+      description: "Search the web for industry news.",
+      func: (query: string) => `search:${query}`,
+    });
+    const weaviateTool = new StructuredTool({
+      name: "Weaviate Vector Search",
+      description: "Search Weaviate blog chunks.",
+      func: (query: string) => `weaviate:${query}`,
+    });
+    const makeAgent = (role: string, goal: string, backstory: string) => new Agent({
+      role,
+      goal,
+      backstory,
+      llm: (messages) => {
+        const prompt = messages.at(-1)?.content ?? "";
+        prompts.push(prompt);
+        return `${role}: ${prompt}`;
+      },
+      tools: [searchTool, weaviateTool],
+      verbose: true,
+    });
+    const biomedicalMarketingAgent = makeAgent(
+      "Industry researcher focused on biomedical trends and their applications in AI",
+      "Track biomedical advancements and identify how Weaviate features support biomedical AI applications.",
+      "A biomedical product marketer turned AI strategist.",
+    );
+    const healthcareMarketingAgent = makeAgent(
+      "AI-savvy marketer specializing in healthcare systems, digital health, and patient engagement.",
+      "Track healthcare policy shifts and how Weaviate can optimize hospital and EHR workflows.",
+      "A public health communications expert focused on retrieval-augmented generation.",
+    );
+    const financialMarketingAgent = makeAgent(
+      "Insight analyst exploring innovations in finance, wealth tech, and regulatory tech",
+      "Monitor financial sector trends and assess how Weaviate enables financial applications.",
+      "A fintech analyst using structured and unstructured data for market research.",
+    );
+    const makeTask = (agentInstance: Agent) => new Task({
+      description: [
+        "Conduct a thorough research about {weaviate_feature}.",
+        "Make sure you find any interesting and relevant information using the web and Weaviate blogs.",
+      ].join("\n"),
+      expectedOutput: "Write an industry specific analysis of why this Weaviate feature would be useful for your industry of expertise.",
+      agent: agentInstance,
+    });
+    const tasks = [
+      makeTask(biomedicalMarketingAgent),
+      makeTask(healthcareMarketingAgent),
+      makeTask(financialMarketingAgent),
+    ];
+    const weaviateFeatures = [
+      { weaviate_feature: "MUVERA" },
+      { weaviate_feature: "Multi-tenancy" },
+      { weaviate_feature: "Compliance" },
+      { weaviate_feature: "Hybrid Search" },
+    ];
+    const blogCrew = new Crew({
+      agents: [biomedicalMarketingAgent, healthcareMarketingAgent, financialMarketingAgent],
+      tasks,
+      process: Process.sequential,
+    });
+
+    const outputs = await blogCrew.kickoff_for_each({ inputs: weaviateFeatures });
+
+    expect(outputs).toHaveLength(4);
+    expect(outputs.map((output) => output.raw)).toEqual([
+      expect.stringContaining("MUVERA"),
+      expect.stringContaining("Multi-tenancy"),
+      expect.stringContaining("Compliance"),
+      expect.stringContaining("Hybrid Search"),
+    ]);
+    expect(prompts).toHaveLength(12);
+    for (const { weaviate_feature: feature } of weaviateFeatures) {
+      expect(prompts.filter((prompt) => prompt.includes(feature))).toHaveLength(3);
+    }
+    expect(blogCrew.agents.map((agentInstance) => agentInstance.tools.map((toolInstance) => toolInstance.name))).toEqual([
+      ["serper_search", "weaviate_vector_search"],
+      ["serper_search", "weaviate_vector_search"],
+      ["serper_search", "weaviate_vector_search"],
+    ]);
+    expect(blogCrew.usageMetrics.successfulRequests).toBe(12);
+  });
+
   it("runs the crewAI-examples game-builder CrewBase template deterministically", async () => {
     const prompts: string[] = [];
     const gameDesigns = {
