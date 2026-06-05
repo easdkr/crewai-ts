@@ -21404,6 +21404,34 @@ describe("flow runtime", () => {
     prepare_conversational_turn(plainFlow, { user_message: "hello" });
     expect(plainFlow.state.last_intent).toBeNull();
     expect(get_conversation_messages(plainFlow)).toEqual([{ role: "user", content: "hello" }]);
+
+    class ClassifierFlow extends Flow<{
+      id: string;
+      messages: Array<Record<string, unknown>>;
+    }> {
+      constructor() {
+        super({
+          initialState: {
+            id: "classifier-chat",
+            messages: [{ role: "user", content: "prior" }],
+          },
+        });
+      }
+    }
+
+    const classifier = new ClassifierFlow();
+    const collapseCalls: Array<{ feedback: string; outcomes: readonly string[] }> = [];
+    classifier._collapse_to_outcome = (feedback, outcomes) => {
+      collapseCalls.push({ feedback, outcomes });
+      return "help";
+    };
+    expect(classifier.classify_intent("I need help", ["order", "help"], {
+      llm: "gpt-4o-mini",
+      context: classifier.conversation_messages,
+    })).toBe("help");
+    expect(collapseCalls[0]).toMatchObject({ outcomes: ["order", "help"] });
+    expect(collapseCalls[0]?.feedback).toContain("I need help");
+    expect(collapseCalls[0]?.feedback).toContain("prior");
   });
 
   it("runs experimental conversational Flow turns through kickoff helpers", async () => {

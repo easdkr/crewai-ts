@@ -1553,6 +1553,30 @@ export class Flow<TState extends object = Record<string, unknown>> {
     return this.conversationStart();
   }
 
+  classifyIntent(
+    text: string,
+    outcomes: readonly string[],
+    options: { llm?: string | LLM | null; context?: readonly LLMMessage[] | null } = {},
+  ): string {
+    const history = options.context ?? this.conversationMessages;
+    const prompt = [
+      `Classify the user message into one of: ${outcomes.join(", ")}`,
+      "",
+      `User message: ${text}`,
+      "",
+      `Conversation history:\n${formatConversationMessages(history)}`,
+    ].join("\n");
+    return this._collapse_to_outcome(prompt, outcomes);
+  }
+
+  classify_intent(
+    text: string,
+    outcomes: readonly string[],
+    options: { llm?: string | LLM | null; context?: readonly LLMMessage[] | null } = {},
+  ): string {
+    return this.classifyIntent(text, outcomes, options);
+  }
+
   routeTurn(context: Record<string, unknown>): string | null {
     const config = getConversationalStaticConfig(this.constructor);
     if (!config) {
