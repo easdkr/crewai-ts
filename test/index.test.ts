@@ -27179,6 +27179,45 @@ describe("flow runtime", () => {
     expect(flow.state.fireCount).toBe(1);
   });
 
+  it("does not double-fire OR listeners across chained routers", async () => {
+    class ChainedRouterOrFlow extends Flow<{ fireCount: number }> {
+      constructor() {
+        super({ initialState: { fireCount: 0 } });
+      }
+
+      kick() {
+        return "kick";
+      }
+
+      routerA() {
+        return "SignalA";
+      }
+
+      routerB() {
+        return "SignalB";
+      }
+
+      handleEither() {
+        this.state.fireCount += 1;
+      }
+    }
+
+    const initializers = [
+      decorateMethod(ChainedRouterOrFlow, "kick", start() as unknown as Decorator),
+      decorateMethod(ChainedRouterOrFlow, "routerA", router("kick") as unknown as Decorator),
+      decorateMethod(ChainedRouterOrFlow, "routerB", router("SignalA") as unknown as Decorator),
+      decorateMethod(ChainedRouterOrFlow, "handleEither", listen(or_("SignalA", "SignalB")) as unknown as Decorator),
+    ];
+    const flow = new ChainedRouterOrFlow();
+    initializers.forEach((initializer) => {
+      initializer.call(flow);
+    });
+
+    await flow.kickoff();
+
+    expect(flow.state.fireCount).toBe(1);
+  });
+
   it("fires OR self-listening flow methods only once", async () => {
     class OrSelfListenFlow extends Flow<{ callCount: number }> {
       constructor() {
