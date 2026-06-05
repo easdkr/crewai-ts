@@ -3739,6 +3739,7 @@ async function preReviewHumanFeedbackOutput(
     if (config.learnStrict ?? config.learn_strict ?? false) {
       throw error;
     }
+    console.warn("HITL pre-review failed", error);
     return methodOutput;
   }
 }
@@ -3777,6 +3778,7 @@ async function distillHumanFeedbackLessons(
     if (config.learnStrict ?? config.learn_strict ?? false) {
       throw error;
     }
+    console.warn("HITL lesson distillation failed", error);
   }
 }
 

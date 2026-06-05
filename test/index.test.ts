@@ -25711,6 +25711,74 @@ describe("flow runtime", () => {
       .some((match) => match.record.content === "Mention release readiness evidence.")).toBe(true);
   });
 
+  it("warns and falls back to raw output when HITL pre-review fails outside strict mode", async () => {
+    const memory = new Memory({ rootScope: "/hitl-pre-review-warning" });
+    memory.remember("Always add citations.", { source: "hitl" });
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const shownOutputs: unknown[] = [];
+    const preReviewError = new Error("simulated pre-review failure");
+    const llm = {
+      call() {
+        throw preReviewError;
+      },
+    };
+    class ReviewFlow extends Flow {}
+    const flow = new ReviewFlow({ memory });
+
+    try {
+      await expect(flow.requestHumanFeedback("review", "raw draft", {
+        message: "Review",
+        learn: true,
+        llm,
+        provider: {
+          requestFeedback: (context) => {
+            shownOutputs.push(context.output);
+            return "";
+          },
+        },
+      })).resolves.toMatchObject({
+        output: "raw draft",
+        feedback: "",
+      });
+      expect(shownOutputs).toEqual(["raw draft"]);
+      expect(warnSpy).toHaveBeenCalledWith("HITL pre-review failed", preReviewError);
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it("warns and keeps flow output when HITL lesson distillation fails outside strict mode", async () => {
+    const memory = new Memory({ rootScope: "/hitl-distill-warning" });
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const distillError = new Error("simulated distill failure");
+    const llm = {
+      call() {
+        throw distillError;
+      },
+    };
+    class ReviewFlow extends Flow {}
+    const flow = new ReviewFlow({ memory });
+
+    try {
+      await expect(flow.requestHumanFeedback("review", "raw draft", {
+        message: "Review",
+        learn: true,
+        llm,
+        provider: {
+          requestFeedback: () => "please add citations",
+        },
+      })).resolves.toMatchObject({
+        output: "raw draft",
+        feedback: "please add citations",
+      });
+      expect(warnSpy).toHaveBeenCalledWith("HITL lesson distillation failed", distillError);
+    } finally {
+      warnSpy.mockRestore();
+    }
+
+    expect(memory.recall("citations", { scoreThreshold: null })).toEqual([]);
+  });
+
   it("includes human feedback metadata in flow structure", () => {
     class ReviewFlow extends Flow {
       generate() {
