@@ -24757,6 +24757,114 @@ describe("flow runtime", () => {
     expect(flow.state.saved).toEqual({ "./Practical_Flow_Patterns.md": expectedBook });
   });
 
+  it("runs the crewAI-examples email auto-responder polling workflow deterministically", async () => {
+    type Email = { id: string; threadId: string; snippet: string; sender: string };
+    type RawEmail = Email;
+
+    class EmailAutoResponderFlow extends Flow<{
+      emails: Email[];
+      checked_emails_ids: Set<string>;
+      inbox: RawEmail[];
+      crewInputs: string[];
+      selfEmail: string;
+      sleeps: number[];
+    }> {
+      constructor() {
+        super({
+          initialState: {
+            emails: [],
+            checked_emails_ids: new Set<string>(),
+            inbox: [
+              { id: "email-1", threadId: "thread-a", snippet: "Please review the launch notes", sender: "lead@example.com" },
+              { id: "email-2", threadId: "thread-a", snippet: "Same thread should be skipped", sender: "lead@example.com" },
+              { id: "email-3", threadId: "thread-b", snippet: "Already sent by us", sender: "me@example.com" },
+              { id: "email-4", threadId: "thread-c", snippet: "Need a budget answer", sender: "finance@example.com" },
+            ],
+            crewInputs: [],
+            selfEmail: "me@example.com",
+            sleeps: [],
+          },
+        });
+      }
+
+      checkEmail(checkedEmailsIds: Set<string>) {
+        const threadIds = new Set<string>();
+        const newEmails: Email[] = [];
+        for (const email of this.state.inbox) {
+          if (!checkedEmailsIds.has(email.id) && !threadIds.has(email.threadId) && email.sender !== this.state.selfEmail) {
+            threadIds.add(email.threadId);
+            newEmails.push({
+              id: email.id,
+              threadId: email.threadId,
+              snippet: email.snippet,
+              sender: email.sender,
+            });
+          }
+        }
+        for (const email of this.state.inbox) {
+          checkedEmailsIds.add(email.id);
+        }
+        return [newEmails, checkedEmailsIds] as const;
+      }
+
+      formatEmails(emails: Email[]) {
+        return emails
+          .map((email) => [
+            `ID: ${email.id}`,
+            `- Thread ID: ${email.threadId}`,
+            `- Snippet: ${email.snippet}`,
+            `- From: ${email.sender}`,
+            "--------",
+          ].join("\n"))
+          .join("\n");
+      }
+
+      fetchNewEmails() {
+        const [newEmails, updatedCheckedEmailIds] = this.checkEmail(this.state.checked_emails_ids);
+        this.state.emails = newEmails;
+        this.state.checked_emails_ids = updatedCheckedEmailIds;
+      }
+
+      generateDraftResponses() {
+        if (this.state.emails.length > 0) {
+          this.state.crewInputs.push(this.formatEmails(this.state.emails));
+          this.state.emails = [];
+        }
+        this.state.sleeps.push(180);
+      }
+    }
+
+    const initializers = [
+      decorateMethod(EmailAutoResponderFlow, "fetchNewEmails", start("wait_next_run") as unknown as Decorator),
+      decorateMethod(EmailAutoResponderFlow, "generateDraftResponses", listen("fetchNewEmails") as unknown as Decorator),
+    ];
+    const flow = new EmailAutoResponderFlow();
+    initializers.forEach((initializer) => {
+      initializer.call(flow);
+    });
+
+    await expect(flow.kickoff()).resolves.toBeUndefined();
+    await expect(flow.kickoff()).resolves.toBeUndefined();
+
+    expect(flow.state.crewInputs).toEqual([
+      [
+        "ID: email-1",
+        "- Thread ID: thread-a",
+        "- Snippet: Please review the launch notes",
+        "- From: lead@example.com",
+        "--------",
+        "ID: email-4",
+        "- Thread ID: thread-c",
+        "- Snippet: Need a budget answer",
+        "- From: finance@example.com",
+        "--------",
+      ].join("\n"),
+    ]);
+    expect([...flow.state.checked_emails_ids]).toEqual(["email-1", "email-2", "email-3", "email-4"]);
+    expect(flow.state.emails).toEqual([]);
+    expect(flow.state.sleeps).toEqual([180, 180]);
+  });
+
   it("exposes upstream Flow tracing disabled helper", () => {
     const previous = process.env.CREWAI_TRACING_DISABLED_MESSAGE_SHOWN;
     delete process.env.CREWAI_TRACING_DISABLED_MESSAGE_SHOWN;
