@@ -28697,6 +28697,167 @@ describe("flow runtime", () => {
     expect(flow.state.sleeps).toEqual([180, 180]);
   });
 
+  it("runs the crewAI-examples Flows 101 content-router notebook workflow deterministically", async () => {
+    type ContentType = "blog" | "newsletter" | "linkedin";
+    type ContentState = {
+      id: string;
+      url: string;
+      content_type: ContentType;
+      final_content: string;
+      runs: string[];
+      taskInputs: Array<{ contentType: ContentType; url: string; taskNames: string[] }>;
+    };
+    type ContentTask = { name: string; description: string; context?: ContentTask[] };
+    const savedStates: Array<{ flowId: string; methodName: string; state: unknown }> = [];
+    const fakePersistence = {
+      persistenceType: "NotebookPersistence",
+      persistence_type: "NotebookPersistence",
+      saveState(flowId: string, methodName: string, state: unknown) {
+        savedStates.push({ flowId, methodName, state });
+      },
+      loadState() {
+        return Promise.resolve(null);
+      },
+      async savePendingFeedback() {},
+      loadPendingFeedback() {
+        return Promise.resolve(null);
+      },
+      async clearPendingFeedback() {},
+    };
+
+    class ContentRouterFlow extends Flow<ContentState> {
+      constructor() {
+        super({
+          initialState: {
+            id: "content-router-flow",
+            url: "https://blog.crewai.com/crewai-on-2025-ia-enablers-list-with-openai-and-anthropic/",
+            content_type: "blog",
+            final_content: "",
+            runs: [],
+            taskInputs: [],
+          },
+        });
+      }
+
+      getUserInput() {
+        this.state.runs.push(`input:${this.state.content_type}:${this.state.url}`);
+        return "Input collected";
+      }
+
+      routeToCrew() {
+        this.state.runs.push(`route:${this.state.content_type}`);
+        return this.state.content_type;
+      }
+
+      createContentTasks(contentType: ContentType): ContentTask[] {
+        const researchTask = {
+          name: `${contentType}-research`,
+          description: `Analyze the content from ${this.state.url}`,
+        };
+        const writingTask = {
+          name: `${contentType}-writing`,
+          description: `Create ${contentType} content based on the research findings.`,
+          context: [researchTask],
+        };
+        this.state.taskInputs.push({
+          contentType,
+          url: this.state.url,
+          taskNames: [researchTask.name, writingTask.name],
+        });
+        return [researchTask, writingTask];
+      }
+
+      runContentCrew(contentType: ContentType, tasks: ContentTask[]) {
+        this.state.runs.push(`crew:${contentType}`);
+        expect(tasks[1]?.context).toEqual([tasks[0]]);
+        return new CrewOutput({
+          raw: `${contentType} content for ${this.state.url}`,
+        });
+      }
+
+      processBlogContent() {
+        const tasks = this.createContentTasks("blog");
+        const result = this.runContentCrew("blog", tasks);
+        this.state.final_content = result.raw;
+        return "Blog content created";
+      }
+
+      processNewsletterContent() {
+        const tasks = this.createContentTasks("newsletter");
+        const result = this.runContentCrew("newsletter", tasks);
+        this.state.final_content = result.raw;
+        return "Newsletter content created";
+      }
+
+      processLinkedinContent() {
+        const tasks = this.createContentTasks("linkedin");
+        const result = this.runContentCrew("linkedin", tasks);
+        this.state.final_content = result.raw;
+        return "LinkedIn content created";
+      }
+    }
+
+    const DecoratedContentRouterFlow = decorateClass(
+      ContentRouterFlow,
+      persist({ persistence: fakePersistence, verbose: true }) as unknown as Decorator,
+    );
+    const initializers = [
+      decorateMethod(DecoratedContentRouterFlow, "getUserInput", start() as unknown as Decorator),
+      decorateMethod(DecoratedContentRouterFlow, "routeToCrew", router("getUserInput") as unknown as Decorator),
+      decorateMethod(DecoratedContentRouterFlow, "processBlogContent", listen("blog") as unknown as Decorator),
+      decorateMethod(DecoratedContentRouterFlow, "processNewsletterContent", listen("newsletter") as unknown as Decorator),
+      decorateMethod(DecoratedContentRouterFlow, "processLinkedinContent", listen("linkedin") as unknown as Decorator),
+    ];
+    const flow = new DecoratedContentRouterFlow();
+    initializers.forEach((initializer) => {
+      initializer.call(flow);
+    });
+
+    await expect(flow.kickoff()).resolves.toBe("Blog content created");
+    expect(flow.state.final_content).toBe(
+      "blog content for https://blog.crewai.com/crewai-on-2025-ia-enablers-list-with-openai-and-anthropic/",
+    );
+    expect(flow.state.runs).toEqual([
+      "input:blog:https://blog.crewai.com/crewai-on-2025-ia-enablers-list-with-openai-and-anthropic/",
+      "route:blog",
+      "crew:blog",
+    ]);
+    expect(flow.state.taskInputs).toEqual([
+      {
+        contentType: "blog",
+        url: "https://blog.crewai.com/crewai-on-2025-ia-enablers-list-with-openai-and-anthropic/",
+        taskNames: ["blog-research", "blog-writing"],
+      },
+    ]);
+    expect(DecoratedContentRouterFlow.flow_definition().persist).toMatchObject({
+      enabled: true,
+      verbose: true,
+    });
+
+    flow.state.content_type = "newsletter";
+    flow.state.final_content = "";
+    flow.state.runs = [];
+    flow.state.taskInputs = [];
+    await expect(flow.kickoff()).resolves.toBe("Newsletter content created");
+    expect(flow.state.final_content).toBe(
+      "newsletter content for https://blog.crewai.com/crewai-on-2025-ia-enablers-list-with-openai-and-anthropic/",
+    );
+    expect(flow.state.runs).toEqual([
+      "input:newsletter:https://blog.crewai.com/crewai-on-2025-ia-enablers-list-with-openai-and-anthropic/",
+      "route:newsletter",
+      "crew:newsletter",
+    ]);
+    expect(flow.state.taskInputs[0]?.taskNames).toEqual(["newsletter-research", "newsletter-writing"]);
+    expect(savedStates.map(({ flowId, methodName }) => `${flowId}:${methodName}`)).toEqual([
+      "content-router-flow:getUserInput",
+      "content-router-flow:routeToCrew",
+      "content-router-flow:processBlogContent",
+      "content-router-flow:getUserInput",
+      "content-router-flow:routeToCrew",
+      "content-router-flow:processNewsletterContent",
+    ]);
+  });
+
   it("exposes upstream Flow tracing disabled helper", () => {
     const previous = process.env.CREWAI_TRACING_DISABLED_MESSAGE_SHOWN;
     delete process.env.CREWAI_TRACING_DISABLED_MESSAGE_SHOWN;
