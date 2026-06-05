@@ -23785,6 +23785,271 @@ describe("standard decorators", () => {
     expect(prompts.some((prompt) => prompt.includes("Outreach strategy: personalized Ruby on Rails"))).toBe(true);
   });
 
+  it("runs the crewAI-examples stock-analysis CrewBase workflow deterministically", async () => {
+    const prompts: string[] = [];
+    const scrapeWebsiteTool = new StructuredTool({
+      name: "Scrape Website",
+      description: "Scrape stock and market websites",
+      func: ({ url }: { url: string }) => `Scraped market page ${url}`,
+    });
+    const websiteSearchTool = new StructuredTool({
+      name: "Website Search",
+      description: "Search financial websites",
+      func: ({ query }: { query: string }) => `Website search result for ${query}`,
+    });
+    const calculatorTool = new StructuredTool({
+      name: "Calculator tool",
+      description: "Useful to perform mathematical calculations.",
+      func: ({ operation }: { operation: string }) => {
+        if (!/^[0-9+\-*/().% ]+$/.test(operation)) {
+          throw new Error("Calculation error: Invalid characters in mathematical expression");
+        }
+        return "42";
+      },
+    });
+    const sec10QTool = new StructuredTool({
+      name: "Search in the specified 10-Q form",
+      description: "Semantic search from a 10-Q form for a specified company.",
+      func: ({ search_query }: { search_query: string }) => `10-Q result for ${search_query}`,
+    });
+    const sec10KTool = new StructuredTool({
+      name: "Search in the specified 10-K form",
+      description: "Semantic search from a 10-K form for a specified company.",
+      func: ({ search_query }: { search_query: string }) => `10-K result for ${search_query}`,
+    });
+
+    class StockAnalysisCrew {
+      agents: Agent[] = [];
+      tasks: Task[] = [];
+      agents_config = {
+        financial_analyst: {
+          role: "The Best Financial Analyst",
+          goal: "Impress all customers with your financial data and market trends analysis",
+          backstory: "A seasoned financial analyst focused on stock market analysis and investment strategies.",
+        },
+        research_analyst: {
+          role: "Staff Research Analyst",
+          goal: "Being the best at gathering, interpreting data and amazing your customer with it",
+          backstory: "Skilled in sifting through news, company announcements, and market sentiment.",
+        },
+        investment_advisor: {
+          role: "Private Investment Advisor",
+          goal: "Impress your customers with full analyses over stocks and complete investment recommendations",
+          backstory: "Combines analytical insights to formulate strategic investment advice.",
+        },
+      };
+      tasks_config = {
+        research: {
+          description: [
+            "Collect and summarize recent news articles, press releases, and market analyses related to the {company_stock} stock and its industry.",
+            "Pay special attention to any significant events, market sentiments, and analysts' opinions.",
+            "Also include upcoming events like earnings and others.",
+          ].join("\n"),
+          expected_output: "A report that includes a comprehensive summary of the latest news and the stock ticker as {company_stock}.",
+        },
+        financial_analysis: {
+          description: [
+            "Conduct a thorough analysis of {company_stock}'s stock financial health and market performance.",
+            "This includes examining key financial metrics such as P/E ratio, EPS growth, revenue trends, and debt-to-equity ratio.",
+          ].join("\n"),
+          expected_output: "A clear assessment of the stock's financial standing, strengths, weaknesses, and peer comparison.",
+        },
+        filings_analysis: {
+          description: [
+            "Analyze the latest 10-Q and 10-K filings from EDGAR for the stock {company_stock} in question.",
+            "Focus on Management's Discussion and analysis, financial statements, insider trading activity, and disclosed risks.",
+          ].join("\n"),
+          expected_output: "An expanded report with significant findings from these filings.",
+        },
+        recommend: {
+          description: [
+            "Review and synthesize the analyses provided by the Financial Analyst and the Research Analyst.",
+            "Combine these insights to form a comprehensive investment recommendation.",
+            "Make sure to include a section that shows insider trading activity, and upcoming events like earnings.",
+          ].join("\n"),
+          expected_output: "A full detailed investment recommendation report with supporting evidence.",
+        },
+      };
+
+      createAgent(config: { role: string; goal: string; backstory: string }, tools: StructuredTool[]) {
+        return new Agent({
+          config,
+          role: config.role,
+          goal: config.goal,
+          backstory: config.backstory,
+          tools,
+          verbose: true,
+          llm: (messages) => {
+            const prompt = messages.at(-1)?.content ?? "";
+            prompts.push(prompt);
+            if (prompt.includes("Review and synthesize the analyses")) {
+              return "Recommendation: hold AMZN with attention to filings, revenue growth, and earnings events.";
+            }
+            if (prompt.includes("Analyze the latest 10-Q and 10-K filings")) {
+              return "Filings analysis: AMZN 10-K and 10-Q mention durable cloud revenue and operational risks.";
+            }
+            if (prompt.includes("Conduct a thorough analysis")) {
+              return "Financial analysis: AMZN revenue trend is positive and leverage remains manageable.";
+            }
+            return "Research summary: AMZN has recent AI, retail, and AWS market news.";
+          },
+        });
+      }
+
+      financial_agent() {
+        return this.createAgent(this.agents_config.financial_analyst, [
+          scrapeWebsiteTool,
+          websiteSearchTool,
+          calculatorTool,
+          sec10QTool,
+          sec10KTool,
+        ]);
+      }
+
+      research_analyst_agent() {
+        return this.createAgent(this.agents_config.research_analyst, [
+          scrapeWebsiteTool,
+          sec10QTool,
+          sec10KTool,
+        ]);
+      }
+
+      financial_analyst_agent() {
+        return this.createAgent(this.agents_config.financial_analyst, [
+          scrapeWebsiteTool,
+          websiteSearchTool,
+          calculatorTool,
+          sec10QTool,
+          sec10KTool,
+        ]);
+      }
+
+      investment_advisor_agent() {
+        return this.createAgent(this.agents_config.investment_advisor, [
+          scrapeWebsiteTool,
+          websiteSearchTool,
+          calculatorTool,
+        ]);
+      }
+
+      research() {
+        const config = this.tasks_config.research;
+        return new Task({
+          config,
+          description: config.description,
+          expected_output: config.expected_output,
+          agent: this.research_analyst_agent(),
+        });
+      }
+
+      financial_analysis() {
+        const config = this.tasks_config.financial_analysis;
+        return new Task({
+          config,
+          description: config.description,
+          expected_output: config.expected_output,
+          agent: this.financial_analyst_agent(),
+        });
+      }
+
+      filings_analysis() {
+        const config = this.tasks_config.filings_analysis;
+        return new Task({
+          config,
+          description: config.description,
+          expected_output: config.expected_output,
+          agent: this.financial_analyst_agent(),
+        });
+      }
+
+      recommend() {
+        const config = this.tasks_config.recommend;
+        return new Task({
+          config,
+          description: config.description,
+          expected_output: config.expected_output,
+          agent: this.investment_advisor_agent(),
+        });
+      }
+
+      crew() {
+        return new Crew({
+          agents: this.agents,
+          tasks: this.tasks,
+          process: Process.sequential,
+          verbose: true,
+        });
+      }
+    }
+
+    const DecoratedStockAnalysisCrew = decorateClass(StockAnalysisCrew, CrewBase as unknown as Decorator);
+    const initializers = [
+      decorateMethod(StockAnalysisCrew, "financial_agent", agent),
+      decorateMethod(StockAnalysisCrew, "research_analyst_agent", agent),
+      decorateMethod(StockAnalysisCrew, "financial_analyst_agent", agent),
+      decorateMethod(StockAnalysisCrew, "investment_advisor_agent", agent),
+      decorateMethod(StockAnalysisCrew, "research", task),
+      decorateMethod(StockAnalysisCrew, "financial_analysis", task),
+      decorateMethod(StockAnalysisCrew, "filings_analysis", task),
+      decorateMethod(StockAnalysisCrew, "recommend", task),
+      decorateMethod(StockAnalysisCrew, "crew", crew),
+    ];
+    const project = new DecoratedStockAnalysisCrew();
+    initializers.forEach((initializer) => {
+      initializer.call(project);
+    });
+
+    const crewInstance = project.crew();
+    expect(crewInstance.process).toBe(Process.sequential);
+    expect(project.agents.map((projectAgent: Agent) => projectAgent.role)).toEqual([
+      "Staff Research Analyst",
+      "The Best Financial Analyst",
+      "Private Investment Advisor",
+    ]);
+    expect(project.financial_analyst_agent().tools.map((toolInstance) => toolInstance.name)).toEqual([
+      "scrape_website",
+      "website_search",
+      "calculator_tool",
+      "search_in_the_specified_10_q_form",
+      "search_in_the_specified_10_k_form",
+    ]);
+    expect(project.research_analyst_agent().tools.map((toolInstance) => toolInstance.name)).toEqual([
+      "scrape_website",
+      "search_in_the_specified_10_q_form",
+      "search_in_the_specified_10_k_form",
+    ]);
+    expect(project.investment_advisor_agent().tools.map((toolInstance) => toolInstance.name)).toEqual([
+      "scrape_website",
+      "website_search",
+      "calculator_tool",
+    ]);
+    expect(project.tasks.map((projectTask: Task) => projectTask.name)).toEqual([
+      "research",
+      "financial_analysis",
+      "filings_analysis",
+      "recommend",
+    ]);
+
+    const output = await crewInstance.kickoff({
+      inputs: {
+        query: "What is the company you want to analyze?",
+        company_stock: "AMZN",
+      },
+    });
+
+    expect(output.raw).toContain("Recommendation: hold AMZN");
+    expect(output.tasksOutput.map((taskOutput) => taskOutput.raw)).toEqual([
+      "Research summary: AMZN has recent AI, retail, and AWS market news.",
+      "Financial analysis: AMZN revenue trend is positive and leverage remains manageable.",
+      "Filings analysis: AMZN 10-K and 10-Q mention durable cloud revenue and operational risks.",
+      "Recommendation: hold AMZN with attention to filings, revenue growth, and earnings events.",
+    ]);
+    expect(prompts.some((prompt) => prompt.includes("AMZN's stock financial health"))).toBe(true);
+    expect(prompts.some((prompt) => prompt.includes("stock AMZN in question"))).toBe(true);
+    expect(prompts.some((prompt) => prompt.includes("Research summary: AMZN has recent AI"))).toBe(true);
+    expect(prompts.some((prompt) => prompt.includes("Filings analysis: AMZN 10-K and 10-Q"))).toBe(true);
+  });
+
   it("infers names for directly awaited async task decorator factories", async () => {
     class AsyncTaskCrew {
       calls = 0;
