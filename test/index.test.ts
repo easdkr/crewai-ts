@@ -9838,6 +9838,77 @@ describe("telemetry compatibility", () => {
     expect(TraceCollectionListener._is_inside_active_flow_context()).toBe(false);
   });
 
+  it("finalizes backend trace batches once and clears sent event buffers", async () => {
+    const plusApi = {
+      send_trace_events: vi.fn(() => ({ status_code: 200 })),
+      finalize_trace_batch: vi.fn(() => ({ status_code: 200, json: () => ({}) })),
+      finalize_ephemeral_trace_batch: vi.fn(() => ({ status_code: 200, json: () => ({ access_code: "TRACE-test" }) })),
+    };
+    const batchManager = new TraceBatchManager({ plus_api: plusApi });
+    batchManager.initialize_batch(
+      { trace_id: "trace-1", privacy_level: "standard" },
+      { execution_type: "flow", flow_name: "TestFlow" },
+    );
+    batchManager.trace_batch_id = "batch-clear-test";
+    batchManager.traceBatchId = "batch-clear-test";
+    batchManager.backend_initialized = true;
+    batchManager.backendInitialized = true;
+    batchManager.add_event(new TraceEvent({
+      type: "llm_call_started",
+      source_type: "llm",
+      event_id: "evt-1",
+      emission_sequence: 1,
+    }));
+
+    await expect(batchManager._finalize_backend_batch()).resolves.toBe(true);
+
+    expect(plusApi.send_trace_events).toHaveBeenCalledWith(
+      "batch-clear-test",
+      expect.objectContaining({
+        events: [expect.objectContaining({ type: "llm_call_started", emissionSequence: 1 })],
+        batch_metadata: { events_count: 1, batch_sequence: 1, is_final_batch: true },
+      }),
+    );
+    expect(plusApi.finalize_trace_batch).toHaveBeenCalledWith(
+      "batch-clear-test",
+      expect.objectContaining({ status: "completed", final_event_count: 1 }),
+    );
+    expect(batchManager.event_buffer).toEqual([]);
+
+    const ephemeralManager = new TraceBatchManager({ plus_api: plusApi });
+    ephemeralManager.trace_batch_id = "ephemeral-batch-id";
+    ephemeralManager.traceBatchId = "ephemeral-batch-id";
+    ephemeralManager.is_current_batch_ephemeral = true;
+    ephemeralManager.isCurrentBatchEphemeral = true;
+
+    await expect(ephemeralManager._finalize_backend_batch()).resolves.toBe(true);
+
+    expect(plusApi.finalize_ephemeral_trace_batch).toHaveBeenCalledWith(
+      "ephemeral-batch-id",
+      expect.objectContaining({ status: "completed", final_event_count: 0 }),
+    );
+    expect(ephemeralManager.ephemeral_trace_url).toContain("ephemeral_trace_batches/ephemeral-batch-id");
+    expect(ephemeralManager.ephemeral_trace_url).not.toContain("None");
+
+    const serializedApi = {
+      finalize_ephemeral_trace_batch: vi.fn(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 1));
+        return { status_code: 200, json: () => ({}) };
+      }),
+    };
+    const serializedManager = new TraceBatchManager({ plus_api: serializedApi });
+    serializedManager.trace_batch_id = "serialized-batch-id";
+    serializedManager.traceBatchId = "serialized-batch-id";
+    serializedManager.is_current_batch_ephemeral = true;
+    serializedManager.isCurrentBatchEphemeral = true;
+
+    await expect(Promise.all([
+      serializedManager._finalize_backend_batch(),
+      serializedManager._finalize_backend_batch(),
+    ])).resolves.toEqual([true, true]);
+    expect(serializedApi.finalize_ephemeral_trace_batch).toHaveBeenCalledTimes(1);
+  });
+
   it("records task, tool, flow, and feature spans without network exporters", () => {
     const telemetry = new Telemetry();
     telemetry.clearSpans();

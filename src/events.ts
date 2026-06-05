@@ -30,6 +30,7 @@ import {
   getBeforeToolCallHooks,
 } from "./hooks.js";
 import type { CrewOutput, TaskOutput } from "./outputs.js";
+import { PlusAPI, type TraceEventsPayload, type TraceFinalizePayload } from "./plus-api.js";
 import { RuntimeState } from "./state.js";
 import { Telemetry } from "./telemetry.js";
 import {
@@ -4198,6 +4199,36 @@ export class TraceEvent extends BaseEvent {
   }
 }
 
+type TraceBackendResponse = {
+  status?: number;
+  status_code?: number;
+  ok?: boolean;
+  json?: () => unknown;
+};
+
+type TraceBackendApi = {
+  sendTraceEvents?: (traceBatchId: string, payload: TraceEventsPayload) => unknown;
+  send_trace_events?: (traceBatchId: string, payload: TraceEventsPayload) => unknown;
+  sendEphemeralTraceEvents?: (traceBatchId: string, payload: TraceEventsPayload) => unknown;
+  send_ephemeral_trace_events?: (traceBatchId: string, payload: TraceEventsPayload) => unknown;
+  finalizeTraceBatch?: (traceBatchId: string, payload: TraceFinalizePayload) => unknown;
+  finalize_trace_batch?: (traceBatchId: string, payload: TraceFinalizePayload) => unknown;
+  finalizeEphemeralTraceBatch?: (traceBatchId: string, payload: TraceFinalizePayload) => unknown;
+  finalize_ephemeral_trace_batch?: (traceBatchId: string, payload: TraceFinalizePayload) => unknown;
+};
+
+function traceResponseOk(response: unknown): boolean {
+  const record = response as TraceBackendResponse | null | undefined;
+  if (!record) {
+    return true;
+  }
+  if (typeof record.ok === "boolean") {
+    return record.ok;
+  }
+  const status = record.status ?? record.status_code;
+  return typeof status === "number" ? status >= 200 && status < 300 : true;
+}
+
 function normalizeTraceBatchInitialization(
   userContextOrOptions: Record<string, string> | {
     userContext?: Record<string, string>;
@@ -4240,6 +4271,8 @@ function normalizeTraceBatchInitialization(
 }
 
 export class TraceBatchManager {
+  readonly plusApi: TraceBackendApi;
+  readonly plus_api: TraceBackendApi;
   isCurrentBatchEphemeral = false;
   is_current_batch_ephemeral = false;
   traceBatchId: string | null = null;
@@ -4264,6 +4297,12 @@ export class TraceBatchManager {
   ephemeralTraceUrl: string | null = null;
   ephemeral_trace_url: string | null = null;
   private pendingEventsCount = 0;
+  private backendFinalizePromise: Promise<boolean> | null = null;
+
+  constructor(options: { plusApi?: TraceBackendApi; plus_api?: TraceBackendApi } = {}) {
+    this.plusApi = options.plusApi ?? options.plus_api ?? new PlusAPI();
+    this.plus_api = this.plusApi;
+  }
 
   initializeBatch(
     userContext: Record<string, string> | {
@@ -4357,6 +4396,90 @@ export class TraceBatchManager {
 
   finalize_batch(): TraceBatch | null {
     return this.finalizeBatch();
+  }
+
+  async finalizeBackendBatch(): Promise<boolean> {
+    if (this.batchFinalized) {
+      return true;
+    }
+    if (this.backendFinalizePromise) {
+      return await this.backendFinalizePromise;
+    }
+    this.backendFinalizePromise = this.finalizeBackendBatchOnce();
+    try {
+      return await this.backendFinalizePromise;
+    } finally {
+      this.backendFinalizePromise = null;
+    }
+  }
+
+  async _finalize_backend_batch(): Promise<boolean> {
+    return await this.finalizeBackendBatch();
+  }
+
+  private async finalizeBackendBatchOnce(): Promise<boolean> {
+    const capturedBatchId = this.traceBatchId ?? this.trace_batch_id ?? this.currentBatch?.batchId ?? null;
+    if (!capturedBatchId) {
+      return false;
+    }
+    const isEphemeral = this.isCurrentBatchEphemeral || this.is_current_batch_ephemeral;
+    const eventPayload: TraceEventsPayload = {
+      events: this.eventBuffer.map((event) => event.toJSON()),
+      batch_metadata: {
+        events_count: this.eventBuffer.length,
+        batch_sequence: 1,
+        is_final_batch: true,
+      },
+    };
+    const sendEvents = isEphemeral
+      ? this.plusApi.sendEphemeralTraceEvents ?? this.plusApi.send_ephemeral_trace_events
+      : this.plusApi.sendTraceEvents ?? this.plusApi.send_trace_events;
+    const finalizeTrace = isEphemeral
+      ? this.plusApi.finalizeEphemeralTraceBatch ?? this.plusApi.finalize_ephemeral_trace_batch
+      : this.plusApi.finalizeTraceBatch ?? this.plusApi.finalize_trace_batch;
+
+    if (sendEvents && eventPayload.events.length > 0) {
+      const response = await sendEvents.call(this.plusApi, capturedBatchId, eventPayload);
+      if (!traceResponseOk(response)) {
+        return false;
+      }
+    }
+    if (finalizeTrace) {
+      const response = await finalizeTrace.call(this.plusApi, capturedBatchId, {
+        status: "completed",
+        duration_ms: this.calculateDuration("execution"),
+        final_event_count: eventPayload.events.length,
+      });
+      if (!traceResponseOk(response)) {
+        return false;
+      }
+      if (isEphemeral) {
+        const responsePayload = await this.readTraceResponseJson(response);
+        const accessCode = typeof responsePayload.access_code === "string" ? responsePayload.access_code : null;
+        this.ephemeralTraceUrl = accessCode
+          ? `ephemeral_trace_batches/${capturedBatchId}?access_code=${accessCode}`
+          : `ephemeral_trace_batches/${capturedBatchId}`;
+        this.ephemeral_trace_url = this.ephemeralTraceUrl;
+      }
+    }
+
+    const finalized = this.finalizeBatch();
+    if (!finalized) {
+      this.setBatchFinalized(true);
+      this.eventBuffer.length = 0;
+    }
+    return true;
+  }
+
+  private async readTraceResponseJson(response: unknown): Promise<Record<string, unknown>> {
+    const json = (response as TraceBackendResponse | null | undefined)?.json;
+    if (!json) {
+      return {};
+    }
+    const payload = await json.call(response);
+    return payload !== null && typeof payload === "object" && !Array.isArray(payload)
+      ? payload as Record<string, unknown>
+      : {};
   }
 
   hasEvents(): boolean {

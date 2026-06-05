@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 1123 passing tests.
+- Test suite: 1124 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -108,6 +108,7 @@ This register is the source of truth for continuing porting work while parity sc
 - CrewAI cloud/platform subscription features are outside this port's scope unless they can be represented as local deterministic metadata with no network side effects.
 - Telemetry and trace upload paths are deterministic local span/event recordings. OpenTelemetry/remote trace exporters remain out of the default gate.
 - Trace batch lifecycle is release-gated for upstream local invariants in the deterministic shim: finalization clears the event buffer, sets upstream-style `batch_finalized` / `_batch_finalized` guards, prevents duplicate local finalization, resets the guard on the next batch initialization, and duplicate upstream-style object initialization merges execution metadata without replacing the batch id.
+- Trace backend batch finalization is release-gated with fake Plus API clients: successful sends clear the local event buffer, ephemeral finalization preserves the captured batch id in the trace URL after manager state changes, and concurrent backend finalizers serialize to a single Plus API finalize call.
 - RAG/vector storage integrations use deterministic in-memory or fake-client-backed shims in the default gate. Real Qdrant, LanceDB, ChromaDB, and provider SDK integration can be added later as optional peer-dependency coverage, but should not be required for release validation.
 - RAG embedding provider backward compatibility is release-gated for the upstream `google` provider alias and legacy `model` config keys: `buildEmbedderFromDict` resolves `google` to the Google Generative AI provider, network-backed providers accept `model` as `model_name`, local runtime-backed providers (`ollama`, `text2vec`, `sentence-transformer`, `instructor`, `openclip`) preserve upstream model aliases, Google preserves task type, and request payloads are built deterministically with mocked fetches.
 - KnowledgeStorage invalid embedding configuration is release-gated for upstream constructor failure behavior: unsupported embedder providers fail during storage initialization with a clear provider error instead of creating a broken storage client.
