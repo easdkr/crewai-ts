@@ -24824,6 +24824,291 @@ describe("standard decorators", () => {
       .toContain("Identify the next big trend in AI");
   });
 
+  it("runs the crewAI-examples NVIDIA marketing strategy integration deterministically", async () => {
+    const invokeCalls: Array<Record<string, unknown>> = [];
+    const serperTool = new StructuredTool({
+      name: "Serper Dev Tool",
+      description: "Search NVIDIA market evidence",
+      func: () => "search evidence",
+    });
+    const scrapeWebsiteTool = new StructuredTool({
+      name: "Scrape Website Tool",
+      description: "Scrape NVIDIA pages",
+      func: () => "website evidence",
+    });
+    const marketStrategyParser = (raw: string) => JSON.parse(raw) as {
+      name: string;
+      tatics: string[];
+      channels: string[];
+      KPIs: string[];
+    };
+    const campaignIdeaParser = (raw: string) => JSON.parse(raw) as {
+      name: string;
+      description: string;
+      audience: string;
+      channel: string;
+    };
+    const copyParser = (raw: string) => JSON.parse(raw) as { title: string; body: string };
+
+    class ChatNvidiaMarketingShim {
+      readonly model = "meta/llama-3.1-8b-instruct";
+
+      invoke(params: Record<string, unknown>) {
+        invokeCalls.push(params);
+        const prompt = (params.input as readonly LLMMessage[]).at(-1)?.content ?? "";
+        if (prompt.includes("Create marketing copies")) {
+          return {
+            content: JSON.stringify({
+              title: "Launch NIM workflows",
+              body: "NVIDIA NIM helps enterprise teams deploy responsive AI automation.",
+            }),
+          };
+        }
+        if (prompt.includes("Develop creative marketing campaign ideas")) {
+          return {
+            content: JSON.stringify({
+              name: "NIM Impact Stories",
+              description: "Customer proof campaign for NIM automation",
+              audience: "Enterprise AI leaders",
+              channel: "LinkedIn",
+            }),
+          };
+        }
+        if (prompt.includes("Formulate a comprehensive marketing strategy")) {
+          return {
+            content: JSON.stringify({
+              name: "NVIDIA NIM Enterprise Strategy",
+              tatics: ["customer stories", "technical webinars"],
+              channels: ["LinkedIn", "partner email"],
+              KPIs: ["qualified leads", "NIM trials"],
+            }),
+          };
+        }
+        return { content: "NVIDIA market and project research notes." };
+      }
+    }
+
+    class NvllmMarketingShim {
+      constructor(readonly options: { llm: ChatNvidiaMarketingShim; model_str: string; api_key: string }) {}
+
+      call(messages: readonly LLMMessage[]) {
+        return this.options.llm.invoke({
+          model: this.options.llm.model,
+          input: messages,
+          timeout: null,
+          temperature: null,
+          top_p: null,
+          n: null,
+          stop: null,
+          max_tokens: null,
+          presence_penalty: null,
+          frequency_penalty: null,
+          logit_bias: null,
+          response_format: null,
+          seed: null,
+          logprobs: null,
+          top_logprobs: null,
+          api_key: this.options.api_key,
+        }).content;
+      }
+    }
+
+    const defaultLlm = new NvllmMarketingShim({
+      model_str: "nvidia_nim/meta/llama-3.1-8b-instruct",
+      llm: new ChatNvidiaMarketingShim(),
+      api_key: "nim-key",
+    });
+
+    class NvidiaMarketingPostsCrew {
+      agents: Agent[] = [];
+      tasks: Task[] = [];
+      agents_config = {
+        lead_market_analyst: {
+          role: "Lead Market Analyst",
+          goal: "Conduct amazing analysis of the products and competitors",
+          backstory: "Dissects online business landscapes.",
+        },
+        chief_marketing_strategist: {
+          role: "Chief Marketing Strategist",
+          goal: "Synthesize product analysis into marketing strategies",
+          backstory: "Crafts strategies that drive success.",
+        },
+        creative_content_creator: {
+          role: "Creative Content Creator",
+          goal: "Develop compelling social campaign copy",
+          backstory: "Turns strategy into engaging stories.",
+        },
+      };
+      tasks_config = {
+        research_task: {
+          description: [
+            "Conduct a thorough research about the customer and competitors in the context of {customer_domain}.",
+            "We are working with them on the following project: {project_description}.",
+          ].join("\n"),
+          expected_output: "A complete report on the customer and their competitors.",
+        },
+        project_understanding_task: {
+          description: "Understand the project details and the target audience for {project_description}.",
+          expected_output: "A detailed summary of the project and a profile of the target audience.",
+        },
+        marketing_strategy_task: {
+          description: "Formulate a comprehensive marketing strategy for {project_description} of {customer_domain}.",
+          expected_output: "A detailed marketing strategy with name, tatics, channels and KPIs.",
+        },
+        campaign_idea_task: {
+          description: "Develop creative marketing campaign ideas for {project_description}.",
+          expected_output: "A list of campaign ideas with descriptions and impact.",
+        },
+        copy_creation_task: {
+          description: "Create marketing copies based on the approved campaign ideas for {project_description}.",
+          expected_output: "Marketing copies for each campaign idea.",
+        },
+      };
+
+      createAgent(config: { role: string; goal: string; backstory: string }, tools: StructuredTool[] = []) {
+        return new Agent({
+          config,
+          role: config.role,
+          goal: config.goal,
+          backstory: config.backstory,
+          tools,
+          verbose: true,
+          memory: false,
+          llm: (messages) => defaultLlm.call(messages),
+        });
+      }
+
+      lead_market_analyst() {
+        return this.createAgent(this.agents_config.lead_market_analyst, [serperTool, scrapeWebsiteTool]);
+      }
+
+      chief_marketing_strategist() {
+        return this.createAgent(this.agents_config.chief_marketing_strategist, [serperTool, scrapeWebsiteTool]);
+      }
+
+      creative_content_creator() {
+        return this.createAgent(this.agents_config.creative_content_creator);
+      }
+
+      research_task() {
+        const config = this.tasks_config.research_task;
+        return new Task({
+          config,
+          description: config.description,
+          expected_output: config.expected_output,
+          agent: this.lead_market_analyst(),
+        });
+      }
+
+      project_understanding_task() {
+        const config = this.tasks_config.project_understanding_task;
+        return new Task({
+          config,
+          description: config.description,
+          expected_output: config.expected_output,
+          agent: this.chief_marketing_strategist(),
+        });
+      }
+
+      marketing_strategy_task() {
+        const config = this.tasks_config.marketing_strategy_task;
+        return new Task({
+          config,
+          description: config.description,
+          expected_output: config.expected_output,
+          agent: this.chief_marketing_strategist(),
+          output_pydantic: marketStrategyParser,
+        });
+      }
+
+      campaign_idea_task() {
+        const config = this.tasks_config.campaign_idea_task;
+        return new Task({
+          config,
+          description: config.description,
+          expected_output: config.expected_output,
+          agent: this.creative_content_creator(),
+          output_pydantic: campaignIdeaParser,
+        });
+      }
+
+      copy_creation_task() {
+        const config = this.tasks_config.copy_creation_task;
+        return new Task({
+          config,
+          description: config.description,
+          expected_output: config.expected_output,
+          agent: this.creative_content_creator(),
+          context: [this.marketing_strategy_task(), this.campaign_idea_task()],
+          output_pydantic: copyParser,
+        });
+      }
+
+      crew() {
+        return new Crew({
+          agents: this.agents,
+          tasks: this.tasks,
+          process: Process.sequential,
+        });
+      }
+    }
+
+    const DecoratedNvidiaMarketingPostsCrew = decorateClass(NvidiaMarketingPostsCrew, CrewBase as unknown as Decorator);
+    const project = new DecoratedNvidiaMarketingPostsCrew();
+    [
+      decorateMethod(NvidiaMarketingPostsCrew, "lead_market_analyst", agent),
+      decorateMethod(NvidiaMarketingPostsCrew, "chief_marketing_strategist", agent),
+      decorateMethod(NvidiaMarketingPostsCrew, "creative_content_creator", agent),
+      decorateMethod(NvidiaMarketingPostsCrew, "research_task", task),
+      decorateMethod(NvidiaMarketingPostsCrew, "project_understanding_task", task),
+      decorateMethod(NvidiaMarketingPostsCrew, "marketing_strategy_task", task),
+      decorateMethod(NvidiaMarketingPostsCrew, "campaign_idea_task", task),
+      decorateMethod(NvidiaMarketingPostsCrew, "copy_creation_task", task),
+      decorateMethod(NvidiaMarketingPostsCrew, "crew", crew),
+    ].forEach((initializer) => {
+      initializer.call(project);
+    });
+
+    const crewInstance = project.crew();
+    expect(crewInstance.process).toBe(Process.sequential);
+    expect(defaultLlm.options.model_str).toBe("nvidia_nim/meta/llama-3.1-8b-instruct");
+    expect(project.lead_market_analyst().tools.map((toolInstance) => toolInstance.name)).toEqual([
+      "serper_dev_tool",
+      "scrape_website_tool",
+    ]);
+    expect(project.marketing_strategy_task().output_pydantic).toBe(marketStrategyParser);
+    expect(project.campaign_idea_task().output_pydantic).toBe(campaignIdeaParser);
+    expect(project.copy_creation_task().context?.map((contextTask) => contextTask.name)).toEqual([
+      "marketing_strategy_task",
+      "campaign_idea_task",
+    ]);
+
+    const output = await crewInstance.kickoff({
+      inputs: {
+        customer_domain: "nvidia.com/en-in/ai/",
+        project_description: "Create a marketing campaign for NVIDIA NIM enterprise adoption.",
+      },
+    });
+
+    expect(output.raw).toContain("Launch NIM workflows");
+    expect(output.tasksOutput[2]?.pydantic).toMatchObject({
+      name: "NVIDIA NIM Enterprise Strategy",
+      channels: ["LinkedIn", "partner email"],
+    });
+    expect(output.tasksOutput[3]?.pydantic).toMatchObject({
+      name: "NIM Impact Stories",
+      channel: "LinkedIn",
+    });
+    expect(output.tasksOutput[4]?.pydantic).toMatchObject({
+      title: "Launch NIM workflows",
+    });
+    expect(invokeCalls.every((call) => call.api_key === "nim-key")).toBe(true);
+    expect(invokeCalls.some((call) => String((call.input as readonly LLMMessage[]).at(-1)?.content)
+      .includes("nvidia.com/en-in/ai/"))).toBe(true);
+    expect(invokeCalls.some((call) => String((call.input as readonly LLMMessage[]).at(-1)?.content)
+      .includes("NVIDIA NIM Enterprise Strategy"))).toBe(true);
+  });
+
   it("infers names for directly awaited async task decorator factories", async () => {
     class AsyncTaskCrew {
       calls = 0;
