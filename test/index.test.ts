@@ -29181,6 +29181,126 @@ describe("flow runtime", () => {
     ]);
   });
 
+  it("runs the crewAI-examples LangGraph RAG notebook workflow deterministically", () => {
+    type Message = { role: string; content: string; toolCalls?: string[] };
+    type AgentState = { messages: Message[] };
+    const events: string[] = [];
+    const retrievalTool = {
+      name: "retrieve_blog_posts",
+      description: "Search Lilian Weng blog posts on agents, prompts, and adversarial attacks.",
+      invoke(question: string) {
+        events.push(`retrieve:${question}`);
+        return question.includes("improved")
+          ? "Relevant context: memory can be short-term, long-term, and reflection memory."
+          : "Irrelevant context: prompt engineering overview.";
+      },
+    };
+
+    function toolsCondition(state: AgentState) {
+      return state.messages.at(-1)?.toolCalls?.length ? "tools" : "end";
+    }
+
+    function agent(): Partial<AgentState> {
+      events.push("agent");
+      return {
+        messages: [{
+          role: "assistant",
+          content: "I should retrieve blog context.",
+          toolCalls: [retrievalTool.name],
+        }],
+      };
+    }
+
+    function retrieve(state: AgentState): Partial<AgentState> {
+      const question = [...state.messages].reverse().find((message) => message.role === "user")?.content ?? "";
+      return {
+        messages: [{
+          role: "tool",
+          content: retrievalTool.invoke(question),
+        }],
+      };
+    }
+
+    function gradeDocuments(state: AgentState) {
+      const question = state.messages[0]?.content ?? "";
+      const docs = state.messages.at(-1)?.content ?? "";
+      events.push(`grade:${docs.includes("Relevant context") ? "yes" : "no"}`);
+      return docs.toLowerCase().includes("memory") && question.toLowerCase().includes("memory")
+        ? "generate"
+        : "rewrite";
+    }
+
+    function rewrite(state: AgentState): Partial<AgentState> {
+      const question = state.messages[0]?.content ?? "";
+      events.push("rewrite");
+      return {
+        messages: [{
+          role: "user",
+          content: `improved ${question}`,
+        }],
+      };
+    }
+
+    function generate(state: AgentState): Partial<AgentState> {
+      const question = [...state.messages].reverse().find((message) => message.role === "user")?.content ?? "";
+      const docs = state.messages.at(-1)?.content ?? "";
+      events.push("generate");
+      return {
+        messages: [{
+          role: "assistant",
+          content: `Answer for "${question}" using ${docs}`,
+        }],
+      };
+    }
+
+    function appendMessages(state: AgentState, update: Partial<AgentState>) {
+      state.messages.push(...(update.messages ?? []));
+    }
+
+    function runGraph(input: AgentState) {
+      const state: AgentState = { messages: [...input.messages] };
+      for (let step = 0; step < 6; step += 1) {
+        appendMessages(state, agent());
+        if (toolsCondition(state) !== "tools") {
+          break;
+        }
+        appendMessages(state, retrieve(state));
+        const route = gradeDocuments(state);
+        if (route === "generate") {
+          appendMessages(state, generate(state));
+          break;
+        }
+        appendMessages(state, rewrite(state));
+      }
+      return state;
+    }
+
+    const state = runGraph({
+      messages: [{ role: "user", content: "What does Lilian Weng say about the types of agent memory?" }],
+    });
+
+    expect(events).toEqual([
+      "agent",
+      "retrieve:What does Lilian Weng say about the types of agent memory?",
+      "grade:no",
+      "rewrite",
+      "agent",
+      "retrieve:improved What does Lilian Weng say about the types of agent memory?",
+      "grade:yes",
+      "generate",
+    ]);
+    expect(state.messages.map((message) => message.role)).toEqual([
+      "user",
+      "assistant",
+      "tool",
+      "user",
+      "assistant",
+      "tool",
+      "assistant",
+    ]);
+    expect(state.messages.at(-1)?.content).toContain("short-term, long-term, and reflection memory");
+  });
+
   it("exposes upstream Flow tracing disabled helper", () => {
     const previous = process.env.CREWAI_TRACING_DISABLED_MESSAGE_SHOWN;
     delete process.env.CREWAI_TRACING_DISABLED_MESSAGE_SHOWN;
