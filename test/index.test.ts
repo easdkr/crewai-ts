@@ -24631,6 +24631,132 @@ describe("flow runtime", () => {
     expect(flow.state.slackMessages).toEqual(["2 New tasks have been added to Trello!"]);
   });
 
+  it("runs the crewAI-examples write-a-book flow fan-out and join deterministically", async () => {
+    type ChapterOutline = {
+      title: string;
+      description: string;
+      model_dump_json: () => string;
+    };
+    type Chapter = { title: string; content: string };
+    type ChapterInput = {
+      goal: string;
+      topic: string;
+      chapter_title: string;
+      chapter_description: string;
+      book_outline: string[];
+    };
+
+    class BookFlow extends Flow<{
+      title: string;
+      book: Chapter[];
+      book_outline: ChapterOutline[];
+      topic: string;
+      goal: string;
+      chapterInputs: ChapterInput[];
+      saved: Record<string, string>;
+    }> {
+      constructor() {
+        super({
+          initialState: {
+            title: "Practical Flow Patterns",
+            book: [],
+            book_outline: [],
+            topic: "CrewAI flows",
+            goal: "Explain deterministic orchestration",
+            chapterInputs: [],
+            saved: {},
+          },
+        });
+      }
+
+      generateBookOutline() {
+        this.state.book_outline = [
+          {
+            title: "Outline First",
+            description: "Derive a stable plan before writing.",
+            model_dump_json() {
+              return JSON.stringify({ title: this.title, description: this.description });
+            },
+          },
+          {
+            title: "Join Results",
+            description: "Merge chapter outputs in outline order.",
+            model_dump_json() {
+              return JSON.stringify({ title: this.title, description: this.description });
+            },
+          },
+        ];
+        return this.state.book_outline;
+      }
+
+      async writeChapters() {
+        const serializedOutline = this.state.book_outline.map((outline) => outline.model_dump_json());
+        const chapters = await Promise.all(
+          this.state.book_outline.map(async (chapterOutline) => {
+            await Promise.resolve();
+            const input = {
+              goal: this.state.goal,
+              topic: this.state.topic,
+              chapter_title: chapterOutline.title,
+              chapter_description: chapterOutline.description,
+              book_outline: serializedOutline,
+            };
+            this.state.chapterInputs.push(input);
+            return {
+              title: chapterOutline.title,
+              content: `${input.goal}: ${input.chapter_title} for ${input.topic}`,
+            };
+          }),
+        );
+        this.state.book.push(...chapters);
+        return chapters;
+      }
+
+      async joinAndSaveChapter() {
+        await Promise.resolve();
+        const bookContent = this.state.book.map((chapter) => `# ${chapter.title}\n\n${chapter.content}\n\n`).join("");
+        const fileName = `./${this.state.title.replaceAll(" ", "_")}.md`;
+        this.state.saved[fileName] = bookContent;
+        return bookContent;
+      }
+    }
+
+    const initializers = [
+      decorateMethod(BookFlow, "generateBookOutline", start() as unknown as Decorator),
+      decorateMethod(BookFlow, "writeChapters", listen("generateBookOutline") as unknown as Decorator),
+      decorateMethod(BookFlow, "joinAndSaveChapter", listen("writeChapters") as unknown as Decorator),
+    ];
+    const flow = new BookFlow();
+    initializers.forEach((initializer) => {
+      initializer.call(flow);
+    });
+
+    const expectedBook =
+      "# Outline First\n\nExplain deterministic orchestration: Outline First for CrewAI flows\n\n" +
+      "# Join Results\n\nExplain deterministic orchestration: Join Results for CrewAI flows\n\n";
+    await expect(flow.kickoff()).resolves.toBe(expectedBook);
+
+    const serializedOutline = flow.state.book_outline.map((outline) => outline.model_dump_json());
+    expect(flow.state.book.map((chapter) => chapter.title)).toEqual(["Outline First", "Join Results"]);
+    expect(flow.state.chapterInputs).toEqual([
+      {
+        goal: "Explain deterministic orchestration",
+        topic: "CrewAI flows",
+        chapter_title: "Outline First",
+        chapter_description: "Derive a stable plan before writing.",
+        book_outline: serializedOutline,
+      },
+      {
+        goal: "Explain deterministic orchestration",
+        topic: "CrewAI flows",
+        chapter_title: "Join Results",
+        chapter_description: "Merge chapter outputs in outline order.",
+        book_outline: serializedOutline,
+      },
+    ]);
+    expect(flow.state.saved).toEqual({ "./Practical_Flow_Patterns.md": expectedBook });
+  });
+
   it("exposes upstream Flow tracing disabled helper", () => {
     const previous = process.env.CREWAI_TRACING_DISABLED_MESSAGE_SHOWN;
     delete process.env.CREWAI_TRACING_DISABLED_MESSAGE_SHOWN;
