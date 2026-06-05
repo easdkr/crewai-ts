@@ -8431,6 +8431,58 @@ describe("agent utility helpers", () => {
     expect(await availableFunctions.search_tool?.({ query: "CrewAI" })).toBe("searched CrewAI");
   });
 
+  it("preserves upstream optional null tool fields in OpenAI strict schemas", () => {
+    const mcpStyle = new StructuredTool({
+      name: "MCP Search",
+      description: "Search with optional filters",
+      argsSchema: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "Search query" },
+          filter_type: {
+            anyOf: [
+              { type: "string", enum: ["internal", "user"] },
+              { type: "null" },
+            ],
+            description: "Filter type",
+            default: null,
+          },
+          page_id: {
+            anyOf: [
+              { type: "string", description: "Page UUID" },
+              { type: "null" },
+            ],
+            default: null,
+          },
+        },
+        required: ["query"],
+      },
+      func: () => "result",
+    });
+
+    const [schemas] = convertToolsToOpenAISchema([mcpStyle]);
+    const parameters = schemas[0]?.function.parameters;
+    const properties = parameters?.properties as Record<string, unknown> | undefined;
+
+    expect(parameters?.required).toEqual(["query", "filter_type", "page_id"]);
+    expect(properties?.query).toEqual({ type: "string", description: "Search query" });
+    expect(properties?.filter_type).toEqual({
+      anyOf: [
+        { type: "string", enum: ["internal", "user"] },
+        { type: "null" },
+      ],
+      description: "Filter type",
+      default: null,
+    });
+    expect(properties?.page_id).toEqual({
+      anyOf: [
+        { type: "string", description: "Page UUID" },
+        { type: "null" },
+      ],
+      default: null,
+    });
+  });
+
   it("validates tool run inputs before usage accounting", async () => {
     const seenArgs: Record<string, unknown>[] = [];
     const toolInstance = new StructuredTool({

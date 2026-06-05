@@ -14,7 +14,7 @@ This repository is a TypeScript port of `crewAIInc/crewAI`, with TS 5 standard d
   - `python3 scripts/check-class-method-parity.py`
   - `python3 scripts/check-subpath-export-parity.py`
   - `node scripts/check-a2ui-schema-parity.mjs`
-- Test suite: 1186 passing tests.
+- Test suite: 1187 passing tests.
 - Upstream clone: `/tmp/crewai-upstream-current/lib/crewai/src/crewai` at commit `4dafb05735dfa0d6e265eaccbe784b820e8fbfad`.
 - Root export parity: `total_missing=0`.
 - Core public class method parity script: `total_missing=0`.
@@ -261,6 +261,7 @@ This register is the source of truth for continuing porting work while parity sc
 - AgentExecutor reasoning initialization is release-gated for upstream start-log semantics: `initialize_reasoning` emits `agent_logs_started` with agent role, task description, and agent/crew verbose state before entering the reasoning loop.
 - AgentExecutor finalization logging is release-gated for upstream execution-log semantics: successful `finalize` emits `agent_logs_execution` with the final answer and agent/crew verbose state when an agent is attached.
 - AgentExecutor native-tool initialization is release-gated for upstream first-iteration semantics: `initialize_reasoning` enables native tool mode only when the LLM reports function-calling support and original tools exist, and prepares OpenAI tool schemas plus available function mappings.
+- Agent utility OpenAI tool-schema conversion is release-gated for upstream MCP-style optional fields: optional string/literal JSON-schema fields preserve `anyOf` null variants and defaults while strict mode still lists every field in `required`.
 - AgentExecutor training feedback context is release-gated for upstream human-feedback semantics: executor-level `_is_training_mode` and `_handle_crew_training_output` integrate with `SyncHumanInputProvider` training feedback, preserving initial and improved outputs through the crew training-output shim.
 - Crew-level `trained_agents_file` is release-gated for upstream trained-data routing: copied crews preserve the configured file path, path-like values are normalized to strings, and agent trained-data lookup prefers `agent.crew.trained_agents_file` over `CREWAI_TRAINED_AGENTS_FILE` before falling back to the default file.
 - Crew training docs validation is release-gated for upstream `crewai train -n` semantics: programmatic `Crew.train` now rejects non-positive and fractional `n_iterations` before emitting lifecycle events or touching training files.
