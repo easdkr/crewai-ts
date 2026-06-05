@@ -3191,12 +3191,22 @@ export class StepExecutor {
     return await this._executeNative(messages, toolCallsMade, maxStepIterations, stepTimeout, startTime);
   }
 
-  async executeStep(step: string, context: StepExecutionContext = new StepExecutionContext({})): Promise<StepResult> {
-    return await this.executeTodoItem(new TodoItem({ description: step }), context, 15, null);
+  async executeStep(
+    step: string,
+    context: StepExecutionContext = new StepExecutionContext({}),
+    maxStepIterations = 15,
+    stepTimeout: number | null = null,
+  ): Promise<StepResult> {
+    return await this.executeTodoItem(new TodoItem({ description: step }), context, maxStepIterations, stepTimeout);
   }
 
-  execute_step(step: string, context?: StepExecutionContext): Promise<StepResult> {
-    return this.executeStep(step, context);
+  execute_step(
+    step: string,
+    context?: StepExecutionContext,
+    max_step_iterations = 15,
+    step_timeout: number | null = null,
+  ): Promise<StepResult> {
+    return this.executeStep(step, context, max_step_iterations, step_timeout);
   }
 
   execute(
@@ -3206,7 +3216,7 @@ export class StepExecutor {
     stepTimeout: number | null = null,
   ): Promise<StepResult> {
     if (typeof todo === "string") {
-      return this.executeStep(todo, context);
+      return this.executeStep(todo, context, maxStepIterations, stepTimeout);
     }
     return this.executeTodoItem(todo, context, maxStepIterations, stepTimeout);
   }

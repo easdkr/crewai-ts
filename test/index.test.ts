@@ -17569,6 +17569,41 @@ describe("core crew runtime", () => {
     expect((events[1]?.from_task as { id?: string } | undefined)?.id).toBe("task-1");
   });
 
+  it("honors StepExecutor string-step iteration limits like upstream todo execution", async () => {
+    const llmCalls: string[] = [];
+    const searchTool = new StructuredTool({
+      name: "Search Tool",
+      description: "Search",
+      func: (args) => `searched:${(args as { query?: string }).query ?? ""}`,
+    });
+    const agentInstance = new Agent({
+      role: "Researcher",
+      goal: "Find facts",
+      backstory: "Careful analyst",
+      llm: () => {
+        llmCalls.push("called");
+        return "Thought: use search\nAction: Search Tool\nAction Input: {\"query\":\"CrewAI\"}";
+      },
+    });
+    const executor = new StepExecutor({
+      agent: agentInstance,
+      tools: [searchTool],
+    });
+
+    const result = await executor.execute(
+      "Search docs",
+      new StepExecutionContext({ taskDescription: "Research CrewAI", taskGoal: "Use sources" }),
+      1,
+    );
+
+    expect(result).toMatchObject({
+      success: true,
+      result: "searched:CrewAI",
+      tool_calls_made: ["Search Tool"],
+    });
+    expect(llmCalls).toHaveLength(1);
+  });
+
   it("routes StepExecutor todo execution through native tool calls", async () => {
     const nativeResponses: unknown[] = [
       [{ id: "call-1", function: { name: "lookup", arguments: "{\"query\":\"CrewAI\"}" } }],
