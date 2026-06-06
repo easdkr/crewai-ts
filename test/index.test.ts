@@ -52533,8 +52533,16 @@ describe("Gemini native tool calling", () => {
     return {
       ok: true,
       status: 200,
-      json: async () => body,
+      json: () => Promise.resolve(body),
     } as Response;
+  }
+
+  function parseGeminiFetchBody(fetchMock: ReturnType<typeof vi.spyOn<typeof globalThis, "fetch">>, index: number): Record<string, unknown> {
+    const body = fetchMock.mock.calls[index]?.[1]?.body;
+    expect(typeof body).toBe("string");
+    const parsed = JSON.parse(body as string) as unknown;
+    expect(parsed).toEqual(expect.any(Object));
+    return parsed as Record<string, unknown>;
   }
 
   function geminiNativeTestTool(name: string, run: (args: Record<string, unknown>) => unknown): Tool {
@@ -52578,7 +52586,7 @@ describe("Gemini native tool calling", () => {
       expect(readFile).toHaveBeenCalledWith({ path: "src/provider-completions.ts" });
       expect(fetchMock).toHaveBeenCalledTimes(2);
 
-      const firstRequest = JSON.parse(String((fetchMock.mock.calls[0]?.[1] as RequestInit).body));
+      const firstRequest = parseGeminiFetchBody(fetchMock, 0);
       expect(firstRequest.tools).toEqual(expect.arrayContaining([
         expect.objectContaining({
           functionDeclarations: [expect.objectContaining({ name: "grep_code" })],
@@ -52588,7 +52596,7 @@ describe("Gemini native tool calling", () => {
         }),
       ]));
 
-      const secondRequest = JSON.parse(String((fetchMock.mock.calls[1]?.[1] as RequestInit).body));
+      const secondRequest = parseGeminiFetchBody(fetchMock, 1);
       const secondContents = secondRequest.contents as Record<string, unknown>[];
       expect(secondContents.at(-2)).toMatchObject({
         role: "model",
