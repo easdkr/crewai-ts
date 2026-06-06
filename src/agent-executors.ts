@@ -3293,9 +3293,11 @@ export class StepExecutor {
     if (this.tools.length === 0) {
       return Object.keys(options).length > 0 ? options : undefined;
     }
-    const [tools] = setupNativeTools(this.tools);
+    const [tools, availableFunctions] = setupNativeTools(this.tools);
     if (tools.length > 0) {
       options.tools = tools;
+      options.availableFunctions = availableFunctions;
+      options.available_functions = availableFunctions;
     }
     return Object.keys(options).length > 0 ? options : undefined;
   }

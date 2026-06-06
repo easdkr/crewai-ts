@@ -8,6 +8,7 @@ import { gzipSync } from "node:zlib";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AsyncHTTPTransport as HookAsyncHTTPTransport, HTTPTransport as HookHTTPTransport } from "../src/llms-hooks-transport.js";
+import type { Tool } from "../src/types.js";
 import {
   A2AClientConfig,
   A2AConfig,
@@ -52515,3 +52516,116 @@ function base64url(value: string | Buffer): string {
   const buffer = typeof value === "string" ? Buffer.from(value) : value;
   return buffer.toString("base64url");
 }
+
+describe("Gemini native tool calling", () => {
+  function geminiToolResponse(parts: readonly Record<string, unknown>[]): Record<string, unknown> {
+    return {
+      candidates: [{
+        content: {
+          role: "model",
+          parts,
+        },
+      }],
+    };
+  }
+
+  function geminiFetchResponse(body: unknown): Response {
+    return {
+      ok: true,
+      status: 200,
+      json: async () => body,
+    } as Response;
+  }
+
+  function geminiNativeTestTool(name: string, run: (args: Record<string, unknown>) => unknown): Tool {
+    return {
+      name,
+      description: `${name} test tool`,
+      argsSchema: {
+        query: { type: "string" },
+        path: { type: "string" },
+      },
+      run,
+    } as unknown as Tool;
+  }
+
+  it("runs all Gemini functionCall parts and returns the final text response", async () => {
+    const grepCode = vi.fn((args: Record<string, unknown>) => `grep:${String(args.query)}`);
+    const readFile = vi.fn((args: Record<string, unknown>) => `read:${String(args.path)}`);
+    const tools = [
+      geminiNativeTestTool("grep_code", grepCode),
+      geminiNativeTestTool("read_file", readFile),
+    ];
+    const [geminiTools, availableFunctions] = convertToolsToOpenAISchema(tools);
+    const fetchMock = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(geminiFetchResponse(geminiToolResponse([
+        { functionCall: { name: "grep_code", args: { query: "GeminiCompletion" } }, thoughtSignature: "sig-grep" },
+        { functionCall: { name: "read_file", args: { path: "src/provider-completions.ts" } }, thoughtSignature: "sig-read" },
+      ])))
+      .mockResolvedValueOnce(geminiFetchResponse(geminiToolResponse([
+        { text: "final answer from Gemini" },
+      ])));
+
+    try {
+      const llm = new GeminiCompletion({ model: "gemini-3.0-pro", apiKey: "test-key" });
+      const result = await llm.call([{ role: "user", content: "inspect Gemini tools" }], {
+        tools: geminiTools as unknown as Tool[],
+        availableFunctions,
+      });
+
+      expect(result).toBe("final answer from Gemini");
+      expect(grepCode).toHaveBeenCalledWith({ query: "GeminiCompletion" });
+      expect(readFile).toHaveBeenCalledWith({ path: "src/provider-completions.ts" });
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+
+      const firstRequest = JSON.parse(String((fetchMock.mock.calls[0]?.[1] as RequestInit).body));
+      expect(firstRequest.tools).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          functionDeclarations: [expect.objectContaining({ name: "grep_code" })],
+        }),
+        expect.objectContaining({
+          functionDeclarations: [expect.objectContaining({ name: "read_file" })],
+        }),
+      ]));
+
+      const secondRequest = JSON.parse(String((fetchMock.mock.calls[1]?.[1] as RequestInit).body));
+      const secondContents = secondRequest.contents as Record<string, unknown>[];
+      expect(secondContents.at(-2)).toMatchObject({
+        role: "model",
+        parts: [
+          { functionCall: { name: "grep_code", args: { query: "GeminiCompletion" } }, thoughtSignature: "sig-grep" },
+          { functionCall: { name: "read_file", args: { path: "src/provider-completions.ts" } }, thoughtSignature: "sig-read" },
+        ],
+      });
+      expect(secondContents.at(-1)).toMatchObject({
+        role: "user",
+        parts: [
+          { functionResponse: { name: "grep_code", response: { result: "grep:GeminiCompletion" } } },
+          { functionResponse: { name: "read_file", response: { result: "read:src/provider-completions.ts" } } },
+        ],
+      });
+    } finally {
+      fetchMock.mockRestore();
+    }
+  });
+
+  it("fails clearly when Gemini requests an unknown function", async () => {
+    const [geminiTools, availableFunctions] = convertToolsToOpenAISchema([
+      geminiNativeTestTool("grep_code", () => "unused"),
+    ]);
+    const fetchMock = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(geminiFetchResponse(geminiToolResponse([
+        { functionCall: { name: "missing_tool", args: { query: "x" } } },
+      ])));
+
+    try {
+      const llm = new GeminiCompletion({ model: "gemini-3.0-pro", apiKey: "test-key" });
+      await expect(llm.call([{ role: "user", content: "call missing tool" }], {
+        tools: geminiTools as unknown as Tool[],
+        availableFunctions,
+      })).rejects.toThrow("Gemini requested unknown function 'missing_tool'.");
+    } finally {
+      fetchMock.mockRestore();
+    }
+  });
+});

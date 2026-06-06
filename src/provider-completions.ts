@@ -1,6 +1,7 @@
 import { ConfiguredLLM, CONTEXT_WINDOW_USAGE_RATIO, LocalFileUploader, registerLLMProviderFactory, stripCacheBreakpoint, type BaseLLMOptions, type LLMAvailableFunction, type LLMCallOptions, type LLMMessageInput, type LLMResponse } from "./llm.js";
 import { convertToolsToOpenAISchema } from "./agent-utils.js";
 import { OpenAICompletion, type OpenAICompletionOptions } from "./openai-completion.js";
+import { sanitizeToolName } from "./string-utils.js";
 import type { LLMMessage, Tool } from "./types.js";
 
 export const TOOL_SEARCH_TOOL_TYPES = Object.freeze([
@@ -1494,34 +1495,38 @@ export class GeminiCompletion extends ConfiguredLLM {
     delete generationConfigBody.safety_settings;
     const model = this.model.replace(/^(?:gemini|google)\//, "");
     const baseUrl = this.baseUrl ?? "https://generativelanguage.googleapis.com/v1beta";
-    const requestInit: RequestInit = {
+    const buildRequestInit = (currentContents: readonly unknown[]): RequestInit => ({
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        contents,
+        contents: currentContents,
         ...(Object.keys(generationConfigBody).length > 0 ? { generationConfig: generationConfigBody } : {}),
         ...("system_instruction" in requestBody ? { system_instruction: requestBody.system_instruction } : {}),
         ...("tools" in requestBody ? { tools: requestBody.tools } : {}),
         ...("safety_settings" in requestBody ? { safety_settings: requestBody.safety_settings } : {}),
       }),
-    };
-    if (options?.signal) {
-      requestInit.signal = options.signal;
-    }
-
-    return fetch(
-      `${baseUrl.replace(/\/$/, "")}/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`,
-      requestInit,
-    ).then(async (response) => {
+      ...(options?.signal ? { signal: options.signal } : {}),
+    });
+    const generateContent = async (currentContents: readonly unknown[]): Promise<unknown> => {
+      const response = await fetch(
+        `${baseUrl.replace(/\/$/, "")}/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`,
+        buildRequestInit(currentContents),
+      );
       const body = await response.json();
       if (!response.ok) {
         const error = readObject(readObject(body).error);
         throw new Error(scalarToString(error.message) ?? `Gemini request failed with HTTP ${response.status.toString()}.`);
       }
+      return body;
+    };
+
+    return generateContent(contents).then(async (body) => {
       return await this.processResponseWithTools(
         body,
         contents,
         (options?.availableFunctions ?? options?.available_functions ?? null) as Record<string, LLMAvailableFunction> | null,
+        generateContent,
+        geminiMaxToolRounds(options),
       ) as LLMResponse;
     });
   }
@@ -1889,47 +1894,81 @@ export class GeminiCompletion extends ConfiguredLLM {
     response: unknown,
     contents: readonly unknown[] = [],
     availableFunctions: Record<string, LLMAvailableFunction> | null = null,
+    generateContent: ((contents: readonly unknown[]) => Promise<unknown>) | null = null,
+    maxToolRounds = DEFAULT_GEMINI_MAX_TOOL_ROUNDS,
   ): Promise<unknown> {
-    void contents;
-    const candidates = readObject(response).candidates;
-    if (!Array.isArray(candidates)) {
-      return GeminiCompletion.extractTextFromResponse(response);
-    }
-    const first = readObject(candidates[0]);
-    const rawParts = Array.isArray(readObject(first.content).parts)
-      ? readObject(first.content).parts as unknown[]
-      : [];
-    const functionCallParts = rawParts.filter((part) => Object.keys(readObject(readObject(part).functionCall ?? readObject(part).function_call)).length > 0);
-    const nonStructuredParts = functionCallParts.filter((part) => {
-      const partRecord = readObject(part);
-      const functionCall = readObject(partRecord.functionCall ?? partRecord.function_call);
-      return (scalarToString(functionCall.name) ?? "") !== STRUCTURED_OUTPUT_TOOL_NAME;
-    });
+    let currentResponse = response;
+    let currentContents = [...contents];
 
-    if (nonStructuredParts.length > 0 && !availableFunctions) {
-      return nonStructuredParts;
-    }
+    for (let round = 0; round <= maxToolRounds; round += 1) {
+      const candidates = readObject(currentResponse).candidates;
+      if (!Array.isArray(candidates)) {
+        return GeminiCompletion.extractTextFromResponse(currentResponse);
+      }
+      const first = readObject(candidates[0]);
+      const rawParts = Array.isArray(readObject(first.content).parts)
+        ? readObject(first.content).parts as unknown[]
+        : [];
+      const functionCallParts = rawParts.filter((part) => Object.keys(readObject(readObject(part).functionCall ?? readObject(part).function_call)).length > 0);
+      const structuredOutput = GeminiCompletion.extractStructuredOutputFromResponse(currentResponse);
+      const nonStructuredParts = functionCallParts.filter((part) => {
+        const partRecord = readObject(part);
+        const functionCall = readObject(partRecord.functionCall ?? partRecord.function_call);
+        return (scalarToString(functionCall.name) ?? "") !== STRUCTURED_OUTPUT_TOOL_NAME;
+      });
 
-    if (nonStructuredParts.length > 0 && availableFunctions) {
+      if (nonStructuredParts.length === 0) {
+        return structuredOutput ?? GeminiCompletion.extractTextFromResponse(currentResponse);
+      }
+
+      if (!availableFunctions) {
+        return nonStructuredParts;
+      }
+
+      if (round >= maxToolRounds) {
+        throw new Error(`Gemini tool loop exceeded max tool rounds (${String(maxToolRounds)}).`);
+      }
+
+      const functionResponseParts: Record<string, unknown>[] = [];
+      let firstToolResult: string | null = null;
       for (const part of nonStructuredParts) {
         const partRecord = readObject(part);
         const functionCall = readObject(partRecord.functionCall ?? partRecord.function_call);
-        const functionName = scalarToString(functionCall.name);
+        const rawFunctionName = scalarToString(functionCall.name) ?? "";
+        const functionName = resolveGeminiFunctionName(rawFunctionName, availableFunctions);
         if (!functionName) {
-          continue;
+          throw new Error(`Gemini requested unknown function '${rawFunctionName}'.`);
         }
         const result = await this.handleToolExecution({
           functionName,
           functionArgs: readObject(functionCall.args),
           availableFunctions,
         });
-        if (result !== null) {
-          return result;
+        if (result === null) {
+          throw new Error(`Gemini failed to execute function '${rawFunctionName}'.`);
         }
+        firstToolResult ??= result;
+        functionResponseParts.push({
+          functionResponse: {
+            name: rawFunctionName,
+            response: { result },
+          },
+        });
       }
+
+      if (!generateContent) {
+        return firstToolResult;
+      }
+
+      currentContents = [
+        ...currentContents,
+        { role: "model", parts: rawParts },
+        { role: "user", parts: functionResponseParts },
+      ];
+      currentResponse = await generateContent(currentContents);
     }
 
-    return GeminiCompletion.extractTextFromResponse(response);
+    throw new Error(`Gemini tool loop exceeded max tool rounds (${String(maxToolRounds)}).`);
   }
 
   async _process_response_with_tools(
@@ -3272,6 +3311,27 @@ function bedrockDocumentName(filename: string): string {
 function geminiVersion(model: string): number {
   const match = /gemini-(\d+(?:\.\d+)?)/iu.exec(model.toLowerCase());
   return match ? Number.parseFloat(match[1] ?? "0") : 0;
+}
+
+const DEFAULT_GEMINI_MAX_TOOL_ROUNDS = 8;
+
+function geminiMaxToolRounds(options: LLMCallOptions | undefined): number {
+  const record = readObject(options);
+  const configured = record.maxToolRounds ?? record.max_tool_rounds;
+  return typeof configured === "number" && Number.isInteger(configured) && configured > 0
+    ? configured
+    : DEFAULT_GEMINI_MAX_TOOL_ROUNDS;
+}
+
+function resolveGeminiFunctionName(
+  functionName: string,
+  availableFunctions: Record<string, LLMAvailableFunction>,
+): string | null {
+  if (functionName in availableFunctions) {
+    return functionName;
+  }
+  const sanitizedName = sanitizeToolName(functionName);
+  return sanitizedName in availableFunctions ? sanitizedName : null;
 }
 
 function geminiTextParts(content: unknown): Record<string, unknown>[] {
