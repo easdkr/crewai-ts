@@ -52636,4 +52636,39 @@ describe("Gemini native tool calling", () => {
       fetchMock.mockRestore();
     }
   });
+
+  it("passes available functions through Agent tools for Gemini native calls", async () => {
+    const readFile = vi.fn((args: Record<string, unknown>) => `read:${String(args.path)}`);
+    const fetchMock = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(geminiFetchResponse(geminiToolResponse([
+        { functionCall: { name: "read_file", args: { path: "README.md" } }, thoughtSignature: "sig-read" },
+      ])))
+      .mockResolvedValueOnce(geminiFetchResponse(geminiToolResponse([
+        { text: "final after reading" },
+      ])));
+
+    try {
+      const agent = new Agent({
+        role: "Gemini Tool Agent",
+        goal: "Read files",
+        backstory: "Uses native Gemini tools",
+        llm: new GeminiCompletion({ model: "gemini-3.0-pro", apiKey: "test-key" }),
+        tools: [geminiNativeTestTool("read_file", readFile)],
+      });
+
+      await expect(agent.kickoff("Read README.md")).resolves.toBe("final after reading");
+      expect(readFile).toHaveBeenCalledWith({ path: "README.md" });
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      const secondRequest = parseGeminiFetchBody(fetchMock, 1);
+      const secondContents = secondRequest.contents as Record<string, unknown>[];
+      expect(secondContents.at(-1)).toMatchObject({
+        role: "user",
+        parts: [
+          { functionResponse: { name: "read_file", response: { result: "read:README.md" } } },
+        ],
+      });
+    } finally {
+      fetchMock.mockRestore();
+    }
+  });
 });

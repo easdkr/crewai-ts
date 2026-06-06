@@ -77,7 +77,7 @@ import { CREWAI_TRAINED_AGENTS_FILE_ENV, TRAINED_AGENTS_DATA_FILE, TRAINING_DATA
 import { CrewTrainingHandler } from "./training-handler.js";
 import { Prompts, type StandardPromptResult, type SystemPromptResult } from "./prompts.js";
 import { LiteAgentOutput, type TodoExecutionResultOptions } from "./lite-agent-output.js";
-import { loadAgentFromRepository } from "./agent-utils.js";
+import { loadAgentFromRepository, setupNativeTools } from "./agent-utils.js";
 import { serializeGuardrailForJson } from "./guardrail.js";
 import { inject_a2a_server_methods } from "./a2a.js";
 import { I18N_DEFAULT } from "./i18n.js";
@@ -2197,8 +2197,15 @@ export class Agent {
     const beforeUsage = getLLMUsageMetrics(llmClient);
     const model = this.modelNameForClient(llmClient);
     const responseModel = responseModelFromOptions(options);
+    const nativeToolOptions = tools.length > 0 && this.clientSupportsFunctionCalling(llmClient)
+      ? (() => {
+        const [, availableFunctions] = setupNativeTools(tools);
+        return { availableFunctions, available_functions: availableFunctions };
+      })()
+      : {};
     const result = await callLLM(llmClient, messagesForCall, {
       tools,
+      ...nativeToolOptions,
       ...(responseModel === undefined ? {} : { responseModel }),
       metadata: {
         agent: this,
@@ -2243,6 +2250,17 @@ export class Agent {
       return true;
     }
     return typeof candidate.supports_multimodal === "function" && candidate.supports_multimodal();
+  }
+
+  private clientSupportsFunctionCalling(llmClient: LLMClient): boolean {
+    const candidate = llmClient as LLMClient & {
+      supportsFunctionCalling?: () => boolean;
+      supports_function_calling?: () => boolean;
+    };
+    if (typeof candidate.supportsFunctionCalling === "function" && candidate.supportsFunctionCalling()) {
+      return true;
+    }
+    return typeof candidate.supports_function_calling === "function" && candidate.supports_function_calling();
   }
 
   private modelNameForClient(llmClient: LLMClient): string | null {
