@@ -1,5 +1,6 @@
 /* global console, process */
 import { execFileSync } from "node:child_process";
+import subpathManifest from "./subpath-export-manifest.json" with { type: "json" };
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -476,15 +477,12 @@ try {
 
   execFileSync("npm", ["install", "--silent"], { cwd: appDir, stdio: "inherit" });
   writeFileSync(join(appDir, "all-exports.mjs"), [
-    "import { readFileSync } from 'node:fs';",
-    "const packageJson = JSON.parse(readFileSync(new URL('./node_modules/@crewai-ts/core/package.json', import.meta.url), 'utf8'));",
-    "for (const key of Object.keys(packageJson.exports)) {",
-    "  if (key === './package.json') continue;",
-    "  const specifier = key === '.' ? '@crewai-ts/core' : `@crewai-ts/core/${key.slice(2)}`;",
-    "  await import(specifier);",
+    `const subpaths = ${JSON.stringify(subpathManifest)};`,
+    "await import('@crewai-ts/core');",
+    "for (const subpath of subpaths) {",
+    "  await import(`@crewai-ts/core/${subpath}`);",
     "}",
     "console.log('all exports import ok');",
-    "",
   ].join("\n"));
   const allExportsOutput = execFileSync("node", ["all-exports.mjs"], { cwd: appDir, encoding: "utf8" }).trim();
   if (allExportsOutput !== "all exports import ok") {

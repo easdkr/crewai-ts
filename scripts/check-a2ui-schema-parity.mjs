@@ -4,7 +4,10 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { load_schema } from "../dist/index.js";
+import { load_schema as loadSchemaUntyped } from "../dist/index.js";
+
+/** @type {(name: string, version: string) => unknown} */
+const load_schema = loadSchemaUntyped;
 
 const upstream = process.env.UPSTREAM_CREWAI_SRC ?? "/tmp/crewai-upstream-current/lib/crewai/src/crewai";
 const schemaRoot = join(upstream, "a2a", "extensions", "a2ui", "schema");

@@ -1090,6 +1090,26 @@ type Decorator = (
   context: never,
 ) => unknown;
 
+function exportedPackageSubpaths(exportsMap: Record<string, unknown>): string[] {
+  const manifest = JSON.parse(
+    readFileSync(join(process.cwd(), "scripts/subpath-export-manifest.json"), "utf8"),
+  ) as string[];
+  const exportKeys = Object.keys(exportsMap);
+
+  return manifest
+    .map((subpath) => `./${subpath}`)
+    .filter((specifier) =>
+      exportKeys.includes(specifier) ||
+      exportKeys.some((key) => packageExportPatternMatches(key, specifier)),
+    );
+}
+
+function packageExportPatternMatches(pattern: string, specifier: string): boolean {
+  if (!pattern.includes("*")) return false;
+  const [prefix, suffix] = pattern.split("*", 2) as [string, string];
+  return specifier.startsWith(prefix) && specifier.endsWith(suffix);
+}
+
 function verifyDetachedJws(publicKey: KeyObject, protectedHeader: string, payload: string, signature: string): boolean {
   return verify(
     "RSA-SHA256",
@@ -1136,7 +1156,7 @@ describe("package entrypoint", () => {
     const packageJson = JSON.parse(readFileSync(join(process.cwd(), "package.json"), "utf8")) as {
       exports: Record<string, unknown>;
     };
-    expect(Object.keys(packageJson.exports)).toEqual(expect.arrayContaining([
+    expect(exportedPackageSubpaths(packageJson.exports)).toEqual(expect.arrayContaining([
       "./flow/dsl/_conditions",
       "./flow/dsl/_human_feedback",
       "./flow/dsl/_listen",

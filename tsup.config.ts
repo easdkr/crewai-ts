@@ -7,7 +7,7 @@ export default defineConfig({
     "state-provider-core": "src/state-provider-core.ts",
   },
   format: ["esm", "cjs"],
-  dts: true,
+  dts: false,
   sourcemap: false,
   clean: true,
   shims: true,

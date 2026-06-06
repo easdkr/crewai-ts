@@ -24,16 +24,37 @@ def upstream_module_path(path: Path) -> str:
     return str(path.with_suffix("").relative_to(UPSTREAM))
 
 
+def exported_subpaths(package: dict) -> set[str]:
+    manifest_path = ROOT / "scripts" / "subpath-export-manifest.json"
+    manifest = set(json.loads(manifest_path.read_text()))
+    explicit = {
+        key[2:]
+        for key in package["exports"]
+        if key.startswith("./") and "*" not in key and key != "./package.json"
+    }
+    patterns = [
+        key[2:]
+        for key in package["exports"]
+        if key.startswith("./") and "*" in key
+    ]
+    covered = set(explicit)
+    for subpath in manifest:
+        if any(pattern_matches(pattern, subpath) for pattern in patterns):
+            covered.add(subpath)
+    return covered
+
+
+def pattern_matches(pattern: str, subpath: str) -> bool:
+    prefix, _, suffix = pattern.partition("*")
+    return subpath.startswith(prefix) and subpath.endswith(suffix)
+
+
 def main() -> int:
     if not UPSTREAM.exists():
         raise SystemExit(f"Upstream source tree not found: {UPSTREAM}")
 
     package = json.loads((ROOT / "package.json").read_text())
-    exports = {
-        key[2:]
-        for key in package["exports"]
-        if key.startswith("./") and key != "./package.json"
-    }
+    exports = exported_subpaths(package)
     upstream_modules = {
         value
         for value in (upstream_module_path(path) for path in UPSTREAM.rglob("*.py"))
