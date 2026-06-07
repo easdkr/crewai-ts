@@ -158,8 +158,59 @@ export class AnthropicCompletion extends ConfiguredLLM {
     this._previous_thinking_blocks = this.previousThinkingBlocks;
   }
 
-  override call(messages: readonly LLMMessage[], options?: LLMCallOptions): Promise<LLMResponse> {
-    return super.call(messages, options);
+  override async call(messages: readonly LLMMessage[], options?: LLMCallOptions): Promise<LLMResponse> {
+    const apiKey = this.apiKey;
+    if (!apiKey) {
+      throw new Error("Anthropic API key required. Pass api_key when constructing AnthropicCompletion.");
+    }
+    if (this.stream) {
+      throw new Error("Anthropic streaming responses are not supported by the built-in HTTP transport yet.");
+    }
+
+    const [formattedMessages, systemMessage] = this.formatMessagesForAnthropic(messages);
+    const availableFunctions = (options?.availableFunctions ?? options?.available_functions ?? null) as Record<string, LLMAvailableFunction> | null;
+    const params = this.prepareCompletionParams(
+      formattedMessages as LLMMessage[],
+      systemMessage,
+      (options?.tools ?? null) as readonly Tool[] | null,
+      availableFunctions,
+    );
+    const baseUrl = this.baseUrl ?? "https://api.anthropic.com";
+    const response = await fetch(`${baseUrl.replace(/\/$/, "")}/v1/messages`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify(params),
+      ...(options?.signal ? { signal: options.signal } : {}),
+    });
+    const body: unknown = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const error = readObject(readObject(body).error);
+      throw new Error(scalarToString(error.message) ?? `Anthropic request failed with HTTP ${response.status.toString()}.`);
+    }
+
+    const usage = this.extractAnthropicTokenUsage(body);
+    if (usage.total_tokens !== 0) {
+      this.trackTokenUsageInternal(usage);
+    }
+    const thinkingBlocks = AnthropicCompletion.extractThinkingBlocksFromResponse(body);
+    if (thinkingBlocks.length > 0) {
+      this.previousThinkingBlocks = thinkingBlocks;
+      this._previous_thinking_blocks = this.previousThinkingBlocks;
+    }
+
+    const toolUses = AnthropicCompletion.extractToolUsesFromResponse(body);
+    if (toolUses.length > 0) {
+      if (availableFunctions && Object.keys(availableFunctions).length > 0) {
+        return await this.executeFirstTool(toolUses, availableFunctions) as LLMResponse;
+      }
+      return toolUses as unknown as LLMResponse;
+    }
+
+    return this.applyStopWords(anthropicResponseText(body)) as LLMResponse;
   }
 
   override async acall(messages: LLMMessageInput, options?: LLMCallOptions): Promise<LLMResponse> {
@@ -815,8 +866,32 @@ export class BedrockCompletion extends ConfiguredLLM {
     this.interceptor = null;
   }
 
-  override call(messages: readonly LLMMessage[], options?: LLMCallOptions): Promise<LLMResponse> {
-    return super.call(messages, options);
+  override async call(messages: readonly LLMMessage[], options?: LLMCallOptions): Promise<LLMResponse> {
+    if (this.stream) {
+      throw new Error("Bedrock streaming responses are not supported by the built-in client transport yet.");
+    }
+    const client = this.getConverseClient();
+    const { messages: formattedMessages, body } = this.prepareConverseRequestBody(
+      messages,
+      (options?.tools ?? null) as readonly Tool[] | null,
+    );
+    const request = {
+      modelId: this.model,
+      messages: formattedMessages,
+      ...body,
+    };
+    const response = await client.converse(request);
+    this.trackTokenUsageInternal(readObject(readObject(response).usage));
+    const toolUses = BedrockCompletion.extractToolUsesFromResponse(response);
+    const availableFunctions = (options?.availableFunctions ?? options?.available_functions ?? null) as Record<string, LLMAvailableFunction> | null;
+    if (toolUses.length > 0) {
+      if (availableFunctions && Object.keys(availableFunctions).length > 0) {
+        const executed = await this.executeToolUseAndPrepareMessages(formattedMessages, toolUses[0], availableFunctions);
+        return executed.result as LLMResponse;
+      }
+      return toolUses as unknown as LLMResponse;
+    }
+    return bedrockResponseText(response) as LLMResponse;
   }
 
   override async acall(messages: LLMMessageInput, options?: LLMCallOptions): Promise<LLMResponse> {
@@ -1369,6 +1444,22 @@ export class BedrockCompletion extends ConfiguredLLM {
     return model.includes("anthropic") || model.includes("claude");
   }
 
+  private getConverseClient(): { converse: (request: Record<string, unknown>) => Promise<unknown> | unknown } {
+    const direct = readObject(this.session).converse;
+    if (typeof direct === "function") {
+      return { converse: direct.bind(this.session) as (request: Record<string, unknown>) => Promise<unknown> | unknown };
+    }
+    const clientFactory = readObject(this.session).client;
+    if (typeof clientFactory === "function") {
+      const client = clientFactory.call(this.session, "bedrock-runtime", this.regionName ? { region: this.regionName } : undefined);
+      const converse = readObject(client).converse;
+      if (typeof converse === "function") {
+        return { converse: converse.bind(client) as (request: Record<string, unknown>) => Promise<unknown> | unknown };
+      }
+    }
+    throw new Error("Bedrock live calls require a session/client with a converse(request) method.");
+  }
+
 }
 
 export type GeminiCompletionOptions = BaseLLMOptions & {
@@ -1473,7 +1564,7 @@ export class GeminiCompletion extends ConfiguredLLM {
 
   override call(messages: readonly LLMMessage[], options?: LLMCallOptions): Promise<LLMResponse> {
     if (this.useVertexai) {
-      return super.call(messages, options);
+      return this.callVertexAI(messages, options);
     }
 
     const apiKey = this.apiKey ?? process.env.GOOGLE_API_KEY ?? process.env.GEMINI_API_KEY ?? null;
@@ -1529,6 +1620,59 @@ export class GeminiCompletion extends ConfiguredLLM {
         geminiMaxToolRounds(options),
       ) as LLMResponse;
     });
+  }
+
+  private async callVertexAI(messages: readonly LLMMessage[], options?: LLMCallOptions): Promise<LLMResponse> {
+    if (!this.project) {
+      throw new Error("Vertex AI Gemini calls require a project.");
+    }
+    const clientParams = readObject(this.clientParams);
+    const accessToken = scalarToString(clientParams.access_token ?? clientParams.accessToken ?? this.apiKey);
+    if (!accessToken) {
+      throw new Error("Vertex AI Gemini calls require client_params.access_token or api_key.");
+    }
+    const [contents, systemInstruction] = this.formatMessagesForGemini(messages);
+    const tools = (options?.tools ?? null) as readonly Tool[] | null;
+    const generationConfig = this.prepareGenerationConfig(
+      systemInstruction,
+      tools,
+      options?.responseModel ?? null,
+    );
+    const requestBody = readObject(generationConfig);
+    const generationConfigBody = { ...generationConfig };
+    delete generationConfigBody.system_instruction;
+    delete generationConfigBody.tools;
+    delete generationConfigBody.safety_settings;
+    const model = this.model.replace(/^(?:gemini|google)\//, "");
+    const baseUrl = this.baseUrl ?? `https://${this.location}-aiplatform.googleapis.com/v1`;
+    const url = `${baseUrl.replace(/\/$/, "")}/projects/${encodeURIComponent(this.project)}/locations/${encodeURIComponent(this.location)}/publishers/google/models/${encodeURIComponent(model)}:generateContent`;
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        contents,
+        ...(Object.keys(generationConfigBody).length > 0 ? { generationConfig: generationConfigBody } : {}),
+        ...("system_instruction" in requestBody ? { systemInstruction: requestBody.system_instruction } : {}),
+        ...("tools" in requestBody ? { tools: requestBody.tools } : {}),
+        ...("safety_settings" in requestBody ? { safetySettings: requestBody.safety_settings } : {}),
+      }),
+      ...(options?.signal ? { signal: options.signal } : {}),
+    });
+    const body: unknown = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const error = readObject(readObject(body).error);
+      throw new Error(scalarToString(error.message) ?? `Vertex AI Gemini request failed with HTTP ${response.status.toString()}.`);
+    }
+    return await this.processResponseWithTools(
+      body,
+      contents,
+      (options?.availableFunctions ?? options?.available_functions ?? null) as Record<string, LLMAvailableFunction> | null,
+      null,
+      geminiMaxToolRounds(options),
+    ) as LLMResponse;
   }
 
   override async acall(messages: LLMMessageInput, options?: LLMCallOptions): Promise<LLMResponse> {
@@ -2801,7 +2945,7 @@ export class AzureCompletion extends ConfiguredLLM {
     if (this._responses_delegate) {
       return this._responses_delegate.call(messages, options);
     }
-    return super.call(messages, options);
+    return this.callChatCompletions(messages, options);
   }
 
   override async acall(messages: LLMMessageInput, options?: LLMCallOptions): Promise<LLMResponse> {
@@ -3041,6 +3185,51 @@ export class AzureCompletion extends ConfiguredLLM {
 
   _prepare_completion_params(messages: readonly LLMMessage[], tools: readonly Tool[] | null = null): AzureCompletionParams {
     return this.prepareCompletionParams(messages, tools);
+  }
+
+  private async callChatCompletions(messages: readonly LLMMessage[], options?: LLMCallOptions): Promise<LLMResponse> {
+    if (this.stream) {
+      throw new Error("Azure streaming responses are not supported by the built-in fetch transport yet.");
+    }
+    const client = this.getSyncClient();
+    const endpoint = scalarToString(client.endpoint);
+    const apiKey = scalarToString(client.api_key);
+    if (!endpoint) {
+      throw new Error("Azure endpoint is required");
+    }
+    if (!apiKey) {
+      throw new Error("Azure API key is required");
+    }
+    const params = this.prepareCompletionParams(
+      this.formatMessages(messages),
+      (options?.tools ?? null) as readonly Tool[] | null,
+    );
+    const url = azureChatCompletionsUrl(endpoint, this.model, this.apiVersion);
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "api-key": apiKey,
+      },
+      body: JSON.stringify(params),
+    });
+    const payload: unknown = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const error = readObject(readObject(payload).error);
+      throw new Error(scalarToString(error.message) ?? `Azure completion request failed with HTTP ${response.status.toString()}.`);
+    }
+    const usage = this.extractAzureTokenUsage(payload);
+    if (usage.total_tokens !== 0) {
+      this.trackTokenUsageInternal(usage);
+    }
+    const choices = readObject(payload).choices;
+    const firstChoice = Array.isArray(choices) ? readObject(choices[0]) : {};
+    const message = readObject(firstChoice.message);
+    const toolCalls = Array.isArray(message.tool_calls) ? message.tool_calls : [];
+    if (toolCalls.length > 0) {
+      return toolCalls as unknown as LLMResponse;
+    }
+    return typeof message.content === "string" ? message.content : "";
   }
 
   prepareResponsesParams(
@@ -3423,10 +3612,24 @@ function anthropicResponseContent(response: unknown): unknown[] {
   return Array.isArray(content) ? content : [];
 }
 
+function anthropicResponseText(response: unknown): string {
+  return anthropicResponseContent(response)
+    .map((block) => scalarToString(readObject(block).text))
+    .filter((text): text is string => text !== null)
+    .join("");
+}
+
 function bedrockResponseContent(response: unknown): unknown[] {
   const output = readObject(readObject(response).output);
   const message = readObject(output.message);
   return Array.isArray(message.content) ? message.content : [];
+}
+
+function bedrockResponseText(response: unknown): string {
+  return bedrockResponseContent(response)
+    .map((block) => scalarToString(readObject(block).text))
+    .filter((text): text is string => text !== null)
+    .join("");
 }
 
 function isAzureOpenAIEndpoint(endpoint: string | null): boolean {
@@ -3460,6 +3663,17 @@ function azureResponsesBaseUrl(endpoint: string | null | undefined): string | nu
     }
     return `${trimmed.replace(/\/openai(?:\/v1)?$/i, "")}/openai/v1/`;
   }
+}
+
+function azureChatCompletionsUrl(endpoint: string, model: string, apiVersion: string | null): string {
+  const version = encodeURIComponent(apiVersion ?? "2024-06-01");
+  const trimmed = endpoint.replace(/\/+$/, "");
+  const deploymentPath = "/openai/deployments/";
+  const lower = trimmed.toLowerCase();
+  const base = lower.includes(deploymentPath)
+    ? trimmed
+    : `${trimmed.replace(/\/openai(?:\/v1)?$/i, "")}${deploymentPath}${encodeURIComponent(azureResponsesModelName(model))}`;
+  return `${base}/chat/completions?api-version=${version}`;
 }
 
 function geminiContextWindowSize(model: string): number {

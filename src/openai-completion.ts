@@ -326,8 +326,15 @@ export class OpenAICompletion extends ConfiguredLLM {
     this.reasoningChainItems = null;
   }
 
-  override call(messages: readonly LLMMessage[], options?: LLMCallOptions): Promise<LLMResponse> {
-    return super.call(messages, options);
+  override async call(messages: readonly LLMMessage[], options?: LLMCallOptions): Promise<LLMResponse> {
+    if (this.stream) {
+      throw new Error("OpenAI streaming responses are not supported by the built-in fetch transport yet.");
+    }
+    const tools = (options?.tools ?? null) as readonly Tool[] | null;
+    const responseModel = options?.responseModel ?? null;
+    return this.api === "responses"
+      ? await this.callResponses(messages, tools, responseModel)
+      : await this.callChatCompletions(messages, tools);
   }
 
   override async acall(messages: LLMMessageInput, options?: LLMCallOptions): Promise<LLMResponse> {
@@ -476,6 +483,86 @@ export class OpenAICompletion extends ConfiguredLLM {
     responseModel: unknown = null,
   ): Record<string, unknown> {
     return this.prepareResponsesParams(messages, tools, responseModel);
+  }
+
+  private async callChatCompletions(messages: readonly LLMMessage[], tools: readonly Tool[] | null): Promise<LLMResponse> {
+    const params = this.prepareCompletionParams(this.formatMessages(messages), tools);
+    const response = await this.fetchOpenAI("chat/completions", params);
+    const usage = this.extractOpenAITokenUsage(response);
+    if (usage.total_tokens !== 0) {
+      this.trackTokenUsageInternal(usage);
+    }
+    const choices = readObject(response).choices;
+    const firstChoice = Array.isArray(choices) ? readObject(choices[0]) : {};
+    const message = readObject(firstChoice.message);
+    const toolCalls = Array.isArray(message.tool_calls) ? message.tool_calls : [];
+    if (toolCalls.length > 0) {
+      return toolCalls as unknown as LLMResponse;
+    }
+    return typeof message.content === "string" ? message.content : "";
+  }
+
+  private async callResponses(
+    messages: readonly LLMMessage[],
+    tools: readonly Tool[] | null,
+    responseModel: unknown,
+  ): Promise<LLMResponse> {
+    const params = this.prepareResponsesParams(this.formatMessages(messages), tools, responseModel);
+    const response = await this.fetchOpenAI("responses", params);
+    const usage = this.extractResponsesTokenUsage(response);
+    if (usage.total_tokens !== 0) {
+      this.trackTokenUsageInternal(usage);
+    }
+    const responseId = stringOrNull(readObject(response).id);
+    if (this.autoChain && responseId) {
+      this.responseChainId = responseId;
+    }
+    const reasoningItems = this.extractReasoningItems(response);
+    if (this.autoChainReasoning && reasoningItems.length > 0) {
+      this.reasoningChainItems = reasoningItems;
+    }
+    const result = this.extractBuiltinToolOutputs(response);
+    if (result.function_calls.length > 0 || result.hasToolOutputs() || result.hasReasoning()) {
+      return result as unknown as LLMResponse;
+    }
+    return result.text;
+  }
+
+  private async fetchOpenAI(path: string, body: Record<string, unknown>): Promise<unknown> {
+    const clientParams = this.getClientParams();
+    const apiKey = stringOrNull(clientParams.api_key);
+    if (!apiKey) {
+      throw new Error("OpenAI API key is required. Pass api_key when constructing OpenAICompletion.");
+    }
+    const baseUrl = (stringOrNull(clientParams.base_url) ?? "https://api.openai.com/v1").replace(/\/$/, "");
+    const defaultQuery = readObject(clientParams.default_query);
+    const query = new URLSearchParams();
+    for (const [key, value] of Object.entries(defaultQuery)) {
+      if (value !== undefined && value !== null) {
+        query.set(key, String(value));
+      }
+    }
+    const url = `${baseUrl}/${path}${query.size > 0 ? `?${query.toString()}` : ""}`;
+    const defaultHeaders = Object.fromEntries(
+      Object.entries(readObject(clientParams.default_headers)).filter(([, value]) => typeof value === "string"),
+    ) as Record<string, string>;
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        ...defaultHeaders,
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+        ...(typeof clientParams.organization === "string" ? { "OpenAI-Organization": clientParams.organization } : {}),
+        ...(typeof clientParams.project === "string" ? { "OpenAI-Project": clientParams.project } : {}),
+      },
+      body: JSON.stringify(body),
+    });
+    const payload: unknown = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const error = readObject(readObject(payload).error);
+      throw new Error(stringOrNull(error.message) ?? `OpenAI request failed with HTTP ${response.status.toString()}.`);
+    }
+    return payload;
   }
 
   convertToolsForInterference(tools: readonly Tool[]): Record<string, unknown>[] {
