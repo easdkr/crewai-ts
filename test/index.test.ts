@@ -39046,6 +39046,39 @@ describe("LLM providers", () => {
     }
   });
 
+  it("builds Azure keyless client descriptors when no api key is configured", () => {
+    const previousApiKey = process.env.AZURE_API_KEY;
+    const previousEndpoint = process.env.AZURE_ENDPOINT;
+    const previousOpenAIEndpoint = process.env.AZURE_OPENAI_ENDPOINT;
+    const previousApiBase = process.env.AZURE_API_BASE;
+    try {
+      delete process.env.AZURE_API_KEY;
+      process.env.AZURE_ENDPOINT = "https://test.openai.azure.com/openai/deployments/gpt-4";
+      delete process.env.AZURE_OPENAI_ENDPOINT;
+      delete process.env.AZURE_API_BASE;
+
+      const azure = new AzureCompletion({ model: "gpt-4" });
+      expect(azure._make_client_kwargs()).toMatchObject({
+        endpoint: "https://test.openai.azure.com/openai/deployments/gpt-4",
+        credential: { provider: "DefaultAzureCredential" },
+      });
+      expect(azure._get_sync_client()).toMatchObject({
+        provider: "azure",
+        model: "gpt-4",
+        credential: { provider: "DefaultAzureCredential" },
+      });
+    } finally {
+      if (previousApiKey === undefined) delete process.env.AZURE_API_KEY;
+      else process.env.AZURE_API_KEY = previousApiKey;
+      if (previousEndpoint === undefined) delete process.env.AZURE_ENDPOINT;
+      else process.env.AZURE_ENDPOINT = previousEndpoint;
+      if (previousOpenAIEndpoint === undefined) delete process.env.AZURE_OPENAI_ENDPOINT;
+      else process.env.AZURE_OPENAI_ENDPOINT = previousOpenAIEndpoint;
+      if (previousApiBase === undefined) delete process.env.AZURE_API_BASE;
+      else process.env.AZURE_API_BASE = previousApiBase;
+    }
+  });
+
   it("exposes upstream AnthropicCompletion aliases directly on the provider class", async () => {
     const anthropic = new AnthropicCompletion({ model: "claude-3-5-sonnet-20241022" });
     for (const methodName of [
@@ -39111,6 +39144,43 @@ describe("LLM providers", () => {
       method: "POST",
     }));
     fetchSpy.mockRestore();
+  });
+
+  it("applies Bedrock region defaults and config serialization contracts", () => {
+    const previousDefaultRegion = process.env.AWS_DEFAULT_REGION;
+    const previousRegionName = process.env.AWS_REGION_NAME;
+    const previousRegion = process.env.AWS_REGION;
+    try {
+      delete process.env.AWS_DEFAULT_REGION;
+      delete process.env.AWS_REGION_NAME;
+      delete process.env.AWS_REGION;
+      expect(new BedrockCompletion({ model: "anthropic.claude-3-5-sonnet-20241022-v2:0" }).region_name)
+        .toBe("us-east-1");
+
+      process.env.AWS_DEFAULT_REGION = "us-west-2";
+      const bedrock = new BedrockCompletion({
+        model: "anthropic.claude-3-5-sonnet-20241022-v2:0",
+        max_tokens: 128,
+        top_p: 0.8,
+        top_k: 40,
+        guardrail_config: { guardrailIdentifier: "guardrail-id" },
+      });
+      expect(bedrock.region_name).toBe("us-west-2");
+      expect(bedrock.to_config_dict()).toMatchObject({
+        region_name: "us-west-2",
+        max_tokens: 128,
+        top_p: 0.8,
+        top_k: 40,
+        guardrail_config: { guardrailIdentifier: "guardrail-id" },
+      });
+    } finally {
+      if (previousDefaultRegion === undefined) delete process.env.AWS_DEFAULT_REGION;
+      else process.env.AWS_DEFAULT_REGION = previousDefaultRegion;
+      if (previousRegionName === undefined) delete process.env.AWS_REGION_NAME;
+      else process.env.AWS_REGION_NAME = previousRegionName;
+      if (previousRegion === undefined) delete process.env.AWS_REGION;
+      else process.env.AWS_REGION = previousRegion;
+    }
   });
 
   it("calls Vertex AI Gemini through the built-in fetch transport", async () => {
@@ -41094,12 +41164,18 @@ describe("LLM providers", () => {
 
     const previousGoogleKey = process.env.GOOGLE_API_KEY;
     const previousGeminiKey = process.env.GEMINI_API_KEY;
+    const previousGoogleLocation = process.env.GOOGLE_CLOUD_LOCATION;
+    const previousUseVertexai = process.env.GOOGLE_GENAI_USE_VERTEXAI;
     try {
       delete process.env.GOOGLE_API_KEY;
       delete process.env.GEMINI_API_KEY;
+      process.env.GOOGLE_CLOUD_LOCATION = "asia-northeast3";
+      process.env.GOOGLE_GENAI_USE_VERTEXAI = "true";
       const lazyGemini = new GeminiCompletion({ model: "gemini-1.5-pro" });
       expect(lazyGemini.api_key).toBeNull();
       expect(lazyGemini._client).toBeNull();
+      expect(lazyGemini.location).toBe("asia-northeast3");
+      expect(lazyGemini.use_vertexai).toBe(true);
 
       process.env.GEMINI_API_KEY = "late-key";
       expect(lazyGemini._get_sync_client()).toMatchObject({ api_key: "late-key" });
@@ -41114,6 +41190,16 @@ describe("LLM providers", () => {
         delete process.env.GEMINI_API_KEY;
       } else {
         process.env.GEMINI_API_KEY = previousGeminiKey;
+      }
+      if (previousGoogleLocation === undefined) {
+        delete process.env.GOOGLE_CLOUD_LOCATION;
+      } else {
+        process.env.GOOGLE_CLOUD_LOCATION = previousGoogleLocation;
+      }
+      if (previousUseVertexai === undefined) {
+        delete process.env.GOOGLE_GENAI_USE_VERTEXAI;
+      } else {
+        process.env.GOOGLE_GENAI_USE_VERTEXAI = previousUseVertexai;
       }
     }
     expect(GeminiCompletion.extract_text_from_response({

@@ -866,7 +866,12 @@ export class BedrockCompletion extends ConfiguredLLM {
       maxTokens: options.maxTokens ?? options.max_tokens ?? null,
       timeout: options.timeout ?? null,
     }) as BaseLLMOptions & { maxTokens?: number | null; timeout?: number | null });
-    this.regionName = options.regionName ?? options.region_name ?? null;
+    this.regionName = options.regionName
+      ?? options.region_name
+      ?? process.env.AWS_DEFAULT_REGION
+      ?? process.env.AWS_REGION_NAME
+      ?? process.env.AWS_REGION
+      ?? "us-east-1";
     this.region_name = this.regionName;
     this.session = options.session ?? null;
     this.timeout = options.timeout ?? null;
@@ -1012,7 +1017,14 @@ export class BedrockCompletion extends ConfiguredLLM {
   }
 
   override toConfigDict(): Record<string, unknown> {
-    return super.toConfigDict();
+    return {
+      ...super.toConfigDict(),
+      ...(this.regionName && this.regionName !== "us-east-1" ? { region_name: this.regionName } : {}),
+      ...(this.maxTokens === null ? {} : { max_tokens: this.maxTokens }),
+      ...(this.topP === null ? {} : { top_p: this.topP }),
+      ...(this.topK === null ? {} : { top_k: this.topK }),
+      ...(this.guardrailConfig ? { guardrail_config: this.guardrailConfig } : {}),
+    };
   }
 
   override to_config_dict(): Record<string, unknown> {
@@ -1559,8 +1571,8 @@ export class GeminiCompletion extends ConfiguredLLM {
       timeout: options.timeout ?? null,
     }) as BaseLLMOptions & { timeout?: number | null });
     this.project = options.project ?? process.env.GOOGLE_CLOUD_PROJECT ?? null;
-    this.location = options.location ?? "us-central1";
-    this.useVertexai = options.useVertexai ?? options.use_vertexai ?? false;
+    this.location = options.location ?? process.env.GOOGLE_CLOUD_LOCATION ?? "us-central1";
+    this.useVertexai = options.useVertexai ?? options.use_vertexai ?? process.env.GOOGLE_GENAI_USE_VERTEXAI?.toLowerCase() === "true";
     this.use_vertexai = this.useVertexai;
     this.timeout = options.timeout ?? null;
     this.maxRetries = options.maxRetries ?? options.max_retries ?? 2;
@@ -3125,7 +3137,11 @@ export class AzureCompletion extends ConfiguredLLM {
     }
     return {
       endpoint,
-      api_key: apiKey,
+      ...(apiKey ? { api_key: apiKey } : {
+        credential: {
+          provider: "DefaultAzureCredential",
+        },
+      }),
       api_version: this.apiVersion,
       ...(credentialScopes ? { credential_scopes: credentialScopes } : {}),
     };
@@ -3142,9 +3158,6 @@ export class AzureCompletion extends ConfiguredLLM {
     const kwargs = this.makeClientKwargs(env);
     if (!kwargs.endpoint) {
       throw new Error("Azure endpoint is required");
-    }
-    if (!kwargs.api_key) {
-      throw new Error("Azure API key is required");
     }
     this._client = {
       provider: "azure",
