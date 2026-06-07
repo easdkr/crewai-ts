@@ -539,7 +539,9 @@ export class OpenAICompletion extends ConfiguredLLM {
     const query = new URLSearchParams();
     for (const [key, value] of Object.entries(defaultQuery)) {
       if (value !== undefined && value !== null) {
-        query.set(key, String(value));
+        query.set(key, typeof value === "string" || typeof value === "number" || typeof value === "boolean"
+          ? String(value)
+          : JSON.stringify(value));
       }
     }
     const url = `${baseUrl}/${path}${query.size > 0 ? `?${query.toString()}` : ""}`;

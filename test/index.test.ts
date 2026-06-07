@@ -38903,7 +38903,7 @@ describe("LLM providers", () => {
     await expect(azure.aclose()).resolves.toBeUndefined();
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
       ok: true,
-      json: async () => ({
+      json: () => Promise.resolve({
         choices: [{ message: { content: "azure smoke ok" } }],
         usage: { prompt_tokens: 6, completion_tokens: 3, total_tokens: 9 },
       }),
@@ -38914,13 +38914,10 @@ describe("LLM providers", () => {
       endpoint: "https://example.openai.azure.com/openai/deployments/gpt-4o",
     });
     await expect(liveAzure.acall([{ role: "user", content: "hello" }])).resolves.toBe("azure smoke ok");
-    expect(fetchMock).toHaveBeenCalledWith(
-      "https://example.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-06-01",
-      expect.objectContaining({
-        method: "POST",
-        headers: expect.objectContaining({ "api-key": "azure-key" }),
-      }),
-    );
+    const [azureUrl, azureInit] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(azureUrl).toBe("https://example.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-06-01");
+    expect(azureInit.method).toBe("POST");
+    expect(azureInit.headers).toMatchObject({ "api-key": "azure-key" });
     fetchMock.mockRestore();
   });
 
@@ -39096,7 +39093,7 @@ describe("LLM providers", () => {
     expect(gemini.format_text_content("hello")).toEqual({ text: "hello" });
     expect(gemini.to_config_dict()).toMatchObject({ model: "gemini-2.5-flash", provider: "gemini" });
     const bedrockClient = {
-      converse: vi.fn(async () => ({
+      converse: vi.fn(() => Promise.resolve({
         output: { message: { content: [{ text: "bedrock smoke ok" }] } },
         usage: { inputTokens: 5, outputTokens: 4, totalTokens: 9 },
       })),
@@ -39106,10 +39103,9 @@ describe("LLM providers", () => {
       session: bedrockClient,
     });
     await expect(liveBedrock.acall([{ role: "user", content: "hello" }])).resolves.toBe("bedrock smoke ok");
-    expect(bedrockClient.converse).toHaveBeenCalledWith(expect.objectContaining({
-      modelId: "anthropic.claude-3-5-sonnet-20241022-v2:0",
-      messages: expect.any(Array),
-    }));
+    const bedrockRequest = bedrockClient.converse.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(bedrockRequest.modelId).toBe("anthropic.claude-3-5-sonnet-20241022-v2:0");
+    expect(Array.isArray(bedrockRequest.messages)).toBe(true);
     await expect(gemini.acall([{ role: "user", content: "hello" }])).resolves.toBe("demo ok");
     expect(fetchSpy).toHaveBeenCalledWith(expect.stringContaining("gemini-2.5-flash:generateContent?key=gemini-key"), expect.objectContaining({
       method: "POST",
@@ -39120,7 +39116,7 @@ describe("LLM providers", () => {
   it("calls Vertex AI Gemini through the built-in fetch transport", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
       ok: true,
-      json: async () => ({
+      json: () => Promise.resolve({
         candidates: [{ content: { parts: [{ text: "vertex smoke ok" }] } }],
       }),
     } as Response);
@@ -39134,16 +39130,13 @@ describe("LLM providers", () => {
         client_params: { access_token: "vertex-token" },
       });
       await expect(gemini.call([{ role: "user", content: "hello" }])).resolves.toBe("vertex smoke ok");
-      expect(fetchMock).toHaveBeenCalledWith(
-        "https://us-central1-aiplatform.googleapis.com/v1/projects/demo-project/locations/us-central1/publishers/google/models/gemini-2.5-flash:generateContent",
-        expect.objectContaining({
-          method: "POST",
-          headers: expect.objectContaining({
-            Authorization: "Bearer vertex-token",
-            "Content-Type": "application/json",
-          }),
-        }),
-      );
+      const [vertexUrl, vertexInit] = fetchMock.mock.calls[0] as [string, RequestInit];
+      expect(vertexUrl).toBe("https://us-central1-aiplatform.googleapis.com/v1/projects/demo-project/locations/us-central1/publishers/google/models/gemini-2.5-flash:generateContent");
+      expect(vertexInit.method).toBe("POST");
+      expect(vertexInit.headers).toMatchObject({
+        Authorization: "Bearer vertex-token",
+        "Content-Type": "application/json",
+      });
     } finally {
       fetchMock.mockRestore();
     }
@@ -39331,7 +39324,7 @@ describe("LLM providers", () => {
   it("calls OpenAI chat completions through the built-in fetch transport", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
       ok: true,
-      json: async () => ({
+      json: () => Promise.resolve({
         choices: [{ message: { content: "openai smoke ok" } }],
         usage: { prompt_tokens: 7, completion_tokens: 4, total_tokens: 11 },
       }),
@@ -39340,14 +39333,16 @@ describe("LLM providers", () => {
     try {
       const openai = new OpenAICompletion({ model: "gpt-4o-mini", api_key: "openai-key", max_tokens: 32 });
       await expect(openai.call([{ role: "user", content: "smoke" }])).resolves.toBe("openai smoke ok");
-      expect(fetchMock).toHaveBeenCalledWith("https://api.openai.com/v1/chat/completions", expect.objectContaining({
-        method: "POST",
-        headers: expect.objectContaining({
-          Authorization: "Bearer openai-key",
-          "Content-Type": "application/json",
-        }),
-      }));
-      const request = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
+      const [openaiUrl, openaiInit] = fetchMock.mock.calls[0] as [string, RequestInit];
+      expect(openaiUrl).toBe("https://api.openai.com/v1/chat/completions");
+      expect(openaiInit.method).toBe("POST");
+      expect(openaiInit.headers).toMatchObject({
+        Authorization: "Bearer openai-key",
+        "Content-Type": "application/json",
+      });
+      const body = openaiInit.body;
+      expect(typeof body).toBe("string");
+      const request = JSON.parse(body as string) as Record<string, unknown>;
       expect(request).toMatchObject({
         model: "gpt-4o-mini",
         messages: [{ role: "user", content: "smoke" }],
@@ -39367,7 +39362,7 @@ describe("LLM providers", () => {
   it("calls OpenAI Responses API through the built-in fetch transport", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
       ok: true,
-      json: async () => ({
+      json: () => Promise.resolve({
         id: "resp_1",
         output_text: "responses smoke ok",
         output: [{ type: "message", content: [{ type: "output_text", text: "responses smoke ok" }] }],
@@ -39395,7 +39390,7 @@ describe("LLM providers", () => {
   it("extracts OpenAI Responses API message text without top-level output_text", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
       ok: true,
-      json: async () => ({
+      json: () => Promise.resolve({
         id: "resp_1",
         output: [{ type: "message", content: [{ type: "output_text", text: "responses nested text ok" }] }],
         usage: { input_tokens: 9, output_tokens: 5, total_tokens: 14 },
@@ -40249,7 +40244,7 @@ describe("LLM providers", () => {
   it("calls Anthropic messages API with an injected api_key", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
       ok: true,
-      json: async () => ({
+      json: () => Promise.resolve({
         id: "msg_live",
         content: [{ type: "text", text: "crewai-ts smoke ok" }],
         usage: {
@@ -40276,7 +40271,8 @@ describe("LLM providers", () => {
         "x-api-key": "anthropic-key",
         "anthropic-version": "2023-06-01",
       });
-      expect(JSON.parse(String(init.body))).toMatchObject({
+      expect(typeof init.body).toBe("string");
+      expect(JSON.parse(init.body as string) as Record<string, unknown>).toMatchObject({
         model: "claude-haiku-4-5-20251001",
         max_tokens: 16,
         messages: [{ role: "user", content: "smoke" }],
@@ -40296,7 +40292,7 @@ describe("LLM providers", () => {
   it("forces Anthropic structured output through a response_format tool", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
       ok: true,
-      json: async () => ({
+      json: () => Promise.resolve({
         id: "msg_structured",
         content: [{
           type: "tool_use",
@@ -40347,7 +40343,9 @@ describe("LLM providers", () => {
         risk_label: "medium",
         checks: ["sum", "discount", "risk"],
       });
-      const request = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
+      const body = fetchMock.mock.calls[0]?.[1]?.body;
+      expect(typeof body).toBe("string");
+      const request = JSON.parse(body as string) as Record<string, unknown>;
       expect(request.thinking).toEqual({ type: "enabled", budget_tokens: 1024 });
       expect(request.tool_choice).toEqual({ type: "tool", name: "structured_output" });
       expect(request.tools).toContainEqual(expect.objectContaining({

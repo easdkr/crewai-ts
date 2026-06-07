@@ -180,7 +180,9 @@ export class AnthropicCompletion extends ConfiguredLLM {
     );
     const schema = anthropicResponseSchema(options?.responseModel ?? this.responseFormat);
     if (schema) {
-      const tools = Array.isArray(params.tools) ? [...params.tools] : [];
+      const tools = Array.isArray(params.tools)
+        ? params.tools.filter((tool): tool is Record<string, unknown> => typeof tool === "object" && tool !== null)
+        : [];
       tools.push({
         name: STRUCTURED_OUTPUT_TOOL_NAME,
         description: "Use this tool to provide your final structured response in the required JSON shape.",
@@ -230,7 +232,7 @@ export class AnthropicCompletion extends ConfiguredLLM {
       return toolUses as unknown as LLMResponse;
     }
 
-    return this.applyStopWords(anthropicResponseText(body)) as LLMResponse;
+    return this.applyStopWords(anthropicResponseText(body));
   }
 
   override async acall(messages: LLMMessageInput, options?: LLMCallOptions): Promise<LLMResponse> {
@@ -911,7 +913,7 @@ export class BedrockCompletion extends ConfiguredLLM {
       }
       return toolUses as unknown as LLMResponse;
     }
-    return bedrockResponseText(response) as LLMResponse;
+    return bedrockResponseText(response);
   }
 
   override async acall(messages: LLMMessageInput, options?: LLMCallOptions): Promise<LLMResponse> {
@@ -1464,17 +1466,20 @@ export class BedrockCompletion extends ConfiguredLLM {
     return model.includes("anthropic") || model.includes("claude");
   }
 
-  private getConverseClient(): { converse: (request: Record<string, unknown>) => Promise<unknown> | unknown } {
+  private getConverseClient(): { converse: (request: Record<string, unknown>) => unknown } {
     const direct = readObject(this.session).converse;
     if (typeof direct === "function") {
-      return { converse: direct.bind(this.session) as (request: Record<string, unknown>) => Promise<unknown> | unknown };
+      return { converse: (request) => Reflect.apply(direct, this.session, [request]) as unknown };
     }
     const clientFactory = readObject(this.session).client;
     if (typeof clientFactory === "function") {
-      const client = clientFactory.call(this.session, "bedrock-runtime", this.regionName ? { region: this.regionName } : undefined);
+      const client = Reflect.apply(clientFactory, this.session, [
+        "bedrock-runtime",
+        this.regionName ? { region: this.regionName } : undefined,
+      ]) as unknown;
       const converse = readObject(client).converse;
       if (typeof converse === "function") {
-        return { converse: converse.bind(client) as (request: Record<string, unknown>) => Promise<unknown> | unknown };
+        return { converse: (request) => Reflect.apply(converse, client, [request]) as unknown };
       }
     }
     throw new Error("Bedrock live calls require a session/client with a converse(request) method.");
