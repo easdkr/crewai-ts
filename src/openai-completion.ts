@@ -786,6 +786,18 @@ export class OpenAICompletion extends ConfiguredLLM {
           name: item.name,
           arguments: item.arguments,
         });
+      } else if (type === "message") {
+        const content = Array.isArray(item.content) ? item.content : [];
+        const textParts: string[] = [];
+        for (const rawContent of content) {
+          const contentItem = readObject(rawContent);
+          if (contentItem.type === "output_text" && typeof contentItem.text === "string") {
+            textParts.push(contentItem.text);
+          }
+        }
+        if (!result.text && textParts.length > 0) {
+          result.text = textParts.join("");
+        }
       }
     }
 
@@ -1146,6 +1158,8 @@ export class OpenAICompatibleCompletion extends OpenAICompletion {
     return OpenAICompatibleCompletion.resolveHeaders(headers, config);
   }
 }
+
+registerLLMProviderFactory("openai", (options) => new OpenAICompletion(options as OpenAICompletionOptions));
 
 for (const provider of Object.keys(OPENAI_COMPATIBLE_PROVIDERS)) {
   registerLLMProviderFactory(provider, (options) => {

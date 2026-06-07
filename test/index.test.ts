@@ -19226,9 +19226,8 @@ describe("core crew runtime", () => {
       tasks: [taskInstance],
       function_calling_llm: "openai/gpt-4o-mini",
     });
-    expect(functionCallingCrew.function_calling_llm).toMatchObject({
-      model: "openai/gpt-4o-mini",
-    });
+    expect(functionCallingCrew.function_calling_llm).toBeInstanceOf(OpenAICompletion);
+    expect((functionCallingCrew.function_calling_llm as OpenAICompletion).model).toBe("gpt-4o-mini");
     expect(functionCallingCrew.functionCallingLlm).toBe(functionCallingCrew.function_calling_llm);
     const functionCallingAgent = new Agent({
       role: "Tool Caller",
@@ -19236,9 +19235,8 @@ describe("core crew runtime", () => {
       backstory: "Normalizes function calling LLM",
       function_calling_llm: "openai/gpt-4o-mini",
     });
-    expect(functionCallingAgent.function_calling_llm).toMatchObject({
-      model: "openai/gpt-4o-mini",
-    });
+    expect(functionCallingAgent.function_calling_llm).toBeInstanceOf(OpenAICompletion);
+    expect((functionCallingAgent.function_calling_llm as OpenAICompletion).model).toBe("gpt-4o-mini");
     expect(functionCallingAgent.functionCallingLlm).toBe(functionCallingAgent.function_calling_llm);
     const agentKnowledgeSource = new StringKnowledgeSource("Agent knowledge uses role collection.");
     const knowledgeAgent = new Agent({
@@ -39394,6 +39392,24 @@ describe("LLM providers", () => {
     }
   });
 
+  it("extracts OpenAI Responses API message text without top-level output_text", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        id: "resp_1",
+        output: [{ type: "message", content: [{ type: "output_text", text: "responses nested text ok" }] }],
+        usage: { input_tokens: 9, output_tokens: 5, total_tokens: 14 },
+      }),
+    } as Response);
+
+    try {
+      const openai = new OpenAICompletion({ model: "gpt-4.1", api: "responses", api_key: "openai-key" });
+      await expect(openai.call([{ role: "user", content: "smoke" }])).resolves.toBe("responses nested text ok");
+    } finally {
+      fetchMock.mockRestore();
+    }
+  });
+
   it("builds OpenAI SDK client params with upstream priority and overrides", () => {
     const previousApiKey = process.env.OPENAI_API_KEY;
     const previousBaseUrl = process.env.OPENAI_BASE_URL;
@@ -41856,6 +41872,21 @@ describe("LLM providers", () => {
       model: "test/configured-model",
     });
 
+    const openai = create_llm({ model: "openai/gpt-4o-mini", api_key: "openai-key" });
+    expect(openai).toBeInstanceOf(OpenAICompletion);
+    expect((openai as OpenAICompletion).model).toBe("gpt-4o-mini");
+    expect((openai as OpenAICompletion).provider).toBe("openai");
+
+    const openaiResponses = create_llm({
+      model: "openai/gpt-4.1",
+      api_key: "openai-key",
+      api: "responses",
+      auto_chain: true,
+    });
+    expect(openaiResponses).toBeInstanceOf(OpenAICompletion);
+    expect((openaiResponses as OpenAICompletion).api).toBe("responses");
+    expect((openaiResponses as OpenAICompletion).autoChain).toBe(true);
+
     const previousDeepSeekKey = process.env.DEEPSEEK_API_KEY;
     const previousOpenRouterKey = process.env.OPENROUTER_API_KEY;
     const previousCerebrasKey = process.env.CEREBRAS_API_KEY;
@@ -41956,10 +41987,9 @@ describe("LLM providers", () => {
       base_url: "https://api.openai.com/v1",
       api_key: "sk-your-api-key-here",
     });
-    expect(withAllAttributes).toBeInstanceOf(ConfiguredLLM);
-    expect((withAllAttributes as ConfiguredLLM).to_config_dict()).toMatchObject({
+    expect(withAllAttributes).toBeInstanceOf(OpenAICompletion);
+    expect((withAllAttributes as OpenAICompletion).to_config_dict()).toMatchObject({
       model: "gpt-3.5-turbo",
-      timeout: 10,
       temperature: 0.7,
       top_p: 0.9,
       stop: ["STOP", "END"],
@@ -41968,7 +41998,6 @@ describe("LLM providers", () => {
       frequency_penalty: 0.1,
       response_format: { type: "json_object" },
       seed: 42,
-      logprobs: true,
       top_logprobs: 5,
       base_url: "https://api.openai.com/v1",
       api_key: "sk-your-api-key-here",

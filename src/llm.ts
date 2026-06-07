@@ -1302,6 +1302,28 @@ export function createLLM(
   if (apiBase !== undefined) {
     options.api_base = apiBase;
   }
+  const providerOptions = options as Record<string, unknown>;
+  const llmOptions = llmValue as Record<string, unknown>;
+  for (const key of [
+    "api",
+    "instructions",
+    "store",
+    "previousResponseId",
+    "previous_response_id",
+    "include",
+    "builtinTools",
+    "builtin_tools",
+    "parseToolOutputs",
+    "parse_tool_outputs",
+    "autoChain",
+    "auto_chain",
+    "autoChainReasoning",
+    "auto_chain_reasoning",
+  ]) {
+    if (llmOptions[key] !== undefined) {
+      providerOptions[key] = llmOptions[key];
+    }
+  }
   return createConfiguredLLM(options);
 }
 
