@@ -40277,6 +40277,72 @@ describe("LLM providers", () => {
     }
   });
 
+  it("forces Anthropic structured output through a response_format tool", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        id: "msg_structured",
+        content: [{
+          type: "tool_use",
+          id: "toolu_structured",
+          name: "structured_output",
+          input: {
+            sum: 55,
+            discount_applied: true,
+            payable: 49.5,
+            risk_label: "medium",
+            checks: ["sum", "discount", "risk"],
+          },
+        }],
+        usage: {
+          input_tokens: 120,
+          output_tokens: 40,
+        },
+      }),
+    } as Response);
+    const responseFormat = {
+      name: "WorkflowCheck",
+      model_json_schema: () => ({
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          sum: { type: "number" },
+          discount_applied: { type: "boolean" },
+          payable: { type: "number" },
+          risk_label: { type: "string", enum: ["low", "medium", "high"] },
+          checks: { type: "array", items: { type: "string" }, minItems: 3, maxItems: 3 },
+        },
+        required: ["sum", "discount_applied", "payable", "risk_label", "checks"],
+      }),
+    };
+
+    try {
+      const anthropic = new AnthropicCompletion({
+        model: "claude-sonnet-4-6",
+        api_key: "anthropic-key",
+        max_tokens: 2048,
+        thinking: { type: "enabled", budget_tokens: 1024 },
+        response_format: responseFormat,
+      });
+      await expect(anthropic.call([{ role: "user", content: "Analyze workflow" }])).resolves.toEqual({
+        sum: 55,
+        discount_applied: true,
+        payable: 49.5,
+        risk_label: "medium",
+        checks: ["sum", "discount", "risk"],
+      });
+      const request = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
+      expect(request.thinking).toEqual({ type: "enabled", budget_tokens: 1024 });
+      expect(request.tool_choice).toEqual({ type: "tool", name: "structured_output" });
+      expect(request.tools).toContainEqual(expect.objectContaining({
+        name: "structured_output",
+        input_schema: sanitizeToolParamsForAnthropicStrict(responseFormat.model_json_schema()),
+      }));
+    } finally {
+      fetchMock.mockRestore();
+    }
+  });
+
   it("defaults missing Anthropic cache token fields to zero", () => {
     expect(AnthropicCompletion._extract_anthropic_token_usage({
       usage: {

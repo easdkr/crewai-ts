@@ -1,6 +1,7 @@
 import { ConfiguredLLM, CONTEXT_WINDOW_USAGE_RATIO, LocalFileUploader, registerLLMProviderFactory, stripCacheBreakpoint, type BaseLLMOptions, type LLMAvailableFunction, type LLMCallOptions, type LLMMessageInput, type LLMResponse } from "./llm.js";
 import { convertToolsToOpenAISchema } from "./agent-utils.js";
 import { OpenAICompletion, type OpenAICompletionOptions } from "./openai-completion.js";
+import { sanitizeToolParamsForAnthropicStrict } from "./schema-utils.js";
 import { sanitizeToolName } from "./string-utils.js";
 import type { LLMMessage, Tool } from "./types.js";
 
@@ -133,6 +134,8 @@ export class AnthropicCompletion extends ConfiguredLLM {
       stop: options.stop,
       stopSequences: options.stopSequences,
       stop_sequences: options.stop_sequences,
+      responseFormat: options.responseFormat,
+      response_format: options.response_format,
       maxTokens: options.maxTokens ?? options.max_tokens ?? 4096,
       timeout: options.timeout ?? null,
     }) as BaseLLMOptions & { maxTokens?: number | null; timeout?: number | null });
@@ -175,6 +178,18 @@ export class AnthropicCompletion extends ConfiguredLLM {
       (options?.tools ?? null) as readonly Tool[] | null,
       availableFunctions,
     );
+    const schema = anthropicResponseSchema(options?.responseModel ?? this.responseFormat);
+    if (schema) {
+      const tools = Array.isArray(params.tools) ? [...params.tools] : [];
+      tools.push({
+        name: STRUCTURED_OUTPUT_TOOL_NAME,
+        description: "Use this tool to provide your final structured response in the required JSON shape.",
+        input_schema: sanitizeToolParamsForAnthropicStrict(structuredClone(schema)),
+        strict: true,
+      });
+      params.tools = tools;
+      params.tool_choice = { type: "tool", name: STRUCTURED_OUTPUT_TOOL_NAME };
+    }
     const baseUrl = this.baseUrl ?? "https://api.anthropic.com";
     const response = await fetch(`${baseUrl.replace(/\/$/, "")}/v1/messages`, {
       method: "POST",
@@ -200,6 +215,11 @@ export class AnthropicCompletion extends ConfiguredLLM {
     if (thinkingBlocks.length > 0) {
       this.previousThinkingBlocks = thinkingBlocks;
       this._previous_thinking_blocks = this.previousThinkingBlocks;
+    }
+
+    const structuredOutput = AnthropicCompletion.extractStructuredOutputFromResponse(body);
+    if (structuredOutput) {
+      return structuredOutput as unknown as LLMResponse;
     }
 
     const toolUses = AnthropicCompletion.extractToolUsesFromResponse(body);
@@ -3593,6 +3613,21 @@ function parsePythonishObjectLiteral(value: string): Record<string, unknown> | n
 }
 
 function geminiResponseSchema(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const schemaProvider = value as {
+    model_json_schema?: () => unknown;
+    modelJsonSchema?: () => unknown;
+    schema?: unknown;
+  };
+  const schema = schemaProvider.model_json_schema?.() ?? schemaProvider.modelJsonSchema?.() ?? schemaProvider.schema;
+  return schema && typeof schema === "object" && !Array.isArray(schema)
+    ? schema as Record<string, unknown>
+    : null;
+}
+
+function anthropicResponseSchema(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== "object") {
     return null;
   }
