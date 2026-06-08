@@ -12,6 +12,12 @@
       "require": "./dist/index.cjs",
       "default": "./dist/index.js"
     },
+    "./argv": {
+      "types": "./dist/argv.d.ts",
+      "import": "./dist/argv.js",
+      "require": "./dist/argv.cjs",
+      "default": "./dist/argv.js"
+    },
     "./package.json": "./package.json"
   },
   "files": ["dist"],
