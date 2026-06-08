@@ -1,0 +1,37 @@
+{
+  "name": "@crewai-ts/cli",
+  "version": "0.1.0",
+  "description": "CLI to run a user's crewai-ts project (TypeScript/JavaScript) via tsx.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "bin": { "crewai-ts": "./dist/index.js" },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": ["dist"],
+  "engines": { "node": ">=22.0.0" },
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsup && tsc -p tsconfig.build.json",
+    "postbuild": "node --input-type=module -e \"import('./dist/index.js')\"",
+    "check": "tsc --noEmit",
+    "test": "vitest run",
+    "prepack": "npm run build"
+  },
+  "dependencies": { "tsx": "^4.19.0" },
+  "peerDependencies": {
+    "@crewai-ts/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.1",
+    "tsup": "^8.5.1",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.7"
+  }
+}
