@@ -56,7 +56,7 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
   return result;
 }
 
-export const HELP_TEXT = `crewai-ts <project-path> [options]
+export const HELP_TEXT = `Usage: crewai-ts <project-path> [options]
 
 Run a crewai-ts project.
 
