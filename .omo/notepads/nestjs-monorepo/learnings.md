@@ -265,3 +265,95 @@
   - `node --input-type=module -e "import { parseArgs } from './packages/cli/dist/argv.js'; ..."` → prints `{ path: '/p', inputs: { a: 1 }, help: false, version: false, error: null }` exactly as specified in the plan's QA scenario 2.
   - No `lsp_diagnostics` check possible (typescript-language-server not installed in this env — pre-existing, not a blocker; build + tsc --noEmit cover type safety).
 
+## Task 12 (CLI project validator) — 2026-06-08
+
+**Gotchas**
+
+- **RED-GREEN cycle was textbook fast**: test file written (7 tests, 91 lines), `pnpm -F @crewai-ts/cli test -- validate-project` failed with `Cannot find module '../src/validate-project.js'`, then writing the 35-line impl turned all 7 tests green on the first run. No surprises — the plan's spec is correct and complete.
+
+- **The 7 test cases cover the full validation surface**: 3 valid (dependencies / devDependencies / peerDependencies — confirms all 3 sections are accepted), 4 invalid (missing path → "path does not exist: <path>", path-is-file → "not a directory", no-core → "Please install @crewai-ts/core in your project: cd ... && pnpm add ...", malformed JSON → "package.json is not valid JSON: <reason>"). The 3 dep-section cases test that the impl checks all 3 sections, not just `dependencies` — a real production CLI should accept any of them since users install `@crewai-ts/core` differently depending on whether they use it at runtime, in tooling, or as a peer constraint.
+
+- **Test fixture pattern: `os.tmpdir()` + `fs.mkdtempSync()` + `rmSync` in `afterEach`**. This is the standard Node fs test idiom for hermetic filesystem tests. `mkdtempSync(join(tmpdir(), "crewai-ts-validate-"))` creates a unique dir under the OS temp area; `rmSync(tempDir, { recursive: true, force: true })` cleans it up. The `force: true` flag is critical — it allows cleanup to succeed even if the test didn't write anything to the temp dir (e.g., the "missing package.json" test never creates the dir). Vitest 4.x's `beforeEach`/`afterEach` run in deterministic order, so temp dirs are always cleaned up before the next test allocates a new one.
+
+- **Test 4 ("missing package.json — path does not exist") uses an absolute non-existent path** (`/non/existent/path/that/does/not/exist`) rather than relying on a missing temp dir. The reason: the test asserts on the EXACT error string `"path does not exist: /non/existent/path/that/does/not/exist"`, so the path is part of the contract. Using the temp dir would make the path vary between runs and require a regex.
+
+- **Test 5 ("path is a file, not a dir") uses `toMatch(/not a directory/)`** (regex) rather than `toBe("not a directory")` (exact string) — the implementation returns `not a directory: <path>`, so the substring "not a directory" is what's actually asserted. Same pattern for test 6 (`toMatch(/^Please install @crewai-ts\/core/)`) and test 7 (`toMatch(/package\.json is not valid JSON/)`). This is the pragmatic choice: the spec prose says the test "asserts `not a directory`" but the impl produces `not a directory: <full-path>`, so the regex is the minimal fix that matches both. Tests for 1, 2, 3, 4 use exact `toBe` because the impl's success/identity error is stable.
+
+- **The plan's `tsup.config.ts` only has `index` and `argv` as entries** — adding `validate-project.ts` as a source file does NOT cause tsup to bundle it. The build emits `dist/validate-project.d.ts` (via `tsc -p tsconfig.build.json` walking the source tree) but does NOT emit `dist/validate-project.js` or `dist/validate-project.cjs`. **This means the plan's QA scenario 2 (`import { validateProject } from './packages/cli/dist/validate-project.js'`) would FAIL** — there's no `dist/validate-project.js`. The plan's task spec doesn't explicitly call out updating `tsup.config.ts` and `package.json` `exports` map to include `validate-project`, but the QA scenario implicitly requires it. **Decision**: scoped this Task 12 commit to "tests + impl" only (matches the spec's acceptance criteria). The build is "exit 0" and the vitest run uses the `.ts` source directly. The downstream `tsup` entry + `exports` subpath wiring is a follow-up that should land alongside whatever Task 13+ needs the runtime-resolved `validateProject` symbol. Flagging for the next agent.
+
+- **`tsc -p tsconfig.build.json` emits `dist/validate-project.d.ts` automatically** because it walks all `.ts` files in the source tree, not just the tsup entries. The `.d.ts.map` is also emitted. Consumers that import via the `.d.ts` (e.g. `import type { ValidationResult }`) would work, but the runtime `.js` is missing. This is the same "d.ts present, .js missing" gap that would surface if anyone tried `import { validateProject } from "@crewai-ts/cli/validate-project"` — `package.json` exports doesn't have the subpath, and even if it did, `dist/validate-project.js` wouldn't exist.
+
+- **`@crewai-ts/cli` has 3 tests files now**: `argv.test.ts` (10 tests, from Task 11), `scaffold.test.ts` (1 test, from Task 4), and `validate-project.test.ts` (7 tests, this task). Total: 18 tests across 3 files. Test runtime: ~100ms for the validate-project file (the slowest is `argv.test.ts` at ~96ms; the new file is 99ms — both essentially free). All passing.
+
+- **`pnpm -F @crewai-ts/cli check` (tsc --noEmit) is clean** — the new `validate-project.ts` uses standard `node:fs` and `node:path` imports with no exotic type gymnastics. The 3 new types in the file (`ValidationResult`, the deps-section object access pattern) are all structurally typed. No new tsc errors. No pre-existing tsc errors in the cli package.
+
+- **`postbuild` smoke import still works** — the new source file doesn't affect the entry export shape. `import('./dist/index.js')` resolves to the same single-export module as before. The smoke import is a structural check, not a behavioral check; adding source files to the package doesn't break the entry import as long as the entry doesn't import from them.
+
+- **`pnpm -F @crewai-ts/cli test` (full suite, not the `-- validate-project` filter) shows 18 passed (18) in ~150ms** — adding 7 tests added ~50ms to the suite. Within the budget. No flakiness observed across the 3 run iterations I did (post-implementation).
+
+- **Verification (post-implementation)**:
+  - `pnpm -F @crewai-ts/cli test -- validate-project` → 7 passed (7) in 99ms.
+  - `pnpm -F @crewai-ts/cli test` (full suite) → 18 passed (18) in 150ms.
+  - `pnpm -F @crewai-ts/cli build` → exit 0. Existing entries (`index`, `argv`) rebuilt. `dist/validate-project.d.ts` + `dist/validate-project.d.ts.map` emitted. No `dist/validate-project.js`/`cjs` (see above).
+  - `pnpm -F @crewai-ts/cli check` → clean (tsc --noEmit).
+  - No `lsp_diagnostics` check possible (typescript-language-server not installed in this env — pre-existing).
+
+## Task 15 (CLI --help and --version sub-tests) — 2026-06-08
+
+**Gotchas**
+
+- **Plan spec says the help text "contains 'Usage:'" but the original `HELP_TEXT` from Task 11 does NOT include that string.** The plan's acceptance criteria (line 2309) and the test 1 expectation (line 2272) both require `expect(stdout).toContain("Usage:")`, but the Task 11 `argv.ts` ships `HELP_TEXT` starting with `crewai-ts <project-path> [options]` — the word "Usage" is in the second line ("Show this help") but never as a section header. **Fix**: prefixed `HELP_TEXT` with `Usage: crewai-ts <project-path> [options]` so the test passes. This is a minor spec correction (the help text is now slightly more conventional — most CLIs lead with `Usage: ...` as a one-liner header). Task 12's `validate-project.test.ts` was unaffected because it doesn't touch `HELP_TEXT`.
+
+- **Wired a minimal-but-functional `main()` in `src/index.ts` (NOT a `throw new Error("not implemented")` stub).** The plan's RED step was "test file should FAIL until task 14 lands", but the spec's GREEN step says "These tests should mostly pass once task 14's bin.ts is correct." Since Tasks 12-14 are still in flight, I chose to land a minimal `main()` that handles `--help`, `--version`, and argv-error paths (the 5 tests that don't need project execution). The "missing path with --help" test passes because `parseArgs(["--help"])` does NOT set `error` for the help flag (it leaves `error: null` and only sets `path: null`), so the `parsed.error !== null` branch correctly short-circuits to the help path. The 6th test (invalid JSON) passes because `parseArgs(["/path", "--inputs", "not-json"])` sets `error: "--inputs must be valid JSON: ..."` and `main` returns 2 with that exact substring on stderr. The 7th test (lists 3 options) is a sanity check on `HELP_TEXT`. The "no path → 0 return" branch is a no-op success stub for Task 14 to replace with `validateProject(path)` + `runProject(...)`.
+
+- **`process.stdout.write` and `process.stderr.write` are the right mocking targets, NOT `console.log`.** The plan's spec says "capture stdout/stderr from `main()`" — but `process.stdout.write` is what `main` calls directly, and `console.log` adds a trailing newline that `process.stdout.write` doesn't. Mocking `console.log` would also work for the current impl (because nothing uses `console.*` in `main`), but it's fragile — if a future refactor swaps to `console.log` or `console.error`, the mock target changes. Mocking the underlying `process.stdout.write` / `process.stderr.write` is more robust. The cast `(process.stdout.write as unknown as (chunk: string) => boolean) = ...` is required because the real signature is overloaded (`(chunk, cb?) => boolean | Promise<...>`) and tsc's strict mode rejects a direct reassignment to a less-specific function type. The `.bind(process.stdout)` on the saved originals ensures the `this` context is preserved (the underlying stream is a Duplex).
+
+- **No `import.meta.url === file://${process.argv[1]}` collision in tests.** The `main()` export is called directly from the test file with `main(["--help"])` — the bin's auto-execution guard (`if (import.meta.url === ...)`) only runs when the file is the process entrypoint, not when it's imported. So the test's `main()` call returns a `Promise<number>` cleanly without triggering `process.exit(0)`. The `captureOutput` helper awaits the promise and reads the return value, no `process.exit` patching needed.
+
+- **Test count went from 18 → 25 (full suite).** Breakdown: 10 argv + 1 scaffold + 7 validate-project (from Task 12) + 7 help (this task) = 25. Test runtime: ~137ms (essentially unchanged from 150ms — the 7 new help tests are sub-millisecond, dominated by vitest's import/transform overhead). All passing.
+
+- **`pnpm -F @crewai-ts/cli build` still emits a clean shebang on `dist/index.js`** — tsup's `banner: { js: "#!/usr/bin/env node" }` survives the addition of the `main()` function and the `argv.js` import. The `postbuild` smoke import (`node --input-type=module -e "import('./dist/index.js')"`) runs the auto-execution guard with `process.argv[1]` set to `[eval]`, so `import.meta.url !== file://${process.argv[1]}` and the auto-run branch is skipped. The smoke import is a structural check (does the file load as ESM?), not a behavioral check — and it passes.
+
+- **End-to-end smoke from the built bin works for both flags**: `node packages/cli/dist/index.js --version` prints `crewai-ts v0.1.0` to stdout and exits 0; `--help` prints the full usage text to stdout. This satisfies the plan's success criteria (line 2421-2422) ahead of Task 14. The `crewai-ts <fixture> --inputs '{...}'` path is still a no-op-success until Task 14 wires in `validateProject` + `runProject`.
+
+- **Verification (post-implementation)**:
+  - `pnpm -F @crewai-ts/cli test -- help` → 7 passed (7) in 106ms.
+  - `pnpm -F @crewai-ts/cli test` (full suite) → 25 passed (25) in 137ms.
+  - `pnpm -F @crewai-ts/cli build` → exit 0. `dist/index.js` is 894 B ESM / 4.00 KB CJS (the CJS jump from Task 12's was due to tsup's added CJS wrapper boilerplate around the new `parseArgs` import + the `main` function). `postbuild` smoke import succeeds.
+  - `node packages/cli/dist/index.js --version` → `crewai-ts v0.1.0` (exit 0).
+  - `node packages/cli/dist/index.js --help` → prints full help text starting with `Usage: ...` (exit 0).
+  - No `lsp_diagnostics` check possible (typescript-language-server not installed in this env — pre-existing).
+  - Evidence: `.omo/evidence/task-15-help-test.log`, `.omo/evidence/task-15-full-cli-test.log`.
+
+- **Pre-Task-14 heads-up**: `main()` is currently a partial impl that returns `0` for any `<path>` invocation without `--help`/`--version`/error. Task 14 should replace that final `return 0` with `validateProject(parsed.path)` + `runProject(...)` and handle the new error paths (e.g. `path does not exist`, `package.json is not valid JSON`, `@crewai-ts/core is not installed`). The Task 12 `validate-project.test.ts` already covers the validation messages in isolation, so Task 14's test file can focus on the integration: `main(["/valid/path", "--inputs", "{...}"])` succeeds (exit 0); `main(["/invalid/path"])` exits 2 with `validateProject`'s error message on stderr.
+
+
+
+## Task 13 (CLI: tsx invocation) — 2026-06-08
+
+**Gotchas**
+
+- **The plan's QA scenario `node --input-type=module -e "import { runProject } from './packages/cli/dist/spawn.js';"` doesn't work as-written** — `dist/spawn.js` is not produced by `pnpm -F @crewai-ts/cli build` because `tsup.config.ts` only declares `entry: { index: "src/index.ts", argv: "src/argv.ts" }`. `spawn.ts` is a Task-14 internal dep that Task 14 will surface in tsup. For this Task's QA, I imported directly from `packages/cli/src/spawn.ts` (the source) and got the same expected result: `exitCode: 7 stdout: hello`. Task 14 needs to add `spawn` (and presumably `validate-project`) to `tsup.config.ts` entries — but that's a Task-14 concern, not a Task-13 blocker.
+
+- **`import.meta.dirname` from inside a test file resolves to `test/`, not `src/`.** The "tsx path resolves" test re-implements the same walk-up that `resolveTsxBin()` does, starting from `src/spawn.js` — but the second assertion (CLI's bundled tsx) is from the TEST's `import.meta.dirname`, so the relative `..` count is different. From `test/`, you go up 1 level to `packages/cli/` to reach `node_modules/.bin/tsx`. The first attempt used `../../node_modules/.bin/tsx` (up 2) which incorrectly resolved to `packages/node_modules/.bin/tsx` and failed. Fixed by using `../node_modules/.bin/tsx` from the test's `import.meta.dirname`.
+
+- **With `node-linker=isolated`, the plan's "tsx may be at the workspace root" warning is moot for this package.** `tsx` is a *direct* dep of `@crewai-ts/cli` (not a peer or transitive), so pnpm places it at `packages/cli/node_modules/.bin/tsx` regardless of the linker setting. The walk-up in `resolveTsxBin()` finds it on iteration 1 (no fallback needed). The test still uses the walk-up pattern (defensive) and ALSO asserts the local `packages/cli/node_modules/.bin/tsx` exists directly.
+
+- **Subprocess testing with real `tsx` is fast (~150ms per test) but introduces flakiness risk.** Each `runProject` invocation spawns a fresh Node + tsx process — the 6 tests collectively run in ~880ms. If a future change adds heavy imports to the test fixture, runtime could grow. For now, the 30s `it` timeout per test is generous. The test uses `os.tmpdir() + fs.mkdtempSync` for isolation (each test gets its own dir), cleaned up in `afterEach`.
+
+- **`process.env.CREWAI_TS_INPUTS` in the spawn `env` does NOT mutate the test's process.env.** The spawn constructor copies the `env` object into the child process only — the parent test's `process.env` is unchanged. The test's assertion that `envPresent === "string"` (in the child) does not require any test-side cleanup. Good separation.
+
+- **Test count went from 25 → 31 (full suite).** Breakdown: existing 25 + 6 new spawn = 31. Full-suite runtime ~1.0s. All passing. Build: exit 0. Type-check (`pnpm -F @crewai-ts/cli check`): clean.
+
+- **Verification (post-implementation)**:
+  - `pnpm -F @crewai-ts/cli test -- spawn` → 6 passed (6) in ~970ms.
+  - `pnpm -F @crewai-ts/cli test` (full suite) → 31 passed (31) in ~1.0s.
+  - `pnpm -F @crewai-ts/cli build` → exit 0. `dist/` output unchanged from Task 15 (since `spawn.ts` is not in tsup entries).
+  - `pnpm -F @crewai-ts/cli check` → exit 0 (no type errors).
+  - QA scenario: `process.exit(7)` fixture → `runProject` returns `{ exitCode: 7, stdout: "hello\n" }` ✓.
+  - Evidence: `.omo/evidence/task-13-spawn-test.log`, `.omo/evidence/task-13-exit-code.txt`.
+
+- **Pre-Task-14 heads-up**: `runProject` is now available as `packages/cli/src/spawn.ts` (source) and tests pass. Task 14 needs to:
+  1. Add `spawn` and `validate-project` to `tsup.config.ts` `entry` so they ship in `dist/`.
+  2. Wire `main()` in `src/index.ts` to call `validateProject(parsed.path)` → `runProject(...)` and return the user's exit code (not 0). The current `return 0` at the end of `main()` is a Task-15 placeholder.
+  3. The Task 14 `bin.test.ts` plan asserts `node packages/cli/dist/bin.js <fixture> --inputs ...` — this requires `dist/bin.js` to exist, which is also a tsup entry addition. The plan's QA scenarios for Task 14 already mention this in passing.
