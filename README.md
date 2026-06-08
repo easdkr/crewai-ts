@@ -18,6 +18,17 @@ to ease migration from the Python library.
 > CrewAI is MIT-licensed (Copyright © crewAI, Inc.); this port retains that notice — see
 > [License](#license).
 
+## Packages
+
+This repository is a pnpm workspace. The root `README.md` documents the public
+package; per-package READMEs live next to each package's `package.json`.
+
+| Package | Description | Path |
+| --- | --- | --- |
+| [`@crewai-ts/core`](https://www.npmjs.com/package/@crewai-ts/core) | Unofficial TypeScript port of CrewAI — agents, tasks, crews, flows, memory, knowledge, and checkpoints. | [`packages/core/`](./packages/core/) |
+| `@crewai-ts/nestjs` | NestJS DI integration for `@crewai-ts/core` (DI tokens, modules, dynamic modules). | [`packages/nestjs/`](./packages/nestjs/) |
+| `@crewai-ts/cli` | Command-line tool for scaffolding and inspecting CrewAI-style projects. | [`packages/cli/`](./packages/cli/) |
+
 ## Installation
 
 ```bash
@@ -29,6 +40,44 @@ pnpm add @crewai-ts/core
 # or
 yarn add @crewai-ts/core
 ```
+
+## Monorepo
+
+This repo is a pnpm workspace (Node >= 22, pnpm 9.15.0). All work happens from
+the repository root; per-package scripts are fanned out with `pnpm -r`.
+
+```bash
+# Install every workspace package (root + packages/*)
+pnpm install
+
+# Run a script in every package (build, lint, test, check, …)
+pnpm -r build
+pnpm -r lint
+pnpm -r test
+pnpm -r check
+
+# Run a script in a single package
+pnpm -F @crewai-ts/core test
+pnpm -F @crewai-ts/nestjs build
+pnpm -F @crewai-ts/cli lint
+
+# Add a dependency to a single package
+pnpm -F @crewai-ts/nestjs add reflect-metadata
+```
+
+Workspace layout:
+
+```
+packages/
+  core/      # @crewai-ts/core  (published)
+  nestjs/    # @crewai-ts/nestjs
+  cli/       # @crewai-ts/cli
+```
+
+Cross-package references use the `workspace:*` protocol — for example
+`@crewai-ts/nestjs` declares `"@crewai-ts/core": "workspace:*"` in its
+`peerDependencies`, which pnpm resolves to the local `packages/core/`
+checkout during development.
 
 ## Requirements
 
@@ -778,14 +827,25 @@ class ResearchCrew extends CrewProject {
 
 ## Development
 
-This repo is built with [tsup](https://tsup.egoist.dev/) (ESM + CJS + type declarations)
-and tested with [Vitest](https://vitest.dev/).
+This monorepo is built with [tsup](https://tsup.egoist.dev/) (ESM + CJS + type
+declarations) and tested with [Vitest](https://vitest.dev/). Every script runs
+across the workspace with `pnpm -r`; see the [Monorepo](#monorepo) section for
+per-package variants and the [`pnpm-workspace.yaml`](./pnpm-workspace.yaml) for
+the workspace layout.
 
 ```bash
-npm run build   # build ESM + CJS output and declarations
-npm run check   # type-check in no-emit mode
-npm test        # run the Vitest suite
-npm run lint    # run ESLint
+pnpm -r build   # build ESM + CJS output and declarations for every package
+pnpm -r check   # type-check in no-emit mode for every package
+pnpm -r test    # run the Vitest suite for every package
+pnpm -r lint    # run ESLint across the whole monorepo
+```
+
+### Build & test a single package
+
+```bash
+pnpm -F @crewai-ts/core build
+pnpm -F @crewai-ts/core test
+pnpm -F @crewai-ts/nestjs lint
 ```
 
 ## License
