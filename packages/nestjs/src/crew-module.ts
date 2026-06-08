@@ -24,8 +24,13 @@ export interface CrewModuleOptions {
 }
 
 export interface CrewModuleAsyncOptions {
+  // `useFactory` is intentionally variadic. Each `inject` token flows through
+  // Nest as an `unknown`, and consumers typically annotate their factory
+  // with a concrete tuple (e.g. `(config: MyConfig) => ...`). We type the
+  // parameters as `any[]` rather than `unknown[]` so those typed factories
+  // remain assignable here without losing their inner argument types.
   useFactory: (
-    ...args: unknown[]
+    ...args: any[]
   ) => CrewModuleOptions | Promise<CrewModuleOptions>;
   inject?: readonly (
     | string

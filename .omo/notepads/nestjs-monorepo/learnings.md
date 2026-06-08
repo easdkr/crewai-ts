@@ -394,3 +394,23 @@
   - QA scenario 3 (missing @crewai-ts/core): stderr "crewai-ts: Please install @crewai-ts/core ...", exit 2.
 
 - **Test count is now 37 = 31 (pre-Task-14) + 6 (bin E2E).** The plan's Task 15 acceptance criterion ("37 total") was anticipating Task 14 landing 6 new tests — confirmed.
+
+## F2 fix: relax `LLMSupply` / `KnowledgeSupply` / `useFactory` (Task 16)
+
+- **`pnpm -F @crewai-ts/nestjs check` (tsc --noEmit) is the gate that catches test-file type errors.** `pnpm -F @crewai-ts/nestjs build` (tsup + `tsc -p tsconfig.build.json`) only checks `src/` and reports success even when test files are broken. The two commands are NOT equivalent — `check` is the canary for test type regressions, `build` only covers production code.
+
+- **`LLMFunction` from core is `(messages, options?) => MaybePromise<LLMResponse>` with NO optional parameters and NO zero-arg overload.** A test's `(): string => "mock-output"` is structurally incompatible with `LLMFunction` because (a) the test function requires zero parameters while `LLMFunction` requires `messages`, and (b) TypeScript's parameter bivariance / strict function types reject zero-arg functions as assignable to a function that expects arguments. The runtime Agent accepts the mock because the call site duck-types the function (it just invokes `llm(messages)` and treats the return as `LLMResponse = string | ToolCalling`), but TypeScript can't prove this.
+
+- **`Knowledge` from core is a class with 14+ properties (`sources`, `collectionName`, `collection_name`, `storage`, ...).** A plain `{ id, content }` object is not assignable to it. Tests want to pass plain objects (or `as const` arrays) as mocks. The fix widens the supply type to `readonly unknown[]` — the actual `Knowledge` class still works (it's a structural supertype via covariance), and mocks also work.
+
+- **The permissive `(...args: never[]) => unknown` pattern is the standard TS escape hatch for "any function".** `never[]` makes the function parameters bottom-typed, so every function type is assignable (function parameter types are contravariant, but `never` is the bottom of the type lattice so anything flows in). This preserves the "rejects non-functions" guard (`number`, `boolean`, etc. still fail) while accepting `() => string`, `(messages) => Promise<LLMResponse>`, async functions, etc.
+
+- **`useFactory` had to be widened from `(...args: unknown[]) => ...` to `(...args: any[]) => ...`.** With `unknown[]`, a typed factory like `(config: { defaultLlm: () => string }): CrewModuleOptions => ...` is rejected because `unknown` is not assignable to `{ defaultLlm: () => string }`. With `any[]`, the inner parameter types flow through unchanged. This is the same pattern NestJS itself uses internally for `FactoryProvider['useFactory']`. The `any[]` is scoped to the parameter list (a bivariant slot) — return type stays strict.
+
+- **The docstring on the relaxed types is load-bearing.** A drive-by "this should just be `LLMType`" cleanup would re-introduce the F2 failures and pass `check` for `src/` only. The comment explicitly records (a) why we diverge from the core's stricter types, (b) how to narrow back with `satisfies LLMType` when strict typing is needed, and (c) the runtime contract that justifies the permissiveness. Keep it.
+
+- **Verification (post-F2 fix)**:
+  - `pnpm -F @crewai-ts/nestjs check` → exit 0 (was 7 errors before).
+  - `pnpm -F @crewai-ts/nestjs test` → 23 passed (23) in ~2.47s. No runtime regression from the type widening — the mock functions still resolve correctly through the DI container and the Agent factory.
+  - `pnpm -F @crewai-ts/nestjs build` → exit 0. tsup emits `dist/index.js` (4.73 KB) and `dist/index.cjs` (6.00 KB); `tsc -p tsconfig.build.json` passes; postbuild smoke import succeeds.
+
