@@ -10,6 +10,7 @@ import {
   MEMORY,
 } from "../src/tokens.js";
 import { DefaultCrewFactory } from "../src/factories/crew-factory.js";
+import { AgentFactory } from "../src/factories/agent-factory.js";
 
 describe("@crewai-ts/nestjs CrewModule", () => {
   it("forRoot registers all 4 tokens", async () => {
@@ -31,9 +32,9 @@ describe("@crewai-ts/nestjs CrewModule", () => {
     const dynamic = CrewModule.forRoot({ llm: null });
     expect(dynamic.module).toBe(CrewModule);
     expect(Array.isArray(dynamic.providers)).toBe(true);
-    // LLM, MEMORY, KNOWLEDGE, DefaultCrewFactory (class provider), CREW_FACTORY (useExisting)
-    expect(dynamic.providers).toHaveLength(5);
-    expect(dynamic.exports).toEqual([CREW_FACTORY, LLM, MEMORY, KNOWLEDGE, DefaultCrewFactory]);
+    // LLM, MEMORY, KNOWLEDGE, DefaultCrewFactory (class provider), CREW_FACTORY (useExisting), AgentFactory
+    expect(dynamic.providers).toHaveLength(6);
+    expect(dynamic.exports).toEqual([CREW_FACTORY, LLM, MEMORY, KNOWLEDGE, DefaultCrewFactory, AgentFactory]);
   });
 
   it("forRoot without arguments errors", () => {

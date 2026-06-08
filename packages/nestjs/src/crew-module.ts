@@ -15,6 +15,7 @@ import {
   type MemorySupply,
 } from "./tokens.js";
 import { DefaultCrewFactory } from "./factories/crew-factory.js";
+import { AgentFactory } from "./factories/agent-factory.js";
 
 export interface CrewModuleOptions {
   llm: LLMSupply;
@@ -50,11 +51,12 @@ export class CrewModule {
       // instance via useExisting so consumers can resolve it by either token.
       DefaultCrewFactory,
       { provide: CREW_FACTORY, useExisting: DefaultCrewFactory },
+      AgentFactory,
     ];
     return {
       module: CrewModule,
       providers,
-      exports: [CREW_FACTORY, LLM, MEMORY, KNOWLEDGE, DefaultCrewFactory],
+      exports: [CREW_FACTORY, LLM, MEMORY, KNOWLEDGE, DefaultCrewFactory, AgentFactory],
     };
   }
 
@@ -92,8 +94,9 @@ export class CrewModule {
         // consumers can resolve it by either the symbol token or the class.
         DefaultCrewFactory,
         { provide: CREW_FACTORY, useExisting: DefaultCrewFactory },
+        AgentFactory,
       ],
-      exports: [CREW_FACTORY, LLM, MEMORY, KNOWLEDGE, DefaultCrewFactory],
+      exports: [CREW_FACTORY, LLM, MEMORY, KNOWLEDGE, DefaultCrewFactory, AgentFactory],
     };
   }
 }
