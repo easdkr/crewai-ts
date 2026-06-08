@@ -1,6 +1,11 @@
 import { defineConfig } from "tsup";
 export default defineConfig({
-  entry: { index: "src/index.ts", argv: "src/argv.ts" },
+  entry: {
+    index: "src/index.ts",
+    argv: "src/argv.ts",
+    "validate-project": "src/validate-project.ts",
+    spawn: "src/spawn.ts",
+  },
   format: ["esm", "cjs"],
   dts: false,
   sourcemap: false,

@@ -18,6 +18,18 @@
       "require": "./dist/argv.cjs",
       "default": "./dist/argv.js"
     },
+    "./validate-project": {
+      "types": "./dist/validate-project.d.ts",
+      "import": "./dist/validate-project.js",
+      "require": "./dist/validate-project.cjs",
+      "default": "./dist/validate-project.js"
+    },
+    "./spawn": {
+      "types": "./dist/spawn.d.ts",
+      "import": "./dist/spawn.js",
+      "require": "./dist/spawn.cjs",
+      "default": "./dist/spawn.js"
+    },
     "./package.json": "./package.json"
   },
   "files": ["dist"],

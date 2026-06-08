@@ -357,3 +357,40 @@
   1. Add `spawn` and `validate-project` to `tsup.config.ts` `entry` so they ship in `dist/`.
   2. Wire `main()` in `src/index.ts` to call `validateProject(parsed.path)` → `runProject(...)` and return the user's exit code (not 0). The current `return 0` at the end of `main()` is a Task-15 placeholder.
   3. The Task 14 `bin.test.ts` plan asserts `node packages/cli/dist/bin.js <fixture> --inputs ...` — this requires `dist/bin.js` to exist, which is also a tsup entry addition. The plan's QA scenarios for Task 14 already mention this in passing.
+
+## Task 14 (CLI bin entry wiring) — 2026-06-08
+
+**Gotchas**
+
+- **The plan body still says `src/bin.ts`, but the user-prompt (Task 14) explicitly says to wire `main()` in `src/index.ts`.** The user-prompt takes precedence here. The CLI's `package.json` `"bin": { "crewai-ts": "./dist/index.js" }` (set in Task 4) confirms the binary is `index.js`, not `bin.js`. The plan's `bin.ts` reference is a stale placeholder from an earlier draft. The user-prompt's bin.test.ts uses `node packages/cli/dist/index.js` (matching the actual `bin` mapping) and the commit message uses `src/index.ts`. I followed the user-prompt: the existing `src/index.ts` was completed (Task 15 had left a stub `return 0` for the project-run path), and no `src/bin.ts` was created. This is consistent with the actual CLI surface users will see.
+
+- **`tsup` already had a chunked shim output for `index.js` from earlier builds** (visible as `chunk-*.js` files in `dist/`). When the new `validate-project` and `spawn` entries were added, tsup produced two new chunks (one for each), each ~400 bytes — these are the Node `import.meta.dirname` shim that tsup injects for ESM. The shims don't affect the CLI's runtime; `tsx`-loaded user code never touches them.
+
+- **`tsc -p tsconfig.build.json` (the post-tsup declaration step) already emits `*.d.ts` for every `.ts` in `src/` via the `include: ["src/**/*.ts"]` glob.** This is why `spawn.d.ts` and `validate-project.d.ts` already existed in `dist/` even before adding the tsup entries — but their `.js` and `.cjs` counterparts did NOT exist. The .d.ts files are useless without the .js runtime. Task 12 / Task 13's notepads flagged this; Task 14 closes the gap by adding the tsup entries (and mirroring them in `package.json` `exports`).
+
+- **`main()` previously wrote `Run "crewai-ts --help" for usage.` for argv errors.** Replaced this with the full `HELP_TEXT` for consistency with the missing-path and parse-error cases — the spec says "print `crewai-ts: ${error}\n\n${HELP_TEXT}` to stderr". The Task 15 help.test.ts only asserts that the error substring is contained in stderr (not the exact suffix), so this change is backward-compatible. `expect(stderr).toContain("--inputs must be valid JSON")` still passes because the substring is preserved in the new output.
+
+- **`captureOutput` in `help.test.ts` writes to `process.stdout.write` / `process.stderr.write` directly.** The new `main()` flow reuses the same `process.stdout.write` / `process.stderr.write` calls (no `console.log`), so the Task 15 unit tests still pass without modification. Verified: `pnpm -F @crewai-ts/cli test` (full suite) → 37 passed (37).
+
+- **E2E `bin.test.ts` runs the real built binary, not the source.** Path resolution: `import.meta.dirname` of `test/bin.test.ts` is `packages/cli/test/`. The binary lives at `packages/cli/dist/index.js`, i.e. `../dist/index.js`. The test passes `cwd: <monorepo root>` so any path-based logic in the CLI (none currently) starts from a known location. Each test gets its own `os.tmpdir() + fs.mkdtempSync` fixture, cleaned in `afterEach` — same pattern as `spawn.test.ts`.
+
+- **The E2E tests run fast (~644ms total for 6 tests)** because the bin itself just shells out to tsx (no per-test Node startup overhead in the test framework — the spawned `node` is the only Node startup per test). The user's `process.exit(7)` from the test fixture is propagated through `spawn` → `main` → `process.exit(7)` cleanly. Exit code 7 ≠ 0/1/2, which exercises the "propagate user exit code exactly" acceptance criterion.
+
+- **Manual E2E smoke test on the built binary** confirmed all 4 spec scenarios:
+  - `node packages/cli/dist/index.js --help` → exit 0, "Usage: crewai-ts <project-path> ..."
+  - `node packages/cli/dist/index.js --version` → exit 0, "crewai-ts v0.1.0"
+  - `node packages/cli/dist/index.js /non/existent` → exit 2, "crewai-ts: path does not exist: /non/existent"
+  - `node packages/cli/dist/index.js /tmp/crewai-ts-e2e --inputs '{"y":2}'` → exit 7, "input: {\"y\":2}" on stdout (user's exit code propagated).
+
+- **The `findProjectEntry` function in `src/index.ts` is exported** for testability and future re-use (e.g., a `scaffold` subcommand or a `validate` subcommand could resolve an entry without running). The current `bin.test.ts` does not import it directly — the test asserts behavior through the bin, not the function. The export keeps the door open for direct unit tests later.
+
+- **Verification (post-implementation)**:
+  - `pnpm -F @crewai-ts/cli test -- bin` → 6 passed (6) in ~644ms.
+  - `pnpm -F @crewai-ts/cli test` → 37 passed (37) in ~1.05s. Breakdown: 10 argv + 7 help + 7 validate + 6 spawn + 6 bin + 1 scaffold = 37.
+  - `pnpm -F @crewai-ts/cli build` → exit 0. New entries: `dist/validate-project.{js,cjs,d.ts}`, `dist/spawn.{js,cjs,d.ts}`. `dist/index.js` shebang: `#!/usr/bin/env node` ✓.
+  - `pnpm -F @crewai-ts/cli check` → exit 0 (no type errors in `index.ts` rewrite).
+  - QA scenario 1 (--help / --version): exit 0 + expected text.
+  - QA scenario 2 (full E2E with fixture): stdout "input: {\"y\":2}", exit 7.
+  - QA scenario 3 (missing @crewai-ts/core): stderr "crewai-ts: Please install @crewai-ts/core ...", exit 2.
+
+- **Test count is now 37 = 31 (pre-Task-14) + 6 (bin E2E).** The plan's Task 15 acceptance criterion ("37 total") was anticipating Task 14 landing 6 new tests — confirmed.
