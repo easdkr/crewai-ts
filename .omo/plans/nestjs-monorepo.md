@@ -227,7 +227,7 @@ Wave FINAL (4 parallel reviews):
 > FORMAT: Task labels MUST use bare numbers: `1.`, `2.`, `3.` — NOT `T1.`, `Task 1.`, `Phase 1:`.
 > Final Verification Wave labels MUST use `F1.`, `F2.`, etc. — NOT `T-F1.`, `F-1.`, `Final 1.`.
 
-- [ ] 1. pnpm workspace bootstrap (root config files)
+- [x] 1. pnpm workspace bootstrap (root config files)
 
   **What to do**:
   - Create `pnpm-workspace.yaml` at repo root with `packages: ["packages/*"]`
@@ -324,7 +324,7 @@ Wave FINAL (4 parallel reviews):
   - Files: `pnpm-workspace.yaml`, root `package.json`, root `tsconfig.base.json`, root `.npmrc`, `.gitignore`, delete `package-lock.json`, add `pnpm-lock.yaml`
   - Pre-commit: `pnpm install` exits 0
 
-- [ ] 2. Core migration: move `@crewai-ts/core` into `packages/core/`
+- [x] 2. Core migration: move `@crewai-ts/core` into `packages/core/`
 
   **What to do**:
   - Use `git mv` to relocate: `src/` → `packages/core/src/`, `test/` → `packages/core/test/`, `scripts/` → `packages/core/scripts/`, `examples/` → `packages/core/examples/`. The flat `src/` structure means internal `./foo.js` relative imports stay valid. The 3 `../src/*.js` imports in `test/index.test.ts` (lines 10, 11, 1087) stay valid since `test/` and `src/` are siblings under `packages/core/`.
@@ -475,7 +475,7 @@ Wave FINAL (4 parallel reviews):
 
 ---
 
-- [ ] 3. Scaffold `packages/nestjs/` (`@crewai-ts/nestjs` v0.1.0)
+- [x] 3. Scaffold `packages/nestjs/` (`@crewai-ts/nestjs` v0.1.0)
 
   **What to do**:
   - Create directory `packages/nestjs/` with subdirs `src/`, `test/`.
@@ -662,7 +662,7 @@ Wave FINAL (4 parallel reviews):
   - Files: `packages/nestjs/**`
   - Pre-commit: `pnpm -F @crewai-ts/nestjs test && pnpm -F @crewai-ts/nestjs build`
 
-- [ ] 4. Scaffold `packages/cli/` (`@crewai-ts/cli` v0.1.0, ships `crewai-ts` bin)
+- [x] 4. Scaffold `packages/cli/` (`@crewai-ts/cli` v0.1.0, ships `crewai-ts` bin)
 
   **What to do**:
   - Create directory `packages/cli/` with subdirs `src/`, `test/`.
@@ -844,7 +844,7 @@ Wave FINAL (4 parallel reviews):
   - Files: `packages/cli/**`
   - Pre-commit: `pnpm -F @crewai-ts/cli test && pnpm -F @crewai-ts/cli build && head -c 15 packages/cli/dist/index.js | grep -q '^#!/usr/bin/env node$'`
 
-- [ ] 5. Root tooling update (eslint, CI, README, .codegraph)
+- [x] 5. Root tooling update (eslint, CI, README, .codegraph)
 
   **What to do**:
   - Create root `eslint.config.js` that lints all 3 packages with per-package `tsconfig.eslint.json` references:

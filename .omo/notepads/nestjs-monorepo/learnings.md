@@ -103,3 +103,19 @@
 - **No `experimentalDecorators` override needed** for cli — the plan explicitly said so, and verified: the base `tsconfig.base.json` already has `experimentalDecorators: false`, which is correct for a CLI that won't use NestJS-style decorators.
 - **`tsx@^4.19.0` in `dependencies` (not peerDeps)** is correct: the CLI is a standalone runtime that bundles tsx for hot-reload / TS execution, so users running `crewai-ts dev` don't need to install tsx separately. Tasks 11-15 will use this.
 
+## Task 6 (NestJS symbol tokens + injection types) — 2026-06-08
+
+**Gotchas**
+
+- **`@crewai-ts/core` exports a value named `LLM` (the class/type)** AND the nestjs tokens file also exports a const named `LLM` (the DI symbol). Doing `import type { LLM } from "@crewai-ts/core"` and then `export const LLM = Symbol.for("crewai-ts/LLM")` in the same file causes tsc errors `TS2395: Individual declarations in merged declaration 'LLM' must be all exported or all local` and `TS2440: Import declaration conflicts with local declaration of 'LLM'`. **Fix: alias the type-only import** — `import type { LLM as LLMType } from "@crewai-ts/core"` — and use the alias in the `LLMSupply` union. The runtime value `LLM` and the type alias `LLMSupply` are exported unchanged from the public surface. The plan's snippet (`import type { LLM } from "@crewai-ts/core"` + `export const LLM = ...`) compiles in pure JS but fails tsc declaration-emit mode used by `tsc -p tsconfig.build.json`. This is a real spec defect worth flagging in Task 7+ if the same `LLM` naming is reused.
+
+- **`Symbol.for("crewai-ts/CREW_FACTORY").toString()` returns `Symbol(crewai-ts/CREW_FACTORY)`** (with parens, no quotes). The `toString()` test pattern `.toContain("crewai-ts/CREW_FACTORY")` is robust — it works for both the global registry form (`Symbol.for(...)`) and the local form (`Symbol("...")`) — and verifies the description string survived. A stricter `toBe(...)` test would couple the test to the registry form.
+
+- **The plan's 4-test count is achievable by folding the type-alias compile-time check into each runtime test** (e.g. `const token: LLMToken = LLM; expect(token).toBe(LLM)`). This means a drift in the `LLMToken` type alias (e.g. someone changes it from `symbol` to `string`) would surface as a tsc error, not as a separate runtime test failure. The alternative is a 5th test ("exposes the expected token TYPE aliases (compile-time)"), but the spec says 4 — chose the inlined form.
+
+- **Test file imports use `../src/tokens.js`** (the `.js` extension) — vitest+tsup+tsc convention for this monorepo, matching the scaffold test's `../src/index.js` import. Do NOT use `../src/tokens` (extensionless) — tsc's `moduleResolution: nodenext` and `allowImportingTsExtensions` is OFF, so the runtime import must include `.js`.
+
+- **`@crewai-ts/core` types compile cleanly from `packages/nestjs/`** — the `workspace:*` symlink at `packages/nestjs/node_modules/@crewai-ts/core` is intact from Task 3, so `import type { Crew, Memory, Knowledge, LLM as LLMType, Agent, Task } from "@crewai-ts/core"` resolves without rebuilding core. No `pnpm -F @crewai-ts/core build` prerequisite.
+
+- **`Symbol.for` returns a globally-registered symbol** — `Symbol.for("x") === Symbol.for("x")` is `true`, and the registry is process-wide. The 4 tokens live in the global symbol registry. If a user app also calls `Symbol.for("crewai-ts/LLM")`, they get the same token. This is intentional (the plan's "WHY Each Reference Matters" note) — it means the same NestJS provider can be referenced from test fixtures and the real app without re-importing the constant.
+
