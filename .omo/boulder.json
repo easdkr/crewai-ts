@@ -1,0 +1,35 @@
+{
+  "schema_version": 2,
+  "active_work_id": "nestjs-monorepo-a315464c",
+  "works": {
+    "nestjs-monorepo-a315464c": {
+      "work_id": "nestjs-monorepo-a315464c",
+      "active_plan": "/Users/june/workspace/personal/crewai-ts/.omo/plans/nestjs-monorepo.md",
+      "plan_name": "nestjs-monorepo",
+      "status": "active",
+      "started_at": "2026-06-08T12:31:20.780Z",
+      "updated_at": "2026-06-08T12:31:20.780Z",
+      "session_ids": [
+        "opencode:ses_158c8af59ffeefSlT9Z39iw22W"
+      ],
+      "session_origins": {
+        "opencode:ses_158c8af59ffeefSlT9Z39iw22W": "direct"
+      },
+      "agent": "atlas",
+      "task_sessions": {}
+    }
+  },
+  "active_plan": "/Users/june/workspace/personal/crewai-ts/.omo/plans/nestjs-monorepo.md",
+  "started_at": "2026-06-08T12:31:20.780Z",
+  "status": "active",
+  "updated_at": "2026-06-08T12:31:20.780Z",
+  "session_ids": [
+    "opencode:ses_158c8af59ffeefSlT9Z39iw22W"
+  ],
+  "session_origins": {
+    "opencode:ses_158c8af59ffeefSlT9Z39iw22W": "direct"
+  },
+  "plan_name": "nestjs-monorepo",
+  "task_sessions": {},
+  "agent": "atlas"
+}

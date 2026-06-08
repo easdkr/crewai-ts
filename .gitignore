@@ -6,3 +6,7 @@ coverage
 *.tgz
 reports
 var
+**/dist/
+**/node_modules/
+**/coverage/
+pnpm-debug.log*
