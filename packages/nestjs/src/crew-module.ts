@@ -4,11 +4,11 @@ import {
   KNOWLEDGE,
   LLM,
   MEMORY,
-  type CrewFactory,
   type KnowledgeSupply,
   type LLMSupply,
   type MemorySupply,
 } from "./tokens.js";
+import { DefaultCrewFactory } from "./factories/crew-factory.js";
 
 export interface CrewModuleOptions {
   llm: LLMSupply;
@@ -26,20 +26,16 @@ export class CrewModule {
       { provide: LLM, useValue: options.llm },
       { provide: MEMORY, useValue: options.memory ?? null },
       { provide: KNOWLEDGE, useValue: options.knowledge ?? null },
-      {
-        provide: CREW_FACTORY,
-        useFactory: (): CrewFactory => ({
-          create: ({ agents, tasks }) => {
-            const { Crew, Process } = require("@crewai-ts/core") as typeof import("@crewai-ts/core");
-            return new Crew({ agents: [...agents], tasks: [...tasks], process: Process.sequential });
-          },
-        }),
-      },
+      // Class-based factory: DefaultCrewFactory is the canonical instance
+      // (injects LLM + MEMORY). The CREW_FACTORY symbol is bound to the SAME
+      // instance via useExisting so consumers can resolve it by either token.
+      DefaultCrewFactory,
+      { provide: CREW_FACTORY, useExisting: DefaultCrewFactory },
     ];
     return {
       module: CrewModule,
       providers,
-      exports: [CREW_FACTORY, LLM, MEMORY, KNOWLEDGE],
+      exports: [CREW_FACTORY, LLM, MEMORY, KNOWLEDGE, DefaultCrewFactory],
     };
   }
 }

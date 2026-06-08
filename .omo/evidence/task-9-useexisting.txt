@@ -1,0 +1,3 @@
+isDefaultCrewFactory: true
+hasCreate: true
+throws: CrewFactory.create requires at least one agent

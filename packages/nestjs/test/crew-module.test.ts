@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import "reflect-metadata";
 import { Test } from "@nestjs/testing";
 import { CrewModule } from "../src/crew-module.js";
 import { type CrewModuleOptions } from "../src/crew-module.js";
@@ -8,6 +9,7 @@ import {
   LLM,
   MEMORY,
 } from "../src/tokens.js";
+import { DefaultCrewFactory } from "../src/factories/crew-factory.js";
 
 describe("@crewai-ts/nestjs CrewModule", () => {
   it("forRoot registers all 4 tokens", async () => {
@@ -29,8 +31,9 @@ describe("@crewai-ts/nestjs CrewModule", () => {
     const dynamic = CrewModule.forRoot({ llm: null });
     expect(dynamic.module).toBe(CrewModule);
     expect(Array.isArray(dynamic.providers)).toBe(true);
-    expect(dynamic.providers).toHaveLength(4);
-    expect(dynamic.exports).toEqual([CREW_FACTORY, LLM, MEMORY, KNOWLEDGE]);
+    // LLM, MEMORY, KNOWLEDGE, DefaultCrewFactory (class provider), CREW_FACTORY (useExisting)
+    expect(dynamic.providers).toHaveLength(5);
+    expect(dynamic.exports).toEqual([CREW_FACTORY, LLM, MEMORY, KNOWLEDGE, DefaultCrewFactory]);
   });
 
   it("forRoot without arguments errors", () => {
