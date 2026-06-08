@@ -2,6 +2,10 @@
 export const NESTJS_PACKAGE_VERSION = "0.1.0";
 
 export { CREW_FACTORY, LLM, MEMORY, KNOWLEDGE } from "./tokens.js";
-export { CrewModule, type CrewModuleOptions } from "./crew-module.js";
+export {
+  CrewModule,
+  type CrewModuleOptions,
+  type CrewModuleAsyncOptions,
+} from "./crew-module.js";
 export { DefaultCrewFactory } from "./factories/crew-factory.js";
 export { AgentFactory } from "./factories/agent-factory.js";
