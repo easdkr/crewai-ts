@@ -1,0 +1,47 @@
+{
+  "name": "@crewai-ts/nestjs",
+  "version": "0.1.0",
+  "description": "NestJS DI integration for @crewai-ts/core.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": ["dist"],
+  "engines": { "node": ">=22.0.0" },
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsup && tsc -p tsconfig.build.json",
+    "postbuild": "node --input-type=module -e \"import('./dist/index.js')\"",
+    "check": "tsc --noEmit",
+    "test": "vitest run",
+    "prepack": "npm run build"
+  },
+  "peerDependencies": {
+    "@crewai-ts/core": "workspace:*",
+    "@nestjs/common": "^10.0.0 || ^11.0.0",
+    "@nestjs/core": "^10.0.0 || ^11.0.0",
+    "reflect-metadata": "^0.2.0"
+  },
+  "peerDependenciesMeta": {
+    "reflect-metadata": { "optional": false }
+  },
+  "devDependencies": {
+    "@nestjs/common": "^11.0.0",
+    "@nestjs/core": "^11.0.0",
+    "@nestjs/testing": "^11.0.0",
+    "@types/node": "^25.9.1",
+    "reflect-metadata": "^0.2.0",
+    "tsup": "^8.5.1",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.7"
+  }
+}

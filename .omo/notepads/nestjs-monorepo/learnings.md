@@ -45,3 +45,14 @@
 - The `build-integrity.test.ts` pattern is reusable — consider copying it to each new package with package-specific guardrails (no `reflect-metadata`, no NestJS metadata decorators, etc.).
 - `tsup` externalizes `node:sqlite` correctly. New packages with native deps should follow the same pattern.
 
+
+## Task 3 (scaffold @crewai-ts/nestjs) — 2026-06-08
+
+**Gotchas**
+
+- **The base `tsconfig.base.json` sets `verbatimModuleSyntax: true` and `experimentalDecorators: false`.** The nestjs package MUST override both — `experimentalDecorators: true`, `emitDecoratorMetadata: true`, `verbatimModuleSyntax: false` — for NestJS DI to work. Just `extends` is not enough; the base flags would actively break `@Injectable()`.
+- **tsup warns "You have emitDecoratorMetadata enabled but @swc/core was not installed, skipping swc plugin"** during the build. This is harmless — tsc is the one that actually needs the metadata (and only for `.d.ts` emission, not for the runtime JS). The ESM/CJS JS still builds fine; only the type metadata downstream is affected. For a placeholder package this doesn't matter, but real DI code in later tasks will need to verify that tsc's `.d.ts` output preserves the metadata. Worth re-checking when tasks 6-10 land.
+- **The plan's `pnpm install` is warm.** Running it again on a no-op manifest change produces `Packages: +19` (the first-time install of the nestjs deps). On a fully-warm install, pnpm 9.15 prints no `@crewai-ts/nestjs` line in the log — the workspace symlink is created silently in `packages/nestjs/node_modules/@crewai-ts/core` (a symlink to `../../../core`). The `ls -la packages/nestjs/node_modules/@crewai-ts/` check is the right verification.
+- **`pnpm -F @crewai-ts/nestjs postbuild` runs the smoke import successfully** (exit 0). It also re-emits the build output on its own — `pnpm build` and `pnpm postbuild` are separate lifecycle steps in pnpm, NOT chained. The smoke import `import('./dist/index.js')` is a no-op for our placeholder (just loads a single const), but it's the right shape for future tasks.
+- **`@nestjs/common`, `@nestjs/core`, `@nestjs/testing` are devDependencies, not peerDeps in devDeps form.** The spec keeps them in `peerDependencies` (for the consuming app) AND in `devDependencies` (so the package's own tests/build can use them). The version constraint in peerDeps is `^10.0.0 || ^11.0.0` (broader for users), but in devDeps it's pinned to `^11.0.0` (so the test matrix is fixed). This is the correct pattern — don't try to "deduplicate" them.
+- **`vitest` 4.x emits no warning about the empty test suite or the deprecation note** — the scaffold test runs in ~108ms, which is fast enough that the future test additions in tasks 6-10 won't slow the loop noticeably.
