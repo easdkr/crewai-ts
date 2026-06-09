@@ -1,9 +1,0 @@
-{
-  "path": "/p",
-  "inputs": {
-    "a": 1
-  },
-  "help": false,
-  "version": false,
-  "error": null
-}
