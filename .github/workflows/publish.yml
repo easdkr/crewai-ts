@@ -1,11 +1,9 @@
-# Follow-up: publish workflows for @crewai-ts/nestjs and @crewai-ts/cli will be
-# added in a separate PR. This workflow publishes @crewai-ts/core only.
-name: Publish to npm
-
-# Publishes @crewai-ts/core to npm when a version tag (vX.Y.Z) is pushed.
+# Publishes all @crewai-ts/* packages to npm when a version tag is pushed.
 # Auth uses npm OIDC Trusted Publishing — no NPM_TOKEN secret is required.
 # One-time setup: configure this repo + workflow as a Trusted Publisher on
-# npmjs.com (package → Settings → Trusted Publisher).
+# npmjs.com for each package (package → Settings → Trusted Publisher).
+
+name: Publish to npm
 
 on:
   push:
@@ -59,9 +57,44 @@ jobs:
             exit 1
           fi
 
-      # No NODE_AUTH_TOKEN: npm authenticates via OIDC and attaches provenance
-      # automatically. `prepack` rebuilds the dist output before packing.
-      # `pnpm -F @crewai-ts/core exec npm publish` runs npm publish scoped to
-      # the @crewai-ts/core workspace package only.
+      # Publish all workspace packages in dependency order.
+      # Core first, then packages that depend only on core,
+      # then packages with cross-dependencies.
       - name: Publish @crewai-ts/core
         run: pnpm -F @crewai-ts/core exec npm publish --access public --provenance
+
+      - name: Publish @crewai-ts/openai
+        run: pnpm -F @crewai-ts/openai exec npm publish --access public --provenance
+
+      - name: Publish @crewai-ts/anthropic
+        run: pnpm -F @crewai-ts/anthropic exec npm publish --access public --provenance
+
+      - name: Publish @crewai-ts/gemini
+        run: pnpm -F @crewai-ts/gemini exec npm publish --access public --provenance
+
+      - name: Publish @crewai-ts/bedrock
+        run: pnpm -F @crewai-ts/bedrock exec npm publish --access public --provenance
+
+      - name: Publish @crewai-ts/azure
+        run: pnpm -F @crewai-ts/azure exec npm publish --access public --provenance
+
+      - name: Publish @crewai-ts/snowflake
+        run: pnpm -F @crewai-ts/snowflake exec npm publish --access public --provenance
+
+      - name: Publish @crewai-ts/rag
+        run: pnpm -F @crewai-ts/rag exec npm publish --access public --provenance
+
+      - name: Publish @crewai-ts/mcp
+        run: pnpm -F @crewai-ts/mcp exec npm publish --access public --provenance
+
+      - name: Publish @crewai-ts/a2a
+        run: pnpm -F @crewai-ts/a2a exec npm publish --access public --provenance
+
+      - name: Publish @crewai-ts/flow
+        run: pnpm -F @crewai-ts/flow exec npm publish --access public --provenance
+
+      - name: Publish @crewai-ts/nestjs
+        run: pnpm -F @crewai-ts/nestjs exec npm publish --access public --provenance
+
+      - name: Publish @crewai-ts/cli
+        run: pnpm -F @crewai-ts/cli exec npm publish --access public --provenance
