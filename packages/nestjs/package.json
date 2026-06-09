@@ -1,7 +1,12 @@
 {
   "name": "@crewai-ts/nestjs",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "NestJS DI integration for @crewai-ts/core.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/easdkr/crewai-ts.git",
+    "directory": "packages/nestjs"
+  },
   "type": "module",
   "main": "./dist/index.js",
   "module": "./dist/index.js",

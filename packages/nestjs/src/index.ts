@@ -1,5 +1,5 @@
 // Public API of @crewai-ts/nestjs. Implemented in tasks 6-10.
-export const NESTJS_PACKAGE_VERSION = "0.1.1";
+export const NESTJS_PACKAGE_VERSION = "0.1.2";
 
 export { CREW_FACTORY, LLM, MEMORY, KNOWLEDGE } from "./tokens.js";
 export {
