@@ -1,6 +1,6 @@
 {
   "name": "@crewai-ts/rag",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "RAG, knowledge, memory, and file-ingestion features for CrewAI TypeScript.",
   "repository": {
     "type": "git",

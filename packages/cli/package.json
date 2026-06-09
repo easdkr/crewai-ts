@@ -1,6 +1,6 @@
 {
   "name": "@crewai-ts/cli",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "CLI to run a user's crewai-ts project (TypeScript/JavaScript) via tsx.",
   "type": "module",
   "main": "./dist/index.js",
