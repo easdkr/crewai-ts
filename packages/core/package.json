@@ -1,6 +1,6 @@
 {
   "name": "@crewai-ts/core",
-  "version": "0.1.12",
+  "version": "0.1.13",
   "description": "Unofficial TypeScript port of CrewAI (not affiliated with crewAI, Inc.).",
   "private": false,
   "keywords": [
