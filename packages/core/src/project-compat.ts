@@ -1,8 +1,8 @@
 import { readFileSync } from "node:fs";
-import { parse } from "yaml";
 
 import { ensureCrewProject, loadConfig, mapAgentVariables, mapTaskVariables } from "./project.js";
 import { getCrewMetadata } from "./metadata.js";
+import { parseYaml } from "./optional-yaml.js";
 
 export const P = Object.freeze({ kind: "ParamSpec" });
 export const P2 = Object.freeze({ kind: "ParamSpec" });
@@ -148,7 +148,7 @@ export const CrewBaseMeta = {
 };
 
 export function loadYaml(configPath: string): Record<string, unknown> {
-  const parsed: unknown = parse(readFileSync(configPath, "utf8"));
+  const parsed: unknown = parseYaml(readFileSync(configPath, "utf8"));
   return parsed && typeof parsed === "object" && !Array.isArray(parsed)
     ? parsed as Record<string, unknown>
     : {};

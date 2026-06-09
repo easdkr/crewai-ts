@@ -1,0 +1,48 @@
+{
+  "name": "@crewai-ts/snowflake",
+  "version": "0.2.0",
+  "description": "Snowflake Cortex native provider for CrewAI TypeScript.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/easdkr/crewai-ts.git",
+    "directory": "packages/snowflake"
+  },
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsup && tsc -p tsconfig.build.json",
+    "postbuild": "node --input-type=module -e \"import('./dist/index.js')\"",
+    "check": "tsc --noEmit",
+    "test": "vitest run",
+    "smoke:pack": "node scripts/pack-smoke.mjs",
+    "prepack": "npm run build"
+  },
+  "dependencies": {
+    "@crewai-ts/core": "workspace:^",
+    "@crewai-ts/openai": "workspace:^"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.1",
+    "tsup": "^8.5.1",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.7"
+  }
+}

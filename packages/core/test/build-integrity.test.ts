@@ -19,7 +19,17 @@
  *     `packages/core/package.json`. The library does not use it; adding it
  *     would invite unintended coupling to NestJS metadata.
  *
- *  4. The three Python parity scripts under `packages/core/scripts/` exist.
+ *  4. The core package must not declare install dependencies. Provider and
+ *     optional feature dependencies belong in their own packages.
+ *
+ *  5. Core entry-path source and built root artifacts must not import or embed
+ *     the optional RAG/Knowledge/Memory implementation files.
+ *
+ *  6. Optional feature/provider implementation files must not exist under
+ *     `packages/core/src`; A2A/A2UI, Flow, RAG/Knowledge/Memory, and native
+ *     providers live in their own packages.
+ *
+ *  7. The three Python parity scripts under `packages/core/scripts/` exist.
  *     They are invoked from CI to compare the TypeScript port against the
  *     Python upstream and would silently no-op (return success without
  *     checking anything) if their paths were renamed.
@@ -45,6 +55,36 @@ const PYTHON_SCRIPTS = [
   "check-export-parity.py",
   "check-subpath-export-parity.py",
 ] as const;
+
+const CORE_ENTRY_SOURCE_FILES = [
+  "src/agent.ts",
+  "src/agent-executors.ts",
+  "src/crew.ts",
+  "src/index.ts",
+  "src/lite-agent.ts",
+  "src/project.ts",
+  "src/task.ts",
+  "src/tools.ts",
+] as const;
+
+const OPTIONAL_FEATURE_SOURCE_FILES = [
+  "src/a2a.ts",
+  "src/a2ui.ts",
+  "src/a2ui-schemas.ts",
+  "src/flow.ts",
+  "src/flow-conversation.ts",
+  "src/flow-definition.ts",
+  "src/flow-persistence.ts",
+  "src/flow-visualization.ts",
+  "src/knowledge.ts",
+  "src/memory.ts",
+  "src/openai-completion.ts",
+  "src/provider-completions.ts",
+  "src/rag.ts",
+] as const;
+
+const OPTIONAL_RAG_IMPORT_PATTERN = /from\s+["']\.\/(?:memory|knowledge|rag)\.js["']|pdf-parse/;
+const OPTIONAL_RAG_DIST_PATTERN = /\/\/ src\/(?:memory|knowledge|rag)\.ts|class Memory\b|class Knowledge\b|RecallMemoryTool|pdf-parse/;
 
 type PackageJson = {
   name?: string;
@@ -91,6 +131,36 @@ describe("build-integrity guardrails", () => {
       for (const depName of Object.keys(bucket)) {
         expect(depName).not.toBe("reflect-metadata");
       }
+    }
+  });
+
+  it("package.json declares no install dependencies", () => {
+    const pkg = readPackageJson();
+    expect(pkg.dependencies ?? {}).toEqual({});
+  });
+
+  it("core entry paths do not import optional RAG implementation files", () => {
+    for (const relativePath of CORE_ENTRY_SOURCE_FILES) {
+      const source = readFileSync(join(PACKAGE_ROOT, relativePath), "utf8");
+      expect(source, relativePath).not.toMatch(OPTIONAL_RAG_IMPORT_PATTERN);
+    }
+  });
+
+  it("built root artifacts do not embed optional RAG implementation symbols", () => {
+    const distFiles = ["dist/index.js", "dist/index.d.ts"];
+    for (const relativePath of distFiles) {
+      const distPath = join(PACKAGE_ROOT, relativePath);
+      if (!existsSync(distPath)) {
+        continue;
+      }
+      const source = readFileSync(distPath, "utf8");
+      expect(source, relativePath).not.toMatch(OPTIONAL_RAG_DIST_PATTERN);
+    }
+  });
+
+  it("core source tree does not contain optional feature implementation files", () => {
+    for (const relativePath of OPTIONAL_FEATURE_SOURCE_FILES) {
+      expect(existsSync(join(PACKAGE_ROOT, relativePath)), relativePath).toBe(false);
     }
   });
 

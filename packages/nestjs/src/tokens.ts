@@ -1,11 +1,10 @@
 import type {
   Crew,
-  Memory,
-  Knowledge,
   LLM as LLMType,
   Agent,
   Task,
 } from "@crewai-ts/core";
+import type { MemoryLike } from "@crewai-ts/core/feature-hooks";
 
 export const CREW_FACTORY = Symbol.for("crewai-ts/CREW_FACTORY");
 export const LLM = Symbol.for("crewai-ts/LLM");
@@ -24,22 +23,22 @@ export type KnowledgeToken = symbol;
 //   - Mock LLMs in tests typically use a zero-arg `(): string => "..."` shape,
 //     which is structurally incompatible with the core's `LLMFunction`
 //     `(messages, options?) => MaybePromise<LLMResponse>`.
-//   - The runtime Agent/Knowledge APIs accept these mocks because the
-//     downstream code path is duck-typed (e.g. a function is called and its
-//     return is treated as `LLMResponse`).
+//   - The Agent/Knowledge APIs accept these mocks because the downstream code
+//     path is duck-typed (e.g. a function is called and its return is treated
+//     as `LLMResponse`).
 //   - Permissive `(...args: never[]) => unknown` and `readonly unknown[]`
 //     still reject non-functions / non-arrays at the type level while letting
 //     users pass mocks, decorators, and plain object knowledge sources.
 //
 // If the core's strict types are needed at a particular call site, narrow with
-// `satisfies LLMType` / `satisfies readonly Knowledge[]` there.
+// `satisfies LLMType` there.
 export type LLMSupply =
   | LLMType
   | string
   | ((...args: never[]) => unknown)
   | null
   | undefined;
-export type MemorySupply = Memory | null | undefined;
+export type MemorySupply = MemoryLike | null | undefined;
 export type KnowledgeSupply = readonly unknown[] | null | undefined;
 
 // CrewFactory contract: returns a configured Crew

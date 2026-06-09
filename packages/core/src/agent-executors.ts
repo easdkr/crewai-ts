@@ -43,7 +43,6 @@ import { I18N_DEFAULT } from "./i18n.js";
 import { agetAllFiles, getAllFiles, type FileInputMap, type FileStoreId } from "./file-store.js";
 import { BaseLLM, callStopOverrideSync, UsageMetrics, type LLMCallOptions, type LLMResponse } from "./llm.js";
 import { PRINTER } from "./logger.js";
-import { sanitize_scope_name } from "./memory.js";
 import { StepExecutionContext, StepResult } from "./step-execution-context.js";
 import { aexecuteToolAndCheckFinality, sanitizeToolName } from "./tools.js";
 import type { InputValues, LLMMessage, MaybePromise, Tool } from "./types.js";
@@ -51,6 +50,14 @@ import type { InputValues, LLMMessage, MaybePromise, Tool } from "./types.js";
 export const ACTION_INPUT_REGEX = /Action\s*\d*\s*:\s*(.*?)\s*Action\s*\d*\s*Input\s*\d*\s*:\s*(.*)/s;
 export const ACTION_REGEX = /Action\s*\d*\s*:\s*(.*?)/s;
 export const ACTION_INPUT_ONLY_REGEX = /\s*Action\s*\d*\s*Input\s*\d*\s*:\s*(.*)/s;
+
+function sanitize_scope_name(name: unknown): string {
+  if (typeof name !== "string") {
+    return "unknown";
+  }
+  const sanitized = name.toLowerCase().trim().replace(/[^a-z0-9_-]/g, "-").replace(/-+/g, "-").replace(/^-+|-+$/g, "");
+  return sanitized || "unknown";
+}
 
 export type PlatformApp = Record<string, unknown>;
 export const PlatformApp = Object.freeze({ kind: "PlatformApp" });

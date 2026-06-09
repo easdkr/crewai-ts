@@ -3,7 +3,7 @@ import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { gunzipSync } from "node:zlib";
 
-import { parse as parseYaml } from "yaml";
+import { parseYaml } from "./optional-yaml.js";
 
 export const SKILL_FILENAME = "SKILL.md";
 export const MAX_SKILL_NAME_LENGTH = 64;

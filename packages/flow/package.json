@@ -1,0 +1,127 @@
+{
+  "name": "@crewai-ts/flow",
+  "version": "0.2.0",
+  "description": "Flow orchestration, persistence, and visualization features for CrewAI TypeScript.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/easdkr/crewai-ts.git",
+    "directory": "packages/flow"
+  },
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs",
+      "default": "./dist/index.js"
+    },
+    "./conversation": {
+      "types": "./dist/flow-conversation.d.ts",
+      "import": "./dist/flow-conversation.js",
+      "require": "./dist/flow-conversation.cjs",
+      "default": "./dist/flow-conversation.js"
+    },
+    "./definition": {
+      "types": "./dist/flow-definition.d.ts",
+      "import": "./dist/flow-definition.js",
+      "require": "./dist/flow-definition.cjs",
+      "default": "./dist/flow-definition.js"
+    },
+    "./persistence": {
+      "types": "./dist/flow-persistence.d.ts",
+      "import": "./dist/flow-persistence.js",
+      "require": "./dist/flow-persistence.cjs",
+      "default": "./dist/flow-persistence.js"
+    },
+    "./visualization": {
+      "types": "./dist/flow-visualization.d.ts",
+      "import": "./dist/flow-visualization.js",
+      "require": "./dist/flow-visualization.cjs",
+      "default": "./dist/flow-visualization.js"
+    },
+    "./flow": {
+      "types": "./dist/flow.d.ts",
+      "import": "./dist/flow.js",
+      "require": "./dist/flow.cjs",
+      "default": "./dist/flow.js"
+    },
+    "./input-provider": {
+      "types": "./dist/input-provider.d.ts",
+      "import": "./dist/input-provider.js",
+      "require": "./dist/input-provider.cjs",
+      "default": "./dist/input-provider.js"
+    },
+    "./flow/dsl/_conditions": {
+      "types": "./dist/flow/dsl/_conditions.d.ts",
+      "import": "./dist/flow/dsl/_conditions.js",
+      "require": "./dist/flow.cjs",
+      "default": "./dist/flow/dsl/_conditions.js"
+    },
+    "./flow/dsl/_human_feedback": {
+      "types": "./dist/flow/dsl/_human_feedback.d.ts",
+      "import": "./dist/flow/dsl/_human_feedback.js",
+      "require": "./dist/flow.cjs",
+      "default": "./dist/flow/dsl/_human_feedback.js"
+    },
+    "./flow/dsl/_listen": {
+      "types": "./dist/flow/dsl/_listen.d.ts",
+      "import": "./dist/flow/dsl/_listen.js",
+      "require": "./dist/flow.cjs",
+      "default": "./dist/flow/dsl/_listen.js"
+    },
+    "./flow/dsl/_router": {
+      "types": "./dist/flow/dsl/_router.d.ts",
+      "import": "./dist/flow/dsl/_router.js",
+      "require": "./dist/flow.cjs",
+      "default": "./dist/flow/dsl/_router.js"
+    },
+    "./flow/dsl/_start": {
+      "types": "./dist/flow/dsl/_start.d.ts",
+      "import": "./dist/flow/dsl/_start.js",
+      "require": "./dist/flow.cjs",
+      "default": "./dist/flow/dsl/_start.js"
+    },
+    "./flow/dsl/_types": {
+      "types": "./dist/flow/dsl/_types.d.ts",
+      "import": "./dist/flow/dsl/_types.js",
+      "require": "./dist/flow.cjs",
+      "default": "./dist/flow/dsl/_types.js"
+    },
+    "./flow/dsl/_utils": {
+      "types": "./dist/flow/dsl/_utils.d.ts",
+      "import": "./dist/flow/dsl/_utils.js",
+      "require": "./dist/flow.cjs",
+      "default": "./dist/flow/dsl/_utils.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsup && tsc -p tsconfig.build.json",
+    "postbuild": "node --input-type=module -e \"import('./dist/index.js')\"",
+    "check": "tsc --noEmit",
+    "test": "vitest run",
+    "smoke:pack": "node scripts/pack-smoke.mjs",
+    "prepack": "npm run build"
+  },
+  "dependencies": {
+    "@crewai-ts/core": "workspace:^",
+    "@crewai-ts/rag": "workspace:^",
+    "yaml": "^2.9.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.1",
+    "tsup": "^8.5.1",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.7"
+  }
+}

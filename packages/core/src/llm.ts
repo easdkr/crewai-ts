@@ -564,69 +564,6 @@ export const ANTHROPIC_MODELS = [
   "claude-3-haiku-latest",
   "claude-3-haiku-20240307",
 ] as const;
-export const GEMINI_MODELS = [
-  "gemini-3-pro-preview",
-  "gemini-3.5-flash",
-  "gemini-3.1-pro-preview",
-  "gemini-3.1-pro-preview-customtools",
-  "gemini-3.1-flash-lite",
-  "gemini-3.1-flash-lite-preview",
-  "gemini-3.1-flash-image",
-  "gemini-3.1-flash-image-preview",
-  "gemini-3.1-flash-tts-preview",
-  "gemini-3-flash-preview",
-  "gemini-2.5-pro",
-  "gemini-2.5-pro-preview-03-25",
-  "gemini-2.5-pro-preview-05-06",
-  "gemini-2.5-pro-preview-06-05",
-  "gemini-2.5-flash",
-  "gemini-2.5-flash-preview-05-20",
-  "gemini-2.5-flash-preview-04-17",
-  "gemini-2.5-flash-image",
-  "gemini-2.5-flash-image-preview",
-  "gemini-2.5-flash-lite",
-  "gemini-2.5-flash-lite-preview-06-17",
-  "gemini-2.5-flash-preview-09-2025",
-  "gemini-2.5-flash-lite-preview-09-2025",
-  "gemini-2.5-flash-preview-tts",
-  "gemini-2.5-pro-preview-tts",
-  "gemini-2.5-computer-use-preview-10-2025",
-  "gemini-2.5-pro-exp-03-25",
-  "gemini-2.0-flash",
-  "gemini-2.0-flash-001",
-  "gemini-2.0-flash-exp",
-  "gemini-2.0-flash-exp-image-generation",
-  "gemini-2.0-flash-lite",
-  "gemini-2.0-flash-lite-001",
-  "gemini-2.0-flash-lite-preview",
-  "gemini-2.0-flash-lite-preview-02-05",
-  "gemini-2.0-flash-preview-image-generation",
-  "gemini-2.0-flash-thinking-exp",
-  "gemini-2.0-flash-thinking-exp-01-21",
-  "gemini-2.0-flash-thinking-exp-1219",
-  "gemini-2.0-pro-exp",
-  "gemini-2.0-pro-exp-02-05",
-  "gemini-exp-1206",
-  "gemini-1.5-pro",
-  "gemini-1.5-flash",
-  "gemini-1.5-flash-8b",
-  "gemini-flash-latest",
-  "gemini-flash-lite-latest",
-  "gemini-pro-latest",
-  "gemini-2.0-flash-live-001",
-  "gemini-live-2.5-flash-preview",
-  "gemini-2.5-flash-live-preview",
-  "gemini-robotics-er-1.5-preview",
-  "gemini-gemma-2-27b-it",
-  "gemini-gemma-2-9b-it",
-  "gemma-3-1b-it",
-  "gemma-3-4b-it",
-  "gemma-3-12b-it",
-  "gemma-3-27b-it",
-  "gemma-3n-e2b-it",
-  "gemma-3n-e4b-it",
-  "learnlm-2.0-flash-experimental",
-] as const;
 export const AZURE_MODELS = [
   "gpt-3.5-turbo",
   "gpt-3.5-turbo-0301",
@@ -871,7 +808,6 @@ export const SAMBANOVA_MODELS = [
 ] as const;
 export type OpenAIModels = typeof OPENAI_MODELS[number];
 export type AnthropicModels = typeof ANTHROPIC_MODELS[number];
-export type GeminiModels = typeof GEMINI_MODELS[number];
 export type AzureModels = typeof AZURE_MODELS[number];
 export type BedrockModels = typeof BEDROCK_MODELS[number];
 export type NvidiaNimModels = typeof NVIDIA_NIM_MODELS[number];
@@ -882,7 +818,6 @@ export type HuggingFaceModels = typeof HUGGINGFACE_MODELS[number];
 export type SambanovaModels = typeof SAMBANOVA_MODELS[number];
 export const OpenAIModels = OPENAI_MODELS;
 export const AnthropicModels = ANTHROPIC_MODELS;
-export const GeminiModels = GEMINI_MODELS;
 export const AzureModels = AZURE_MODELS;
 export const BedrockModels = BEDROCK_MODELS;
 export const NvidiaNimModels = NVIDIA_NIM_MODELS;
@@ -894,7 +829,6 @@ export const SambanovaModels = SAMBANOVA_MODELS;
 export const MODELS = Object.freeze({
   openai: OPENAI_MODELS,
   anthropic: ANTHROPIC_MODELS,
-  gemini: GEMINI_MODELS,
   nvidia_nim: NVIDIA_NIM_MODELS,
   groq: GROQ_MODELS,
   ollama: OLLAMA_MODELS,
@@ -1050,24 +984,6 @@ export const LLM_CONTEXT_WINDOW_SIZES: Readonly<Record<string, number>> = {
   "o1-mini": 128000,
   "o3-mini": 200000,
   "o4-mini": 200000,
-  "gemini-3-pro-preview": 1048576,
-  "gemini-2.0-flash": 1048576,
-  "gemini-2.0-flash-thinking-exp-01-21": 32768,
-  "gemini-2.0-flash-lite-001": 1048576,
-  "gemini-3.5-flash": 1048576,
-  "gemini-3.1-pro-preview": 1048576,
-  "gemini-3.1-pro-preview-customtools": 1048576,
-  "gemini-3.1-flash-lite": 1048576,
-  "gemini-3.1-flash-lite-preview": 1048576,
-  "gemini-3.1-flash-image": 1048576,
-  "gemini-3.1-flash-image-preview": 1048576,
-  "gemini-3.1-flash-tts-preview": 1048576,
-  "gemini-2.0-flash-001": 1048576,
-  "gemini-2.5-flash-preview-04-17": 1048576,
-  "gemini-2.5-pro-exp-03-25": 1048576,
-  "gemini-1.5-pro": 2097152,
-  "gemini-1.5-flash": 1048576,
-  "gemini-1.5-flash-8b": 1048576,
   "deepseek-chat": 128000,
   "llama-3.1-70b-versatile": 131072,
   "llama-3.1-8b-instant": 131072,
@@ -1112,7 +1028,6 @@ const registeredProviders = new Map<string, LLMClient>();
 const registeredProviderFactories = new Map<string, (options: ConstructorParameters<typeof ConfiguredLLM>[0]) => LLMClient>();
 const openAIModelSet = new Set<string>(OPENAI_MODELS);
 const anthropicModelSet = new Set<string>(ANTHROPIC_MODELS);
-const geminiModelSet = new Set<string>(GEMINI_MODELS);
 const azureModelSet = new Set<string>(AZURE_MODELS);
 const bedrockModelSet = new Set<string>(BEDROCK_MODELS);
 const nativeProviderSet = new Set<string>(SUPPORTED_NATIVE_PROVIDERS);
@@ -3007,9 +2922,6 @@ export function validateModelInConstants(model: string, provider: string): boole
   if (canonicalProvider === "anthropic" && anthropicModelSet.has(model)) {
     return true;
   }
-  if (canonicalProvider === "gemini" && geminiModelSet.has(model)) {
-    return true;
-  }
   if (canonicalProvider === "bedrock" && bedrockModelSet.has(model)) {
     return true;
   }
@@ -3031,7 +2943,7 @@ export function inferProviderFromModel(model: string): string {
   if (anthropicModelSet.has(model)) {
     return "anthropic";
   }
-  if (geminiModelSet.has(model)) {
+  if (matchesProviderPattern(model, "gemini")) {
     return "gemini";
   }
   if (bedrockModelSet.has(model)) {

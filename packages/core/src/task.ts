@@ -4,7 +4,6 @@ import { createHash, randomUUID } from "node:crypto";
 import { dirname, resolve } from "node:path";
 
 import { Agent, type AgentExecutionOptions } from "./agent.js";
-import type { Knowledge } from "./knowledge.js";
 import {
   HumanFeedbackReceivedEvent,
   HumanFeedbackRequestedEvent,
@@ -17,7 +16,7 @@ import {
 } from "./events.js";
 import { getHumanInputProvider, type HumanInputProvider } from "./human-input.js";
 import { TaskOutput } from "./outputs.js";
-import type { Memory, MemoryScope } from "./memory.js";
+import type { KnowledgeLike, MemoryLike, MemoryScopeLike } from "./feature-hooks.js";
 import { coerceSecurityConfig, type Fingerprint, type SecurityConfig } from "./security.js";
 import { LLMGuardrail, serializeGuardrailForJson, serializeGuardrailsForJson } from "./guardrail.js";
 import { sanitizeToolName, ToolUsageLimitExceededError, ToolValidationError } from "./tools.js";
@@ -55,8 +54,8 @@ export type TaskExecutionOptions = {
   triggerPayload?: unknown;
   inputFiles?: TaskInputFiles;
   functionCallingLlm?: LLM | string | null;
-  memory?: Memory | MemoryScope | null;
-  knowledge?: Knowledge | null;
+  memory?: MemoryLike | MemoryScopeLike | null;
+  knowledge?: KnowledgeLike | null;
   useAsyncAgent?: boolean;
 };
 

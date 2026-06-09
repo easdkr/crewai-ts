@@ -64,22 +64,31 @@ import {
   crewaiEventBus,
 } from "./events.js";
 import { Converter, type StructuredModel } from "./converter.js";
-import { Knowledge, extractKnowledgeContext, type KnowledgeQueryOptions, type KnowledgeSource } from "./knowledge.js";
 import { coerceSecurityConfig, type Fingerprint, type SecurityConfig } from "./security.js";
 import { coerceCheckpointConfig, RuntimeState, type CheckpointConfig, type CheckpointOption } from "./state.js";
 import type { ExecutionContext } from "./context.js";
 import type { AgentStep, AgentStepCallback, InputValues, LLM, LLMMessage, Tool } from "./types.js";
-import { createMemoryTools as createAgentMemoryTools, type Memory, type MemoryScope } from "./memory.js";
 import { renderInputFiles, withReadFileTool, type InputFiles } from "./input-files.js";
 import { Skill, activateSkill, discoverSkills, formatSkillContext, resolveRegistryRef } from "./skills.js";
-import type { EmbedderConfig } from "./rag.js";
 import { CREWAI_TRAINED_AGENTS_FILE_ENV, TRAINED_AGENTS_DATA_FILE, TRAINING_DATA_FILE } from "./settings.js";
 import { CrewTrainingHandler } from "./training-handler.js";
 import { Prompts, type StandardPromptResult, type SystemPromptResult } from "./prompts.js";
 import { LiteAgentOutput, type TodoExecutionResultOptions } from "./lite-agent-output.js";
 import { loadAgentFromRepository, setupNativeTools } from "./agent-utils.js";
 import { serializeGuardrailForJson } from "./guardrail.js";
-import { inject_a2a_server_methods } from "./a2a.js";
+import {
+  applyA2AServerMethodsInjector,
+  createRegisteredKnowledge,
+  createRegisteredMemoryTools,
+  extractKnowledgeContext,
+  isRegisteredKnowledge,
+  type EmbedderConfig,
+  type KnowledgeLike,
+  type KnowledgeQueryOptions,
+  type KnowledgeSourceLike,
+  type MemoryLike,
+  type MemoryScopeLike,
+} from "./feature-hooks.js";
 import { I18N_DEFAULT } from "./i18n.js";
 import { normalizePathLikeString } from "./utilities.js";
 
@@ -107,10 +116,10 @@ export type AgentOptions = {
   crew?: unknown;
   functionCallingLlm?: LLM | string | null;
   function_calling_llm?: LLM | string | null;
-  memory?: Memory | MemoryScope | null;
-  knowledge?: Knowledge | null;
-  knowledgeSources?: readonly KnowledgeSource[];
-  knowledge_sources?: readonly KnowledgeSource[];
+  memory?: MemoryLike | MemoryScopeLike | null;
+  knowledge?: KnowledgeLike | null;
+  knowledgeSources?: readonly KnowledgeSourceLike[];
+  knowledge_sources?: readonly KnowledgeSourceLike[];
   knowledgeStorage?: unknown;
   knowledge_storage?: unknown;
   knowledgeConfig?: Record<string, unknown> | null;
@@ -207,8 +216,8 @@ export type AgentExecutionOptions = {
   response_format?: unknown;
   stepCallbacks?: readonly AgentStepCallback[];
   functionCallingLlm?: LLM | string | null;
-  memory?: Memory | MemoryScope | null;
-  knowledge?: Knowledge | null;
+  memory?: MemoryLike | MemoryScopeLike | null;
+  knowledge?: KnowledgeLike | null;
   inputFiles?: InputFiles;
   input_files?: InputFiles;
   task?: unknown;
@@ -242,10 +251,10 @@ export class Agent {
   readonly crew: unknown;
   readonly functionCallingLlm: LLM | string | null;
   readonly function_calling_llm: LLM | string | null;
-  memory: Memory | MemoryScope | null;
-  knowledge: Knowledge | null;
-  readonly knowledgeSources: readonly KnowledgeSource[];
-  readonly knowledge_sources: readonly KnowledgeSource[];
+  memory: MemoryLike | MemoryScopeLike | null;
+  knowledge: KnowledgeLike | null;
+  readonly knowledgeSources: readonly KnowledgeSourceLike[];
+  readonly knowledge_sources: readonly KnowledgeSourceLike[];
   readonly knowledgeStorage: unknown;
   readonly knowledge_storage: unknown;
   readonly knowledgeConfig: Record<string, unknown> | null;
@@ -391,7 +400,7 @@ export class Agent {
     this.apps = options.apps ? [...options.apps] : null;
     this.mcps = options.mcps ? [...options.mcps] : null;
     this.a2a = options.a2a ?? null;
-    inject_a2a_server_methods(this);
+    applyA2AServerMethodsInjector(this);
     this.agentExecutor = options.agentExecutor ?? options.agent_executor ?? null;
     this.agent_executor = this.agentExecutor;
     this.executorClass = options.executorClass ?? options.executor_class ?? null;
@@ -757,22 +766,22 @@ export class Agent {
     return this.validateAndSetAttributes();
   }
 
-  resolveMemory(): Memory | MemoryScope | null {
+  resolveMemory(): MemoryLike | MemoryScopeLike | null {
     return this.memory;
   }
 
-  resolve_memory(): Memory | MemoryScope | null {
+  resolve_memory(): MemoryLike | MemoryScopeLike | null {
     return this.resolveMemory();
   }
 
-  createKnowledgeFromSources(): Knowledge | null {
+  createKnowledgeFromSources(): KnowledgeLike | null {
     return this.knowledgeSources.length > 0
-      ? new Knowledge({ sources: this.knowledgeSources, collectionName: this.role, embedder: this.embedder })
+      ? createRegisteredKnowledge({ sources: this.knowledgeSources, collectionName: this.role, embedder: this.embedder })
       : null;
   }
 
-  setKnowledge(knowledgeOrCrewEmbedder: Knowledge | EmbedderConfig | null = null): void {
-    if (knowledgeOrCrewEmbedder instanceof Knowledge || knowledgeOrCrewEmbedder === null) {
+  setKnowledge(knowledgeOrCrewEmbedder: KnowledgeLike | EmbedderConfig | null = null): void {
+    if (isRegisteredKnowledge(knowledgeOrCrewEmbedder) || knowledgeOrCrewEmbedder === null) {
       this.knowledge = knowledgeOrCrewEmbedder;
       return;
     }
@@ -785,7 +794,7 @@ export class Agent {
     }
   }
 
-  set_knowledge(knowledgeOrCrewEmbedder: Knowledge | EmbedderConfig | null = null): void {
+  set_knowledge(knowledgeOrCrewEmbedder: KnowledgeLike | EmbedderConfig | null = null): void {
     this.setKnowledge(knowledgeOrCrewEmbedder);
   }
 
@@ -932,8 +941,8 @@ export class Agent {
     const startedAt = Date.now();
     crewaiEventBus.emit(this, new MemoryRetrievalStartedEvent({ task_id: taskId }));
     try {
-      const crewPrivateMemory = readRecordValue(this.crew, "_memory") as Memory | MemoryScope | null;
-      const crewMemory = readRecordValue(this.crew, "memory") as Memory | MemoryScope | null;
+      const crewPrivateMemory = readRecordValue(this.crew, "_memory") as MemoryLike | MemoryScopeLike | null;
+      const crewMemory = readRecordValue(this.crew, "memory") as MemoryLike | MemoryScopeLike | null;
       const memory = this.memory ?? crewPrivateMemory ?? crewMemory ?? null;
       const query = stringRecordValue(task, "description") ?? taskPrompt;
       const matches = memory?.recall(query, { limit: 5 }) ?? [];
@@ -1609,7 +1618,7 @@ export class Agent {
   ): AgentPreparedKickoff {
     const formatted = formatKickoffInput(messages, inputFiles);
     const rawTools = this.memory
-      ? mergeAgentTools(this.tools, createAgentMemoryTools(this.memory))
+      ? mergeAgentTools(this.tools, createRegisteredMemoryTools(this.memory) as readonly Tool[])
       : [...this.tools];
     const [prompt, stopWords, rpmLimitFn] = this.buildExecutionPrompt(rawTools);
     const executor = isRecord(this.agentExecutor) ? this.agentExecutor : {};
@@ -1701,7 +1710,7 @@ export class Agent {
     const input = typeof messages === "string"
       ? messages
       : messages.map((message) => message.content).filter(Boolean).join("\n") || "User request";
-    this.memory.remember(`Input: ${input}\nAgent: ${this.role}\nResult: ${outputText}`, {
+    this.memory.remember?.(`Input: ${input}\nAgent: ${this.role}\nResult: ${outputText}`, {
       agentRole: this.role,
       source: "agent_kickoff",
     });
@@ -2050,7 +2059,7 @@ export class Agent {
     return currentDate ? `${prompt}\n\nCurrent Date: ${currentDate}` : prompt;
   }
 
-  private promptWithMemoryContext(prompt: string, executionMemory: Memory | MemoryScope | null): string {
+  private promptWithMemoryContext(prompt: string, executionMemory: MemoryLike | MemoryScopeLike | null): string {
     const memory = this.memory ?? executionMemory;
     if (!memory) {
       return prompt;
@@ -2068,8 +2077,8 @@ export class Agent {
     ].join("\n\n");
   }
 
-  private promptWithKnowledgeContext(prompt: string, executionKnowledge: Knowledge | null, task: unknown): string {
-    const knowledgeSources = [this.knowledge, executionKnowledge].filter((knowledge): knowledge is Knowledge => knowledge !== null);
+  private promptWithKnowledgeContext(prompt: string, executionKnowledge: KnowledgeLike | null, task: unknown): string {
+    const knowledgeSources = [this.knowledge, executionKnowledge].filter((knowledge): knowledge is KnowledgeLike => knowledge !== null);
     let promptWithStaticContext = prompt;
     const staticContexts = [
       this.crewKnowledgeContext ? `Crew knowledge context:\n${this.crewKnowledgeContext}` : "",
@@ -2125,7 +2134,7 @@ export class Agent {
 
   private saveResultToMemory(prompt: string, output: string, options: AgentExecutionOptions): void {
     if (this.memory) {
-      this.memory.remember(`Input: ${prompt}\nAgent: ${this.role}\nResult: ${output}`, {
+      this.memory.remember?.(`Input: ${prompt}\nAgent: ${this.role}\nResult: ${output}`, {
         agentRole: this.role,
         source: "agent",
       });
@@ -2675,7 +2684,7 @@ function resolveAgentSkills(skills: readonly unknown[]): unknown[] {
   return resolved;
 }
 
-function copyKnowledgeSourcesForAgent(sources: readonly KnowledgeSource[]): KnowledgeSource[] {
+function copyKnowledgeSourcesForAgent(sources: readonly KnowledgeSourceLike[]): KnowledgeSourceLike[] {
   if (sources.length === 0) {
     return [];
   }
@@ -2710,17 +2719,17 @@ function omitModelDumpKeys(source: Record<string, unknown>, exclude: ModelDumpOp
   return Object.fromEntries(Object.entries(source).filter(([key]) => !excluded.has(key)));
 }
 
-function copyKnowledgeSource(source: KnowledgeSource): KnowledgeSource {
+function copyKnowledgeSource(source: KnowledgeSourceLike): KnowledgeSourceLike {
   const modelCopy = (source as { model_copy?: unknown }).model_copy;
   if (typeof modelCopy === "function") {
-    return modelCopy.call(source) as KnowledgeSource;
+    return modelCopy.call(source) as KnowledgeSourceLike;
   }
   const copy = (source as { copy?: unknown }).copy;
   if (typeof copy === "function") {
-    return copy.call(source) as KnowledgeSource;
+    return copy.call(source) as KnowledgeSourceLike;
   }
   const prototype = Object.getPrototypeOf(source) as object | null;
-  return Object.assign(Object.create(prototype) as KnowledgeSource, source);
+  return Object.assign(Object.create(prototype) as KnowledgeSourceLike, source);
 }
 
 function skillDedupeKey(skill: unknown): string {

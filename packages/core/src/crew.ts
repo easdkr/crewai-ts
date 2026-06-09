@@ -20,9 +20,7 @@ import {
 } from "./events.js";
 import { FileHandler } from "./file-handler.js";
 import type { HumanInputProvider } from "./human-input.js";
-import { Knowledge, type KnowledgeSource } from "./knowledge.js";
 import { addUsageMetrics, createLLM, emptyUsageMetrics, subtractUsageMetrics, type UsageMetrics } from "./llm.js";
-import { Memory, MemoryScope, createMemoryTools } from "./memory.js";
 import { CrewOutput, TaskOutput } from "./outputs.js";
 import { CrewPlanner } from "./planning.js";
 import { CrewEvaluator, TaskEvaluator, type TrainingTaskEvaluation } from "./evaluators.js";
@@ -39,9 +37,21 @@ import { CrewTrainingHandler } from "./training-handler.js";
 import { OutputFormat, Process, type AgentStepCallback, type CrewKickoffCallback, type InputValues, type TaskCallback, type Tool } from "./types.js";
 import type { LLM } from "./types.js";
 import { createReadFileTool, extractInputFilesFromInputs } from "./input-files.js";
-import type { EmbedderConfig } from "./rag.js";
 import { aggregateRawOutputsFromTaskOutputs, aggregateRawOutputsFromTasks } from "./formatter.js";
 import { normalizePathLikeString, withCrewContext } from "./utilities.js";
+import {
+  bindRegisteredMemoryView,
+  createRegisteredKnowledge,
+  createRegisteredMemory,
+  createRegisteredMemoryTools,
+  isRegisteredMemory,
+  isRegisteredMemoryScope,
+  type EmbedderConfig,
+  type KnowledgeLike,
+  type KnowledgeSourceLike,
+  type MemoryLike,
+  type MemoryScopeLike,
+} from "./feature-hooks.js";
 
 type PathLikeString = PathLike | { toString(): string };
 
@@ -113,9 +123,9 @@ export type ResetMemoriesCommandType =
 type NormalizedResetMemoriesCommandType = Exclude<ReturnType<typeof normalizeResetMemoriesCommandType>, "all">;
 
 type MemorySystemConfig = {
-  system: Memory | MemoryScope | readonly Knowledge[] | Crew | null;
+  system: MemoryLike | MemoryScopeLike | readonly KnowledgeLike[] | Crew | null;
   name: string;
-  reset: (system: Memory | MemoryScope | readonly Knowledge[] | Crew) => void;
+  reset: (system: MemoryLike | MemoryScopeLike | readonly KnowledgeLike[] | Crew) => void;
 };
 
 export function _resolve_agent(value: unknown, _info: unknown = null): unknown {
@@ -137,7 +147,7 @@ export function default_reset(memory: { reset: () => unknown }): unknown {
   return memory.reset();
 }
 
-export function knowledge_reset(crew: { resetKnowledge?: (knowledges: readonly Knowledge[]) => void; reset_knowledge?: (knowledges: readonly Knowledge[]) => void }, knowledges: readonly Knowledge[]): void {
+export function knowledge_reset(crew: { resetKnowledge?: (knowledges: readonly KnowledgeLike[]) => void; reset_knowledge?: (knowledges: readonly KnowledgeLike[]) => void }, knowledges: readonly KnowledgeLike[]): void {
   if (crew.resetKnowledge) {
     crew.resetKnowledge(knowledges);
     return;
@@ -171,10 +181,10 @@ export type CrewOptions = {
   prompt_file?: string | null;
   shareCrew?: boolean | null;
   share_crew?: boolean | null;
-  memory?: boolean | Memory | MemoryScope;
-  knowledge?: Knowledge | null;
-  knowledgeSources?: readonly KnowledgeSource[];
-  knowledge_sources?: readonly KnowledgeSource[];
+  memory?: boolean | MemoryLike | MemoryScopeLike;
+  knowledge?: KnowledgeLike | null;
+  knowledgeSources?: readonly KnowledgeSourceLike[];
+  knowledge_sources?: readonly KnowledgeSourceLike[];
   managerAgent?: Agent | null;
   manager_agent?: Agent | null;
   managerLlm?: LLM | string | null;
@@ -236,9 +246,9 @@ export class Crew extends FlowTrackable {
   shareCrew: boolean | null;
   share_crew: boolean | null;
   executionLogs: TaskExecutionLog[];
-  memory: boolean | Memory | MemoryScope;
-  knowledge: Knowledge | null;
-  knowledgeSources: readonly KnowledgeSource[];
+  memory: boolean | MemoryLike | MemoryScopeLike;
+  knowledge: KnowledgeLike | null;
+  knowledgeSources: readonly KnowledgeSourceLike[];
   managerAgent: Agent | null;
   manager_agent: Agent | null;
   managerLlm: LLM | string | null;
@@ -261,7 +271,7 @@ export class Crew extends FlowTrackable {
   private readonly rpmController: RpmController | null;
   private readonly cacheHandler: CacheHandler;
   private readonly fileHandler: FileHandler | null;
-  private readonly resolvedMemory: Memory | MemoryScope | null;
+  private readonly resolvedMemory: MemoryLike | MemoryScopeLike | null;
   beforeKickoffCallbacks: CrewKickoffCallback<InputValues>[];
   afterKickoffCallbacks: CrewKickoffCallback<CrewOutput>[];
   readonly securityConfig: SecurityConfig;
@@ -518,13 +528,17 @@ export class Crew extends FlowTrackable {
   }
 
   rebindMemoryViews(): void {
-    const backing = this.resolvedMemory instanceof Memory ? this.resolvedMemory : this.memory instanceof Memory ? this.memory : null;
+    const backing = isRegisteredMemory(this.resolvedMemory)
+      ? this.resolvedMemory
+      : isRegisteredMemory(this.memory)
+        ? this.memory
+        : null;
     if (!backing) {
       return;
     }
-    bindMemoryView(this.memory, backing);
+    bindRegisteredMemoryView(this.memory, backing);
     for (const agent of this.agents) {
-      bindMemoryView(agent.memory, backing);
+      bindRegisteredMemoryView(agent.memory, backing);
     }
   }
 
@@ -561,7 +575,7 @@ export class Crew extends FlowTrackable {
   createCrewKnowledge(): this {
     if (!this.knowledge && this.knowledgeSources.length > 0) {
       try {
-        this.knowledge = new Knowledge({
+        this.knowledge = createRegisteredKnowledge({
           sources: this.knowledgeSources,
           collectionName: "crew",
           ...(this.embedder === null ? {} : { embedder: this.embedder }),
@@ -2033,17 +2047,17 @@ export class Crew extends FlowTrackable {
     return this.managerAgent;
   }
 
-  private resolveMemory(memory: boolean | Memory | MemoryScope): Memory | MemoryScope | null {
+  private resolveMemory(memory: boolean | MemoryLike | MemoryScopeLike): MemoryLike | MemoryScopeLike | null {
     if (memory === true) {
-      return new Memory({
+      return createRegisteredMemory({
         rootScope: `/crew/${sanitizeScopeName(this.name ?? "crew")}`,
         ...(this.embedder === null ? {} : { embedder: this.embedder }),
       });
     }
-    if (memory instanceof Memory) {
+    if (isRegisteredMemory(memory)) {
       return memory;
     }
-    if (memory && typeof memory === "object" && "recall" in memory && "remember" in memory) {
+    if (isRegisteredMemoryScope(memory)) {
       return memory;
     }
     return null;
@@ -2082,17 +2096,17 @@ export class Crew extends FlowTrackable {
   }
 
   resetMemorySystem(
-    system: Memory | MemoryScope | readonly Knowledge[] | Crew,
+    system: MemoryLike | MemoryScopeLike | readonly KnowledgeLike[] | Crew,
     _name: string,
-    resetFn: (system: Memory | MemoryScope | readonly Knowledge[] | Crew) => void,
+    resetFn: (system: MemoryLike | MemoryScopeLike | readonly KnowledgeLike[] | Crew) => void,
   ): void {
     resetFn(system);
   }
 
   _reset_memory_system(
-    system: Memory | MemoryScope | readonly Knowledge[] | Crew,
+    system: MemoryLike | MemoryScopeLike | readonly KnowledgeLike[] | Crew,
     name: string,
-    reset_fn: (system: Memory | MemoryScope | readonly Knowledge[] | Crew) => void,
+    reset_fn: (system: MemoryLike | MemoryScopeLike | readonly KnowledgeLike[] | Crew) => void,
   ): void {
     this.resetMemorySystem(system, name, reset_fn);
   }
@@ -2136,13 +2150,13 @@ export class Crew extends FlowTrackable {
     return this.fetchInputs();
   }
 
-  resetKnowledge(knowledges: readonly Knowledge[]): void {
+  resetKnowledge(knowledges: readonly KnowledgeLike[]): void {
     for (const knowledge of knowledges) {
-      knowledge.reset();
+      knowledge.reset?.();
     }
   }
 
-  reset_knowledge(knowledges: readonly Knowledge[]): void {
+  reset_knowledge(knowledges: readonly KnowledgeLike[]): void {
     this.resetKnowledge(knowledges);
   }
 
@@ -2284,11 +2298,11 @@ export class Crew extends FlowTrackable {
     return this.addCodeExecutionTools(agent, tools);
   }
 
-  addMemoryTools(tools: readonly Tool[], memory: Memory | MemoryScope): Tool[] {
-    return Crew.mergeTools(tools, createMemoryTools(memory));
+  addMemoryTools(tools: readonly Tool[], memory: MemoryLike | MemoryScopeLike): Tool[] {
+    return Crew.mergeTools(tools, createRegisteredMemoryTools(memory) as readonly Tool[]);
   }
 
-  _add_memory_tools(tools: readonly Tool[], memory: Memory | MemoryScope): Tool[] {
+  _add_memory_tools(tools: readonly Tool[], memory: MemoryLike | MemoryScopeLike): Tool[] {
     return this.addMemoryTools(tools, memory);
   }
 
@@ -2475,7 +2489,7 @@ export class Crew extends FlowTrackable {
   private buildMemorySystems(): Record<NormalizedResetMemoriesCommandType, MemorySystemConfig> {
     const agentKnowledges = this.agents
       .map((agent) => agent.knowledge)
-      .filter((knowledge): knowledge is Knowledge => knowledge !== null);
+      .filter((knowledge): knowledge is KnowledgeLike => knowledge !== null);
     const crewAndAgentKnowledges = [
       ...(this.knowledge ? [this.knowledge] : []),
       ...agentKnowledges,
@@ -2485,12 +2499,13 @@ export class Crew extends FlowTrackable {
         system: this.resolvedMemory,
         name: "Memory",
         reset: (system) => {
-          if (system instanceof Memory) {
-            system.reset();
+          if (isRegisteredMemory(system)) {
+            system.reset?.();
             return;
           }
-          if (system instanceof MemoryScope) {
-            system._require_memory().reset(system.rootPath);
+          if (isRegisteredMemoryScope(system)) {
+            const backing = system._require_memory?.() ?? system.memory ?? null;
+            backing?.reset?.(system.rootPath ?? system.root_path ?? undefined);
           }
         },
       },
@@ -2971,27 +2986,17 @@ function normalizeStoredOutputFormat(value: string | undefined): OutputFormat {
   return OutputFormat.RAW;
 }
 
-function bindMemoryView(value: unknown, backing: Memory): void {
-  if (!value || typeof value !== "object" || value instanceof Memory) {
-    return;
-  }
-  const bind = (value as { bind?: unknown }).bind;
-  if (typeof bind === "function") {
-    bind.call(value, backing);
-  }
-}
-
 async function initializeTrainingFile(filename: string): Promise<void> {
   new CrewTrainingHandler(filename).initializeFile();
   await Promise.resolve();
 }
 
-function copyKnowledge(knowledge: Knowledge | null): Knowledge | null {
+function copyKnowledge(knowledge: KnowledgeLike | null): KnowledgeLike | null {
   if (!knowledge) {
     return null;
   }
   const prototype = Object.getPrototypeOf(knowledge) as object | null;
-  return Object.assign(Object.create(prototype) as Knowledge, knowledge);
+  return Object.assign(Object.create(prototype) as KnowledgeLike, knowledge);
 }
 
 function copyLlm<T extends LLM | string | null>(llm: T): T {

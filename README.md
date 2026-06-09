@@ -5,13 +5,15 @@
 [![types](https://img.shields.io/npm/types/@crewai-ts/core.svg)](https://www.npmjs.com/package/@crewai-ts/core)
 
 An **unofficial** TypeScript port of [CrewAI](https://github.com/crewAIInc/crewAI) — build
-multi-agent workflows with agents, tasks, crews, and flows using a native TypeScript API.
+multi-agent workflows with agents, tasks, and crews using a native TypeScript API.
 
-The package mirrors CrewAI's runtime semantics (sequential and hierarchical processes,
-delegation, planning, memory, knowledge, checkpoints, and streaming) while staying
-idiomatic to TypeScript. It ships both **ESM and CommonJS** builds with full type
-declarations, and provides Python-style snake_case aliases for common async entry points
-to ease migration from the Python library.
+The core package is intentionally small: it contains the execution core, shared
+contracts, tools, checkpoints, and provider registration hooks. Native providers and
+optional features such as RAG/PDF parsing, MCP, A2A/A2UI, and Flow live in separate
+packages so Lambda and serverless users can install only what they need. Packages ship
+both **ESM and CommonJS** builds with full type declarations, and provide Python-style
+snake_case aliases for common async entry points to ease migration from the Python
+library.
 
 > **Unofficial project.** This is a community port and is **not affiliated with, endorsed
 > by, or maintained by crewAI, Inc.** "CrewAI" belongs to its respective owner. The original
@@ -25,21 +27,43 @@ package; per-package READMEs live next to each package's `package.json`.
 
 | Package | Description | Path |
 | --- | --- | --- |
-| [`@crewai-ts/core`](https://www.npmjs.com/package/@crewai-ts/core) | Unofficial TypeScript port of CrewAI — agents, tasks, crews, flows, memory, knowledge, and checkpoints. | [`packages/core/`](./packages/core/) |
+| [`@crewai-ts/core`](https://www.npmjs.com/package/@crewai-ts/core) | Lightweight execution core: agents, tasks, crews, tools, checkpoints, provider contracts, and shared hooks. | [`packages/core/`](./packages/core/) |
+| `@crewai-ts/gemini` | Gemini native provider and model catalog. | [`packages/gemini/`](./packages/gemini/) |
+| `@crewai-ts/openai` | OpenAI and OpenAI-compatible native providers. | [`packages/openai/`](./packages/openai/) |
+| `@crewai-ts/anthropic` | Anthropic native provider. | [`packages/anthropic/`](./packages/anthropic/) |
+| `@crewai-ts/bedrock` | AWS Bedrock native provider. | [`packages/bedrock/`](./packages/bedrock/) |
+| `@crewai-ts/azure` | Azure OpenAI native provider. | [`packages/azure/`](./packages/azure/) |
+| `@crewai-ts/snowflake` | Snowflake Cortex native provider. | [`packages/snowflake/`](./packages/snowflake/) |
+| `@crewai-ts/mcp` | MCP tool integration and SDK-backed transports. | [`packages/mcp/`](./packages/mcp/) |
+| `@crewai-ts/rag` | Knowledge, Memory, RAG, file ingestion, and PDF text extraction. | [`packages/rag/`](./packages/rag/) |
+| `@crewai-ts/a2a` | A2A and A2UI protocol support. | [`packages/a2a/`](./packages/a2a/) |
+| `@crewai-ts/flow` | Flow orchestration, persistence, visualization, and Flow DSL compatibility paths. | [`packages/flow/`](./packages/flow/) |
 | `@crewai-ts/nestjs` | NestJS DI integration for `@crewai-ts/core` (DI tokens, modules, dynamic modules). | [`packages/nestjs/`](./packages/nestjs/) |
 | `@crewai-ts/cli` | Command-line tool for scaffolding and inspecting CrewAI-style projects. | [`packages/cli/`](./packages/cli/) |
 
 ## Installation
 
 ```bash
-npm install @crewai-ts/core
-```
-
-```bash
 pnpm add @crewai-ts/core
+# or
+npm install @crewai-ts/core
 # or
 yarn add @crewai-ts/core
 ```
+
+Install provider and feature packages explicitly:
+
+```bash
+# Gemini-only install path
+pnpm add @crewai-ts/core @crewai-ts/gemini
+
+# Optional feature packages
+pnpm add @crewai-ts/rag @crewai-ts/mcp @crewai-ts/a2a @crewai-ts/flow
+```
+
+This package split is a breaking package-boundary change. See
+[`docs/PACKAGE_SPLIT_MIGRATION.md`](./docs/PACKAGE_SPLIT_MIGRATION.md) for old
+`@crewai-ts/core` import replacements.
 
 ## Monorepo
 
@@ -69,9 +93,19 @@ Workspace layout:
 
 ```
 packages/
-  core/      # @crewai-ts/core  (published)
-  nestjs/    # @crewai-ts/nestjs
-  cli/       # @crewai-ts/cli
+  core/       # @crewai-ts/core
+  gemini/     # @crewai-ts/gemini
+  openai/     # @crewai-ts/openai
+  anthropic/  # @crewai-ts/anthropic
+  bedrock/    # @crewai-ts/bedrock
+  azure/      # @crewai-ts/azure
+  snowflake/  # @crewai-ts/snowflake
+  mcp/        # @crewai-ts/mcp
+  rag/        # @crewai-ts/rag
+  a2a/        # @crewai-ts/a2a
+  flow/       # @crewai-ts/flow
+  nestjs/     # @crewai-ts/nestjs
+  cli/        # @crewai-ts/cli
 ```
 
 Cross-package references use the `workspace:*` protocol — for example
@@ -93,6 +127,32 @@ import { Agent, Crew, Task } from "@crewai-ts/core";
 // CommonJS
 const { Agent, Crew, Task } = require("@crewai-ts/core");
 ```
+
+## Breaking package split
+
+`@crewai-ts/core` is no longer an umbrella package for every provider and optional
+feature. Import providers and feature APIs from their owning packages:
+
+| Old surface | New package |
+| --- | --- |
+| `GeminiCompletion`, Gemini model constants | `@crewai-ts/gemini` |
+| `OpenAICompletion`, OpenAI-compatible providers | `@crewai-ts/openai` |
+| `AnthropicCompletion` | `@crewai-ts/anthropic` |
+| `BedrockCompletion` | `@crewai-ts/bedrock` |
+| `AzureCompletion` | `@crewai-ts/azure` |
+| `SnowflakeCompletion` | `@crewai-ts/snowflake` |
+| MCP clients and native tools | `@crewai-ts/mcp` |
+| Memory, Knowledge, RAG, PDF parsing | `@crewai-ts/rag` |
+| A2A and A2UI | `@crewai-ts/a2a` |
+| Flow APIs and Flow DSL paths | `@crewai-ts/flow` |
+
+The core package has no direct install dependencies. Optional dependencies are
+owned by their feature packages: `@crewai-ts/rag` owns `pdf-parse`,
+`@crewai-ts/mcp` owns `@modelcontextprotocol/sdk`, and `@crewai-ts/flow` owns
+`yaml`.
+
+See [`docs/PACKAGE_SPLIT_MIGRATION.md`](./docs/PACKAGE_SPLIT_MIGRATION.md) for a
+complete migration guide.
 
 ## Quick start
 
@@ -152,6 +212,7 @@ including `kickoff_async`, `kickoff_for_each`, `kickoff_for_each_async`,
 - [Checkpoints](#checkpoints)
 - [Tools](#tools)
 - [LLM providers](#llm-providers)
+- [Breaking package split](#breaking-package-split)
 - [Agent planning](#agent-planning)
 - [Flows](#flows)
 - [Task output files](#task-output-files)
@@ -218,11 +279,12 @@ including `kickoff_async`, `kickoff_for_each`, `kickoff_for_each_async`,
 **LLM providers**
 
 - function or object LLM providers with tool-call options, string model registry, and token usage aggregation
+- native provider implementations live in explicit packages such as `@crewai-ts/gemini`
 
 **Flows**
 
-- `Flow` with standard TS `@start`, `@listen`, `@router`, `or_`, `and_`, `ask()` input providers, and `@humanFeedback`
-- basic `stream: true` crew and flow outputs via `CrewStreamingOutput` / `FlowStreamingOutput`
+- available from `@crewai-ts/flow`: `Flow`, standard TS `@start`, `@listen`, `@router`, `or_`, `and_`, `ask()` input providers, and `@humanFeedback`
+- basic `stream: true` crew output from core, plus flow streaming from `@crewai-ts/flow`
 
 **Events and hooks**
 
@@ -233,8 +295,8 @@ including `kickoff_async`, `kickoff_for_each`, `kickoff_for_each_async`,
 
 **Memory and knowledge**
 
-- `Memory` / `MemoryScope` with recall / save tools injected into crews when memory is enabled
-- `Knowledge` sources (`StringKnowledgeSource`, `TextFileKnowledgeSource`, `JSONKnowledgeSource`, `CSVKnowledgeSource`) with agent and crew context injection
+- available from `@crewai-ts/rag`: `Memory` / `MemoryScope` with recall / save tools injected into crews when memory is enabled
+- available from `@crewai-ts/rag`: `Knowledge` sources (`StringKnowledgeSource`, `TextFileKnowledgeSource`, `JSONKnowledgeSource`, `CSVKnowledgeSource`) with agent and crew context injection
 
 **State, security, and checkpoints**
 
@@ -408,6 +470,23 @@ object providers can expose `getUsageMetrics()` or CrewAI-style
 `getTokenUsageSummary()` for exact token accounting. When they do not, the
 runtime records an estimated usage count.
 
+Native providers are installed and registered from their own packages. For a
+Gemini-only project, install only `@crewai-ts/core` and `@crewai-ts/gemini`:
+
+```ts
+import { Agent } from "@crewai-ts/core";
+import { GeminiCompletion, registerGeminiProvider } from "@crewai-ts/gemini";
+
+registerGeminiProvider();
+
+const researcher = new Agent({
+  role: "Researcher",
+  goal: "Find facts",
+  backstory: "Careful analyst",
+  llm: new GeminiCompletion({ model: "gemini-2.5-flash" }),
+});
+```
+
 ```ts
 import { Agent, registerLLMProvider } from "@crewai-ts/core";
 
@@ -475,12 +554,18 @@ const answer = await researcher.kickoff("Research CrewAI");
 
 ## Flows
 
+Install `@crewai-ts/flow` to use Flow APIs:
+
+```bash
+pnpm add @crewai-ts/core @crewai-ts/flow
+```
+
 Flows run decorated methods as a stateful workflow. `@start` methods begin the
 run, `@listen` methods react to completed methods or router path strings, and
 `@router` methods return the next path label.
 
 ```ts
-import { Flow, and_, listen, router, start } from "@crewai-ts/core";
+import { Flow, and_, listen, router, start } from "@crewai-ts/flow";
 
 class ResearchFlow extends Flow<{ topic?: string; done?: boolean }> {
   @start()
@@ -718,12 +803,20 @@ const crew = new Crew({
 
 ## Memory
 
+Install `@crewai-ts/rag` to use Memory, Knowledge, RAG, and PDF text extraction
+helpers:
+
+```bash
+pnpm add @crewai-ts/core @crewai-ts/rag
+```
+
 Enable memory on a crew to append relevant memory context to task prompts and
 inject recall/save tools into task execution. Agent-level memory is also
 available through `new Agent({ memory })` and stores completed agent results.
 
 ```ts
-import { Agent, Crew, Memory, Process, Task } from "@crewai-ts/core";
+import { Agent, Crew, Process, Task } from "@crewai-ts/core";
+import { Memory } from "@crewai-ts/rag";
 
 const memory = new Memory();
 memory.remember("CrewAI supports sequential crews");
@@ -758,7 +851,8 @@ Attach `Knowledge` or `knowledgeSources` to an agent or crew to inject relevant
 source snippets into task prompts as additional information.
 
 ```ts
-import { Agent, Crew, StringKnowledgeSource, TextFileKnowledgeSource, Task } from "@crewai-ts/core";
+import { Agent, Crew, Task } from "@crewai-ts/core";
+import { StringKnowledgeSource, TextFileKnowledgeSource } from "@crewai-ts/rag";
 
 const researcher = new Agent({
   role: "Researcher",

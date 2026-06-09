@@ -1,6 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
-import { parse } from "yaml";
 
 import { Agent, type AgentGuardrail, type AgentOptions, type CodeExecutionMode } from "./agent.js";
 import { Crew } from "./crew.js";
@@ -8,8 +7,9 @@ import type { PlanningConfig, PlanningConfigOptions } from "./agent-planning.js"
 import { Task, type TaskInputFiles, type TaskOptions, type TaskOutputConverter } from "./task.js";
 import type { AgentStepCallback, LLM, TaskCallback, Tool } from "./types.js";
 import { BaseTool, type CacheHandler } from "./tools.js";
-import type { EmbedderConfig } from "./rag.js";
+import type { EmbedderConfig } from "./feature-hooks.js";
 import { getCrewMetadata } from "./metadata.js";
+import { parseYaml } from "./optional-yaml.js";
 import type { AvailableExport, EnvVarEntry } from "./plus-api.js";
 
 export type ConfigRecord = Record<string, unknown>;
@@ -235,7 +235,7 @@ export function loadConfig(source: ConfigSource, baseDirectory = process.cwd()):
     return {};
   }
 
-  const parsed: unknown = parse(readFileSync(fullPath, "utf8"));
+  const parsed: unknown = parseYaml(readFileSync(fullPath, "utf8"));
   return isProjectConfig(parsed) ? normalizeProjectConfig(parsed) : {};
 }
 

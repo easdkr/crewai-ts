@@ -18,18 +18,19 @@ import { I18N_DEFAULT } from "./i18n.js";
 import { extractInputFilesFromInputs, type InputFiles } from "./input-files.js";
 import { createLLM, emptyUsageMetrics, type LLM, type LLMClient, type UsageMetrics } from "./llm.js";
 import { LiteAgentOutput } from "./lite-agent-output.js";
-import { createMemoryTools, Memory, type MemoryScope } from "./memory.js";
 import { getToolNames, parseTools, renderTextDescriptionAndArgs } from "./agent-utils.js";
 import { AgentFinish } from "./agent-parser.js";
 import type { AgentStepCallback, LLMMessage, Tool } from "./types.js";
 import { serializeGuardrailForJson } from "./guardrail.js";
 import {
-  _execute_task_with_a2a,
-  create_extension_registry_from_config,
-  get_a2a_agents_and_response_model,
-  inject_a2a_server_methods,
-  wrap_agent_with_a2a_instance,
-} from "./a2a.js";
+  applyA2AAgentWrapper,
+  applyA2AServerMethodsInjector,
+  createRegisteredMemory,
+  createRegisteredMemoryTools,
+  getLiteAgentA2AKickoffHandler,
+  type MemoryLike,
+  type MemoryScopeLike,
+} from "./feature-hooks.js";
 
 export type LiteAgentGuardrailResult =
   | readonly [boolean, unknown]
@@ -74,7 +75,7 @@ export type LiteAgentOptions = {
   guardrail?: LiteAgentGuardrail | null;
   guardrailMaxRetries?: number;
   guardrail_max_retries?: number;
-  memory?: Memory | MemoryScope | boolean | null;
+  memory?: MemoryLike | MemoryScopeLike | boolean | null;
   stepCallback?: AgentStepCallback | null;
   step_callback?: AgentStepCallback | null;
   codeExecutionMode?: CodeExecutionMode;
@@ -96,40 +97,28 @@ export async function _kickoff_with_a2a_support(
   messages: LiteAgentKickoffInput,
   response_format: unknown = null,
   input_files: InputFiles | null = null,
-  extension_registry = create_extension_registry_from_config([]),
+  _extension_registry: unknown = null,
 ): Promise<LiteAgentOutput> {
-  const [a2aAgents, agentResponseModel] = get_a2a_agents_and_response_model(agent.a2a as never);
-  if (a2aAgents.length === 0) {
+  void _extension_registry;
+  const handler = getLiteAgentA2AKickoffHandler();
+  if (!handler) {
     return await original_kickoff(messages, response_format, input_files ?? undefined);
   }
-  const description = liteAgentKickoffDescription(messages);
-  if (!description) {
-    return await original_kickoff(messages, response_format, input_files ?? undefined);
-  }
-  const result = await _execute_task_with_a2a({
-    self: agent,
-    a2a_agents: a2aAgents,
-    original_fn: async () => {
-      const output = await original_kickoff(messages, response_format, input_files ?? undefined);
-      return output.raw;
-    },
-    task: {
-      description,
-      agent,
-      expected_output: "Result from A2A delegation",
-      input_files: input_files ?? {},
-    },
-    agent_response_model: agentResponseModel,
-    context: null,
-    tools: null,
-    extension_registry,
+  const result = await handler({
+    agent,
+    originalKickoff: original_kickoff as (messages: unknown, responseFormat?: unknown, inputFiles?: unknown) => unknown,
+    messages,
+    responseFormat: response_format,
+    inputFiles: input_files ?? undefined,
   });
-  return new LiteAgentOutput({
-    raw: result,
-    agent_role: agent.role,
-    usage_metrics: null,
-    messages: [],
-  });
+  return result instanceof LiteAgentOutput
+    ? result
+    : new LiteAgentOutput({
+      raw: String(result),
+      agent_role: agent.role,
+      usage_metrics: null,
+      messages: [],
+    });
 }
 
 export function task_to_kickoff_adapter(
@@ -167,7 +156,7 @@ export class LiteAgent {
   readonly guardrail: LiteAgentGuardrail | null;
   readonly guardrailMaxRetries: number;
   readonly guardrail_max_retries: number;
-  memory: Memory | MemoryScope | null;
+  memory: MemoryLike | MemoryScopeLike | null;
   readonly stepCallback: AgentStepCallback | null;
   readonly codeExecutionMode: CodeExecutionMode;
   readonly code_execution_mode: CodeExecutionMode;
@@ -205,7 +194,7 @@ export class LiteAgent {
     this.guardrailMaxRetries = options.guardrailMaxRetries ?? options.guardrail_max_retries ?? 3;
     this.guardrail_max_retries = this.guardrailMaxRetries;
     this.memory = options.memory === true
-      ? new Memory()
+      ? createRegisteredMemory()
       : options.memory
         ? options.memory
         : null;
@@ -271,9 +260,9 @@ export class LiteAgent {
 
   setupA2aSupport(): this {
     if (this.a2a) {
-      wrap_agent_with_a2a_instance(this);
+      applyA2AAgentWrapper(this);
     } else {
-      inject_a2a_server_methods(this);
+      applyA2AServerMethodsInjector(this);
     }
     return this;
   }
@@ -597,9 +586,14 @@ export class LiteAgent {
     }
     const inputText = this._getLastUserContent() || "User request";
     const raw = `Input: ${inputText}\nAgent: ${this.role}\nResult: ${outputText}`;
-    const extracted = this.memory.extract_memories(raw);
+    const extractMemories = this.memory.extract_memories?.bind(this.memory) ?? this.memory.extractMemories?.bind(this.memory);
+    const rememberMany = this.memory.remember_many?.bind(this.memory) ?? this.memory.rememberMany?.bind(this.memory);
+    if (!extractMemories || !rememberMany) {
+      return;
+    }
+    const extracted = extractMemories(raw);
     if (extracted.length > 0) {
-      this.memory.remember_many(extracted, { agentRole: this.role });
+      rememberMany(extracted, { agentRole: this.role });
     }
   }
 
@@ -612,14 +606,14 @@ export class LiteAgent {
       return this.tools;
     }
     const names = new Set(this.tools.map((tool) => tool.name.toLowerCase().replace(/\s+/g, "_")));
-    const memoryTools = createMemoryTools(this.memory).filter((tool) => {
+    const memoryTools = (createRegisteredMemoryTools(this.memory) as readonly Tool[]).filter((tool) => {
       const name = tool.name.toLowerCase().replace(/\s+/g, "_");
       return !names.has(name);
     });
     return memoryTools.length > 0 ? [...this.tools, ...memoryTools] : this.tools;
   }
 
-  private toAgent(options: { memory?: Memory | MemoryScope | null; tools?: readonly Tool[] } = {}): Agent {
+  private toAgent(options: { memory?: MemoryLike | MemoryScopeLike | null; tools?: readonly Tool[] } = {}): Agent {
     return new Agent({
       role: this.role,
       goal: this.goal,
@@ -759,19 +753,6 @@ function formatLiteAgentMessages(input: LiteAgentKickoffInput, explicitInputFile
     messages,
     inputFiles: { ...messageInputFiles, ...(explicitInputFiles ?? {}) },
   };
-}
-
-function liteAgentKickoffDescription(messages: LiteAgentKickoffInput): string {
-  if (typeof messages === "string") {
-    return messages;
-  }
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const message = messages[index];
-    if (message?.role === "user" && typeof message.content === "string") {
-      return message.content;
-    }
-  }
-  return "";
 }
 
 function parseStructuredOutput(raw: string, responseFormat: unknown): unknown {

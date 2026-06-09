@@ -1,7 +1,6 @@
 import { createInterface } from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 
-import type { Flow, HumanFeedbackProvider } from "./flow.js";
 import type { MaybePromise } from "./types.js";
 
 export type InputResponse = {
@@ -12,19 +11,19 @@ export type InputResponse = {
 export type InputProvider = {
   requestInput?(
     message: string,
-    flow: Flow<object>,
+    flow: unknown,
     metadata?: Record<string, unknown> | null,
   ): MaybePromise<string | InputResponse | null>;
   request_input?(
     message: string,
-    flow: Flow<object>,
+    flow: unknown,
     metadata?: Record<string, unknown> | null,
   ): MaybePromise<string | InputResponse | null>;
 };
 
 export type FlowConfig = {
   inputProvider: InputProvider | null;
-  hitlProvider: HumanFeedbackProvider | null;
+  hitlProvider: unknown;
 };
 export const FlowConfig = Object.freeze({ kind: "FlowConfig" });
 

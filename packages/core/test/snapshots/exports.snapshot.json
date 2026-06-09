@@ -6,12 +6,6 @@
       "require": "./dist/index.cjs",
       "default": "./dist/index.js"
     },
-    "./a2a": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js",
-      "require": "./dist/index.cjs",
-      "default": "./dist/index.js"
-    },
     "./agent": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
@@ -25,10 +19,10 @@
       "default": "./dist/index.js"
     },
     "./auth": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js",
-      "require": "./dist/index.cjs",
-      "default": "./dist/index.js"
+      "types": "./dist/auth.d.ts",
+      "import": "./dist/auth.js",
+      "require": "./dist/auth.cjs",
+      "default": "./dist/auth.js"
     },
     "./cli": {
       "types": "./dist/index.d.ts",
@@ -67,10 +61,10 @@
       "default": "./dist/index.js"
     },
     "./events": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js",
-      "require": "./dist/index.cjs",
-      "default": "./dist/index.js"
+      "types": "./dist/events.d.ts",
+      "import": "./dist/events.js",
+      "require": "./dist/events.cjs",
+      "default": "./dist/events.js"
     },
     "./experimental": {
       "types": "./dist/index.d.ts",
@@ -78,37 +72,25 @@
       "require": "./dist/index.cjs",
       "default": "./dist/index.js"
     },
+    "./experimental/conversational": {
+      "types": "./dist/experimental-conversational.d.ts",
+      "import": "./dist/experimental-conversational.js",
+      "require": "./dist/experimental-conversational.cjs",
+      "default": "./dist/experimental-conversational.js"
+    },
+    "./feature-hooks": {
+      "types": "./dist/feature-hooks.d.ts",
+      "import": "./dist/feature-hooks.js",
+      "require": "./dist/feature-hooks.cjs",
+      "default": "./dist/feature-hooks.js"
+    },
     "./files": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "require": "./dist/index.cjs",
       "default": "./dist/index.js"
     },
-    "./flow": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js",
-      "require": "./dist/index.cjs",
-      "default": "./dist/index.js"
-    },
     "./hooks": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js",
-      "require": "./dist/index.cjs",
-      "default": "./dist/index.js"
-    },
-    "./knowledge": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js",
-      "require": "./dist/index.cjs",
-      "default": "./dist/index.js"
-    },
-    "./lite-agent": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js",
-      "require": "./dist/index.cjs",
-      "default": "./dist/index.js"
-    },
-    "./lite-agent-output": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "require": "./dist/index.cjs",
@@ -126,11 +108,23 @@
       "require": "./dist/index.cjs",
       "default": "./dist/index.js"
     },
-    "./llm": {
+    "./lite-agent": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "require": "./dist/index.cjs",
       "default": "./dist/index.js"
+    },
+    "./lite-agent-output": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs",
+      "default": "./dist/index.js"
+    },
+    "./llm": {
+      "types": "./dist/llm.d.ts",
+      "import": "./dist/llm.js",
+      "require": "./dist/llm.cjs",
+      "default": "./dist/llm.js"
     },
     "./llms": {
       "types": "./dist/index.d.ts",
@@ -138,17 +132,11 @@
       "require": "./dist/index.cjs",
       "default": "./dist/index.js"
     },
-    "./mcp": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js",
-      "require": "./dist/index.cjs",
-      "default": "./dist/index.js"
-    },
-    "./memory": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js",
-      "require": "./dist/index.cjs",
-      "default": "./dist/index.js"
+    "./llms/hooks/transport": {
+      "types": "./dist/llms-hooks-transport.d.ts",
+      "import": "./dist/llms-hooks-transport.js",
+      "require": "./dist/llms-hooks-transport.cjs",
+      "default": "./dist/llms-hooks-transport.js"
     },
     "./mypy": {
       "types": "./dist/index.d.ts",
@@ -174,11 +162,11 @@
       "require": "./dist/index.cjs",
       "default": "./dist/index.js"
     },
-    "./rag": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js",
-      "require": "./dist/index.cjs",
-      "default": "./dist/index.js"
+    "./schema-utils": {
+      "types": "./dist/schema-utils.d.ts",
+      "import": "./dist/schema-utils.js",
+      "require": "./dist/schema-utils.cjs",
+      "default": "./dist/schema-utils.js"
     },
     "./security": {
       "types": "./dist/index.d.ts",
@@ -204,6 +192,12 @@
       "require": "./dist/index.cjs",
       "default": "./dist/index.js"
     },
+    "./state/provider/core": {
+      "types": "./dist/state-provider-core.d.ts",
+      "import": "./dist/state-provider-core.js",
+      "require": "./dist/state-provider-core.cjs",
+      "default": "./dist/state-provider-core.js"
+    },
     "./task": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
@@ -223,16 +217,16 @@
       "default": "./dist/index.js"
     },
     "./tools": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js",
-      "require": "./dist/index.cjs",
-      "default": "./dist/index.js"
+      "types": "./dist/tools.d.ts",
+      "import": "./dist/tools.js",
+      "require": "./dist/tools.cjs",
+      "default": "./dist/tools.js"
     },
     "./types": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js",
-      "require": "./dist/index.cjs",
-      "default": "./dist/index.js"
+      "types": "./dist/types.d.ts",
+      "import": "./dist/types.js",
+      "require": "./dist/types.cjs",
+      "default": "./dist/types.js"
     },
     "./utilities": {
       "types": "./dist/index.d.ts",
@@ -241,24 +235,6 @@
       "default": "./dist/index.js"
     },
     "./version": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js",
-      "require": "./dist/index.cjs",
-      "default": "./dist/index.js"
-    },
-    "./llms/hooks/transport": {
-      "types": "./dist/llms-hooks-transport.d.ts",
-      "import": "./dist/llms-hooks-transport.js",
-      "require": "./dist/llms-hooks-transport.cjs",
-      "default": "./dist/llms-hooks-transport.js"
-    },
-    "./state/provider/core": {
-      "types": "./dist/state-provider-core.d.ts",
-      "import": "./dist/state-provider-core.js",
-      "require": "./dist/state-provider-core.cjs",
-      "default": "./dist/state-provider-core.js"
-    },
-    "./a2a/*": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "require": "./dist/index.cjs",
@@ -306,19 +282,7 @@
       "require": "./dist/index.cjs",
       "default": "./dist/index.js"
     },
-    "./flow/*": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js",
-      "require": "./dist/index.cjs",
-      "default": "./dist/index.js"
-    },
     "./hooks/*": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js",
-      "require": "./dist/index.cjs",
-      "default": "./dist/index.js"
-    },
-    "./knowledge/*": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "require": "./dist/index.cjs",
@@ -330,25 +294,7 @@
       "require": "./dist/index.cjs",
       "default": "./dist/index.js"
     },
-    "./mcp/*": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js",
-      "require": "./dist/index.cjs",
-      "default": "./dist/index.js"
-    },
-    "./memory/*": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js",
-      "require": "./dist/index.cjs",
-      "default": "./dist/index.js"
-    },
     "./project/*": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js",
-      "require": "./dist/index.cjs",
-      "default": "./dist/index.js"
-    },
-    "./rag/*": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "require": "./dist/index.cjs",

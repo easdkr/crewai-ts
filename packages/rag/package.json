@@ -1,0 +1,69 @@
+{
+  "name": "@crewai-ts/rag",
+  "version": "0.2.0",
+  "description": "RAG, knowledge, memory, and file-ingestion features for CrewAI TypeScript.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/easdkr/crewai-ts.git",
+    "directory": "packages/rag"
+  },
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs",
+      "default": "./dist/index.js"
+    },
+    "./knowledge": {
+      "types": "./dist/knowledge.d.ts",
+      "import": "./dist/knowledge.js",
+      "require": "./dist/knowledge.cjs",
+      "default": "./dist/knowledge.js"
+    },
+    "./memory": {
+      "types": "./dist/memory.d.ts",
+      "import": "./dist/memory.js",
+      "require": "./dist/memory.cjs",
+      "default": "./dist/memory.js"
+    },
+    "./rag": {
+      "types": "./dist/rag.d.ts",
+      "import": "./dist/rag.js",
+      "require": "./dist/rag.cjs",
+      "default": "./dist/rag.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "sideEffects": [
+    "./dist/index.js",
+    "./dist/index.cjs"
+  ],
+  "scripts": {
+    "build": "tsup && tsc -p tsconfig.build.json",
+    "postbuild": "node --input-type=module -e \"import('./dist/index.js')\"",
+    "check": "tsc --noEmit",
+    "test": "vitest run",
+    "smoke:pack": "node scripts/pack-smoke.mjs",
+    "prepack": "npm run build"
+  },
+  "dependencies": {
+    "@crewai-ts/core": "workspace:^",
+    "pdf-parse": "^2.4.5"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.1",
+    "tsup": "^8.5.1",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.7"
+  }
+}
