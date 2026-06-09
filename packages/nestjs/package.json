@@ -1,6 +1,6 @@
 {
   "name": "@crewai-ts/nestjs",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "NestJS DI integration for @crewai-ts/core.",
   "repository": {
     "type": "git",
