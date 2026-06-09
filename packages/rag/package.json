@@ -57,7 +57,7 @@
     "prepack": "npm run build"
   },
   "dependencies": {
-    "@crewai-ts/core": "workspace:^",
+    "@crewai-ts/core": "^0.2.0",
     "pdf-parse": "^2.4.5"
   },
   "devDependencies": {

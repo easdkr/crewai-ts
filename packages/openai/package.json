@@ -36,7 +36,7 @@
     "prepack": "npm run build"
   },
   "dependencies": {
-    "@crewai-ts/core": "workspace:^"
+    "@crewai-ts/core": "^0.2.0"
   },
   "devDependencies": {
     "@types/node": "^25.9.1",

@@ -114,8 +114,8 @@
     "prepack": "npm run build"
   },
   "dependencies": {
-    "@crewai-ts/core": "workspace:^",
-    "@crewai-ts/rag": "workspace:^",
+    "@crewai-ts/core": "^0.2.0",
+    "@crewai-ts/rag": "^0.2.0",
     "yaml": "^2.9.0"
   },
   "devDependencies": {

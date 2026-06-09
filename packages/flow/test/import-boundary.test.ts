@@ -13,8 +13,8 @@ describe("@crewai-ts/flow package boundary", () => {
   it("keeps Flow owned by a feature package with explicit dependencies", () => {
     expect(pkg.name).toBe("@crewai-ts/flow");
     expect(pkg.dependencies).toEqual({
-      "@crewai-ts/core": "workspace:^",
-      "@crewai-ts/rag": "workspace:^",
+      "@crewai-ts/core": "^0.2.0",
+      "@crewai-ts/rag": "^0.2.0",
       yaml: "^2.9.0",
     });
     expect(pkg.dependencies).not.toHaveProperty("@modelcontextprotocol/sdk");

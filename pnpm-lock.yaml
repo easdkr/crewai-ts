@@ -36,7 +36,7 @@ importers:
   packages/a2a:
     dependencies:
       '@crewai-ts/core':
-        specifier: workspace:^
+        specifier: ^0.2.0
         version: link:../core
     devDependencies:
       '@types/node':
@@ -55,7 +55,7 @@ importers:
   packages/anthropic:
     dependencies:
       '@crewai-ts/core':
-        specifier: workspace:^
+        specifier: ^0.2.0
         version: link:../core
     devDependencies:
       '@types/node':
@@ -74,10 +74,10 @@ importers:
   packages/azure:
     dependencies:
       '@crewai-ts/core':
-        specifier: workspace:^
+        specifier: ^0.2.0
         version: link:../core
       '@crewai-ts/openai':
-        specifier: workspace:^
+        specifier: ^0.2.0
         version: link:../openai
     devDependencies:
       '@types/node':
@@ -96,7 +96,7 @@ importers:
   packages/bedrock:
     dependencies:
       '@crewai-ts/core':
-        specifier: workspace:^
+        specifier: ^0.2.0
         version: link:../core
     devDependencies:
       '@types/node':
@@ -115,7 +115,7 @@ importers:
   packages/cli:
     dependencies:
       '@crewai-ts/core':
-        specifier: workspace:^
+        specifier: ^0.2.0
         version: link:../core
       tsx:
         specifier: ^4.19.0
@@ -139,10 +139,10 @@ importers:
   packages/flow:
     dependencies:
       '@crewai-ts/core':
-        specifier: workspace:^
+        specifier: ^0.2.0
         version: link:../core
       '@crewai-ts/rag':
-        specifier: workspace:^
+        specifier: ^0.2.0
         version: link:../rag
       yaml:
         specifier: ^2.9.0
@@ -164,7 +164,7 @@ importers:
   packages/gemini:
     dependencies:
       '@crewai-ts/core':
-        specifier: workspace:^
+        specifier: ^0.2.0
         version: link:../core
     devDependencies:
       '@types/node':
@@ -183,7 +183,7 @@ importers:
   packages/mcp:
     dependencies:
       '@crewai-ts/core':
-        specifier: workspace:^
+        specifier: ^0.2.0
         version: link:../core
       '@modelcontextprotocol/sdk':
         specifier: ^1.29.0
@@ -205,7 +205,7 @@ importers:
   packages/nestjs:
     dependencies:
       '@crewai-ts/core':
-        specifier: workspace:^
+        specifier: ^0.2.0
         version: link:../core
     devDependencies:
       '@nestjs/common':
@@ -236,7 +236,7 @@ importers:
   packages/openai:
     dependencies:
       '@crewai-ts/core':
-        specifier: workspace:^
+        specifier: ^0.2.0
         version: link:../core
     devDependencies:
       '@types/node':
@@ -255,7 +255,7 @@ importers:
   packages/rag:
     dependencies:
       '@crewai-ts/core':
-        specifier: workspace:^
+        specifier: ^0.2.0
         version: link:../core
       pdf-parse:
         specifier: ^2.4.5
@@ -277,10 +277,10 @@ importers:
   packages/snowflake:
     dependencies:
       '@crewai-ts/core':
-        specifier: workspace:^
+        specifier: ^0.2.0
         version: link:../core
       '@crewai-ts/openai':
-        specifier: workspace:^
+        specifier: ^0.2.0
         version: link:../openai
     devDependencies:
       '@types/node':

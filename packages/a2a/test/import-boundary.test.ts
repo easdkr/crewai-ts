@@ -9,7 +9,7 @@ describe("@crewai-ts/a2a package boundary", () => {
   it("keeps A2A owned by a feature package with only core as a workspace dependency", () => {
     expect(pkg.name).toBe("@crewai-ts/a2a");
     expect(pkg.dependencies).toEqual({
-      "@crewai-ts/core": "workspace:^",
+      "@crewai-ts/core": "^0.2.0",
     });
     expect(pkg.dependencies).not.toHaveProperty("@crewai-ts/rag");
     expect(pkg.dependencies).not.toHaveProperty("@modelcontextprotocol/sdk");
