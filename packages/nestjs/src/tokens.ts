@@ -11,10 +11,24 @@ export const LLM = Symbol.for("crewai-ts/LLM");
 export const MEMORY = Symbol.for("crewai-ts/MEMORY");
 export const KNOWLEDGE = Symbol.for("crewai-ts/KNOWLEDGE");
 
+// v0.3.0 tokens — multi-LLM, planning, function-calling, eventing, and agent registry.
+export const LLM_REGISTRY = Symbol.for("crewai-ts/LLM_REGISTRY");
+export const LLM_ROUTER = Symbol.for("crewai-ts/LLM_ROUTER");
+export const PLANNING_LLM = Symbol.for("crewai-ts/PLANNING_LLM");
+export const FUNCTION_CALLING_LLM = Symbol.for("crewai-ts/FUNCTION_CALLING_LLM");
+export const EVENT_BUS = Symbol.for("crewai-ts/EVENT_BUS");
+export const AGENT_REGISTRY = Symbol.for("crewai-ts/AGENT_REGISTRY");
+
 export type CrewFactoryToken = symbol;
 export type LLMToken = symbol;
 export type MemoryToken = symbol;
 export type KnowledgeToken = symbol;
+export type LlmRegistryToken = symbol;
+export type LlmRouterToken = symbol;
+export type PlanningLlmToken = symbol;
+export type FunctionCallingLlmToken = symbol;
+export type EventBusToken = symbol;
+export type AgentRegistryToken = symbol;
 
 // Helper types for injection.
 //
@@ -45,3 +59,9 @@ export type KnowledgeSupply = readonly unknown[] | null | undefined;
 export interface CrewFactory {
   create(input: { agents: readonly Agent[]; tasks: readonly Task[] }): Crew;
 }
+
+// Strategy used by LLM_REGISTRY / LLM_ROUTER to pick a provider from a set.
+// `false` opts out of routing — the registry provides a single LLM directly.
+export type RouterStrategy = "round-robin" | "fallback" | "race" | "weighted" | false;
+
+export type LlmProviderName = "openai" | "anthropic" | "gemini" | "azure";

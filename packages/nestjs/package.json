@@ -33,6 +33,7 @@
     "postbuild": "node --input-type=module -e \"import('./dist/index.js')\"",
     "check": "tsc --noEmit",
     "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
     "prepack": "npm run build"
   },
   "peerDependencies": {
@@ -51,9 +52,21 @@
     "@nestjs/core": "^11.0.0",
     "@nestjs/testing": "^11.0.0",
     "@types/node": "^25.9.1",
+    "@vitest/coverage-v8": "^4.1.8",
     "reflect-metadata": "^0.2.0",
     "tsup": "^8.5.1",
     "typescript": "^6.0.3",
     "vitest": "^4.1.7"
+  },
+  "coverage": {
+    "provider": "v8",
+    "include": ["src/**"],
+    "exclude": ["src/**/index.ts", "src/**/*.d.ts"],
+    "thresholds": {
+      "lines": 80,
+      "branches": 80,
+      "functions": 80,
+      "statements": 80
+    }
   }
 }
