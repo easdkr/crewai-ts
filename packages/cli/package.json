@@ -2,10 +2,21 @@
   "name": "@crewai-ts/cli",
   "version": "0.2.1",
   "description": "CLI to run a user's crewai-ts project (TypeScript/JavaScript) via tsx.",
+  "license": "MIT",
+  "author": "June <sjchoi@wisely.store>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/easdkr/crewai-ts.git",
+    "directory": "packages/cli"
+  },
+  "homepage": "https://github.com/easdkr/crewai-ts#readme",
+  "bugs": {
+    "url": "https://github.com/easdkr/crewai-ts/issues"
+  },
   "type": "module",
   "main": "./dist/index.js",
   "bin": {
-    "crewai-ts": "./dist/index.js"
+    "crewai-ts": "dist/index.js"
   },
   "exports": {
     ".": {
