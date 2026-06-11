@@ -42,7 +42,8 @@ const result = await client.callTool("read_file", { path: "/tmp/example.txt" });
 ## Using MCP Tools with Agents
 
 ```ts
-import { MCPToolResolver } from "@crewai-ts/mcp";
+import { Agent } from "@crewai-ts/core";
+import { MCPServerStdio, MCPToolResolver } from "@crewai-ts/mcp";
 
 const resolver = new MCPToolResolver();
 const tools = await resolver.resolve([

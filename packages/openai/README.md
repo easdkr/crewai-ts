@@ -46,17 +46,31 @@ const agent = new Agent({
 
 ## OpenAI-Compatible Providers
 
-Use with any OpenAI-compatible API endpoint:
+`OpenAICompatibleCompletion` extends `OpenAICompletion` and is configured for
+a specific upstream provider via the `provider` option. The list of known
+provider keys is exported as `OPENAI_COMPATIBLE_PROVIDERS`.
 
 ```ts
 import { OpenAICompatibleCompletion } from "@crewai-ts/openai";
 
-const llm = new OpenAICompatibleCompletion({
+// Ollama — local llama.cpp / Ollama server
+const ollama = new OpenAICompatibleCompletion({
+  provider: "ollama", // or "ollama_chat"
   model: "llama3.1",
   baseUrl: "http://localhost:11434/v1",
-  apiKey: "ollama", // or your API key
+  apiKey: "ollama", // any non-empty value; Ollama ignores the key
+});
+
+// OpenRouter — hosted OpenAI-compatible routing
+const openrouter = new OpenAICompatibleCompletion({
+  provider: "openrouter",
+  model: "anthropic/claude-3.5-sonnet",
+  apiKey: process.env.OPENROUTER_API_KEY,
 });
 ```
+
+Omit `provider` only when you want the default `openrouter` config. Passing
+an unknown `provider` throws at construction time.
 
 ## Built-in Tools
 

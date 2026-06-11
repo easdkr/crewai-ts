@@ -69,8 +69,11 @@ const llm = new BedrockCompletion({
 ## Exports
 
 - `BedrockCompletion` — main LLM provider class
-- `BedrockConverseRequestBody`, `BedrockConverseStreamRequestBody` — request body helpers
-- `ConverseToolTypeDef`, `ToolInputSchema`, `ToolSpec` — tool definition helpers
+- `BedrockConverseRequestBody`, `BedrockConverseStreamRequestBody` —
+  branded type-marker constants (used internally to distinguish request-body
+  shapes)
+- `ConverseToolTypeDef`, `ToolInputSchema`, `ToolSpec` — branded type-marker
+  constants (used internally to distinguish tool-spec shapes)
 - `registerBedrockProvider` — register the provider with the core runtime
 
 ## License

@@ -61,40 +61,118 @@ jobs:
       # Core first, then packages that depend only on core,
       # then packages with cross-dependencies.
       - name: Publish @crewai-ts/core
-        run: pnpm -F @crewai-ts/core exec npm publish --access public --provenance
+        run: |
+          VERSION="$(node -p "require('./packages/core/package.json').version")"
+          if npm view "@crewai-ts/core@${VERSION}" version >/dev/null 2>&1; then
+            echo "::notice::@crewai-ts/core@${VERSION} already published, skipping"
+          else
+            pnpm -F @crewai-ts/core exec npm publish --access public --provenance
+          fi
 
       - name: Publish @crewai-ts/openai
-        run: pnpm -F @crewai-ts/openai exec npm publish --access public --provenance
+        run: |
+          VERSION="$(node -p "require('./packages/openai/package.json').version")"
+          if npm view "@crewai-ts/openai@${VERSION}" version >/dev/null 2>&1; then
+            echo "::notice::@crewai-ts/openai@${VERSION} already published, skipping"
+          else
+            pnpm -F @crewai-ts/openai exec npm publish --access public --provenance
+          fi
 
       - name: Publish @crewai-ts/anthropic
-        run: pnpm -F @crewai-ts/anthropic exec npm publish --access public --provenance
+        run: |
+          VERSION="$(node -p "require('./packages/anthropic/package.json').version")"
+          if npm view "@crewai-ts/anthropic@${VERSION}" version >/dev/null 2>&1; then
+            echo "::notice::@crewai-ts/anthropic@${VERSION} already published, skipping"
+          else
+            pnpm -F @crewai-ts/anthropic exec npm publish --access public --provenance
+          fi
 
       - name: Publish @crewai-ts/gemini
-        run: pnpm -F @crewai-ts/gemini exec npm publish --access public --provenance
+        run: |
+          VERSION="$(node -p "require('./packages/gemini/package.json').version")"
+          if npm view "@crewai-ts/gemini@${VERSION}" version >/dev/null 2>&1; then
+            echo "::notice::@crewai-ts/gemini@${VERSION} already published, skipping"
+          else
+            pnpm -F @crewai-ts/gemini exec npm publish --access public --provenance
+          fi
 
       - name: Publish @crewai-ts/bedrock
-        run: pnpm -F @crewai-ts/bedrock exec npm publish --access public --provenance
+        run: |
+          VERSION="$(node -p "require('./packages/bedrock/package.json').version")"
+          if npm view "@crewai-ts/bedrock@${VERSION}" version >/dev/null 2>&1; then
+            echo "::notice::@crewai-ts/bedrock@${VERSION} already published, skipping"
+          else
+            pnpm -F @crewai-ts/bedrock exec npm publish --access public --provenance
+          fi
 
       - name: Publish @crewai-ts/azure
-        run: pnpm -F @crewai-ts/azure exec npm publish --access public --provenance
+        run: |
+          VERSION="$(node -p "require('./packages/azure/package.json').version")"
+          if npm view "@crewai-ts/azure@${VERSION}" version >/dev/null 2>&1; then
+            echo "::notice::@crewai-ts/azure@${VERSION} already published, skipping"
+          else
+            pnpm -F @crewai-ts/azure exec npm publish --access public --provenance
+          fi
 
       - name: Publish @crewai-ts/snowflake
-        run: pnpm -F @crewai-ts/snowflake exec npm publish --access public --provenance
+        run: |
+          VERSION="$(node -p "require('./packages/snowflake/package.json').version")"
+          if npm view "@crewai-ts/snowflake@${VERSION}" version >/dev/null 2>&1; then
+            echo "::notice::@crewai-ts/snowflake@${VERSION} already published, skipping"
+          else
+            pnpm -F @crewai-ts/snowflake exec npm publish --access public --provenance
+          fi
 
       - name: Publish @crewai-ts/rag
-        run: pnpm -F @crewai-ts/rag exec npm publish --access public --provenance
+        run: |
+          VERSION="$(node -p "require('./packages/rag/package.json').version")"
+          if npm view "@crewai-ts/rag@${VERSION}" version >/dev/null 2>&1; then
+            echo "::notice::@crewai-ts/rag@${VERSION} already published, skipping"
+          else
+            pnpm -F @crewai-ts/rag exec npm publish --access public --provenance
+          fi
 
       - name: Publish @crewai-ts/mcp
-        run: pnpm -F @crewai-ts/mcp exec npm publish --access public --provenance
+        run: |
+          VERSION="$(node -p "require('./packages/mcp/package.json').version")"
+          if npm view "@crewai-ts/mcp@${VERSION}" version >/dev/null 2>&1; then
+            echo "::notice::@crewai-ts/mcp@${VERSION} already published, skipping"
+          else
+            pnpm -F @crewai-ts/mcp exec npm publish --access public --provenance
+          fi
 
       - name: Publish @crewai-ts/a2a
-        run: pnpm -F @crewai-ts/a2a exec npm publish --access public --provenance
+        run: |
+          VERSION="$(node -p "require('./packages/a2a/package.json').version")"
+          if npm view "@crewai-ts/a2a@${VERSION}" version >/dev/null 2>&1; then
+            echo "::notice::@crewai-ts/a2a@${VERSION} already published, skipping"
+          else
+            pnpm -F @crewai-ts/a2a exec npm publish --access public --provenance
+          fi
 
       - name: Publish @crewai-ts/flow
-        run: pnpm -F @crewai-ts/flow exec npm publish --access public --provenance
+        run: |
+          VERSION="$(node -p "require('./packages/flow/package.json').version")"
+          if npm view "@crewai-ts/flow@${VERSION}" version >/dev/null 2>&1; then
+            echo "::notice::@crewai-ts/flow@${VERSION} already published, skipping"
+          else
+            pnpm -F @crewai-ts/flow exec npm publish --access public --provenance
+          fi
 
       - name: Publish @crewai-ts/nestjs
-        run: pnpm -F @crewai-ts/nestjs exec npm publish --access public --provenance
+        run: |
+          VERSION="$(node -p "require('./packages/nestjs/package.json').version")"
+          if npm view "@crewai-ts/nestjs@${VERSION}" version >/dev/null 2>&1; then
+            echo "::notice::@crewai-ts/nestjs@${VERSION} already published, skipping"
+          else
+            pnpm -F @crewai-ts/nestjs exec npm publish --access public --provenance
+          fi
 
       - name: Publish @crewai-ts/cli
-        run: pnpm -F @crewai-ts/cli exec npm publish --access public --provenance
+        run: |
+          VERSION="$(node -p "require('./packages/cli/package.json').version")"
+          if npm view "@crewai-ts/cli@${VERSION}" version >/dev/null 2>&1; then
+            echo "::notice::@crewai-ts/cli@${VERSION} already published, skipping"
+          else
+            pnpm -F @crewai-ts/cli exec npm publish --access public --provenance
+          fi
