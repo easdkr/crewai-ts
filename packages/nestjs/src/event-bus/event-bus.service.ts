@@ -1,11 +1,10 @@
-import { Inject, Injectable, Optional } from "@nestjs/common";
+import { Injectable } from "@nestjs/common";
 import {
   crewaiEventBus,
   type CrewAIEvent,
   type EventBus,
   type EventHandler,
 } from "@crewai-ts/core";
-import { EVENT_BUS } from "../tokens.js";
 
 /**
  * A simple 1-arg handler shape: receives the event payload directly.
@@ -25,14 +24,19 @@ type Handler = (event: unknown) => void;
  *
  * No `OnModuleDestroy` is used (0 occurrences in repo; brand-new pattern).
  * Callers must invoke `destroy()` explicitly.
+ *
+ * The `bus` field is a class-field initializer (not a constructor-injected
+ * parameter) so the class has no ctor at all — same shape as the sibling
+ * `LlmRegistryService` and `AgentRegistryService` services. A constructor
+ * with `@Inject(EVENT_BUS) bus` would create a Nest circular dependency once
+ * `CrewModule` binds `EVENT_BUS` to this very class via `useExisting`
+ * (Nest would try to resolve `EVENT_BUS` to instantiate the class the token
+ * points to).
  */
 @Injectable()
 export class EventBusService {
+  private readonly bus: EventBus = crewaiEventBus;
   private readonly handlers = new Map<string, Map<Handler, () => void>>();
-
-  constructor(
-    @Optional() @Inject(EVENT_BUS) private readonly bus: EventBus = crewaiEventBus,
-  ) {}
 
   /**
    * Register a handler for `type`. Returns the bus-provided unsubscribe
