@@ -82,4 +82,22 @@ describe("EventBusService", () => {
     expect(handler).toHaveBeenCalledTimes(1);
     off();
   });
+
+  it("off() with unknown type is a no-op (no throw)", () => {
+    const handler = vi.fn();
+    expect(() => service.off("test:off-unknown-type", handler)).not.toThrow();
+  });
+
+  it("off() with unknown handler is a no-op (no throw)", () => {
+    service.on("test:off-unknown-handler", () => {});
+    expect(() => service.off("test:off-unknown-handler", () => {})).not.toThrow();
+    service.destroy(); // cleanup
+  });
+
+  it("off() called twice for the same handler is idempotent (no throw)", () => {
+    const handler = vi.fn();
+    service.on("test:off-double", handler);
+    service.off("test:off-double", handler);
+    expect(() => service.off("test:off-double", handler)).not.toThrow();
+  });
 });

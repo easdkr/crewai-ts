@@ -93,4 +93,10 @@ describe("AgentProvider + AgentRegistryService", () => {
     expect(registry.has("c")).toBe(false);
     expect(new Set(registry.roles())).toEqual(new Set(["a", "b"]));
   });
+
+  it("AgentProviderClass({role}).provide() throws with a role-tagged error", () => {
+    const Provider = AgentProviderClass({ role: "writer" });
+    const p = new Provider();
+    expect(() => p.provide()).toThrow(/AgentProvider\.provide\(\) must be implemented.*writer/);
+  });
 });
