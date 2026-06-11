@@ -14,7 +14,7 @@ Requirements:
 
 - Node.js 22 or later
 - NestJS 10 or 11
-- `@crewai-ts/core` 0.1.12 or later
+- `@crewai-ts/core` ^0.3.0
 
 ## Basic Usage
 
@@ -28,7 +28,7 @@ import { ResearchService } from "./research.service";
 @Module({
   imports: [
     CrewModule.forRoot({
-      llm: "openai/gpt-4o-mini",
+      llm: "openai/gpt-4o-mini", // (Deprecated — use llms.default in v0.3+)
     }),
   ],
   controllers: [ResearchController],
@@ -103,6 +103,162 @@ export class ResearchController {
 }
 ```
 
+## Multi-LLM
+
+`@crewai-ts/nestjs` v0.3.0 introduces a named LLM registry and a per-module router. Configure LLMs by name and resolve them by string in your agents, tasks, or services.
+
+```ts
+// app.module.ts
+import { Module } from "@nestjs/common";
+import { CrewModule } from "@crewai-ts/nestjs";
+
+@Module({
+  imports: [
+    CrewModule.forRoot({
+      llms: {
+        default: "openai/gpt-4o-mini",
+        fast: "openai/gpt-4o-mini",
+        smart: "openai/gpt-4o",
+      },
+      llmProviders: ["openai"], // auto-registers @crewai-ts/openai
+      llmRouter: "fallback",
+    }),
+  ],
+})
+export class AppModule {}
+```
+
+`llms.default` is the reserved key for the default LLM. `llms` is wired to the `LLM_REGISTRY` token and the legacy `LLM` token resolves to `llms.default ?? options.llm`.
+
+```ts
+// some.service.ts
+import { Injectable, Inject } from "@nestjs/common";
+import { AgentFactory, LLM_REGISTRY, type LlmRegistryToken } from "@crewai-ts/nestjs";
+import type { LLM } from "@crewai-ts/core";
+import { LlmRegistryService } from "@crewai-ts/nestjs";
+
+@Injectable()
+export class MyService {
+  constructor(
+    private readonly agentFactory: AgentFactory,
+    @Inject(LLM_REGISTRY) private readonly registry: LlmRegistryService,
+  ) {}
+
+  pickByName() {
+    return this.registry.get("smart"); // returns the registered LLM
+  }
+}
+```
+
+## Provider Auto-Registration
+
+Pass `llmProviders` to auto-register native LLM provider packages via lazy `import()`. The 4 supported providers are `'openai' | 'anthropic' | 'gemini' | 'azure'`. Native packages are kept out of `peerDependencies` — install only what you use.
+
+```ts
+CrewModule.forRoot({
+  llmProviders: ["openai", "gemini"],
+  llms: { default: "gpt-4o-mini" },
+});
+```
+
+If a provider package is not installed, the module throws a clear error:
+```
+Cannot auto-register provider 'openai': @crewai-ts/openai is not installed.
+Run: pnpm add @crewai-ts/openai
+```
+
+## Router Strategies
+
+`LlmRouterService` selects an LLM from the registry based on a strategy. Built-in strategies:
+
+- `round-robin` (default) — atomic counter on `SharedArrayBuffer`; concurrency-safe under `Promise.all`
+- `fallback` — always returns the first registered LLM
+- `race` — deterministic first-by-index picker
+- `weighted` — equal-weight random spread (`Math.random() * n`)
+
+```ts
+import { LlmRouterService } from "@crewai-ts/nestjs";
+
+// Built-in
+const router = moduleRef.get(LlmRouterService);
+router.use("round-robin");
+const llm = router.route(); // cycles through the registry
+
+// Custom strategy
+router.use((llms) => {
+  // Pick the LLM that returned a cached value, fall back to the first
+  return llms.find((l) => /* heuristic */) ?? llms[0];
+});
+```
+
+Pass `false` via `llmRouter: false` in `forRoot` to opt out of routing (the registry serves a single LLM directly).
+
+## EventBusService
+
+A Nest-friendly facade over `crewaiEventBus`. Tracks the off-functions for handlers registered via this service so `destroy()` only removes THIS service's handlers (direct `crewaiEventBus.on()` handlers are preserved).
+
+```ts
+import { Injectable } from "@nestjs/common";
+import { EventBusService } from "@crewai-ts/nestjs";
+
+@Injectable()
+export class TaskLogger {
+  constructor(private readonly bus: EventBusService) {
+    this.bus.on("task_completed", (event) => {
+      console.log("Task completed:", event);
+    });
+  }
+
+  onModuleDestroy() {
+    this.bus.destroy(); // removes only the handlers this service registered
+  }
+}
+```
+
+`destroy()` is idempotent and never calls `crewaiEventBus.clear()` or `removeAllListeners()`.
+
+## AgentProvider
+
+Class-based agent registration via Nest DI. Subclass `AgentProvider`, inject other providers (HTTP services, databases, etc.) in the constructor, and return a fully-constructed `Agent` from `provide()`. The `AgentRegistryService` resolves by role.
+
+```ts
+import { Injectable, Inject } from "@nestjs/common";
+import { Module } from "@nestjs/common";
+import { Agent } from "@crewai-ts/core";
+import { AgentProvider, AgentProviderClass, CrewModule, AGENT_REGISTRY } from "@crewai-ts/nestjs";
+import { AgentRegistryService } from "@crewai-ts/nestjs";
+
+class ResearcherProvider extends AgentProvider {
+  constructor(private readonly config: ResearcherConfig) { super(); }
+  provide(): Agent {
+    return new Agent({ role: "researcher", goal: this.config.goal, ... });
+  }
+}
+
+@Module({
+  imports: [
+    CrewModule.forRoot({ llm: "gpt-4o-mini" }),
+    // Register the provider; on first instantiation, the agent is added to AGENT_REGISTRY
+  ],
+  providers: [
+    ResearcherProvider,
+    { provide: AGENT_REGISTRY, useExisting: AgentRegistryService },
+  ],
+})
+export class AppModule {}
+
+// In another service:
+class SomeService {
+  constructor(private readonly agentFactory: AgentFactory) {}
+  build() {
+    // factory.create({role: "researcher", ...}) returns the registered agent by IDENTITY
+    return this.agentFactory.create({ role: "researcher", goal: "x", backstory: "y" });
+  }
+}
+```
+
+Alternatively, use `AgentProviderClass({role: "researcher"})` to derive a class with `role` metadata baked in.
+
 ## Async Configuration
 
 Use `forRootAsync` when your LLM, memory, or knowledge sources come from another NestJS provider.
@@ -128,7 +284,7 @@ export class AppModule {}
 
 ## Injection Tokens
 
-`CrewModule` registers four stable symbol tokens. Use them when a provider needs the module-level AI runtime configuration directly.
+`CrewModule` registers ten stable symbol tokens. Use them when a provider needs the module-level AI runtime configuration directly.
 
 | Token | What it contains | Typical use |
 | --- | --- | --- |
@@ -136,6 +292,12 @@ export class AppModule {}
 | `MEMORY` | The optional shared `Memory` instance passed to `CrewModule.forRoot({ memory })`. | Attach a crew-level memory store and inject it into services that need recall/save access. |
 | `KNOWLEDGE` | The optional module-level knowledge source list passed to `CrewModule.forRoot({ knowledge })`. | Keep knowledge sources in Nest DI so services can inspect or reuse them. |
 | `CREW_FACTORY` | The `DefaultCrewFactory` instance bound under a symbol token. | Build a configured `Crew` from agents and tasks. |
+| `LLM_REGISTRY` | The named LLM registry (instance of `LlmRegistryService`). | Inject the registry in services that need to resolve LLMs by name. |
+| `LLM_ROUTER` | The router service. | Pick an LLM from the registry by strategy. |
+| `PLANNING_LLM` | Module-level planning LLM. | Used by the Crew factory for planning. |
+| `FUNCTION_CALLING_LLM` | Module-level function-calling LLM. | Used by the Agent factory for tool-calling LLMs. |
+| `EVENT_BUS` | The `EventBusService` instance. | Subscribe to crew events in Nest providers. |
+| `AGENT_REGISTRY` | The `AgentRegistryService` (role → Agent). | Pre-register Agents by role; factory returns them by identity. |
 
 Configure all tokens up front:
 
@@ -272,12 +434,24 @@ it("runs a crew without network calls", async () => {
 ```ts
 import {
   AgentFactory,
+  AgentProvider,
+  AgentProviderClass,
+  AgentRegistryService,
+  AGENT_REGISTRY,
   CREW_FACTORY,
   CrewModule,
   DefaultCrewFactory,
+  EVENT_BUS,
+  EventBusService,
+  FUNCTION_CALLING_LLM,
   KNOWLEDGE,
   LLM,
+  LLM_REGISTRY,
+  LLM_ROUTER,
+  LlmRegistryService,
+  LlmRouterService,
   MEMORY,
+  PLANNING_LLM,
 } from "@crewai-ts/nestjs";
 ```
 
@@ -287,8 +461,34 @@ import {
 - `LLM`
 - `MEMORY`
 - `KNOWLEDGE`
+- `LLM_REGISTRY`
+- `LLM_ROUTER`
+- `PLANNING_LLM`
+- `FUNCTION_CALLING_LLM`
+- `EVENT_BUS`
+- `AGENT_REGISTRY`
 - `DefaultCrewFactory`
 - `AgentFactory`
+- `LlmRegistryService`
+- `LlmRouterService`
+- `EventBusService`
+- `AgentRegistryService`
+
+## Migration from v0.2.x
+
+v0.3.0 deprecates the legacy `llm` field on `CrewModuleOptions` and `AgentFactory.create({llm})`. A `DeprecationWarning` is emitted at runtime. Removal is planned for v1.0.0.
+
+```ts
+// v0.2.x (still works, but emits DeprecationWarning)
+CrewModule.forRoot({ llm: "gpt-4o-mini" });
+
+// v0.3.0+
+CrewModule.forRoot({ llms: { default: "gpt-4o-mini" } });
+```
+
+When both `llm` and `llms.default` are set, `llms.default` wins. The legacy `LLM` token continues to resolve to the default LLM (now sourced from `llms.default` when present).
+
+The peer dependency on `@crewai-ts/core` was bumped from `^0.2.0` to `^0.3.0`.
 
 ## Notes
 

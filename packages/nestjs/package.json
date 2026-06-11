@@ -1,6 +1,6 @@
 {
   "name": "@crewai-ts/nestjs",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "NestJS DI integration for @crewai-ts/core.",
   "repository": {
     "type": "git",
@@ -37,7 +37,7 @@
     "prepack": "npm run build"
   },
   "peerDependencies": {
-    "@crewai-ts/core": "^0.2.0",
+    "@crewai-ts/core": "^0.3.0",
     "@nestjs/common": "^10.0.0 || ^11.0.0",
     "@nestjs/core": "^10.0.0 || ^11.0.0",
     "reflect-metadata": "^0.2.0"
