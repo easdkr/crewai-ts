@@ -24,7 +24,6 @@ All notable changes to `@crewai-ts/nestjs` are documented here. The format follo
 ### Changed
 
 - `AgentFactory.create({llm})` and `CrewModuleOptions.llm` marked `@deprecated` with `process.emitWarning(..., "DeprecationWarning")`. `llms.default` is the recommended replacement. Removal planned for v1.0.0.
-- Peer dependency on `@crewai-ts/core` bumped from `^0.2.0` to `^0.3.0`.
 
 ### Removed
 

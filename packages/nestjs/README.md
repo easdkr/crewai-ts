@@ -14,7 +14,7 @@ Requirements:
 
 - Node.js 22 or later
 - NestJS 10 or 11
-- `@crewai-ts/core` ^0.3.0
+- `@crewai-ts/core` ^0.2.0
 
 ## Basic Usage
 
