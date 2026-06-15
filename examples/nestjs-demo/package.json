@@ -1,0 +1,33 @@
+{
+  "name": "@crewai-ts/nestjs-demo",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Runnable HTTP NestJS demo + live smoke test for @crewai-ts/nestjs (OpenAI / Gemini / Anthropic).",
+  "type": "module",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "start": "tsx src/main.ts",
+    "dev": "tsx watch src/main.ts",
+    "smoke": "tsx src/smoke.ts",
+    "check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@crewai-ts/core": "workspace:*",
+    "@crewai-ts/nestjs": "workspace:*",
+    "@crewai-ts/openai": "workspace:*",
+    "@crewai-ts/gemini": "workspace:*",
+    "@crewai-ts/anthropic": "workspace:*",
+    "@nestjs/common": "^11.0.0",
+    "@nestjs/core": "^11.0.0",
+    "@nestjs/platform-express": "^11.0.0",
+    "reflect-metadata": "^0.2.0",
+    "rxjs": "^7.8.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.1",
+    "tsx": "^4.19.0",
+    "typescript": "^6.0.3"
+  }
+}
