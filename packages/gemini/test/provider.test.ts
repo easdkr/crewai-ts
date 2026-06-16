@@ -172,6 +172,33 @@ describe("GeminiCompletion", () => {
     ]);
   });
 
+  it("preserves Gemini multimodal parts arrays passed as message content", () => {
+    const llm = new GeminiCompletion({ model: "gemini/gemini-2.0-flash" });
+    const parts = [
+      { text: "Inspect this image" },
+      {
+        inlineData: {
+          mimeType: "image/png",
+          data: Buffer.from("gemini-inline-image").toString("base64"),
+        },
+      },
+    ];
+
+    const [contents, systemInstruction] = (llm as unknown as {
+      _format_messages_for_gemini(messages: Array<LLMMessage & Record<string, unknown>>): [Record<string, unknown>[], string | null];
+    })._format_messages_for_gemini([
+      { role: "user", content: parts } as unknown as LLMMessage & Record<string, unknown>,
+    ]);
+
+    expect(systemInstruction).toBeNull();
+    expect(contents).toEqual([
+      {
+        role: "user",
+        parts,
+      },
+    ]);
+  });
+
   it("rejects interceptor transport", () => {
     class TestInterceptor extends BaseInterceptor {
       on_outbound(message: unknown): unknown {

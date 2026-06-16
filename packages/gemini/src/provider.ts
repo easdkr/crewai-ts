@@ -3,10 +3,10 @@ import {
   CONTEXT_WINDOW_USAGE_RATIO,
   LocalFileUploader,
   registerLLMProviderFactory,
+  stripCacheBreakpoint,
   type BaseLLMOptions,
   type LLMAvailableFunction,
   type LLMCallOptions,
-  type LLMMessageInput,
   type LLMResponse,
 } from "@crewai-ts/core/llm";
 import type { LLMMessage, Tool } from "@crewai-ts/core/types";
@@ -77,6 +77,13 @@ export const GEMINI_MODELS = [
 
 export type GeminiModels = typeof GEMINI_MODELS[number];
 export const GeminiModels = GEMINI_MODELS;
+
+export type GeminiContentPart = Record<string, unknown>;
+export type GeminiMessageContent = string | readonly GeminiContentPart[];
+export type GeminiLLMMessage = Omit<LLMMessage, "content"> & {
+  content: GeminiMessageContent;
+} & Record<string, unknown>;
+export type GeminiLLMMessageInput = string | readonly (Partial<GeminiLLMMessage> & Record<string, unknown>)[];
 
 export type GeminiCompletionOptions = BaseLLMOptions & {
   project?: string | null;
@@ -181,7 +188,7 @@ export class GeminiCompletion extends ConfiguredLLM {
     this.tools = null;
   }
 
-  override call(messages: readonly LLMMessage[], options?: LLMCallOptions): Promise<LLMResponse> {
+  override call(messages: readonly GeminiLLMMessage[], options?: LLMCallOptions): Promise<LLMResponse> {
     if (this.useVertexai) {
       return this.callVertexAI(messages, options);
     }
@@ -237,7 +244,7 @@ export class GeminiCompletion extends ConfiguredLLM {
     });
   }
 
-  private async callVertexAI(messages: readonly LLMMessage[], options?: LLMCallOptions): Promise<LLMResponse> {
+  private async callVertexAI(messages: readonly GeminiLLMMessage[], options?: LLMCallOptions): Promise<LLMResponse> {
     if (!this.project) {
       throw new Error("Vertex AI Gemini calls require a project.");
     }
@@ -286,8 +293,8 @@ export class GeminiCompletion extends ConfiguredLLM {
     ) as LLMResponse;
   }
 
-  override async acall(messages: LLMMessageInput, options?: LLMCallOptions): Promise<LLMResponse> {
-    return await this.call(this.formatMessages(messages), options);
+  override async acall(messages: GeminiLLMMessageInput, options?: LLMCallOptions): Promise<LLMResponse> {
+    return await this.call(this.formatMessagesForGeminiInput(messages) as GeminiLLMMessage[], options);
   }
 
   override supportsFunctionCalling(): boolean {
@@ -442,8 +449,8 @@ export class GeminiCompletion extends ConfiguredLLM {
     return this.convertToolsForInterference(tools);
   }
 
-  formatMessagesForGemini(messages: string | readonly (Partial<LLMMessage> & Record<string, unknown>)[]): [Record<string, unknown>[], string | null] {
-    const baseFormatted = this._format_messages(messages);
+  formatMessagesForGemini(messages: GeminiLLMMessageInput): [Record<string, unknown>[], string | null] {
+    const baseFormatted = this.formatMessagesForGeminiInput(messages);
     const contents: Record<string, unknown>[] = [];
     let systemInstruction: string | null = null;
 
@@ -514,8 +521,26 @@ export class GeminiCompletion extends ConfiguredLLM {
     return [contents, systemInstruction];
   }
 
-  _format_messages_for_gemini(messages: string | readonly (Partial<LLMMessage> & Record<string, unknown>)[]): [Record<string, unknown>[], string | null] {
+  _format_messages_for_gemini(messages: GeminiLLMMessageInput): [Record<string, unknown>[], string | null] {
     return this.formatMessagesForGemini(messages);
+  }
+
+  private formatMessagesForGeminiInput(messages: GeminiLLMMessageInput): LLMMessage[] {
+    if (typeof messages === "string") {
+      return this.processMessageFiles([{ role: "user", content: messages }]);
+    }
+    const cleaned = messages.map((message, index) => {
+      if (Array.isArray(message)) {
+        throw new Error(`Message at index ${String(index)} must be a dictionary.`);
+      }
+      if (!isGeminiMessageRole(message.role) || !isGeminiMessageContent(message.content)) {
+        throw new Error(`Message at index ${String(index)} must have 'role' and 'content' keys.`);
+      }
+      const copy = { ...message };
+      stripCacheBreakpoint(copy);
+      return copy as unknown as LLMMessage;
+    });
+    return this.processMessageFiles(cleaned);
   }
 
   override toConfigDict(): Record<string, unknown> {
@@ -882,6 +907,14 @@ function geminiTextParts(content: unknown): Record<string, unknown>[] {
     });
   }
   return [{ text: scalarToString(content) ?? "" }];
+}
+
+function isGeminiMessageRole(value: unknown): value is LLMMessage["role"] {
+  return value === "system" || value === "user" || value === "assistant" || value === "tool";
+}
+
+function isGeminiMessageContent(value: unknown): value is GeminiMessageContent {
+  return typeof value === "string" || Array.isArray(value);
 }
 
 function parseToolArguments(value: unknown): Record<string, unknown> {
