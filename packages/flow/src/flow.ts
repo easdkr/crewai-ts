@@ -282,9 +282,47 @@ export type FlowOptions<TState extends object = Record<string, unknown>> = {
   maxMethodCalls?: number;
   inputProvider?: InputProvider | null;
   persistence?: FlowPersistence | null;
+  stateBackend?: FlowStateBackend<TState> | null;
   stream?: boolean;
   checkpoint?: CheckpointOption;
   memory?: Memory | MemoryScope | MemorySlice | null;
+};
+
+export type FlowStateBackendSaveMetadata = {
+  flowName: string;
+  methodName: string | null;
+  inputs: InputValues;
+  inputFiles: InputFiles;
+};
+
+export type FlowStateBackend<TState extends object = Record<string, unknown>> = {
+  load(flowId: string): MaybePromise<TState | null>;
+  save(flowId: string, state: TState, metadata: FlowStateBackendSaveMetadata): MaybePromise<void>;
+};
+
+export class InMemoryFlowStateBackend<TState extends object = Record<string, unknown>> implements FlowStateBackend<TState> {
+  private readonly states = new Map<string, TState>();
+
+  load(flowId: string): TState | null {
+    const state = this.states.get(flowId);
+    return state ? cloneFlowState(state) : null;
+  }
+
+  save(flowId: string, state: TState): void {
+    this.states.set(flowId, cloneFlowState(state));
+  }
+}
+
+export type FlowContext<TState extends object = Record<string, unknown>> = {
+  readonly state: TState;
+  readonly flowId: string;
+  readonly inputs: InputValues;
+  readonly inputFiles: InputFiles;
+  commitState(): Promise<void>;
+  replaceState(state: TState): Promise<void>;
+  patchState(updates: Partial<TState>): Promise<void>;
+  ask(message: string, options?: FlowAskOptions): MaybePromise<string | null>;
+  kickoffCrew(crew: Crew, options?: KickoffOptions): Promise<CrewOutput>;
 };
 
 export class LockedDictProxy<TValue extends Record<string, unknown> = Record<string, unknown>> {
@@ -1176,7 +1214,7 @@ export type FlowSerializedStructureInfo = {
   inputs: readonly string[];
 };
 
-type AnyFlowMethod<This = unknown> = (this: This, ...args: unknown[]) => MaybePromise<unknown>;
+type AnyFlowMethod<This = unknown> = (this: This, ...args: any[]) => MaybePromise<any>;
 export class FlowMethod {
   readonly _meth: (...args: unknown[]) => unknown;
   readonly _instance: unknown;
@@ -1215,7 +1253,7 @@ type FlowMetadataTarget = abstract new (...args: never[]) => object;
 const flowMetadata = new WeakMap<FlowMetadataTarget, FlowMethodEntry[]>();
 const humanFeedbackMetadata = new WeakMap<FlowMetadataTarget, Map<string, HumanFeedbackConfig>>();
 
-export class Flow<TState extends object = Record<string, unknown>> {
+class Flow<TState extends object = Record<string, unknown>> {
   static _flow_definition?: FlowDefinition | null;
   static builtin_routes: readonly string[] = ["converse", "end"];
   static builtinRoutes: readonly string[] = Flow.builtin_routes;
@@ -1249,10 +1287,12 @@ export class Flow<TState extends object = Record<string, unknown>> {
   inputProvider: InputProvider | null;
   input_provider: InputProvider | null;
   persistence: FlowPersistence | null;
+  stateBackend: FlowStateBackend<TState> | null;
   stream: boolean;
   checkpoint: CheckpointConfig | false | null;
   memory: Memory | MemoryScope | MemorySlice | null;
   state: TState;
+  private runtimeTarget: object | null = null;
   private currentInputFiles: InputFiles = {};
   private readonly runtimeMethodOutputs: unknown[] = [];
   private readonly runtimeCompletedMethods = new Set<string>();
@@ -1270,6 +1310,8 @@ export class Flow<TState extends object = Record<string, unknown>> {
   private readonly firedOrListeners = new Set<string>();
   private racingGroupsCache: Map<ReadonlySet<string>, string> | null = null;
   private readonly autoMemoryDisabled: boolean;
+  private readonly configuredInitialState: TState | (() => TState) | undefined;
+  private activeBackendFlowId: string | null = null;
   private deferredFlowFinished: { flowName: string; result: unknown; state: unknown } | null = null;
 
   constructor(options: FlowOptions<TState> = {}) {
@@ -1278,20 +1320,107 @@ export class Flow<TState extends object = Record<string, unknown>> {
     this.inputProvider = options.inputProvider ?? null;
     this.input_provider = this.inputProvider;
     this.persistence = options.persistence ?? null;
+    this.stateBackend = options.stateBackend ?? null;
     this.stream = options.stream ?? false;
     this.checkpoint = coerceCheckpointConfig(options.checkpoint);
     this.autoMemoryDisabled = "memory" in options && options.memory === null;
     this.memory = "memory" in options ? options.memory ?? null : (this.shouldSkipAutoMemory()
       ? null
       : new Memory({ rootScope: `/flow/${sanitize_scope_name(this.flowName())}` }));
-    const constructorInitialState = this.constructor as {
+    this.configuredInitialState = options.initialState;
+    this.state = this.createFreshInitialState();
+  }
+
+  bindRuntimeTarget(target: object): void {
+    this.runtimeTarget = target;
+    if (!this.name && !this.autoMemoryDisabled && this.memory instanceof Memory) {
+      this.memory = new Memory({ rootScope: `/flow/${sanitize_scope_name(this.flowName())}` });
+    }
+  }
+
+  private runtimeObject(): object {
+    return this.runtimeTarget ?? this;
+  }
+
+  private runtimeConstructor(): FlowMetadataTarget {
+    return this.runtimeObject().constructor as FlowMetadataTarget;
+  }
+
+  private flowMetadataEntries(): readonly FlowMethodEntry[] {
+    return getFlowMetadata(this.runtimeObject());
+  }
+
+  private createFreshInitialState(): TState {
+    const constructorInitialState = this.runtimeConstructor() as {
       initialState?: TState | (() => TState);
       initial_state?: TState | (() => TState);
     };
-    const initialState = options.initialState
+    const initialState = this.configuredInitialState
       ?? constructorInitialState.initialState
       ?? constructorInitialState.initial_state;
-    this.state = createInitialFlowState(initialState, this.constructor);
+    return createInitialFlowState(initialState, this.runtimeConstructor());
+  }
+
+  private humanFeedbackMetadataEntries(): ReadonlyMap<string, HumanFeedbackConfig> {
+    return getHumanFeedbackMetadata(this.runtimeObject());
+  }
+
+  private getStaticRecordForRuntime(key: string): Record<string, unknown> | null {
+    return getStaticRecord(this.runtimeConstructor(), key);
+  }
+
+  private getStaticStringArrayForRuntime(key: string): string[] | null {
+    return getStaticStringArray(this.runtimeConstructor(), key);
+  }
+
+  private getFlowMethod(methodName: string): { method: (...args: unknown[]) => MaybePromise<unknown>; receiver: object } {
+    const target = this.runtimeTarget;
+    if (target) {
+      const targetMethod = (target as Record<string, unknown>)[methodName];
+      if (typeof targetMethod === "function") {
+        return { method: targetMethod as (...args: unknown[]) => MaybePromise<unknown>, receiver: target };
+      }
+    }
+    const method = (this as Record<string, unknown>)[methodName];
+    if (typeof method !== "function") {
+      throw new Error(`Flow method '${methodName}' is not callable.`);
+    }
+    return { method: method as (...args: unknown[]) => MaybePromise<unknown>, receiver: this };
+  }
+
+  private createFlowContext(): FlowContext<TState> {
+    const engine = this;
+    return {
+      get state(): TState {
+        return engine.state;
+      },
+      get flowId(): string {
+        return engine.flowPersistenceId();
+      },
+      get inputs(): InputValues {
+        return { ...engine.lastInputs };
+      },
+      get inputFiles(): InputFiles {
+        return engine.inputFiles;
+      },
+      async commitState(): Promise<void> {
+        await engine.commitState(engine.currentMethodName);
+      },
+      async replaceState(state: TState): Promise<void> {
+        engine.state = cloneFlowState(state);
+        await engine.commitState(engine.currentMethodName);
+      },
+      async patchState(updates: Partial<TState>): Promise<void> {
+        Object.assign(engine.state, updates);
+        await engine.commitState(engine.currentMethodName);
+      },
+      ask(message: string, options: FlowAskOptions = {}): MaybePromise<string | null> {
+        return engine.ask(message, options);
+      },
+      kickoffCrew(crew: Crew, options: KickoffOptions = {}): Promise<CrewOutput> {
+        return engine.kickoffCrew(crew, options);
+      },
+    };
   }
 
   model_post_init(_context: unknown = null): void {
@@ -1356,7 +1485,7 @@ export class Flow<TState extends object = Record<string, unknown>> {
       ? cloneConversationState(this.state) as TState
       : Object.keys(this.state).length > 0
         ? cloneFlowState(this.state)
-        : isConversationalFlowConstructor(this.constructor)
+        : isConversationalFlowConstructor(this.runtimeConstructor())
           ? new ConversationState() as TState
           : {} as TState;
     const record = current as Record<string, unknown>;
@@ -1399,11 +1528,11 @@ export class Flow<TState extends object = Record<string, unknown>> {
   ): void {
     const state = this.state as Record<string, unknown>;
     const content = stringifyFlowHelperValue(result);
-    const constructorRecord = this.constructor as unknown as {
+    const constructorRecord = this.runtimeConstructor() as unknown as {
       conversational_config?: { visible_agent_outputs?: readonly string[] | "all" | null; visibleAgentOutputs?: readonly string[] | "all" | null } | null;
       conversationalConfig?: { visible_agent_outputs?: readonly string[] | "all" | null; visibleAgentOutputs?: readonly string[] | "all" | null } | null;
     };
-    const constructorConfig = (typeof this.constructor === "function" || isRecord(this.constructor))
+    const constructorConfig = (typeof this.runtimeConstructor() === "function" || isRecord(this.runtimeConstructor()))
       ? constructorRecord.conversational_config ?? constructorRecord.conversationalConfig ?? null
       : null;
     const config = constructorConfig;
@@ -1451,7 +1580,7 @@ export class Flow<TState extends object = Record<string, unknown>> {
 
   _buildRouteCatalog(routerConfig: RouterConfig | null = null): Record<string, string> {
     const labelToMethod = new Map<string, string>();
-    for (const entry of getFlowMetadata(this)) {
+    for (const entry of this.flowMetadataEntries()) {
       if (entry.kind !== "listen") {
         continue;
       }
@@ -1464,8 +1593,8 @@ export class Flow<TState extends object = Record<string, unknown>> {
 
     const routes = this._effectiveRoutes(routerConfig);
     const overrides = routerConfig?.route_descriptions ?? routerConfig?.routeDescriptions ?? {};
-    const builtinDescriptions = getStaticRecord(this.constructor, "builtin_route_descriptions")
-      ?? getStaticRecord(this.constructor, "builtinRouteDescriptions")
+    const builtinDescriptions = this.getStaticRecordForRuntime("builtin_route_descriptions")
+      ?? this.getStaticRecordForRuntime("builtinRouteDescriptions")
       ?? {};
     const catalog: Record<string, string> = {};
     for (const routeLabel of routes) {
@@ -1578,7 +1707,7 @@ export class Flow<TState extends object = Record<string, unknown>> {
   }
 
   routeTurn(context: Record<string, unknown>): string | null {
-    const config = getConversationalStaticConfig(this.constructor);
+    const config = getConversationalStaticConfig(this.runtimeConstructor());
     if (!config) {
       return null;
     }
@@ -1693,7 +1822,7 @@ export class Flow<TState extends object = Record<string, unknown>> {
   }
 
   answerFromHistoryTurn(): string | null {
-    const config = getConversationalStaticConfig(this.constructor);
+    const config = getConversationalStaticConfig(this.runtimeConstructor());
     const llm = config?.answer_from_history_llm ?? config?.answerFromHistoryLlm ?? null;
     if (!llm) {
       return null;
@@ -1744,11 +1873,11 @@ export class Flow<TState extends object = Record<string, unknown>> {
   }
 
   _effectiveRoutes(routerConfig: RouterConfig | null = null): string[] {
-    const builtinRoutes = getStaticStringArray(this.constructor, "builtin_routes")
-      ?? getStaticStringArray(this.constructor, "builtinRoutes")
+    const builtinRoutes = this.getStaticStringArrayForRuntime("builtin_routes")
+      ?? this.getStaticStringArrayForRuntime("builtinRoutes")
       ?? ["converse", "end"];
-    const internalRoutes = getStaticStringArray(this.constructor, "internal_routes")
-      ?? getStaticStringArray(this.constructor, "internalRoutes")
+    const internalRoutes = this.getStaticStringArrayForRuntime("internal_routes")
+      ?? this.getStaticStringArrayForRuntime("internalRoutes")
       ?? ["answer_from_history", "conversation_start"];
     const explicitRoutes = routerConfig?.routes ? [...routerConfig.routes] : [];
     const customRoutes = explicitRoutes.length > 0
@@ -1763,7 +1892,7 @@ export class Flow<TState extends object = Record<string, unknown>> {
 
   private validRouteLabels(): string[] {
     const labels = new Set<string>();
-    for (const entry of getFlowMetadata(this)) {
+    for (const entry of this.flowMetadataEntries()) {
       if (entry.kind !== "listen") {
         continue;
       }
@@ -1778,7 +1907,7 @@ export class Flow<TState extends object = Record<string, unknown>> {
     if (!handlerName) {
       return "";
     }
-    const prototype = (this.constructor as { prototype?: Record<string, unknown> }).prototype;
+    const prototype = (this.runtimeConstructor() as { prototype?: Record<string, unknown> }).prototype;
     const handler = prototype?.[handlerName];
     if (!handler || (typeof handler !== "function" && !isRecord(handler))) {
       return "";
@@ -1789,13 +1918,13 @@ export class Flow<TState extends object = Record<string, unknown>> {
   }
 
   private builtinRouteNames(): string[] {
-    return getStaticStringArray(this.constructor, "builtin_routes")
-      ?? getStaticStringArray(this.constructor, "builtinRoutes")
+    return this.getStaticStringArrayForRuntime("builtin_routes")
+      ?? this.getStaticStringArrayForRuntime("builtinRoutes")
       ?? ["converse", "end"];
   }
 
   private defaultRouterLlm(routerConfig: RouterConfig): unknown {
-    const config = getConversationalStaticConfig(this.constructor);
+    const config = getConversationalStaticConfig(this.runtimeConstructor());
     return routerConfig.llm
       ?? config?.intent_llm
       ?? config?.intentLlm
@@ -1804,7 +1933,7 @@ export class Flow<TState extends object = Record<string, unknown>> {
   }
 
   private defaultConversationLlm(): unknown {
-    const config = getConversationalStaticConfig(this.constructor);
+    const config = getConversationalStaticConfig(this.runtimeConstructor());
     if (!config) {
       return null;
     }
@@ -1819,13 +1948,13 @@ export class Flow<TState extends object = Record<string, unknown>> {
   }
 
   private resolveConversationalSystemPrompt(): string | null {
-    const config = getConversationalStaticConfig(this.constructor);
+    const config = getConversationalStaticConfig(this.runtimeConstructor());
     const prompt = config?.system_prompt ?? config?.systemPrompt;
     return typeof prompt === "string" ? prompt : null;
   }
 
   private resolveAnswerFromHistoryPrompt(): string {
-    const config = getConversationalStaticConfig(this.constructor);
+    const config = getConversationalStaticConfig(this.runtimeConstructor());
     const prompt = config?.answer_from_history_prompt ?? config?.answerFromHistoryPrompt;
     return typeof prompt === "string" && prompt.length > 0
       ? prompt
@@ -1845,7 +1974,7 @@ export class Flow<TState extends object = Record<string, unknown>> {
     if (record.defer_trace_finalization === true || record.deferTraceFinalization === true) {
       return true;
     }
-    const config = getConversationalStaticConfig(this.constructor);
+    const config = getConversationalStaticConfig(this.runtimeConstructor());
     if (!config) {
       return false;
     }
@@ -1853,7 +1982,7 @@ export class Flow<TState extends object = Record<string, unknown>> {
   }
 
   private canAnswerFromHistory(context: Record<string, unknown>): boolean {
-    const config = getConversationalStaticConfig(this.constructor);
+    const config = getConversationalStaticConfig(this.runtimeConstructor());
     const llm = config?.answer_from_history_llm ?? config?.answerFromHistoryLlm ?? null;
     if (!llm || this.conversationMessages.length < 2) {
       return false;
@@ -1895,7 +2024,7 @@ export class Flow<TState extends object = Record<string, unknown>> {
   }
 
   async chat(options: FlowChatOptions = {}): Promise<void> {
-    if (!isConversationalFlowConstructor(this.constructor)) {
+    if (!isConversationalFlowConstructor(this.runtimeConstructor())) {
       throw new Error("Flow.chat() is only available on conversational flows");
     }
 
@@ -1964,11 +2093,10 @@ export class Flow<TState extends object = Record<string, unknown>> {
   }
 
   async _executeStartMethod(startMethodName: string): Promise<void> {
-    const method = (this as Record<string, unknown>)[startMethodName];
-    if (typeof method !== "function") {
-      throw new Error(`Flow start method '${startMethodName}' is not callable.`);
-    }
-    const enhanced = this._injectTriggerPayloadForStartMethod(method as (...args: unknown[]) => MaybePromise<unknown>);
+    const { method } = this.getFlowMethod(startMethodName);
+    const enhanced = this.runtimeTarget
+      ? method
+      : this._injectTriggerPayloadForStartMethod(method);
     const [result, eventId] = await this._executeMethod(startMethodName, enhanced);
     await this._executeListeners(startMethodName, result, eventId);
     if (result !== undefined && result !== null) {
@@ -2013,7 +2141,10 @@ export class Flow<TState extends object = Record<string, unknown>> {
     method: (...args: unknown[]) => MaybePromise<unknown>,
     ...args: unknown[]
   ): Promise<[unknown, string | null]> {
-    const result = await method(...args);
+    const result = this.runtimeTarget
+      ? await method.call(this.runtimeTarget, this.createFlowContext(), ...args)
+      : await method(...args);
+    await this.commitState(methodName);
     const eventId = randomUUID();
     this.runtimeMethodOutputs.push(result);
     this.runtimeCompletedMethods.add(methodName);
@@ -2062,7 +2193,7 @@ export class Flow<TState extends object = Record<string, unknown>> {
   }
 
   _findTriggeredMethods(triggerMethod: string, routerOnly: boolean): string[] {
-    return getFlowMetadata(this)
+    return this.flowMetadataEntries()
       .filter((entry) => (routerOnly ? entry.kind === "router" : entry.kind !== "router"))
       .filter((entry) => entry.condition && this._evaluateCondition(entry.condition, triggerMethod, String(entry.name)))
       .map((entry) => String(entry.name));
@@ -2140,7 +2271,7 @@ export class Flow<TState extends object = Record<string, unknown>> {
       : [...this.firedOrListeners].filter((listenerName) => rearmable.has(listenerName));
 
     for (const listenerName of candidates) {
-      const entry = getFlowMetadata(this).find((item) => String(item.name) === listenerName);
+      const entry = this.flowMetadataEntries().find((item) => String(item.name) === listenerName);
       if (!entry?.condition) {
         continue;
       }
@@ -2162,7 +2293,7 @@ export class Flow<TState extends object = Record<string, unknown>> {
   }
 
   _buildRacingGroups(): Map<ReadonlySet<string>, string> {
-    const entries = getFlowMetadata(this);
+    const entries = this.flowMetadataEntries();
     const methodToListeners = new Map<string, Set<string>>();
     const racingGroups = new Map<ReadonlySet<string>, string>();
 
@@ -2329,7 +2460,7 @@ export class Flow<TState extends object = Record<string, unknown>> {
       throw new Error("Cannot combine from_checkpoint with restore_from_state_id");
     }
     if (checkpointConfig?.restoreFrom) {
-      const restored = await Flow.fromCheckpoint.call(this.constructor as new () => Flow<object>, checkpointConfig);
+      const restored = await Flow.fromCheckpoint.call(this.runtimeConstructor() as new () => Flow<object>, checkpointConfig);
       return await restored.kickoffAsync(withoutCheckpointOptions(options));
     }
     if (this.stream) {
@@ -2342,6 +2473,11 @@ export class Flow<TState extends object = Record<string, unknown>> {
       ...(options.inputFiles ?? options.input_files ?? {}),
       ...extracted.inputFiles,
     };
+    const backendFlowId = this.resolveBackendFlowId(inputs);
+    const restoredBackendState = this.stateBackend ? await this.stateBackend.load(backendFlowId) : null;
+    if (restoredBackendState) {
+      this.state = cloneFlowState(restoredBackendState);
+    }
     const restoredForkState = effectiveRestoreFromStateId && this.persistence
       ? await loadPersistedFlowState(this.persistence, effectiveRestoreFromStateId)
       : null;
@@ -2357,6 +2493,9 @@ export class Flow<TState extends object = Record<string, unknown>> {
     if (restoredInputState) {
       this.state = { ...restoredInputState } as TState;
     }
+    if (!isConversationalTurn && !restoredBackendState && !restoredForkState && !restoredInputState) {
+      this.state = this.createFreshInitialState();
+    }
     this.lastInputs = inputs;
     if (restoredForkState) {
       const { id: _id, ...filteredInputs } = inputs;
@@ -2369,6 +2508,7 @@ export class Flow<TState extends object = Record<string, unknown>> {
     } else {
       Object.assign(this.state, inputs);
     }
+    this.activeBackendFlowId = restoredBackendState ? backendFlowId : this.resolveBackendFlowId(inputs);
     if (isConversationalTurn) {
       prepareConversationalTurn(this, {
         userMessage,
@@ -2391,7 +2531,7 @@ export class Flow<TState extends object = Record<string, unknown>> {
       if (!shouldSkipCompletedMethods) {
         this.resetRuntimeState();
       }
-      const entries = getFlowMetadata(this);
+      const entries = this.flowMetadataEntries();
       const outputs = new Map<string, unknown>();
       const completed = new Set<string>(restoredCompletedMethods);
       const queue: FlowExecutionQueueItem[] = [];
@@ -2440,7 +2580,7 @@ export class Flow<TState extends object = Record<string, unknown>> {
           continue;
         }
         if (methodCalls >= this.maxMethodCalls) {
-          throw new Error(`Flow '${this.name ?? this.constructor.name}' exceeded maxMethodCalls of ${String(this.maxMethodCalls)}.`);
+          throw new Error(`Flow '${this.flowName()}' exceeded maxMethodCalls of ${String(this.maxMethodCalls)}.`);
         }
         methodCalls += 1;
         const methodEntry = entries.find((entry) => String(entry.name) === current.name);
@@ -2834,7 +2974,7 @@ export class Flow<TState extends object = Record<string, unknown>> {
   toJSON(): Record<string, unknown> {
     return {
       type: "Flow",
-      class_name: this.constructor.name,
+      class_name: this.runtimeConstructor().name,
       name: this.name,
       checkpoint_completed_methods: [...this.runtimeCompletedMethods],
       checkpoint_method_outputs: [...this.runtimeMethodOutputs],
@@ -2949,10 +3089,10 @@ export class Flow<TState extends object = Record<string, unknown>> {
   }
 
   private resolveInputProvider(): InputProvider {
-    const constructorProvider = (this.constructor as {
+    const constructorProvider = (this.runtimeConstructor() as {
       inputProvider?: InputProvider | null;
       input_provider?: InputProvider | null;
-    }).inputProvider ?? (this.constructor as {
+    }).inputProvider ?? (this.runtimeConstructor() as {
       inputProvider?: InputProvider | null;
       input_provider?: InputProvider | null;
     }).input_provider ?? null;
@@ -3034,10 +3174,7 @@ export class Flow<TState extends object = Record<string, unknown>> {
     flowName: string,
     triggeredByEventId: string | null = null,
   ): Promise<{ rawOutput: unknown; finishedEventId: string }> {
-    const method = (this as Record<string, unknown>)[name];
-    if (typeof method !== "function") {
-      throw new Error(`Flow method '${name}' is not callable.`);
-    }
+    const { method, receiver } = this.getFlowMethod(name);
     const startedEvent = new MethodExecutionStartedEvent({
       flowName,
       methodName: name,
@@ -3056,9 +3193,12 @@ export class Flow<TState extends object = Record<string, unknown>> {
     });
     try {
       const flowMethod = this.isStartMethod(name)
-        ? this._injectTriggerPayloadForStartMethod(method as (...args: unknown[]) => MaybePromise<unknown>)
-        : method as (...args: unknown[]) => MaybePromise<unknown>;
-      const result: unknown = await flowMethod.call(this, input);
+        ? this.runtimeTarget ? method : this._injectTriggerPayloadForStartMethod(method)
+        : method;
+      const result: unknown = this.runtimeTarget
+        ? await flowMethod.call(receiver, this.createFlowContext(), input)
+        : await flowMethod.call(this, input);
+      await this.commitState(name);
       const finishedEvent = new MethodExecutionFinishedEvent({
         flowName,
         methodName: name,
@@ -3124,7 +3264,7 @@ export class Flow<TState extends object = Record<string, unknown>> {
 
   private async continueFromHumanFeedback(context: PendingFeedbackContext, feedback: string): Promise<unknown> {
     const flowName = this.flowName();
-    const liveLlm = liveHumanFeedbackLlmFor(this, context.methodName);
+    const liveLlm = liveHumanFeedbackLlmFor(this.runtimeObject(), context.methodName);
     const llm = liveLlm !== null && typeof liveLlm !== "string"
       ? liveLlm
       : context.llm ?? liveLlm ?? null;
@@ -3144,7 +3284,7 @@ export class Flow<TState extends object = Record<string, unknown>> {
       outcome: result.outcome,
     }));
 
-    const entries = getFlowMetadata(this);
+    const entries = this.flowMetadataEntries();
     const outputs = new Map<string, unknown>();
     const completed = new Set<string>();
     const queue: FlowExecutionQueueItem[] = [];
@@ -3189,7 +3329,7 @@ export class Flow<TState extends object = Record<string, unknown>> {
         continue;
       }
       if (methodCalls >= this.maxMethodCalls) {
-        throw new Error(`Flow '${this.name ?? this.constructor.name}' exceeded maxMethodCalls of ${String(this.maxMethodCalls)}.`);
+        throw new Error(`Flow '${this.flowName()}' exceeded maxMethodCalls of ${String(this.maxMethodCalls)}.`);
       }
       methodCalls += 1;
       const entry = entries.find((candidate) => String(candidate.name) === current.name);
@@ -3257,6 +3397,25 @@ export class Flow<TState extends object = Record<string, unknown>> {
       return;
     }
     return this.persistence.saveState(this.flowPersistenceId(), methodName, this.stateSnapshot());
+  }
+
+  private resolveBackendFlowId(inputs: InputValues): string {
+    const id = inputs.id;
+    return typeof id === "string" && id.length > 0
+      ? id
+      : this.flowPersistenceId();
+  }
+
+  private async commitState(methodName: string | null): Promise<void> {
+    if (!this.stateBackend) {
+      return;
+    }
+    await this.stateBackend.save(this.activeBackendFlowId ?? this.resolveBackendFlowId(this.lastInputs), cloneFlowState(this.state), {
+      flowName: this.flowName(),
+      methodName,
+      inputs: { ...this.lastInputs },
+      inputFiles: this.inputFiles,
+    });
   }
 
   private recordHumanFeedbackResult(options: {
@@ -3342,7 +3501,7 @@ export class Flow<TState extends object = Record<string, unknown>> {
   }
 
   private flowName(): string {
-    return this.name ?? this.constructor.name;
+    return this.name ?? this.runtimeConstructor().name;
   }
 
   private shouldSkipAutoMemory(): boolean {
@@ -3354,7 +3513,7 @@ export class Flow<TState extends object = Record<string, unknown>> {
   }
 
   private isStartMethod(methodName: string): boolean {
-    return getFlowMetadata(this).some((entry) => entry.kind === "start" && String(entry.name) === methodName);
+    return this.flowMetadataEntries().some((entry) => entry.kind === "start" && String(entry.name) === methodName);
   }
 
   private isRouterOutput(
@@ -3365,7 +3524,7 @@ export class Flow<TState extends object = Record<string, unknown>> {
     if (output === undefined || output === null) {
       return false;
     }
-    return methodEntry?.kind === "router" || Boolean(humanFeedbackConfigFor(this, methodName)?.emit?.length);
+    return methodEntry?.kind === "router" || Boolean(humanFeedbackConfigFor(this.runtimeObject(), methodName)?.emit?.length);
   }
 
   private async collectHumanFeedback(
@@ -3392,7 +3551,7 @@ export class Flow<TState extends object = Record<string, unknown>> {
       metadata: { ...(config.metadata ?? {}) },
       llm: serializeHumanFeedbackLlm(config.llm ?? null),
       flowId: this.flowPersistenceId(),
-      flowClass: this.constructor.name,
+      flowClass: this.runtimeConstructor().name,
       requestedAt: new Date(),
     });
     const provider = config.provider ?? flowConfig.hitlProvider;
@@ -3406,6 +3565,190 @@ export class Flow<TState extends object = Record<string, unknown>> {
     return feedback ?? "";
   }
 }
+
+export type FlowRuntime<TState extends object = Record<string, unknown>> = {
+  kickoff(
+    optionsOrInputs?: FlowKickoffOptions | InputValues | null,
+    inputFiles?: InputFiles | null,
+    fromCheckpoint?: CheckpointConfig | null,
+    restoreFromStateId?: string | null,
+  ): Promise<unknown>;
+  kickoffAsync(
+    optionsOrInputs?: FlowKickoffOptions | InputValues | null,
+    inputFiles?: InputFiles | null,
+    fromCheckpoint?: CheckpointConfig | null,
+    restoreFromStateId?: string | null,
+  ): Promise<unknown>;
+  akickoff(
+    optionsOrInputs?: FlowKickoffOptions | InputValues | null,
+    inputFiles?: InputFiles | null,
+    fromCheckpoint?: CheckpointConfig | null,
+    restoreFromStateId?: string | null,
+  ): Promise<unknown>;
+  kickoff_async(
+    optionsOrInputs?: FlowKickoffOptions | InputValues | null,
+    inputFiles?: InputFiles | null,
+    fromCheckpoint?: CheckpointConfig | null,
+    restoreFromStateId?: string | null,
+  ): Promise<unknown>;
+  ask(message: string, options?: FlowAskOptions): MaybePromise<string | null>;
+  kickoffCrew(crew: Crew, options?: KickoffOptions): Promise<CrewOutput>;
+  resume(feedback?: string): Promise<unknown>;
+  resumeAsync(feedback?: string): Promise<unknown>;
+  resume_async(feedback?: string): Promise<unknown>;
+  aresume(feedback?: string): Promise<unknown>;
+  toExecutionData(): FlowExecutionData;
+  reload(executionData: FlowExecutionData): void;
+  stateSnapshot(): Record<string, unknown>;
+  readonly inputFiles: InputFiles;
+  readonly methodOutputs: readonly unknown[];
+  readonly method_outputs: readonly unknown[];
+  readonly completedMethods: ReadonlySet<string>;
+  readonly methodExecutionCounts: ReadonlyMap<string, number>;
+  readonly executionTrace: readonly FlowExecutionTraceEntry[];
+  readonly inputHistory: readonly FlowInputHistoryEntry[];
+  readonly input_history: readonly FlowInputHistoryEntry[];
+  readonly flow_id: string;
+  readonly humanFeedbackHistory: readonly HumanFeedbackResult[];
+  readonly lastHumanFeedback: HumanFeedbackResult | null;
+};
+
+type FlowConstructor<TInstance extends object = object> = new (...args: any[]) => TInstance;
+
+export type Stage3FlowClassDecorator<TState extends object = Record<string, unknown>> = <
+  TClass extends FlowConstructor,
+>(
+  value: TClass,
+  context: ClassDecoratorContext<TClass>,
+) => TClass | void;
+
+export type LegacyFlowClassDecorator = <TClass extends FlowConstructor>(value: TClass) => TClass | void;
+
+export type FlowClassDecorator<TState extends object = Record<string, unknown>> =
+  Stage3FlowClassDecorator<TState> & LegacyFlowClassDecorator;
+
+const flowRuntimeEngines = new WeakMap<object, Flow<object>>();
+
+const FLOW_RUNTIME_METHODS = [
+  "kickoff",
+  "kickoffAsync",
+  "akickoff",
+  "kickoff_async",
+  "resume",
+  "resumeAsync",
+  "resume_async",
+  "aresume",
+  "plot",
+  "recall",
+  "remember",
+  "extractMemories",
+  "extract_memories",
+  "handleTurn",
+  "handle_turn",
+  "chat",
+  "ask",
+  "kickoffCrew",
+  "toExecutionData",
+  "reload",
+  "stateSnapshot",
+] as const;
+
+const FLOW_RUNTIME_GETTERS = [
+  "inputFiles",
+  "methodOutputs",
+  "method_outputs",
+  "flow_id",
+  "completedMethods",
+  "methodExecutionCounts",
+  "executionTrace",
+  "inputHistory",
+  "input_history",
+  "_input_history",
+  "pendingFeedback",
+  "pending_feedback",
+] as const;
+
+const FLOW_RUNTIME_FIELD_GETTERS = [
+  "humanFeedbackHistory",
+  "lastHumanFeedback",
+] as const;
+
+function getFlowEngine(instance: object): Flow<object> | null {
+  return instance instanceof Flow ? instance as Flow<object> : flowRuntimeEngines.get(instance) ?? null;
+}
+
+function installFlowRuntime<TInstance extends object, TState extends object>(
+  instance: TInstance,
+  options: FlowOptions<TState> = {},
+): TInstance & FlowRuntime<TState> {
+  const existing = flowRuntimeEngines.get(instance);
+  if (existing) {
+    return instance as TInstance & FlowRuntime<TState>;
+  }
+
+  const engine = new Flow<TState>(options);
+  engine.bindRuntimeTarget(instance);
+  flowRuntimeEngines.set(instance, engine as Flow<object>);
+
+  for (const name of FLOW_RUNTIME_METHODS) {
+    const method = (engine as unknown as Record<string, unknown>)[name];
+    if (typeof method !== "function") {
+      continue;
+    }
+    Object.defineProperty(instance, name, {
+      configurable: true,
+      value: method.bind(engine),
+      writable: true,
+    });
+  }
+
+  for (const name of FLOW_RUNTIME_GETTERS) {
+    const descriptor = Object.getOwnPropertyDescriptor(Flow.prototype, name);
+    if (!descriptor?.get) {
+      continue;
+    }
+    Object.defineProperty(instance, name, {
+      configurable: true,
+      get: () => descriptor.get?.call(engine),
+    });
+  }
+
+  for (const name of FLOW_RUNTIME_FIELD_GETTERS) {
+    Object.defineProperty(instance, name, {
+      configurable: true,
+      get: () => (engine as unknown as Record<string, unknown>)[name],
+    });
+  }
+
+  return instance as TInstance & FlowRuntime<TState>;
+}
+
+const FlowDecorator = <TState extends object = Record<string, unknown>>(
+  options: FlowOptions<TState> = {},
+): FlowClassDecorator<TState> => {
+  return function decorate<TClass extends FlowConstructor>(
+    value: TClass,
+    _context?: ClassDecoratorContext<TClass>,
+  ): TClass {
+    const DecoratedFlow = class extends value {
+      constructor(...args: any[]) {
+        super(...args);
+        installFlowRuntime(this, options);
+      }
+    };
+    Object.defineProperty(DecoratedFlow, "name", { configurable: true, value: value.name });
+    return DecoratedFlow as TClass;
+  } as FlowClassDecorator<TState>;
+};
+
+export function flow<TInstance extends object, TState extends object = Record<string, unknown>>(
+  instance: TInstance,
+  options: FlowOptions<TState> = {},
+): TInstance & FlowRuntime<TState> {
+  return installFlowRuntime(instance, options);
+}
+
+export { Flow as FlowEngine, FlowDecorator as Flow };
 
 export class _FlowGeneric<TState extends object = Record<string, unknown>> extends Flow<TState> {}
 
@@ -3912,34 +4255,64 @@ export function humanFeedback(configOrMessage: HumanFeedbackConfig | string): Me
     : configOrMessage;
   validateHumanFeedbackConfig(config);
   return function decorate<This extends object>(
-    value: AnyFlowMethod<This>,
-    context: ClassMethodDecoratorContext<This, AnyFlowMethod<This>>,
-  ): AnyFlowMethod<This> {
+    valueOrTarget: AnyFlowMethod<This> | object,
+    contextOrKey: ClassMethodDecoratorContext<This, AnyFlowMethod<This>> | string | symbol,
+    descriptor?: PropertyDescriptor,
+  ): AnyFlowMethod<This> | PropertyDescriptor | void {
     const normalizedConfig = normalizeHumanFeedbackConfig(config);
-    context.addInitializer(function init(this: This) {
-      const ctor = this.constructor as FlowMetadataTarget;
-      const entries = humanFeedbackMetadata.get(ctor) ?? new Map<string, HumanFeedbackConfig>();
-      entries.set(String(context.name), normalizedConfig);
-      humanFeedbackMetadata.set(ctor, entries);
-    });
+
+    const original = isStage3MethodDecoratorContext(contextOrKey)
+      ? valueOrTarget as AnyFlowMethod<This>
+      : descriptor?.value as AnyFlowMethod<This> | undefined;
+    if (typeof original !== "function") {
+      return descriptor;
+    }
 
     const wrapped = async function wrapped(this: This, ...args: unknown[]): Promise<unknown> {
-      const output = await value.call(this, ...args);
-      if (!(this instanceof Flow)) {
+      const output = await original.call(this, ...args);
+      const engine = getFlowEngine(this);
+      if (!engine) {
         return output;
       }
-      return await this.requestHumanFeedback(String(context.name), output, normalizedConfig, { preserveMethodOutput: true });
+      const methodName = isStage3MethodDecoratorContext(contextOrKey) ? contextOrKey.name : contextOrKey;
+      return await engine.requestHumanFeedback(String(methodName), output, normalizedConfig, { preserveMethodOutput: true });
     };
-    copyFlowMethodAttributes(value, wrapped);
+    copyFlowMethodAttributes(original, wrapped);
     attachHumanFeedbackAttributes(wrapped, normalizedConfig);
     (wrapped as unknown as Record<string, unknown>)[HUMAN_FEEDBACK_LIVE_LLM_ATTR] = "llm" in config
       ? config.llm
       : normalizedConfig.llm;
-    return wrapped;
-  };
+
+    if (isStage3MethodDecoratorContext(contextOrKey)) {
+      contextOrKey.addInitializer(function init(this: object) {
+        registerHumanFeedbackMetadata(this.constructor as FlowMetadataTarget, contextOrKey.name, normalizedConfig);
+      });
+      return wrapped;
+    }
+
+    const legacyName = contextOrKey as string | symbol;
+    registerHumanFeedbackMetadata((valueOrTarget as object).constructor as FlowMetadataTarget, legacyName, normalizedConfig);
+    return {
+      ...descriptor,
+      configurable: descriptor?.configurable ?? true,
+      enumerable: descriptor?.enumerable ?? false,
+      writable: descriptor?.writable ?? true,
+      value: wrapped,
+    };
+  } as MethodDecoratorFactory;
 }
 
 export const human_feedback = humanFeedback;
+
+function registerHumanFeedbackMetadata(
+  ctor: FlowMetadataTarget,
+  name: string | symbol,
+  config: HumanFeedbackConfig,
+): void {
+  const entries = humanFeedbackMetadata.get(ctor) ?? new Map<string, HumanFeedbackConfig>();
+  entries.set(String(name), config);
+  humanFeedbackMetadata.set(ctor, entries);
+}
 
 function validateHumanFeedbackConfig(config: HumanFeedbackConfig): void {
   const emit = config.emit ?? null;
@@ -4846,10 +5219,18 @@ export function isFlowMethod(value: unknown): boolean {
 
 export const is_flow_method = isFlowMethod;
 
-export type FlowMethodDecorator = <This extends object>(
+export type Stage3FlowMethodDecorator = <This extends object>(
   value: AnyFlowMethod<This>,
   context: ClassMethodDecoratorContext<This, AnyFlowMethod<This>>,
 ) => AnyFlowMethod<This>;
+
+export type LegacyFlowMethodDecorator = (
+  target: object,
+  propertyKey: string | symbol,
+  descriptor: PropertyDescriptor,
+) => PropertyDescriptor | void;
+
+export type FlowMethodDecorator = Stage3FlowMethodDecorator & LegacyFlowMethodDecorator;
 export const FlowMethodDecorator = Object.freeze({ kind: "FlowMethodDecorator" });
 export type MethodDecoratorFactory = FlowMethodDecorator;
 
@@ -5437,18 +5818,46 @@ function flowDecorator(
   emit: readonly string[] | null = null,
 ): MethodDecoratorFactory {
   return function decorate<This extends object>(
-    value: AnyFlowMethod<This>,
-    context: ClassMethodDecoratorContext<This, AnyFlowMethod<This>>,
-  ): AnyFlowMethod<This> {
-    attachFlowMethodDefinition(value, kind, condition, emit);
-    context.addInitializer(function init(this: This) {
-      const ctor = this.constructor as FlowMetadataTarget;
-      const entries = flowMetadata.get(ctor) ?? [];
-      entries.push({ name: context.name, kind, condition, emit: emit ? uniqueStrings(emit) : null });
-      flowMetadata.set(ctor, entries);
-    });
-    return value;
-  };
+    valueOrTarget: AnyFlowMethod<This> | object,
+    contextOrKey: ClassMethodDecoratorContext<This, AnyFlowMethod<This>> | string | symbol,
+    descriptor?: PropertyDescriptor,
+  ): AnyFlowMethod<This> | PropertyDescriptor | void {
+    if (isStage3MethodDecoratorContext(contextOrKey)) {
+      const value = valueOrTarget as AnyFlowMethod<This>;
+      attachFlowMethodDefinition(value, kind, condition, emit);
+      contextOrKey.addInitializer(function init(this: object) {
+        registerFlowMethodMetadata(this.constructor as FlowMetadataTarget, contextOrKey.name, kind, condition, emit);
+      });
+      return value;
+    }
+
+    const method = descriptor?.value;
+    const legacyName = contextOrKey as string | symbol;
+    attachFlowMethodDefinition(method, kind, condition, emit);
+    registerFlowMethodMetadata((valueOrTarget as object).constructor as FlowMetadataTarget, legacyName, kind, condition, emit);
+    return descriptor;
+  } as MethodDecoratorFactory;
+}
+
+function isStage3MethodDecoratorContext<This extends object>(
+  value: unknown,
+): value is ClassMethodDecoratorContext<This, AnyFlowMethod<This>> {
+  return value !== null
+    && typeof value === "object"
+    && "addInitializer" in value
+    && typeof (value as { addInitializer?: unknown }).addInitializer === "function";
+}
+
+function registerFlowMethodMetadata(
+  ctor: FlowMetadataTarget,
+  name: string | symbol,
+  kind: FlowMethodKind,
+  condition: FlowCondition | null,
+  emit: readonly string[] | null,
+): void {
+  const entries = flowMetadata.get(ctor) ?? [];
+  entries.push({ name, kind, condition, emit: emit ? uniqueStrings(emit) : null });
+  flowMetadata.set(ctor, entries);
 }
 
 function attachFlowMethodDefinition(

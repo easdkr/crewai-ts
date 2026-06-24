@@ -1,7 +1,7 @@
 import { createInterface } from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 
-import type { Flow, HumanFeedbackProvider } from "./flow.js";
+import type { FlowEngine, HumanFeedbackProvider } from "./flow.js";
 import type { MaybePromise } from "@crewai-ts/core/types";
 
 export type InputResponse = {
@@ -12,12 +12,12 @@ export type InputResponse = {
 export type InputProvider = {
   requestInput?(
     message: string,
-    flow: Flow<object>,
+    flow: FlowEngine<object>,
     metadata?: Record<string, unknown> | null,
   ): MaybePromise<string | InputResponse | null>;
   request_input?(
     message: string,
-    flow: Flow<object>,
+    flow: FlowEngine<object>,
     metadata?: Record<string, unknown> | null,
   ): MaybePromise<string | InputResponse | null>;
 };

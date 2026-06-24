@@ -1,8 +1,9 @@
 # @crewai-ts/nestjs-demo
 
 A runnable **HTTP NestJS app** that exercises most of the `@crewai-ts/nestjs`
-helper surface, and doubles as a **live smoke test** against a real LLM
-(OpenAI, Gemini, or Anthropic) using provider keys from your environment.
+helper surface plus the new `@crewai-ts/flow` `@Flow()` / `FlowContext` API.
+It doubles as a **live smoke test** against a real LLM (OpenAI, Gemini, or
+Anthropic) using provider keys from your environment.
 
 > **Live only.** There is no mock fallback — if no provider key is set, the app
 > fails fast with a clear error. Secrets are read from `process.env` only and
@@ -14,7 +15,8 @@ helper surface, and doubles as a **live smoke test** against a real LLM
 | --- | --- |
 | `CrewModule.forRootAsync` (`imports`/`inject`/`useFactory`) | `src/app.module.ts` |
 | `forRoot` options (`llms`, `planningLlm`, `functionCallingLlm`, `planning`, `verbose`, `cache`, `llmRouter`, `memory`, `knowledge`) | `src/llm/llm-config.service.ts` |
-| `AgentFactory`, `CREW_FACTORY` / `DefaultCrewFactory`, `crew.kickoff` (**live**) | `src/research/*` |
+| `@Flow()`, `FlowContext`, `@start`, `@router`, `@listen`, state backend | `src/research/research-flow.ts` |
+| `AgentFactory`, `CREW_FACTORY` / `DefaultCrewFactory`, `crew.kickoff` (**live**) inside Flow methods | `src/research/*` |
 | `LLM_REGISTRY` / `LlmRegistryService` (`names`/`get`/`has`/`register`/`resolve`) | `src/registry/*` |
 | `LLM_ROUTER` / `LlmRouterService` (round-robin / fallback / race / weighted / custom) | `src/router/*` |
 | `EVENT_BUS` / `EventBusService` (`on`/`off`/`emit`/`destroy`) | `src/events/*` |
@@ -64,7 +66,9 @@ LLM_PROVIDER=gemini    pnpm --filter @crewai-ts/nestjs-demo smoke
 LLM_PROVIDER=anthropic pnpm --filter @crewai-ts/nestjs-demo smoke   # needs the proxy on ANTHROPIC_BASE_URL
 ```
 
-Exit code `0` = a real LLM round-trip returned non-empty output.
+Exit code `0` = the Nest app booted, the Flow selected a deep route, a real LLM
+round-trip returned non-empty output, and the Flow emitted trace/audit/quality
+metadata.
 
 ### HTTP server
 
@@ -73,12 +77,12 @@ pnpm --filter @crewai-ts/nestjs-demo start   # http://localhost:3000 (PORT to ov
 ```
 
 ```sh
-# Live 2-agent crew (default provider)
+# Live Flow-backed research workflow (default provider)
 curl -X POST localhost:3000/research -H 'content-type: application/json' \
-  -d '{"topic":"dependency injection in NestJS"}'
+  -d '{"topic":"dependency injection in NestJS","depth":"deep","requireRiskReview":true}'
 # Pin a provider per request
 curl -X POST localhost:3000/research -H 'content-type: application/json' \
-  -d '{"topic":"caching","provider":"gemini"}'
+  -d '{"topic":"caching","provider":"gemini","audience":"backend platform team","riskTolerance":"low"}'
 
 curl localhost:3000/llms
 curl localhost:3000/llms/default
