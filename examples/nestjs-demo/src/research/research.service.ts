@@ -1,14 +1,39 @@
+import { randomUUID } from "node:crypto";
 import { BadRequestException, Inject, Injectable } from "@nestjs/common";
-import { Task } from "@crewai-ts/core";
 import {
   AgentFactory,
   CREW_FACTORY,
   LLM_REGISTRY,
   LlmRegistryService,
   type CrewFactory,
-  type LLMSupply,
 } from "@crewai-ts/nestjs";
 import { LlmConfigService } from "../llm/llm-config.service.js";
+import {
+  ResearchBriefingFlow,
+  type ResearchDepth,
+  type ResearchFlowInput,
+  type ResearchWorkflowResult,
+} from "./research-flow.js";
+
+export type ResearchRunOptions = {
+  provider?: string;
+  depth?: ResearchDepth;
+  audience?: string;
+  riskTolerance?: "low" | "medium" | "high";
+  requireRiskReview?: boolean;
+};
+
+export type ResearchRunResult = ResearchWorkflowResult & {
+  workflow: {
+    id: string;
+    route: string | null;
+    methodTrace: Array<{
+      methodName: string;
+      kind: string;
+      routerPath: string | null;
+    }>;
+  };
+};
 
 /**
  * The core "does it actually work end-to-end" path:
@@ -30,45 +55,44 @@ export class ResearchService {
     @Inject(LlmConfigService) private readonly config: LlmConfigService,
   ) {}
 
-  async run(topic: string, provider?: string): Promise<{ provider: string; topic: string; output: string }> {
-    // Optional per-agent LLM override: resolve a named entry from the registry.
-    let override: LLMSupply | undefined;
-    if (provider) {
-      if (!this.registry.has(provider)) {
+  async run(topic: string, options: ResearchRunOptions = {}): Promise<ResearchRunResult> {
+    if (options.provider) {
+      if (!this.registry.has(options.provider)) {
         throw new BadRequestException(
-          `Unknown provider '${provider}'. Registered: ${this.registry.names().join(", ")}.`,
+          `Unknown provider '${options.provider}'. Registered: ${this.registry.names().join(", ")}.`,
         );
       }
-      override = this.registry.get(provider);
     }
 
-    const researcher = this.agentFactory.create({
-      role: "Researcher",
-      goal: `Research ${topic}`,
-      backstory: "You find practical, source-grounded technical details.",
-      ...(override ? { llm: override } : {}),
+    const flow = new ResearchBriefingFlow({
+      agentFactory: this.agentFactory,
+      crewFactory: this.crewFactory,
+      registry: this.registry,
+      config: this.config,
     });
-    const writer = this.agentFactory.create({
-      role: "Writer",
-      goal: `Turn research about ${topic} into a short implementation brief`,
-      backstory: "You write concise engineering notes for busy backend teams.",
-      ...(override ? { llm: override } : {}),
-    });
-
-    const task = new Task({
-      description: `Research "${topic}" and produce a SHORT (<= 120 words) NestJS implementation brief.`,
-      expectedOutput: "A concise implementation brief with risks and next steps.",
-      agent: writer,
-    });
-
-    // When no override is given, agents fall back to the LLM token (llms.default).
-    const crew = this.crewFactory.create({ agents: [researcher, writer], tasks: [task] });
-    const result = await crew.kickoff({ inputs: { topic } });
+    const input: ResearchFlowInput = {
+      id: randomUUID(),
+      topic,
+      ...(options.provider ? { provider: options.provider } : {}),
+      ...(options.depth ? { depth: options.depth } : {}),
+      ...(options.audience ? { audience: options.audience } : {}),
+      ...(options.riskTolerance ? { riskTolerance: options.riskTolerance } : {}),
+      ...(options.requireRiskReview === undefined ? {} : { requireRiskReview: options.requireRiskReview }),
+    };
+    const result = await flow.kickoff({ inputs: input }) as ResearchWorkflowResult;
+    const state = flow.stateSnapshot();
 
     return {
-      provider: provider ?? this.config.resolvedDefaultProvider(),
-      topic,
-      output: result.raw,
+      ...result,
+      workflow: {
+        id: String(state.id ?? input.id),
+        route: typeof state.route === "string" ? state.route : null,
+        methodTrace: flow.executionTrace.map((entry) => ({
+          methodName: entry.methodName,
+          kind: entry.kind,
+          routerPath: entry.routerPath,
+        })),
+      },
     };
   }
 }

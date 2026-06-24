@@ -15,7 +15,7 @@ async function bootstrap(): Promise<void> {
   const log = new Logger("bootstrap");
   log.log(`@crewai-ts/nestjs-demo listening on http://localhost:${port}`);
   log.log("Endpoints:");
-  log.log(`  POST /research            { "topic": "...", "provider"?: "openai|gemini|anthropic" }  (LIVE LLM)`);
+  log.log(`  POST /research            { "topic": "...", "provider"?, "depth"?, "requireRiskReview"? }  (LIVE Flow + LLM)`);
   log.log(`  GET  /llms                · GET /llms/:name · POST /llms/:name { "aliasOf": "default" }`);
   log.log(`  GET  /router/route?strategy=round-robin|fallback|race|weighted · POST /router/custom`);
   log.log(`  GET  /agents              · GET /agents/:role`);

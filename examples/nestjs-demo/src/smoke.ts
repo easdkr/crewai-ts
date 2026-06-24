@@ -36,12 +36,26 @@ async function main(): Promise<void> {
 
     // Live LLM round-trip (the actual smoke).
     const topic = process.env.SMOKE_TOPIC?.trim() || "dependency injection in NestJS";
-    const res = await app.get(ResearchService).run(topic, process.env.LLM_PROVIDER?.trim() || undefined);
+    const res = await app.get(ResearchService).run(topic, {
+      provider: process.env.LLM_PROVIDER?.trim() || undefined,
+      depth: "deep",
+      audience: "backend platform team",
+      riskTolerance: "low",
+      requireRiskReview: true,
+    });
     const ok = typeof res.output === "string" && res.output.trim().length > 0;
+    const flowOk = res.workflow.methodTrace.length >= 5
+      && res.audit.length >= 5
+      && res.qualityScore >= 0
+      && res.riskScore >= 0
+      && res.nextActions.length > 0;
 
     log.log(`provider=${res.provider} topic="${res.topic}"`);
+    log.log(`flow route=${res.workflow.route} trace=[${res.workflow.methodTrace.map((entry) => entry.methodName).join(" -> ")}]`);
+    log.log(`quality=${res.qualityScore} risk=${res.riskScore} warnings=[${res.warnings.join(", ")}]`);
     log.log(`output (first 400 chars):\n${res.output.slice(0, 400)}`);
     if (!ok) throw new Error("LLM returned empty output");
+    if (!flowOk) throw new Error("Flow workflow did not produce the expected trace/audit/quality metadata");
 
     log.log("✅ SMOKE PASS");
     await app.close();

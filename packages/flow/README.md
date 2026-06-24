@@ -4,7 +4,7 @@
 
 Flow orchestration, persistence, and visualization features for CrewAI TypeScript.
 
-This package provides the `Flow` class and decorators (`@start`, `@listen`, `@router`, `@humanFeedback`) for building stateful, event-driven workflows. It also includes persistence, conversation state, flow visualization, and input providers.
+This package provides the `@Flow()` class decorator and method decorators (`@start`, `@listen`, `@router`, `@humanFeedback`) for building stateful, event-driven workflows. It also includes persistence, conversation state, flow visualization, state backends, and input providers.
 
 ## Install
 
@@ -20,29 +20,36 @@ Requirements:
 ## Quick Start
 
 ```ts
-import { Flow, start, listen, router, and_ } from "@crewai-ts/flow";
+import { Flow, start, listen, router, and_, type FlowContext, type FlowRuntime } from "@crewai-ts/flow";
 
-class ResearchFlow extends Flow<{ topic?: string; done?: boolean }> {
+type ResearchState = { topic?: string; done?: boolean };
+
+interface ResearchFlow extends FlowRuntime<ResearchState> {}
+
+@Flow<ResearchState>({
+  initialState: () => ({ done: false }),
+})
+class ResearchFlow {
   @start()
-  begin(inputs: { topic: string }) {
-    this.state.topic = inputs.topic;
+  begin(ctx: FlowContext<ResearchState>, inputs: { topic: string }) {
+    ctx.state.topic = inputs.topic;
     return inputs.topic;
   }
 
   @router("begin")
-  route() {
-    return this.state.topic ? "research" : "skip";
+  route(ctx: FlowContext<ResearchState>) {
+    return ctx.state.topic ? "research" : "skip";
   }
 
   @listen("research")
-  doResearch() {
-    return `Researching ${this.state.topic}`;
+  doResearch(ctx: FlowContext<ResearchState>) {
+    return `Researching ${ctx.state.topic}`;
   }
 
   @listen(and_("research", "begin"))
-  finish() {
-    this.state.done = true;
-    return `Finished researching ${this.state.topic}`;
+  finish(ctx: FlowContext<ResearchState>) {
+    ctx.state.done = true;
+    return `Finished researching ${ctx.state.topic}`;
   }
 }
 
@@ -51,38 +58,53 @@ const result = await new ResearchFlow().kickoff({
 });
 ```
 
+TypeScript does not widen class instance types from decorators, so the
+`interface ResearchFlow extends FlowRuntime<ResearchState> {}` merge lets
+`new ResearchFlow().kickoff()` typecheck.
+
 ## Persistence
 
 Save and restore flow state across process restarts:
 
 ```ts
-import { JsonFlowPersistence, SQLiteFlowPersistence } from "@crewai-ts/flow";
+import { flow, JsonFlowPersistence, SQLiteFlowPersistence } from "@crewai-ts/flow";
 
-const flow = new ResearchFlow({
+const runtime = flow(new ResearchFlow(), {
   persistence: new JsonFlowPersistence("./.flows"),
 });
 ```
+
+Runtime state can live in a `FlowStateBackend` when you opt in with
+`stateBackend`, such as `new InMemoryFlowStateBackend()` for local state or a
+Redis/SQL implementation. State is saved after each method and whenever
+`ctx.commitState()` is called.
 
 ## Human Feedback
 
 Request human feedback during flow execution:
 
 ```ts
-import { humanFeedback } from "@crewai-ts/flow";
+import { Flow, humanFeedback, listen, start, type FlowContext, type FlowRuntime } from "@crewai-ts/flow";
 
-class ReviewFlow extends Flow {
+type ReviewState = { draft?: string };
+
+interface ReviewFlow extends FlowRuntime<ReviewState> {}
+
+@Flow<ReviewState>()
+class ReviewFlow {
   @start()
   @humanFeedback({
     message: "Review this draft",
     emit: ["approved", "rejected"],
   })
-  draft() {
+  draft(ctx: FlowContext<ReviewState>) {
+    ctx.state.draft = "Draft content";
     return "Draft content";
   }
 
   @listen("approved")
-  publish() {
-    return this.lastHumanFeedback?.output;
+  publish(ctx: FlowContext<ReviewState>) {
+    return ctx.state.draft;
   }
 }
 ```
@@ -102,7 +124,9 @@ const html = renderInteractive(flow);
 Request user input during flow execution:
 
 ```ts
-const flow = new ResearchFlow({
+import { flow } from "@crewai-ts/flow";
+
+const runtime = flow(new ResearchFlow(), {
   inputProvider: {
     requestInput: async (message, flow, metadata) => ({
       text: "CrewAI",
@@ -111,7 +135,7 @@ const flow = new ResearchFlow({
   },
 });
 
-const topic = await flow.ask("Topic?", { metadata: { channel: "research" } });
+const topic = await runtime.ask("Topic?", { metadata: { channel: "research" } });
 ```
 
 ## Exports

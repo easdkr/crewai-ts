@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@crewai-ts/core": "workspace:*",
+    "@crewai-ts/flow": "workspace:*",
     "@crewai-ts/nestjs": "workspace:*",
     "@crewai-ts/openai": "workspace:*",
     "@crewai-ts/gemini": "workspace:*",

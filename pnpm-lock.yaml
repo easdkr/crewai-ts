@@ -41,6 +41,9 @@ importers:
       '@crewai-ts/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@crewai-ts/flow':
+        specifier: workspace:*
+        version: link:../../packages/flow
       '@crewai-ts/gemini':
         specifier: workspace:*
         version: link:../../packages/gemini

@@ -38,6 +38,7 @@ export interface DefaultCrewFactoryOptions {
   functionCallingLlm?: LLMSupply;
   verbose?: boolean;
   cache?: boolean;
+  memory?: MemoryLike | false | null;
   /** Per-agent tools (legacy alias — applied to every agent if not already set). */
   tools?: readonly BaseTool[];
 }
@@ -59,11 +60,12 @@ export class DefaultCrewFactory {
     const agents = options.tools
       ? options.agents.map((agent) => this.attachTools(agent, options.tools!))
       : [...options.agents];
+    const memory = options.memory === undefined ? this.memory : options.memory || null;
     return new Crew({
       agents,
       tasks: [...options.tasks],
       process: Process.sequential,
-      ...(this.memory ? { memory: this.memory } : {}),
+      ...(memory ? { memory } : {}),
       ...(options.planning !== undefined ? { planning: options.planning } : {}),
       ...(options.verbose !== undefined ? { verbose: options.verbose } : {}),
       ...(options.cache !== undefined ? { cache: options.cache } : {}),
@@ -87,4 +89,3 @@ export class DefaultCrewFactory {
     return agent;
   }
 }
-

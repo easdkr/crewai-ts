@@ -565,24 +565,31 @@ run, `@listen` methods react to completed methods or router path strings, and
 `@router` methods return the next path label.
 
 ```ts
-import { Flow, and_, listen, router, start } from "@crewai-ts/flow";
+import { Flow, and_, listen, router, start, type FlowContext, type FlowRuntime } from "@crewai-ts/flow";
 
-class ResearchFlow extends Flow<{ topic?: string; done?: boolean }> {
+type ResearchState = { topic?: string; done?: boolean };
+
+interface ResearchFlow extends FlowRuntime<ResearchState> {}
+
+@Flow<ResearchState>({
+  initialState: () => ({ done: false }),
+})
+class ResearchFlow {
   @start()
-  begin(inputs: { topic: string }) {
-    this.state.topic = inputs.topic;
+  begin(ctx: FlowContext<ResearchState>, inputs: { topic: string }) {
+    ctx.state.topic = inputs.topic;
     return inputs.topic;
   }
 
   @router("begin")
-  route() {
-    return this.state.topic ? "research" : "skip";
+  route(ctx: FlowContext<ResearchState>) {
+    return ctx.state.topic ? "research" : "skip";
   }
 
   @listen(and_("research", "begin"))
-  finish() {
-    this.state.done = true;
-    return `researched ${this.state.topic}`;
+  finish(ctx: FlowContext<ResearchState>) {
+    ctx.state.done = true;
+    return `researched ${ctx.state.topic}`;
   }
 }
 
@@ -595,16 +602,19 @@ const result = await new ResearchFlow().kickoff({
 router path fires. Flow execution is bounded by `maxMethodCalls` so cyclic
 flows fail clearly instead of running forever.
 
-Inside a flow, use `this.kickoffCrew(crew)` to run a crew with the flow's
+Inside a flow, use `ctx.kickoffCrew(crew)` to run a crew with the flow's
 `inputFiles` / `input_files` automatically forwarded.
 
-Flows can request user input through `this.ask()`. Set an `inputProvider` on
-the flow instance or `flowConfig.inputProvider` globally. Providers may return
+Flows can request user input through `ctx.ask()` inside a method or
+`runtime.ask()` on a composed runtime. Set an `inputProvider` on the flow
+runtime or `flowConfig.inputProvider` globally. Providers may return
 a string, `null`, or `{ text, metadata }`; responses are available through
-`flow.inputHistory`.
+`runtime.inputHistory`.
 
 ```ts
-const flow = new ResearchFlow({
+import { flow } from "@crewai-ts/flow";
+
+const runtime = flow(new ResearchFlow(), {
   inputProvider: {
     requestInput: async (_message, _flow, metadata) => ({
       text: "CrewAI",
@@ -613,7 +623,7 @@ const flow = new ResearchFlow({
   },
 });
 
-const topic = await flow.ask("Topic?", {
+const topic = await runtime.ask("Topic?", {
   metadata: { channel: "research" },
   timeout: 30,
 });
@@ -621,11 +631,18 @@ const topic = await flow.ask("Topic?", {
 
 Flow methods can also be wrapped with `@humanFeedback`. The method output is
 sent to a feedback provider, the result is stored on
-`flow.lastHumanFeedback` / `flow.humanFeedbackHistory`, and `emit` values make
+`runtime.lastHumanFeedback` / `runtime.humanFeedbackHistory`, and `emit` values make
 the method act as a router.
 
 ```ts
-class ReviewFlow extends Flow {
+import { Flow, humanFeedback, listen, start, type FlowContext, type FlowRuntime } from "@crewai-ts/flow";
+
+type ReviewState = { draft?: string };
+
+interface ReviewFlow extends FlowRuntime<ReviewState> {}
+
+@Flow<ReviewState>()
+class ReviewFlow {
   @start()
   @humanFeedback({
     message: "Review this draft",
@@ -634,13 +651,14 @@ class ReviewFlow extends Flow {
       requestFeedback: async () => "approved",
     },
   })
-  draft() {
+  draft(ctx: FlowContext<ReviewState>) {
+    ctx.state.draft = "Draft content";
     return "Draft content";
   }
 
   @listen("approved")
-  publish() {
-    return this.lastHumanFeedback?.output;
+  publish(ctx: FlowContext<ReviewState>) {
+    return ctx.state.draft;
   }
 }
 ```
@@ -663,32 +681,29 @@ provider: {
 }
 ```
 
-To resume after process restart, provide a `JsonFlowPersistence` in the Flow
-constructor. Pending feedback is written with the current state and can be
-restored with `Flow.fromPending(flowId, persistence)`.
+To resume on the same runtime, call `resume(feedback)` or
+`resumeAsync(feedback)`. Low-level class restore helpers remain available on
+`FlowEngine` for inheritance-based runtimes.
 
 ```ts
-const persistence = new JsonFlowPersistence(".flows");
-const pending = await flow.kickoff();
+const pending = await runtime.kickoff();
 
 if (pending instanceof HumanFeedbackPending && pending.context.flowId) {
-  const restored = await ReviewFlow.fromPending(pending.context.flowId, persistence);
-  await restored.resume("approved");
+  await runtime.resume("approved");
 }
 ```
 
 The same persistence object stores ordinary Flow state after each completed
-method. Use `Flow.fromState(flowId, persistence)` to restore the latest state
-snapshot for a Flow id.
+method. Runtime state can also be moved to an opt-in `FlowStateBackend`.
 
-After a run, `flow.methodOutputs`, `flow.completedMethods`,
-`flow.methodExecutionCounts`, and `flow.executionTrace` expose the last
+After a run, `runtime.methodOutputs`, `runtime.completedMethods`,
+`runtime.methodExecutionCounts`, and `runtime.executionTrace` expose the last
 execution's method-level runtime state.
 
 Use `getFlowStructure(flowOrClass)` to inspect the static Flow graph for
 visualization or tooling.
 
-Use `flow.toExecutionData()` and `flow.reload(data)` to export and restore the
+Use `runtime.toExecutionData()` and `runtime.reload(data)` to export and restore the
 last run's state, completed methods, method outputs, and execution trace.
 Flows emit `flow_started`, `flow_input_requested`, `flow_input_received`,
 `human_feedback_requested`, `human_feedback_received`,

@@ -16,7 +16,7 @@ import {
 import type { LLM } from "@crewai-ts/core/llm";
 import type { LLMMessage } from "@crewai-ts/core/types";
 import {
-  Flow,
+  FlowEngine as Flow,
   FlowConfigDefinition,
   FlowDefinition,
   FlowDefinitionDiagnostic,

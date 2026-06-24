@@ -57,7 +57,11 @@ export type KnowledgeSupply = readonly unknown[] | null | undefined;
 
 // CrewFactory contract: returns a configured Crew
 export interface CrewFactory {
-  create(input: { agents: readonly Agent[]; tasks: readonly Task[] }): Crew;
+  create(input: {
+    agents: readonly Agent[];
+    tasks: readonly Task[];
+    memory?: MemorySupply | false;
+  }): Crew;
 }
 
 // Strategy used by LLM_REGISTRY / LLM_ROUTER to pick a provider from a set.
