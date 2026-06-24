@@ -1,6 +1,6 @@
 {
   "name": "@crewai-ts/flow",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Flow orchestration, persistence, and visualization features for CrewAI TypeScript.",
   "repository": {
     "type": "git",
