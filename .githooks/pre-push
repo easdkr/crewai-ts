@@ -1,0 +1,27 @@
+#!/bin/sh
+set -eu
+
+blocked_refs=""
+
+while read -r local_ref local_sha remote_ref remote_sha; do
+  case "$remote_ref" in
+    refs/tags/v*|refs/tags/@crewai-ts/*@*|refs/tags/nestjs-v*)
+      blocked_refs="${blocked_refs}${remote_ref}
+"
+      ;;
+  esac
+done
+
+if [ -z "$blocked_refs" ]; then
+  exit 0
+fi
+
+if [ "${ALLOW_CREWAI_TS_MANUAL_RELEASE_TAG_PUSH:-}" = "1" ]; then
+  echo "crewai-ts release tag push allowed by ALLOW_CREWAI_TS_MANUAL_RELEASE_TAG_PUSH=1" >&2
+  exit 0
+fi
+
+echo "Blocked manual crewai-ts release tag push:" >&2
+printf "%s" "$blocked_refs" | sed "s/^/  - /" >&2
+echo "Use the Changesets Release PR flow. Set ALLOW_CREWAI_TS_MANUAL_RELEASE_TAG_PUSH=1 only for approved break-glass releases." >&2
+exit 1
