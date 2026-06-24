@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 
 import { describe, expect, it, vi } from "vitest";
 
-import { Agent, Crew, CrewOutput, FlowStreamingOutput, Task } from "@crewai-ts/core";
+import { Agent, Crew, CrewOutput, FlowStreamingOutput, Task, runWithExecutionContext } from "@crewai-ts/core";
 import { crewaiEventBus, type FlowFinishedEvent } from "@crewai-ts/core/events";
 import {
   AgentMessage,
@@ -84,6 +84,44 @@ describe("@crewai-ts/flow execution package", () => {
     expect(output).toBe("summary for CrewAI");
     expect(flow.state.events).toEqual(["begin:CrewAI", "summary:CrewAI"]);
     expect(getFlowMetadata(flow).map((entry) => entry.kind)).toEqual(["start", "listen"]);
+  });
+
+  it("keeps the event scope stack balanced across flow method execution", async () => {
+    class StackFlow extends Flow<{ events: string[] }> {
+      constructor() {
+        super({ initialState: { events: [] } });
+      }
+
+      begin() {
+        this.state.events.push("begin");
+        return "ready";
+      }
+
+      finish(input: string) {
+        this.state.events.push(`finish:${input}`);
+        return this.state.events.join(",");
+      }
+    }
+
+    const initializers = [
+      decorateMethod(StackFlow, "begin", start() as unknown as Decorator),
+      decorateMethod(StackFlow, "finish", listen("begin") as unknown as Decorator),
+    ];
+    const flow = new StackFlow();
+    initializers.forEach((initializer) => {
+      initializer.call(flow);
+    });
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    try {
+      await runWithExecutionContext({}, async () => {
+        await expect(flow.kickoff()).resolves.toBe("begin,finish:ready");
+      });
+
+      expect(warnSpy).not.toHaveBeenCalled();
+    } finally {
+      warnSpy.mockRestore();
+    }
   });
 
   it("accepts direct kickoff inputs", async () => {

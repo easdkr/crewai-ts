@@ -3038,13 +3038,6 @@ export class Flow<TState extends object = Record<string, unknown>> {
     if (typeof method !== "function") {
       throw new Error(`Flow method '${name}' is not callable.`);
     }
-    const startedEvent = new MethodExecutionStartedEvent({
-      flowName,
-      methodName: name,
-      state: this.stateSnapshot(),
-    });
-    startedEvent.triggeredByEventId = triggeredByEventId;
-    crewaiEventBus.emit(this, startedEvent);
     const previousMethodName = this.currentMethodName;
     const previousContext = captureExecutionContext();
     this.currentMethodName = name;
@@ -3054,6 +3047,13 @@ export class Flow<TState extends object = Record<string, unknown>> {
       flowName,
       flowMethodName: name,
     });
+    const startedEvent = new MethodExecutionStartedEvent({
+      flowName,
+      methodName: name,
+      state: this.stateSnapshot(),
+    });
+    startedEvent.triggeredByEventId = triggeredByEventId;
+    crewaiEventBus.emit(this, startedEvent);
     try {
       const flowMethod = this.isStartMethod(name)
         ? this._injectTriggerPayloadForStartMethod(method as (...args: unknown[]) => MaybePromise<unknown>)
