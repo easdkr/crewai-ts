@@ -1700,8 +1700,12 @@ function createToolFromFunction<TArgs extends readonly unknown[]>(
   if (!inferredName) {
     throw new Error("Tool function must have a name or explicit tool name.");
   }
+  const explicitArgsSchema = options.argsSchema ?? options.args_schema;
   const parameterNames = inferFunctionParameterNames(func);
-  const argsSchema = options.argsSchema ?? options.args_schema ?? inferFunctionArgsSchema(func);
+  const argsSchema = explicitArgsSchema ?? inferFunctionArgsSchema(func);
+  const invocationParameterNames = parameterNames.length > 1 && explicitArgsSchema
+    ? Object.keys(explicitArgsSchema)
+    : parameterNames;
   return new StructuredTool({
     name: inferredName,
     description: options.description ?? inferFunctionDescription(func, inferredName),
@@ -1711,8 +1715,19 @@ function createToolFromFunction<TArgs extends readonly unknown[]>(
     maxUsageCount: options.maxUsageCount ?? options.max_usage_count ?? null,
     ...(options.cacheFunction === undefined ? {} : { cacheFunction: options.cacheFunction }),
     ...(options.cache === undefined ? {} : { cache: options.cache }),
-    func: (args) => func(...parameterNames.map((parameterName) => args[parameterName]) as unknown as TArgs),
+    func: (args) => callFunctionTool(func, args, invocationParameterNames),
   });
+}
+
+function callFunctionTool<TArgs extends readonly unknown[]>(
+  func: ToolFunction<TArgs>,
+  args: Record<string, unknown>,
+  parameterNames: readonly string[],
+): MaybePromise<unknown> {
+  if (parameterNames.length <= 1) {
+    return (func as unknown as (args: Record<string, unknown>) => MaybePromise<unknown>)(args);
+  }
+  return func(...parameterNames.map((parameterName) => args[parameterName]) as unknown as TArgs);
 }
 
 function normalizeFromFunctionOptions(
@@ -2382,12 +2397,9 @@ function inferFunctionArgsSchema(func: unknown): ToolArgsSchema {
 }
 
 function inferFunctionParameters(func: unknown): Array<{ name: string; hasDefault: boolean; defaultValue?: unknown }> {
-  const source = Function.prototype.toString.call(func);
-  const parametersSource = source.match(/^[^(]*\(([^)]*)\)/)?.[1]
-    ?? source.match(/^([^=()]+)=>/)?.[1]
-    ?? "";
-  return parametersSource
-    .split(",")
+  const source = Function.prototype.toString.call(func).trim();
+  const parametersSource = extractFunctionParametersSource(source);
+  return splitFunctionParameters(parametersSource)
     .map((parameter) => parameter.trim())
     .map(parseFunctionParameter)
     .filter((parameter): parameter is { name: string; hasDefault: boolean; defaultValue?: unknown } =>
@@ -2395,15 +2407,173 @@ function inferFunctionParameters(func: unknown): Array<{ name: string; hasDefaul
 }
 
 function parseFunctionParameter(parameter: string): { name: string; hasDefault: boolean; defaultValue?: unknown } | null {
-  const [rawName = "", ...defaultParts] = parameter.split("=");
-  const name = rawName.trim();
+  const defaultIndex = findTopLevelDefaultIndex(parameter);
+  const rawName = defaultIndex < 0 ? parameter : parameter.slice(0, defaultIndex);
+  const name = rawName.trim().replace(/^\.\.\./, "").trim();
   if (!name) {
     return null;
   }
-  if (defaultParts.length === 0) {
+  if (defaultIndex < 0) {
     return { name, hasDefault: false };
   }
-  return { name, hasDefault: true, defaultValue: parseFunctionDefaultValue(defaultParts.join("=").trim()) };
+  return { name, hasDefault: true, defaultValue: parseFunctionDefaultValue(parameter.slice(defaultIndex + 1).trim()) };
+}
+
+function extractFunctionParametersSource(source: string): string {
+  const functionOpenIndex = findFunctionOpenIndex(source);
+  if (functionOpenIndex !== null) {
+    return extractParenthesizedContent(source, functionOpenIndex) ?? "";
+  }
+
+  const methodOpenIndex = findMethodOpenIndex(source);
+  if (methodOpenIndex !== null) {
+    return extractParenthesizedContent(source, methodOpenIndex) ?? "";
+  }
+
+  const arrowIndex = source.indexOf("=>");
+  if (arrowIndex < 0) {
+    return "";
+  }
+
+  const arrowHead = stripLeadingAsyncKeyword(source.slice(0, arrowIndex).trim());
+  if (arrowHead.startsWith("(")) {
+    return extractParenthesizedContent(arrowHead, 0) ?? "";
+  }
+  return arrowHead;
+}
+
+function findFunctionOpenIndex(source: string): number | null {
+  const match = /^(?:async\s+)?function(?:\s+[A-Za-z_$][\w$]*)?\s*\(/.exec(source);
+  return match ? match[0].lastIndexOf("(") : null;
+}
+
+function findMethodOpenIndex(source: string): number | null {
+  const match = /^(?:async\s+)?(?:get\s+|set\s+)?[A-Za-z_$][\w$]*\s*\(/.exec(source);
+  return match ? match[0].lastIndexOf("(") : null;
+}
+
+function stripLeadingAsyncKeyword(source: string): string {
+  return source.startsWith("async ") ? source.slice("async ".length).trimStart() : source;
+}
+
+function extractParenthesizedContent(source: string, openIndex: number): string | null {
+  let depth = 0;
+  let quote: string | null = null;
+  let escaped = false;
+  for (let index = openIndex; index < source.length; index += 1) {
+    const char = source[index];
+    if (char === undefined) {
+      continue;
+    }
+    if (quote) {
+      if (escaped) {
+        escaped = false;
+      } else if (char === "\\") {
+        escaped = true;
+      } else if (char === quote) {
+        quote = null;
+      }
+      continue;
+    }
+    if (char === "\"" || char === "'" || char === "`") {
+      quote = char;
+      continue;
+    }
+    if (char === "(") {
+      depth += 1;
+      continue;
+    }
+    if (char === ")") {
+      depth -= 1;
+      if (depth === 0) {
+        return source.slice(openIndex + 1, index);
+      }
+    }
+  }
+  return null;
+}
+
+function splitFunctionParameters(parametersSource: string): string[] {
+  if (!parametersSource.trim()) {
+    return [];
+  }
+  const parameters: string[] = [];
+  let start = 0;
+  let depth = 0;
+  let quote: string | null = null;
+  let escaped = false;
+  for (let index = 0; index < parametersSource.length; index += 1) {
+    const char = parametersSource[index];
+    if (char === undefined) {
+      continue;
+    }
+    if (quote) {
+      if (escaped) {
+        escaped = false;
+      } else if (char === "\\") {
+        escaped = true;
+      } else if (char === quote) {
+        quote = null;
+      }
+      continue;
+    }
+    if (char === "\"" || char === "'" || char === "`") {
+      quote = char;
+      continue;
+    }
+    if (char === "(" || char === "[" || char === "{") {
+      depth += 1;
+      continue;
+    }
+    if (char === ")" || char === "]" || char === "}") {
+      depth = Math.max(0, depth - 1);
+      continue;
+    }
+    if (char === "," && depth === 0) {
+      parameters.push(parametersSource.slice(start, index));
+      start = index + 1;
+    }
+  }
+  parameters.push(parametersSource.slice(start));
+  return parameters;
+}
+
+function findTopLevelDefaultIndex(parameter: string): number {
+  let depth = 0;
+  let quote: string | null = null;
+  let escaped = false;
+  for (let index = 0; index < parameter.length; index += 1) {
+    const char = parameter[index];
+    if (char === undefined) {
+      continue;
+    }
+    if (quote) {
+      if (escaped) {
+        escaped = false;
+      } else if (char === "\\") {
+        escaped = true;
+      } else if (char === quote) {
+        quote = null;
+      }
+      continue;
+    }
+    if (char === "\"" || char === "'" || char === "`") {
+      quote = char;
+      continue;
+    }
+    if (char === "(" || char === "[" || char === "{") {
+      depth += 1;
+      continue;
+    }
+    if (char === ")" || char === "]" || char === "}") {
+      depth = Math.max(0, depth - 1);
+      continue;
+    }
+    if (char === "=" && depth === 0) {
+      return index;
+    }
+  }
+  return -1;
 }
 
 function parseFunctionDefaultValue(rawDefault: string): unknown {
