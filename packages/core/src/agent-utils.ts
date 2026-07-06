@@ -1,4 +1,8 @@
-import { generateModelDescription, sanitizeToolParamsForOpenAIStrict, type JsonSchema } from "./schema-utils.js";
+import {
+  generateModelDescription,
+  normalizeToolArgsSchemaForOpenAIStrict,
+  type JsonSchema,
+} from "./schema-utils.js";
 import { sanitizeToolName } from "./string-utils.js";
 import {
   AgentAction,
@@ -7,7 +11,7 @@ import {
   OutputParserError,
   parseAgentOutput,
 } from "./agent-parser.js";
-import { BaseTool, ToolResult, type ToolArgsSchema, type ToolArgumentSpec } from "./tools.js";
+import { BaseTool, ToolResult, type ToolArgsSchema } from "./tools.js";
 import type { LLM, LLMMessage, MaybePromise, Tool, ToolContext } from "./types.js";
 import { AgentRepositoryError } from "./errors.js";
 import { BaseLLM, callStopOverride, type LLMResponse } from "./llm.js";
@@ -142,7 +146,7 @@ export function convertToolsToOpenAISchema(tools: readonly Tool[]): OpenAIToolCo
     } satisfies OpenAIFunctionToolSchema;
 
     openaiTools.push(schema);
-    availableFunctions[sanitizedName] = (input) => tool.run(input);
+    availableFunctions[sanitizedName] = (input) => tool.run(normalizeOptionalToolRunnerInput(tool, input));
     toolNameMapping[sanitizedName] = tool;
   }
 
@@ -1237,7 +1241,7 @@ function toolParameters(tool: Tool): JsonSchema {
     return schema;
   }
 
-  return sanitizeToolParamsForOpenAIStrict(toolArgsSchemaToJsonSchema(argsSchema));
+  return normalizeToolArgsSchemaForOpenAIStrict(argsSchema);
 }
 
 function isJsonSchema(schema: ToolArgsSchema | JsonSchema): schema is JsonSchema {
@@ -1248,40 +1252,25 @@ function isJsonSchema(schema: ToolArgsSchema | JsonSchema): schema is JsonSchema
     || "oneOf" in schema;
 }
 
-function toolArgsSchemaToJsonSchema(argsSchema: ToolArgsSchema): JsonSchema {
-  const properties: Record<string, JsonSchema> = {};
-  const required: string[] = [];
+function normalizeOptionalToolRunnerInput(tool: Tool, input: Parameters<ToolRunner>[0]): Parameters<ToolRunner>[0] {
+  const toolWithSchema = tool as ToolWithArgsSchema;
+  const argsSchema = toolWithSchema.argsSchema ?? toolWithSchema.args_schema;
+  if (!argsSchema || isJsonSchema(argsSchema) || !input || typeof input !== "object" || Array.isArray(input)) {
+    return input;
+  }
 
-  for (const [name, spec] of Object.entries(argsSchema)) {
-    properties[name] = toolArgumentSpecToJsonSchema(spec);
-    if (spec.required) {
-      required.push(name);
+  const normalized = { ...input } as Record<string, unknown>;
+  const toolArgsSchema = argsSchema as ToolArgsSchema;
+  for (const [name, spec] of Object.entries(toolArgsSchema)) {
+    if (spec.required === true) {
+      continue;
+    }
+    const value = normalized[name];
+    if (value === null || value === undefined || value === "") {
+      Reflect.deleteProperty(normalized, name);
     }
   }
-
-  return {
-    type: "object",
-    properties,
-    required,
-    additionalProperties: false,
-  };
-}
-
-function toolArgumentSpecToJsonSchema(spec: ToolArgumentSpec): JsonSchema {
-  const schema: JsonSchema = {};
-  if (spec.type && spec.type !== "unknown") {
-    schema.type = spec.type === "number" ? "number" : spec.type;
-  }
-  if (spec.description) {
-    schema.description = spec.description;
-  }
-  if (spec.default !== undefined) {
-    schema.default = spec.default;
-  }
-  if (!schema.type) {
-    schema.type = "object";
-  }
-  return schema;
+  return normalized;
 }
 
 function isAgentUtilsExecutorContext(value: unknown): value is AgentUtilsExecutorContext {

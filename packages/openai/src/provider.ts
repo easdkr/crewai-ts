@@ -1,5 +1,5 @@
 import { ConfiguredLLM, LocalFileUploader, registerLLMProviderFactory, type BaseLLMOptions, type LLMCallOptions, type LLMMessageInput, type LLMResponse } from "@crewai-ts/core/llm";
-import { generateModelDescription, type JsonSchema } from "@crewai-ts/core/schema-utils";
+import { generateModelDescription, normalizeToolArgsSchemaForOpenAIStrict, type JsonSchema } from "@crewai-ts/core/schema-utils";
 import type { LLMMessage, Tool } from "@crewai-ts/core/types";
 
 export const WebSearchResult = Object.freeze({ kind: "WebSearchResult" });
@@ -1182,18 +1182,23 @@ function stripUndefined<T extends Record<string, unknown>>(value: T): Partial<T>
 function convertToolsToOpenAISchema(tools: readonly Tool[]): Record<string, unknown>[] {
   const seen = new Set<string>();
   return tools.map((tool) => {
-    const rawName = stringOrNull((tool as { name?: unknown }).name) ?? "tool";
-    let sanitizedName = sanitizeToolName(rawName);
-    if (seen.has(sanitizedName)) {
-      let counter = 2;
-      let candidate = sanitizeToolName(`${sanitizedName}_${String(counter)}`);
-      while (seen.has(candidate)) {
-        counter += 1;
-        candidate = sanitizeToolName(`${sanitizedName}_${String(counter)}`);
-      }
-      sanitizedName = candidate;
+    const openAISchema = normalizeOpenAIFunctionToolSchema(tool);
+    if (openAISchema) {
+      const fn = readObject(openAISchema.function);
+      const rawName = stringOrNull(fn.name) ?? "tool";
+      const sanitizedName = uniqueToolName(rawName, seen);
+      return {
+        ...openAISchema,
+        function: {
+          ...fn,
+          name: sanitizedName,
+          strict: true,
+        },
+      };
     }
-    seen.add(sanitizedName);
+
+    const rawName = stringOrNull((tool as { name?: unknown }).name) ?? "tool";
+    const sanitizedName = uniqueToolName(rawName, seen);
     return {
       type: "function",
       function: {
@@ -1204,6 +1209,41 @@ function convertToolsToOpenAISchema(tools: readonly Tool[]): Record<string, unkn
       },
     };
   });
+}
+
+function uniqueToolName(rawName: string, seen: Set<string>): string {
+  let sanitizedName = sanitizeToolName(rawName);
+  if (seen.has(sanitizedName)) {
+    let counter = 2;
+    let candidate = sanitizeToolName(`${sanitizedName}_${String(counter)}`);
+    while (seen.has(candidate)) {
+      counter += 1;
+      candidate = sanitizeToolName(`${sanitizedName}_${String(counter)}`);
+    }
+    sanitizedName = candidate;
+  }
+  seen.add(sanitizedName);
+  return sanitizedName;
+}
+
+function normalizeOpenAIFunctionToolSchema(tool: unknown): Record<string, unknown> | null {
+  const record = readObject(tool);
+  if (record.type !== "function") {
+    return null;
+  }
+  const fn = readObject(record.function);
+  if (typeof fn.name !== "string") {
+    return null;
+  }
+  return {
+    type: "function",
+    function: {
+      name: fn.name,
+      description: stringOrNull(fn.description) ?? "",
+      parameters: readObject(fn.parameters),
+      strict: true,
+    },
+  };
 }
 
 function cleanToolDescription(description: string): string {
@@ -1230,31 +1270,7 @@ function toolParameters(tool: Tool): JsonSchema {
     }
     return normalized;
   }
-  return normalizeToolArgsSchema(schema);
-}
-
-function normalizeToolArgsSchema(schema: Record<string, unknown>): JsonSchema {
-  const properties: Record<string, unknown> = {};
-  const required: string[] = [];
-  for (const [name, spec] of Object.entries(schema)) {
-    const field = readObject(spec);
-    properties[name] = {
-      ...(stringOrNull(field.type) ? { type: stringOrNull(field.type) } : { type: "object" }),
-      ...(stringOrNull(field.description) ? { description: stringOrNull(field.description) } : {}),
-      ...(field.default !== undefined ? { default: field.default } : {}),
-      ...(field.enum !== undefined ? { enum: field.enum } : {}),
-      ...(field.items !== undefined ? { items: field.items } : {}),
-    };
-    if (field.required !== false) {
-      required.push(name);
-    }
-  }
-  return {
-    type: "object",
-    additionalProperties: false,
-    properties,
-    required,
-  };
+  return normalizeToolArgsSchemaForOpenAIStrict(schema);
 }
 
 function isJsonSchemaLike(schema: Record<string, unknown>): boolean {

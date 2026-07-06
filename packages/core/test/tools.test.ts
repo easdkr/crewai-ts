@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { StructuredTool, functionTool, type ToolArgsSchema } from "../src/tools.js";
+import { convertToolsToOpenAISchema } from "../src/agent-utils.js";
+import { BaseTool, StructuredTool, functionTool, type ToolArgsSchema } from "../src/tools.js";
 
 const githubArgsSchema = {
   owner: { type: "string", required: true },
@@ -174,5 +175,83 @@ describe("StructuredTool function parameter handling", () => {
       repo: { type: "unknown", required: true },
     });
     await expect(Promise.resolve(tool.invoke({ owner: "easdkr", repo: "crewai-ts" }))).resolves.toBe("easdkr/crewai-ts");
+  });
+});
+
+describe("OpenAI strict tool schema conversion", () => {
+  it("emits nullable required properties for optional args and strips optional nullish runner values", async () => {
+    class CloneRepoTool extends BaseTool {
+      calls: Record<string, unknown>[] = [];
+
+      constructor() {
+        super({
+          name: "clone_repo",
+          description: "clone",
+          argsSchema: {
+            repo: { type: "string", required: true },
+            owner: { type: "string", required: false },
+            branch: { type: "string", required: false },
+            searchPath: { type: ["string", "null"], required: false },
+          },
+        });
+      }
+
+      protected _run(args: Record<string, unknown>): Record<string, unknown> {
+        this.calls.push(args);
+        return args;
+      }
+    }
+
+    const tool = new CloneRepoTool();
+    const [schemas, availableFunctions] = convertToolsToOpenAISchema([tool]);
+
+    expect(schemas[0]?.function.parameters).toEqual({
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        repo: { type: "string", additionalProperties: false },
+        owner: { type: ["string", "null"], additionalProperties: false },
+        branch: { type: ["string", "null"], additionalProperties: false },
+        searchPath: { type: ["string", "null"], additionalProperties: false },
+      },
+      required: ["repo", "owner", "branch", "searchPath"],
+    });
+
+    await expect(Promise.resolve(availableFunctions.clone_repo?.({
+      repo: "crewai-ts",
+      owner: null,
+      branch: "",
+      searchPath: undefined,
+    }))).resolves.toEqual({ repo: "crewai-ts" });
+    expect(tool.calls).toEqual([{ repo: "crewai-ts" }]);
+  });
+
+  it("preserves null unions and strict object shape for JSON schema input", () => {
+    const tool = new StructuredTool({
+      name: "clone_repo",
+      description: "clone",
+      argsSchema: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          repo: { type: "string" },
+          branch: { type: ["string", "null"], additionalProperties: false },
+        },
+        required: ["repo", "branch"],
+      } as unknown as ToolArgsSchema,
+      func: (args) => args,
+    });
+
+    const [schemas] = convertToolsToOpenAISchema([tool]);
+
+    expect(schemas[0]?.function.parameters).toEqual({
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        repo: { type: "string" },
+        branch: { type: ["string", "null"], additionalProperties: false },
+      },
+      required: ["repo", "branch"],
+    });
   });
 });

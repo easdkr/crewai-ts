@@ -354,6 +354,55 @@ export function sanitizeToolParamsForOpenAIStrict<T>(params: T): T {
   return stripUnsupportedFormats(commonStrictPipeline(params)) as T;
 }
 
+export function normalizeToolArgsSchemaForOpenAIStrict(schema: Record<string, unknown>): JsonSchema {
+  const properties: Record<string, JsonSchema> = {};
+
+  for (const [name, spec] of Object.entries(schema)) {
+    const field = isSchemaRecord(spec) ? spec : {};
+    const required = field.required === true;
+    properties[name] = normalizeToolArgFieldForOpenAIStrict(field, { nullable: !required });
+  }
+
+  return sanitizeToolParamsForOpenAIStrict({
+    type: "object",
+    additionalProperties: false,
+    properties,
+    required: Object.keys(properties),
+  });
+}
+
+export const normalize_tool_args_schema_for_openai_strict = normalizeToolArgsSchemaForOpenAIStrict;
+
+function normalizeToolArgFieldForOpenAIStrict(field: JsonSchema, options: { nullable: boolean }): JsonSchema {
+  const property: JsonSchema = {};
+
+  for (const [key, value] of Object.entries(field)) {
+    if (key !== "required" && value !== undefined) {
+      property[key] = cloneSchema(value);
+    }
+  }
+
+  if (!("type" in property) || property.type === "unknown") {
+    property.type = "object";
+  }
+  if (options.nullable) {
+    property.type = nullableJsonSchemaType(property.type);
+  }
+  property.additionalProperties ??= false;
+  return property;
+}
+
+function nullableJsonSchemaType(type: unknown): unknown {
+  if (Array.isArray(type)) {
+    const entries = Array.from(type as readonly unknown[]);
+    return entries.includes("null") ? entries : [...entries, "null"];
+  }
+  if (typeof type === "string") {
+    return type === "null" ? type : [type, "null"];
+  }
+  return ["object", "null"];
+}
+
 export function sanitizeToolParamsForAnthropicStrict<T>(params: T): T {
   if (!isSchemaRecord(params)) {
     return params;
