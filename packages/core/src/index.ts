@@ -1578,6 +1578,8 @@ export {
   generate_model_description,
   liftTopLevelAnyOf,
   lift_top_level_anyof,
+  normalizeToolArgsSchemaForOpenAIStrict,
+  normalize_tool_args_schema_for_openai_strict,
   resolveRefs,
   resolve_refs,
   sanitizeToolParamsForAnthropicStrict,

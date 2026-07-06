@@ -28,13 +28,16 @@ export const OPENAI_BIGGER_MODELS = Object.freeze([
   "gpt-4.1",
 ] as const);
 
-export type ToolArgumentType = "string" | "number" | "boolean" | "object" | "array" | "unknown";
+export type ToolArgumentType = "string" | "number" | "boolean" | "object" | "array" | "null" | "unknown";
 
 export type ToolArgumentSpec = {
-  type?: ToolArgumentType;
+  type?: ToolArgumentType | readonly ToolArgumentType[];
   description?: string;
   required?: boolean;
   default?: unknown;
+  enum?: readonly unknown[];
+  items?: Record<string, unknown>;
+  additionalProperties?: unknown;
 };
 
 export type ToolArgsSchema = Record<string, ToolArgumentSpec>;
@@ -1990,9 +1993,9 @@ export function validateArgs(
       }
       continue;
     }
-    if (spec.type && spec.type !== "unknown" && !matchesType(value, spec.type)) {
+    if (spec.type && !matchesType(value, spec.type)) {
       throw new ToolValidationError(
-        `Tool '${toolName}' argument '${name}' expected ${spec.type}, got ${Array.isArray(value) ? "array" : typeof value}.`,
+        `Tool '${toolName}' argument '${name}' expected ${formatToolArgumentType(spec.type)}, got ${Array.isArray(value) ? "array" : typeof value}.`,
       );
     }
     validated[name] = value;
@@ -2004,12 +2007,17 @@ function isToolContext(input: Record<string, unknown> | ToolContext): input is T
   return typeof input.input === "string" && "inputs" in input;
 }
 
-function matchesType(value: unknown, type: ToolArgumentType): boolean {
+function matchesType(value: unknown, type: ToolArgumentType | readonly ToolArgumentType[]): boolean {
+  if (Array.isArray(type)) {
+    return type.some((entry) => isToolArgumentType(entry) && matchesType(value, entry));
+  }
   switch (type) {
     case "array":
       return Array.isArray(value);
     case "object":
       return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+    case "null":
+      return value === null;
     case "string":
     case "number":
     case "boolean":
@@ -2019,6 +2027,20 @@ function matchesType(value: unknown, type: ToolArgumentType): boolean {
     default:
       return false;
   }
+}
+
+function formatToolArgumentType(type: ToolArgumentType | readonly ToolArgumentType[]): string {
+  return typeof type === "string" ? type : type.join(" | ");
+}
+
+function isToolArgumentType(value: unknown): value is ToolArgumentType {
+  return value === "string"
+    || value === "number"
+    || value === "boolean"
+    || value === "object"
+    || value === "array"
+    || value === "null"
+    || value === "unknown";
 }
 
 export function buildToolContext(input: string, inputs: InputValues): ToolContext {
