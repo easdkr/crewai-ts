@@ -45,6 +45,8 @@ export type LLMCallOptions = {
   callbacks?: readonly unknown[];
   availableFunctions?: Record<string, unknown>;
   available_functions?: Record<string, unknown>;
+  maxToolRounds?: number;
+  max_tool_rounds?: number;
   fromTask?: unknown;
   from_task?: unknown;
   fromAgent?: unknown;

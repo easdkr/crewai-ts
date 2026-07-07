@@ -1,4 +1,4 @@
-import { ConfiguredLLM, LocalFileUploader, registerLLMProviderFactory, type BaseLLMOptions, type LLMCallOptions, type LLMMessageInput, type LLMResponse } from "@crewai-ts/core/llm";
+import { ConfiguredLLM, LocalFileUploader, registerLLMProviderFactory, type BaseLLMOptions, type LLMAvailableFunction, type LLMCallOptions, type LLMMessageInput, type LLMResponse } from "@crewai-ts/core/llm";
 import { generateModelDescription, normalizeToolArgsSchemaForOpenAIStrict, type JsonSchema } from "@crewai-ts/core/schema-utils";
 import type { LLMMessage, Tool } from "@crewai-ts/core/types";
 
@@ -331,9 +331,11 @@ export class OpenAICompletion extends ConfiguredLLM {
     }
     const tools = (options?.tools ?? null) as readonly Tool[] | null;
     const responseModel = options?.responseModel ?? null;
+    const availableFunctions = readAvailableFunctions(options);
+    const maxToolRounds = readMaxToolRounds(options);
     return this.api === "responses"
-      ? await this.callResponses(messages, tools, responseModel)
-      : await this.callChatCompletions(messages, tools);
+      ? await this.callResponses(messages, tools, responseModel, availableFunctions, maxToolRounds)
+      : await this.callChatCompletions(messages, tools, availableFunctions, maxToolRounds);
   }
 
   override async acall(messages: LLMMessageInput, options?: LLMCallOptions): Promise<LLMResponse> {
@@ -484,8 +486,31 @@ export class OpenAICompletion extends ConfiguredLLM {
     return this.prepareResponsesParams(messages, tools, responseModel);
   }
 
-  private async callChatCompletions(messages: readonly LLMMessage[], tools: readonly Tool[] | null): Promise<LLMResponse> {
-    const params = this.prepareCompletionParams(this.formatMessages(messages), tools);
+  private async callChatCompletions(
+    messages: readonly LLMMessage[],
+    tools: readonly Tool[] | null,
+    availableFunctions: Record<string, LLMAvailableFunction> | null = null,
+    maxToolRounds = DEFAULT_MAX_TOOL_ROUNDS,
+  ): Promise<LLMResponse> {
+    const conversation = this.formatMessages(messages);
+    for (let round = 0; round <= maxToolRounds; round += 1) {
+      const result = await this.callChatCompletionsOnce(conversation, tools);
+      if (!Array.isArray(result)) {
+        return result;
+      }
+      if (!availableFunctions || Object.keys(availableFunctions).length === 0) {
+        return result as unknown as LLMResponse;
+      }
+      if (round === maxToolRounds) {
+        throw new Error(`OpenAI tool call loop exceeded maxToolRounds (${String(maxToolRounds)}).`);
+      }
+      await this.appendChatCompletionToolResults(conversation, result, availableFunctions);
+    }
+    return "";
+  }
+
+  private async callChatCompletionsOnce(messages: readonly LLMMessage[], tools: readonly Tool[] | null): Promise<string | unknown[]> {
+    const params = this.prepareCompletionParams(messages, tools);
     const response = await this.fetchOpenAI("chat/completions", params);
     const usage = this.extractOpenAITokenUsage(response);
     if (usage.total_tokens !== 0) {
@@ -496,17 +521,71 @@ export class OpenAICompletion extends ConfiguredLLM {
     const message = readObject(firstChoice.message);
     const toolCalls = Array.isArray(message.tool_calls) ? message.tool_calls : [];
     if (toolCalls.length > 0) {
-      return toolCalls as unknown as LLMResponse;
+      return toolCalls;
     }
     return typeof message.content === "string" ? message.content : "";
+  }
+
+  private async appendChatCompletionToolResults(
+    messages: LLMMessage[],
+    toolCalls: readonly unknown[],
+    availableFunctions: Record<string, LLMAvailableFunction>,
+  ): Promise<void> {
+    messages.push({ role: "assistant", content: "", tool_calls: toolCalls } as unknown as LLMMessage);
+    for (const toolCall of toolCalls) {
+      const parsed = parseOpenAIChatToolCall(toolCall);
+      if (!parsed) {
+        continue;
+      }
+      const result = await this.handleToolExecution({
+        functionName: parsed.name,
+        functionArgs: parsed.args,
+        availableFunctions,
+      });
+      messages.push({
+        role: "tool",
+        content: result ?? `Tool '${parsed.name}' is not available.`,
+        tool_call_id: parsed.id ?? parsed.name,
+      } as unknown as LLMMessage);
+    }
   }
 
   private async callResponses(
     messages: readonly LLMMessage[],
     tools: readonly Tool[] | null,
     responseModel: unknown,
+    availableFunctions: Record<string, LLMAvailableFunction> | null = null,
+    maxToolRounds = DEFAULT_MAX_TOOL_ROUNDS,
   ): Promise<LLMResponse> {
-    const params = this.prepareResponsesParams(this.formatMessages(messages), tools, responseModel);
+    let input = this.formatMessages(messages);
+    let previousResponseId: string | null = null;
+    for (let round = 0; round <= maxToolRounds; round += 1) {
+      const result = await this.callResponsesOnce(input, tools, responseModel, previousResponseId);
+      if (!(result instanceof ResponsesAPIResult) || result.function_calls.length === 0) {
+        return result;
+      }
+      if (!availableFunctions || Object.keys(availableFunctions).length === 0) {
+        return result as unknown as LLMResponse;
+      }
+      if (round === maxToolRounds) {
+        throw new Error(`OpenAI tool call loop exceeded maxToolRounds (${String(maxToolRounds)}).`);
+      }
+      previousResponseId = result.response_id;
+      input = await this.buildResponsesFunctionCallOutputs(result.function_calls, availableFunctions);
+    }
+    return "";
+  }
+
+  private async callResponsesOnce(
+    messages: readonly LLMMessage[],
+    tools: readonly Tool[] | null,
+    responseModel: unknown,
+    previousResponseId: string | null = null,
+  ): Promise<LLMResponse> {
+    const params = this.prepareResponsesParams(messages, tools, responseModel);
+    if (previousResponseId) {
+      params.previous_response_id = previousResponseId;
+    }
     const response = await this.fetchOpenAI("responses", params);
     const usage = this.extractResponsesTokenUsage(response);
     if (usage.total_tokens !== 0) {
@@ -525,6 +604,30 @@ export class OpenAICompletion extends ConfiguredLLM {
       return result as unknown as LLMResponse;
     }
     return result.text;
+  }
+
+  private async buildResponsesFunctionCallOutputs(
+    functionCalls: readonly Record<string, unknown>[],
+    availableFunctions: Record<string, LLMAvailableFunction>,
+  ): Promise<LLMMessage[]> {
+    const messages: LLMMessage[] = [];
+    for (const functionCall of functionCalls) {
+      const name = stringOrNull(functionCall.name);
+      if (!name) {
+        continue;
+      }
+      const result = await this.handleToolExecution({
+        functionName: name,
+        functionArgs: parseOpenAIChatToolArguments(functionCall.arguments),
+        availableFunctions,
+      });
+      messages.push({
+        type: "function_call_output",
+        call_id: stringOrNull(functionCall.id) ?? name,
+        output: result ?? `Tool '${name}' is not available.`,
+      } as unknown as LLMMessage);
+    }
+    return messages;
   }
 
   private async fetchOpenAI(path: string, body: Record<string, unknown>): Promise<unknown> {
@@ -1177,6 +1280,54 @@ export function registerOpenAIProvider(): void {
 
 function stripUndefined<T extends Record<string, unknown>>(value: T): Partial<T> {
   return Object.fromEntries(Object.entries(value).filter(([, entry]) => entry !== undefined)) as Partial<T>;
+}
+
+const DEFAULT_MAX_TOOL_ROUNDS = 10;
+
+function readAvailableFunctions(options?: LLMCallOptions): Record<string, LLMAvailableFunction> | null {
+  const raw = options?.availableFunctions ?? options?.available_functions ?? null;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return null;
+  }
+  return raw as Record<string, LLMAvailableFunction>;
+}
+
+function readMaxToolRounds(options?: LLMCallOptions): number {
+  const value = options?.maxToolRounds ?? options?.max_tool_rounds ?? DEFAULT_MAX_TOOL_ROUNDS;
+  return Number.isInteger(value) && value >= 0 ? value : DEFAULT_MAX_TOOL_ROUNDS;
+}
+
+function parseOpenAIChatToolCall(toolCall: unknown): { id: string | null; name: string; args: Record<string, unknown> } | null {
+  const record = readObject(toolCall);
+  const fn = readObject(record.function);
+  const name = stringOrNull(fn.name);
+  if (!name) {
+    return null;
+  }
+  const rawArgs = fn.arguments;
+  const args = parseOpenAIChatToolArguments(rawArgs);
+  return {
+    id: stringOrNull(record.id),
+    name,
+    args,
+  };
+}
+
+function parseOpenAIChatToolArguments(value: unknown): Record<string, unknown> {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+  if (typeof value !== "string" || value.length === 0) {
+    return {};
+  }
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : { input: value };
+  } catch {
+    return { input: value };
+  }
 }
 
 function convertToolsToOpenAISchema(tools: readonly Tool[]): Record<string, unknown>[] {
