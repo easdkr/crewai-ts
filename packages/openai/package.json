@@ -1,6 +1,6 @@
 {
   "name": "@crewai-ts/openai",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "OpenAI and OpenAI-compatible native providers for CrewAI TypeScript.",
   "repository": {
     "type": "git",
@@ -37,7 +37,7 @@
     "prepack": "npm run build"
   },
   "dependencies": {
-    "@crewai-ts/core": "^0.2.0"
+    "@crewai-ts/core": "^0.2.5"
   },
   "devDependencies": {
     "@types/node": "^25.9.1",
