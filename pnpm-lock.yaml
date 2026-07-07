@@ -285,7 +285,7 @@ importers:
   packages/openai:
     dependencies:
       '@crewai-ts/core':
-        specifier: ^0.2.0
+        specifier: ^0.2.5
         version: link:../core
     devDependencies:
       '@types/node':
