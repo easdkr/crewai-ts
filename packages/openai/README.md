@@ -95,10 +95,37 @@ const llm = new OpenAICompletion({
 });
 ```
 
+## Retries and Flex Fallback
+
+`maxRetries` (default `2`) controls how many additional attempts are made
+after the first failed request — network errors and HTTP 408/409/429/5xx are
+retried with exponential backoff (honoring `Retry-After` / `Retry-After-Ms`
+response headers when present). Other errors (e.g. 400/401/404) fail
+immediately and are thrown as `OpenAIRequestError`, which preserves the
+HTTP status code via `.status`.
+
+Set `flexFallbackToAuto` (or `flex_fallback_to_auto`) to `true` to fall back
+from `service_tier: "flex"` to `"auto"` once a retryable error occurs, so a
+request that starts on the cheaper Flex tier can still complete on retry
+instead of failing outright when Flex capacity is unavailable. Once a
+request falls back to `"auto"` it stays on `"auto"` for the remaining
+retries of that request. This defaults to `false`, so existing `flex` users
+are unaffected unless they opt in:
+
+```ts
+const llm = new OpenAICompletion({
+  model: "gpt-4o",
+  maxRetries: 3,
+  additionalParams: { service_tier: "flex" },
+  flexFallbackToAuto: true,
+});
+```
+
 ## Exports
 
 - `OpenAICompletion` — main OpenAI provider class
 - `OpenAICompatibleCompletion` — OpenAI-compatible provider class
+- `OpenAIRequestError` — thrown on failed requests; carries the HTTP `status`
 - `ResponsesAPIResult` — responses API result wrapper
 - `registerOpenAIProvider` — register the provider with the core runtime
 - Result types: `WebSearchResult`, `FileSearchResult`, `CodeInterpreterResult`, `ComputerUseResult`, `ReasoningSummary`
