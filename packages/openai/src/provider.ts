@@ -146,6 +146,16 @@ export class ResponsesAPIResult {
   }
 }
 
+export class OpenAIRequestError extends Error {
+  readonly status: number | null;
+
+  constructor(message: string, status: number | null = null) {
+    super(message);
+    this.name = "OpenAIRequestError";
+    this.status = status;
+  }
+}
+
 export type OpenAICompletionOptions = BaseLLMOptions & {
   organization?: string | null;
   project?: string | null;
@@ -194,6 +204,8 @@ export type OpenAICompletionOptions = BaseLLMOptions & {
   autoChainReasoning?: boolean;
   api_base?: string | null;
   apiBase?: string | null;
+  flex_fallback_to_auto?: boolean;
+  flexFallbackToAuto?: boolean;
 };
 
 export class OpenAICompletion extends ConfiguredLLM {
@@ -241,6 +253,8 @@ export class OpenAICompletion extends ConfiguredLLM {
   readonly auto_chain: boolean;
   readonly autoChainReasoning: boolean;
   readonly auto_chain_reasoning: boolean;
+  readonly flexFallbackToAuto: boolean;
+  readonly flex_fallback_to_auto: boolean;
   readonly isO1Model: boolean;
   readonly is_o1_model: boolean;
   readonly isGpt4Model: boolean;
@@ -316,6 +330,8 @@ export class OpenAICompletion extends ConfiguredLLM {
     this.auto_chain = this.autoChain;
     this.autoChainReasoning = options.autoChainReasoning ?? options.auto_chain_reasoning ?? false;
     this.auto_chain_reasoning = this.autoChainReasoning;
+    this.flexFallbackToAuto = options.flexFallbackToAuto ?? options.flex_fallback_to_auto ?? false;
+    this.flex_fallback_to_auto = this.flexFallbackToAuto;
     const lowerModel = model.toLowerCase();
     this.isO1Model = lowerModel.includes("o1");
     this.is_o1_model = this.isO1Model;
@@ -650,23 +666,59 @@ export class OpenAICompletion extends ConfiguredLLM {
     const defaultHeaders = Object.fromEntries(
       Object.entries(readObject(clientParams.default_headers)).filter(([, value]) => typeof value === "string"),
     ) as Record<string, string>;
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        ...defaultHeaders,
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-        ...(typeof clientParams.organization === "string" ? { "OpenAI-Organization": clientParams.organization } : {}),
-        ...(typeof clientParams.project === "string" ? { "OpenAI-Project": clientParams.project } : {}),
-      },
-      body: JSON.stringify(body),
-    });
-    const payload: unknown = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      const error = readObject(readObject(payload).error);
-      throw new Error(stringOrNull(error.message) ?? `OpenAI request failed with HTTP ${response.status.toString()}.`);
+    const headers: Record<string, string> = {
+      ...defaultHeaders,
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+      ...(typeof clientParams.organization === "string" ? { "OpenAI-Organization": clientParams.organization } : {}),
+      ...(typeof clientParams.project === "string" ? { "OpenAI-Project": clientParams.project } : {}),
+    };
+
+    const maxAttempts = Math.max(1, this.maxRetries + 1);
+    let requestBody = body;
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      let response: Response | undefined;
+      let networkError: unknown;
+      try {
+        response = await fetch(url, { method: "POST", headers, body: JSON.stringify(requestBody) });
+      } catch (err) {
+        networkError = err;
+      }
+
+      if (response?.ok) {
+        return await response.json().catch(() => ({}));
+      }
+
+      const status = response?.status;
+      const isNetworkError = networkError !== undefined;
+      const retryable = isNetworkError || isRetryableOpenAIStatus(status);
+      const isLastAttempt = attempt === maxAttempts;
+
+      if (!retryable || isLastAttempt) {
+        if (isNetworkError) {
+          throw networkError instanceof Error ? networkError : new Error(String(networkError));
+        }
+        const payload: unknown = await response!.json().catch(() => ({}));
+        const error = readObject(readObject(payload).error);
+        throw new OpenAIRequestError(
+          stringOrNull(error.message) ?? `OpenAI request failed with HTTP ${String(status)}.`,
+          status ?? null,
+        );
+      }
+
+      logOpenAIRetry(path, attempt, maxAttempts, status, isNetworkError);
+      const delayMs = response ? resolveRetryDelayMs(attempt, response.headers) : computeOpenAIBackoffMs(attempt);
+      await sleep(delayMs);
+      requestBody = this.applyFlexFallback(requestBody);
     }
-    return payload;
+    throw new Error("OpenAI request retry loop exited without a result.");
+  }
+
+  private applyFlexFallback(body: Record<string, unknown>): Record<string, unknown> {
+    if (!this.flexFallbackToAuto || body.service_tier !== "flex") {
+      return body;
+    }
+    return { ...body, service_tier: "auto" };
   }
 
   convertToolsForInterference(tools: readonly Tool[]): Record<string, unknown>[] {
@@ -1430,6 +1482,66 @@ function isJsonSchemaLike(schema: Record<string, unknown>): boolean {
     || "properties" in schema
     || "anyOf" in schema
     || "oneOf" in schema;
+}
+
+const RETRYABLE_OPENAI_STATUS_CODES: ReadonlySet<number> = new Set([408, 409, 429]);
+
+function isRetryableOpenAIStatus(status: number | undefined): boolean {
+  if (status === undefined) {
+    return false;
+  }
+  return status >= 500 || RETRYABLE_OPENAI_STATUS_CODES.has(status);
+}
+
+function computeOpenAIBackoffMs(attempt: number): number {
+  const initialDelayMs = 500;
+  const maxDelayMs = 8000;
+  const retriesTaken = Math.max(0, attempt - 1);
+  const delayMs = Math.min(initialDelayMs * 2 ** retriesTaken, maxDelayMs);
+  const jitter = 1 - Math.random() * 0.25;
+  return delayMs * jitter;
+}
+
+function resolveRetryDelayMs(attempt: number, headers: Headers): number {
+  const retryAfterMsHeader = headers.get("retry-after-ms");
+  if (retryAfterMsHeader) {
+    const parsed = Number(retryAfterMsHeader);
+    if (Number.isFinite(parsed) && parsed >= 0) {
+      return parsed;
+    }
+  }
+  const retryAfterHeader = headers.get("retry-after");
+  if (retryAfterHeader) {
+    const asSeconds = Number(retryAfterHeader);
+    if (Number.isFinite(asSeconds) && asSeconds >= 0) {
+      return asSeconds * 1000;
+    }
+    const asDate = Date.parse(retryAfterHeader);
+    if (!Number.isNaN(asDate)) {
+      const diffMs = asDate - Date.now();
+      if (diffMs >= 0) {
+        return diffMs;
+      }
+    }
+  }
+  return computeOpenAIBackoffMs(attempt);
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+function logOpenAIRetry(
+  path: string,
+  attempt: number,
+  maxAttempts: number,
+  status: number | undefined,
+  isNetworkError: boolean,
+): void {
+  const reason = isNetworkError ? "network_error" : `status=${String(status)}`;
+  console.warn(`[@crewai-ts/openai] retrying ${path} (attempt ${String(attempt)}/${String(maxAttempts)}, ${reason})`);
 }
 
 function stripCrewAISpecificParams(params: Record<string, unknown>): Record<string, unknown> {

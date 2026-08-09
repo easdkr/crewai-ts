@@ -1,6 +1,7 @@
 export {
   OpenAICompatibleCompletion,
   OpenAICompletion,
+  OpenAIRequestError,
   OPENAI_COMPATIBLE_PROVIDERS,
   ResponsesAPIResult,
   type CodeInterpreterFileResult,
