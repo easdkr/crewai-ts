@@ -101,7 +101,7 @@ importers:
   packages/anthropic:
     dependencies:
       '@crewai-ts/core':
-        specifier: ^0.2.0
+        specifier: ^0.2.6
         version: link:../core
     devDependencies:
       '@types/node':
@@ -120,10 +120,10 @@ importers:
   packages/azure:
     dependencies:
       '@crewai-ts/core':
-        specifier: ^0.2.0
+        specifier: ^0.2.6
         version: link:../core
       '@crewai-ts/openai':
-        specifier: ^0.2.0
+        specifier: ^0.3.0
         version: link:../openai
     devDependencies:
       '@types/node':
@@ -285,7 +285,7 @@ importers:
   packages/openai:
     dependencies:
       '@crewai-ts/core':
-        specifier: ^0.2.5
+        specifier: ^0.2.6
         version: link:../core
     devDependencies:
       '@types/node':
@@ -326,10 +326,10 @@ importers:
   packages/snowflake:
     dependencies:
       '@crewai-ts/core':
-        specifier: ^0.2.0
+        specifier: ^0.2.6
         version: link:../core
       '@crewai-ts/openai':
-        specifier: ^0.2.0
+        specifier: ^0.3.0
         version: link:../openai
     devDependencies:
       '@types/node':

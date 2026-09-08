@@ -1,6 +1,6 @@
 {
   "name": "@crewai-ts/azure",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Azure OpenAI native provider for CrewAI TypeScript.",
   "repository": {
     "type": "git",
@@ -37,8 +37,8 @@
     "prepack": "npm run build"
   },
   "dependencies": {
-    "@crewai-ts/core": "^0.2.0",
-    "@crewai-ts/openai": "^0.2.0"
+    "@crewai-ts/core": "^0.2.6",
+    "@crewai-ts/openai": "^0.3.0"
   },
   "devDependencies": {
     "@types/node": "^25.9.1",

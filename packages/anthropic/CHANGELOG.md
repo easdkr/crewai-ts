@@ -1,8 +1,8 @@
-# @crewai-ts/core
+# @crewai-ts/anthropic
 
-## 0.2.6
+## 0.3.0
 
-### Patch Changes
+### Minor Changes
 
 - 0f2d8ce: Add support for current OpenAI GPT-6 Astra and GPT-5.6 models and Anthropic Claude Fable 5.1, Opus 5, and Sonnet 5 models.
 
@@ -12,10 +12,7 @@
 
   Add Claude adaptive thinking, effort controls, and native structured outputs, with model-specific thinking and tool constraints and explicit errors for malformed structured responses. Preserve supported legacy model behavior.
 
-## 0.2.5
-
 ### Patch Changes
 
-- 4113794: Execute OpenAI native tool calls when `availableFunctions` or `available_functions` is provided, including bounded `maxToolRounds` support.
-- 0ab2f55: Normalize optional tool args for OpenAI strict function schemas and preserve pre-converted OpenAI function schemas in the OpenAI provider.
-- 30f63ad: Fix tool function parameter handling for minified and non-minified functions.
+- Updated dependencies [0f2d8ce]
+  - @crewai-ts/core@0.2.6
