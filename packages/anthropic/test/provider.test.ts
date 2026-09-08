@@ -59,6 +59,118 @@ describe("AnthropicCompletion", () => {
     });
   });
 
+  it.each([
+    "claude-fable-5-1",
+    "claude-opus-5",
+    "claude-sonnet-5",
+  ])("prepares adaptive thinking and effort for %s", (model) => {
+    const anthropic = new AnthropicCompletion({
+      model,
+      max_tokens: 16_000,
+      thinking: { type: "adaptive", display: "summarized" },
+      effort: "xhigh",
+    });
+
+    expect(anthropic._prepare_completion_params([
+      { role: "user", content: "Reason carefully" },
+    ])).toMatchObject({
+      model,
+      max_tokens: 16_000,
+      thinking: { type: "adaptive", display: "summarized" },
+      output_config: { effort: "xhigh" },
+    });
+  });
+
+  it("preserves manual thinking for Claude Sonnet 4.6", () => {
+    const anthropic = new AnthropicCompletion({
+      model: "claude-sonnet-4-6",
+      max_tokens: 16_000,
+      thinking: { type: "enabled", budget_tokens: 10_000 },
+    });
+
+    expect(anthropic._prepare_completion_params([
+      { role: "user", content: "Prove the result" },
+    ])).toMatchObject({
+      thinking: { type: "enabled", budget_tokens: 10_000 },
+    });
+  });
+
+  it("keeps tool choice automatic for Claude Fable 5.1", () => {
+    const lookup = new StructuredTool({
+      name: "lookup docs",
+      description: "Lookup documentation",
+      argsSchema: { id: { type: "string" } },
+      func: () => "result",
+    });
+    const anthropic = new AnthropicCompletion({ model: "claude-fable-5-1" });
+
+    const params = anthropic._prepare_completion_params(
+      [{ role: "user", content: "Find CrewAI" }],
+      null,
+      [lookup],
+      { lookup_docs: lookup },
+    );
+
+    expect(params.tools).toContainEqual(expect.objectContaining({ name: "lookup_docs" }));
+    expect(params).not.toHaveProperty("tool_choice");
+  });
+
+  it("rejects manual thinking for Claude Sonnet 5", () => {
+    const anthropic = new AnthropicCompletion({
+      model: "claude-sonnet-5",
+      thinking: { type: "enabled", budget_tokens: 10_000 },
+    });
+
+    expect(() => anthropic._prepare_completion_params([
+      { role: "user", content: "Prove the result" },
+    ])).toThrow("does not support manual thinking");
+  });
+
+  it("omits unsupported sampling parameters for Claude Sonnet 5", () => {
+    const anthropic = new AnthropicCompletion({
+      model: "claude-sonnet-5",
+      temperature: 0.3,
+      top_p: 0.7,
+    });
+
+    const params = anthropic._prepare_completion_params([
+      { role: "user", content: "Answer briefly" },
+    ]);
+
+    expect(params).not.toHaveProperty("temperature");
+    expect(params).not.toHaveProperty("top_p");
+  });
+
+  it.each([
+    "claude-fable-5-1",
+    "claude-opus-5",
+    "claude-sonnet-5",
+  ])("recognizes multimodal input for %s", (model) => {
+    expect(new AnthropicCompletion({ model }).supports_multimodal()).toBe(true);
+  });
+
+  it("does not force a tool when manual thinking is enabled", () => {
+    const lookup = new StructuredTool({
+      name: "lookup docs",
+      description: "Lookup documentation",
+      argsSchema: { id: { type: "string" } },
+      func: () => "result",
+    });
+    const anthropic = new AnthropicCompletion({
+      model: "claude-sonnet-4-6",
+      thinking: { type: "enabled", budget_tokens: 10_000 },
+    });
+
+    const params = anthropic._prepare_completion_params(
+      [{ role: "user", content: "Find CrewAI" }],
+      null,
+      [lookup],
+      { lookup_docs: lookup },
+    );
+
+    expect(params).not.toHaveProperty("tool_choice");
+  });
+
   it("calls the Anthropic Messages API with an injected api_key", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
       ok: true,
@@ -106,6 +218,80 @@ describe("AnthropicCompletion", () => {
     }
   });
 
+  it("uses native structured outputs for Claude Opus 5", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({
+        content: [{ type: "text", text: '{"answer":"done","confidence":0.93}' }],
+        usage: { input_tokens: 12, output_tokens: 4 },
+      }),
+    } as Response);
+    const responseFormat = {
+      model_json_schema: () => ({
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          answer: { type: "string" },
+          confidence: { type: "number" },
+        },
+        required: ["answer", "confidence"],
+      }),
+    };
+
+    try {
+      const anthropic = new AnthropicCompletion({
+        model: "claude-opus-5",
+        api_key: "anthropic-key",
+        response_format: responseFormat as never,
+      });
+      await expect(anthropic.call([{ role: "user", content: "Analyze" }])).resolves.toEqual({
+        answer: "done",
+        confidence: 0.93,
+      });
+      const body = JSON.parse(fetchMock.mock.calls[0]?.[1]?.body as string) as Record<string, unknown>;
+      expect(body.output_config).toEqual({
+        format: {
+          type: "json_schema",
+          schema: sanitizeToolParamsForAnthropicStrict(responseFormat.model_json_schema()),
+        },
+      });
+      expect(body).not.toHaveProperty("tools");
+      expect(body).not.toHaveProperty("tool_choice");
+    } finally {
+      fetchMock.mockRestore();
+    }
+  });
+
+  it("rejects malformed native structured output", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({
+        stop_reason: "end_turn",
+        content: [{ type: "text", text: "not json" }],
+      }),
+    } as Response);
+    const responseFormat = {
+      model_json_schema: () => ({
+        type: "object",
+        additionalProperties: false,
+        properties: { answer: { type: "string" } },
+        required: ["answer"],
+      }),
+    };
+
+    try {
+      const anthropic = new AnthropicCompletion({
+        model: "claude-opus-5",
+        api_key: "anthropic-key",
+        response_format: responseFormat as never,
+      });
+      await expect(anthropic.call([{ role: "user", content: "Analyze" }]))
+        .rejects.toThrow("native structured output was not valid JSON");
+    } finally {
+      fetchMock.mockRestore();
+    }
+  });
+
   it("forces structured output through a response_format tool", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
       ok: true,
@@ -133,7 +319,7 @@ describe("AnthropicCompletion", () => {
 
     try {
       const anthropic = new AnthropicCompletion({
-        model: "claude-sonnet-4-6",
+        model: "claude-3-5-sonnet-20241022",
         api_key: "anthropic-key",
         response_format: responseFormat as never,
       });

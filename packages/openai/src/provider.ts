@@ -260,6 +260,9 @@ export class OpenAICompletion extends ConfiguredLLM {
   readonly isGpt4Model: boolean;
   readonly is_gpt4_model: boolean;
   private responseChainId: string | null;
+  private readonly isReasoningModel: boolean;
+  private readonly isGpt6AstraModel: boolean;
+  private readonly omitsSamplingParams: boolean;
   private reasoningChainItems: unknown[] | null;
 
   constructor(options: OpenAICompletionOptions = { model: "gpt-4o" }) {
@@ -316,7 +319,7 @@ export class OpenAICompletion extends ConfiguredLLM {
     this.reasoningEffort = options.reasoningEffort ?? options.reasoning_effort ?? null;
     this.reasoning_effort = this.reasoningEffort;
     this.interceptor = options.interceptor ?? null;
-    this.api = options.api ?? "completions";
+    this.api = options.api ?? (model.toLowerCase().startsWith("gpt-6-astra") ? "responses" : "completions");
     this.instructions = options.instructions ?? null;
     this.store = options.store ?? null;
     this.previousResponseId = options.previousResponseId ?? options.previous_response_id ?? null;
@@ -335,6 +338,9 @@ export class OpenAICompletion extends ConfiguredLLM {
     const lowerModel = model.toLowerCase();
     this.isO1Model = lowerModel.includes("o1");
     this.is_o1_model = this.isO1Model;
+    this.isReasoningModel = isOpenAIReasoningModel(lowerModel);
+    this.isGpt6AstraModel = lowerModel === "gpt-6-astra" || lowerModel.startsWith("gpt-6-astra-");
+    this.omitsSamplingParams = this.isGpt6AstraModel;
     this.isGpt4Model = lowerModel.includes("gpt-4");
     this.is_gpt4_model = this.isGpt4Model;
     this.responseChainId = this.previousResponseId;
@@ -368,10 +374,10 @@ export class OpenAICompletion extends ConfiguredLLM {
       params.stream = true;
       params.stream_options = { include_usage: true };
     }
-    if (this.temperature !== null) {
+    if (!this.omitsSamplingParams && this.temperature !== null) {
       params.temperature = this.temperature;
     }
-    if (this.topP !== null) {
+    if (!this.omitsSamplingParams && this.topP !== null) {
       params.top_p = this.topP;
     }
     if (this.frequencyPenalty !== null) {
@@ -383,28 +389,34 @@ export class OpenAICompletion extends ConfiguredLLM {
     if (this.maxCompletionTokens !== null) {
       params.max_completion_tokens = this.maxCompletionTokens;
     } else if (this.maxTokens !== null) {
-      params.max_tokens = this.maxTokens;
+      params[this.isReasoningModel ? "max_completion_tokens" : "max_tokens"] = this.maxTokens;
     }
     if (this.seed !== null) {
       params.seed = this.seed;
     }
-    if (this.logprobs !== null) {
+    if (!this.omitsSamplingParams && this.logprobs !== null) {
       params.logprobs = this.logprobs;
     }
-    if (this.topLogprobs !== null) {
+    if (!this.omitsSamplingParams && this.topLogprobs !== null) {
       params.top_logprobs = this.topLogprobs;
     }
-    if (this.isO1Model && this.reasoningEffort) {
+    if (this.isReasoningModel && this.reasoningEffort) {
       params.reasoning_effort = this.reasoningEffort;
+    }
+    if (this.stop.length > 0 && this.supportsStopWords()) {
+      params.stop = [...this.stop];
     }
     if (this.responseFormat !== null) {
       params.response_format = this.responseFormat;
     }
     if (tools && tools.length > 0) {
+      if (!this.supportsFunctionCalling()) {
+        throw new Error(`OpenAI model ${this.model} does not support function calling with Chat Completions; use api: "responses".`);
+      }
       params.tools = this.convertToolsForInterference(tools);
       params.tool_choice = "auto";
     }
-    return stripCrewAISpecificParams(params);
+    return stripOpenAIUnsupportedParams(stripCrewAISpecificParams(params), this.omitsSamplingParams);
   }
 
   _prepare_completion_params(messages: readonly LLMMessage[], tools: readonly Tool[] | null = null): Record<string, unknown> {
@@ -426,7 +438,9 @@ export class OpenAICompletion extends ConfiguredLLM {
       }
     }
 
-    const includeItems = [...(this.include ?? [])];
+    const includeItems = this.isGpt6AstraModel
+      ? (this.include ?? []).filter((item) => item !== "message.output_text.logprobs")
+      : [...(this.include ?? [])];
     if (this.autoChainReasoning && !includeItems.includes("reasoning.encrypted_content")) {
       includeItems.push("reasoning.encrypted_content");
     }
@@ -458,10 +472,10 @@ export class OpenAICompletion extends ConfiguredLLM {
     if (includeItems.length > 0) {
       params.include = includeItems;
     }
-    if (this.temperature !== null) {
+    if (!this.omitsSamplingParams && this.temperature !== null) {
       params.temperature = this.temperature;
     }
-    if (this.topP !== null) {
+    if (!this.omitsSamplingParams && this.topP !== null) {
       params.top_p = this.topP;
     }
     if (this.maxCompletionTokens !== null) {
@@ -491,7 +505,7 @@ export class OpenAICompletion extends ConfiguredLLM {
     if (allTools.length > 0) {
       params.tools = allTools;
     }
-    return stripCrewAISpecificParams(params);
+    return stripOpenAIUnsupportedParams(stripCrewAISpecificParams(params), this.omitsSamplingParams);
   }
 
   _prepare_responses_params(
@@ -1036,7 +1050,7 @@ export class OpenAICompletion extends ConfiguredLLM {
   }
 
   override supportsFunctionCalling(): boolean {
-    return !this.isO1Model;
+    return !this.isO1Model && !(this.isGpt6AstraModel && this.api === "completions");
   }
 
   override supports_function_calling(): boolean {
@@ -1048,7 +1062,7 @@ export class OpenAICompletion extends ConfiguredLLM {
     if (model.includes("gpt-5")) {
       return false;
     }
-    return !this.isO1Model;
+    return !this.isO1Model && !/^o[34](?:-|$)/.test(model);
   }
 
   override supports_stop_words(): boolean {
@@ -1057,12 +1071,8 @@ export class OpenAICompletion extends ConfiguredLLM {
 
   override supportsMultimodal(): boolean {
     const model = this.model.toLowerCase();
-    return ["gpt-4o", "gpt-4.1", "gpt-4-turbo", "gpt-4-vision", "gpt-5", "o1", "o3", "o4"]
+    return ["gpt-4o", "gpt-4.1", "gpt-4-turbo", "gpt-4-vision", "gpt-5", "gpt-6", "o1", "o3", "o4"]
       .some((prefix) => model.startsWith(prefix));
-  }
-
-  override supports_multimodal(): boolean {
-    return this.supportsMultimodal();
   }
 
   override getFileUploader(): LocalFileUploader {
@@ -1621,3 +1631,26 @@ function readStringNumberBooleanRecord(value: unknown): Record<string, string | 
     )),
   ) as Record<string, string | number | boolean>;
 }
+
+function isOpenAIReasoningModel(model: string): boolean {
+  if (model.includes("o1") || model.includes("o3") || model.includes("o4")) {
+    return true;
+  }
+  return (model.startsWith("gpt-5") || model.startsWith("gpt-6")) && !model.includes("-chat");
+}
+
+function stripOpenAIUnsupportedParams(
+  params: Record<string, unknown>,
+  omitSamplingParams: boolean,
+): Record<string, unknown> {
+  if (!omitSamplingParams) {
+    return params;
+  }
+  const filtered = { ...params };
+  delete filtered.temperature;
+  delete filtered.top_p;
+  delete filtered.logprobs;
+  delete filtered.top_logprobs;
+  return filtered;
+}
+

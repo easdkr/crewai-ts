@@ -247,6 +247,183 @@ describe("OpenAICompletion native tool calls", () => {
   });
 });
 
+
+describe("OpenAICompletion latest reasoning models", () => {
+  it("uses Chat Completions reasoning parameters for supported reasoning families", () => {
+    for (const [model, reasoningEffort] of [
+      ["gpt-5.1", "high"],
+      ["gpt-5.5", "high"],
+      ["gpt-5.6-sol", "max"],
+      ["gpt-5.6-terra", "max"],
+      ["gpt-5.6-luna", "max"],
+      ["gpt-5.6", "max"],
+      ["o3", "high"],
+      ["o4-mini", "high"],
+    ] as const) {
+      const llm = new OpenAICompletion({
+        model,
+        apiKey: "test-key",
+        maxTokens: 128_000,
+        reasoningEffort,
+      });
+
+      const params = llm.prepareCompletionParams([{ role: "user", content: "reason" }]);
+
+      expect(params).toMatchObject({
+        model,
+        max_completion_tokens: 128_000,
+        reasoning_effort: reasoningEffort,
+      });
+      expect(params).not.toHaveProperty("max_tokens");
+    }
+  });
+
+  it("uses Responses reasoning parameters for GPT-6 Astra", () => {
+    const llm = new OpenAICompletion({
+      model: "gpt-6-astra",
+      apiKey: "test-key",
+      api: "responses",
+      maxTokens: 128_000,
+      reasoningEffort: "max",
+    });
+
+    expect(llm.prepareResponsesParams([{ role: "user", content: "reason" }])).toMatchObject({
+      model: "gpt-6-astra",
+      max_output_tokens: 128_000,
+      reasoning: { effort: "max" },
+    });
+  });
+
+  it("omits unsupported sampling parameters for GPT-6 Astra on both endpoints", () => {
+    const chat = new OpenAICompletion({
+      model: "gpt-6-astra",
+      apiKey: "test-key",
+      api: "completions",
+      temperature: 0.2,
+      topP: 0.8,
+      topLogprobs: 3,
+      logprobs: true,
+      additionalParams: {
+        temperature: 0.4,
+        top_p: 0.7,
+        top_logprobs: 2,
+        logprobs: true,
+      },
+    });
+    const responses = new OpenAICompletion({
+      model: "gpt-6-astra",
+      apiKey: "test-key",
+      api: "responses",
+      temperature: 0.2,
+      topP: 0.8,
+      additionalParams: {
+        temperature: 0.4,
+        top_p: 0.7,
+        top_logprobs: 2,
+        logprobs: true,
+      },
+    });
+
+    const chatParams = chat.prepareCompletionParams([{ role: "user", content: "reason" }]);
+    const responsesParams = responses.prepareResponsesParams([{ role: "user", content: "reason" }]);
+
+    for (const params of [chatParams, responsesParams]) {
+      expect(params).not.toHaveProperty("temperature");
+      expect(params).not.toHaveProperty("top_p");
+    }
+    expect(chatParams).not.toHaveProperty("logprobs");
+    expect(chatParams).not.toHaveProperty("top_logprobs");
+  });
+
+  it("preserves GPT-5.6 sampling parameters from additionalParams", () => {
+    const llm = new OpenAICompletion({
+      model: "gpt-5.6-sol",
+      apiKey: "test-key",
+      api: "responses",
+      additionalParams: {
+        temperature: 0.4,
+        top_p: 0.7,
+      },
+    });
+
+    const params = llm.prepareResponsesParams([{ role: "user", content: "reason" }]);
+
+    expect(params).toMatchObject({
+      temperature: 0.4,
+      top_p: 0.7,
+    });
+  });
+
+  it("filters unsupported logprobs include items for GPT-6 Astra Responses", () => {
+    const llm = new OpenAICompletion({
+      model: "gpt-6-astra",
+      apiKey: "test-key",
+      api: "responses",
+      include: ["message.output_text.logprobs", "reasoning.encrypted_content"],
+    });
+
+    expect(llm.prepareResponsesParams([{ role: "user", content: "reason" }]).include)
+      .toEqual(["reasoning.encrypted_content"]);
+  });
+
+  it("defaults GPT-6 Astra to Responses and rejects Chat tools", () => {
+    const llm = new OpenAICompletion({ model: "gpt-6-astra", apiKey: "test-key" });
+    const chat = new OpenAICompletion({
+      model: "gpt-6-astra",
+      apiKey: "test-key",
+      api: "completions",
+    });
+
+    expect(llm.api).toBe("responses");
+    expect(llm.supportsFunctionCalling()).toBe(true);
+    expect(chat.supportsFunctionCalling()).toBe(false);
+    expect(() => chat.prepareCompletionParams([], [{
+      type: "function",
+      function: { name: "echo", parameters: { type: "object" } },
+    } as never])).toThrow('does not support function calling with Chat Completions; use api: "responses"');
+  });
+
+  it("recognizes GPT-6 Astra as a reasoning model in Chat Completions", () => {
+    const llm = new OpenAICompletion({
+      model: "gpt-6-astra",
+      apiKey: "test-key",
+      api: "completions",
+      reasoningEffort: "high",
+    });
+
+    expect(llm.prepareCompletionParams([{ role: "user", content: "reason" }])).toMatchObject({
+      reasoning_effort: "high",
+    });
+  });
+});
+
+describe("OpenAICompletion stop sequences", () => {
+  it("includes configured stop sequences in Chat Completions requests", () => {
+    const llm = new OpenAICompletion({
+      model: "gpt-4o",
+      apiKey: "test-key",
+      stop: ["STOP", "DONE"],
+    });
+
+    expect(llm.prepareCompletionParams([{ role: "user", content: "stop" }])).toMatchObject({
+      stop: ["STOP", "DONE"],
+    });
+  });
+
+  it("omits unsupported stop sequences for o3 reasoning requests", () => {
+    const llm = new OpenAICompletion({
+      model: "o3",
+      apiKey: "test-key",
+      api: "completions",
+      stop: "STOP",
+    });
+
+    expect(llm.supportsStopWords()).toBe(false);
+    expect(llm.prepareCompletionParams([{ role: "user", content: "stop" }]))
+      .not.toHaveProperty("stop");
+  });
+});
+
 function openAIResponse(payload: unknown): Response {
   return {
     ok: true,
