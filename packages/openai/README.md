@@ -44,6 +44,38 @@ const agent = new Agent({
 });
 ```
 
+## Current Models
+
+The provider supports `gpt-6-astra`, `gpt-5.6-sol`, `gpt-5.6-terra`,
+`gpt-5.6-luna`, and the `gpt-5.6` alias, alongside earlier models.
+The core model catalog and context limits include these models; the existing
+85% context safety margin still applies. Existing default model choices are unchanged.
+
+```ts
+const llm = new OpenAICompletion({
+  model: "gpt-6-astra",
+  api: "responses",
+  reasoningEffort: "high",
+  maxCompletionTokens: 16000,
+});
+```
+
+GPT-6 Astra defaults to Responses because its tool calling requires that API.
+Explicit `api: "completions"` supports text requests, but requesting tools throws
+an error directing you to Responses. Unsupported Astra sampling/logprobs fields
+are omitted, including values supplied through `additionalParams`.
+Use `low`, `medium`, `high`, `xhigh`, or `max` reasoning effort for Astra;
+`none` is not supported.
+
+For reasoning Chat Completions models, `maxTokens` is sent as
+`max_completion_tokens`; an explicit `maxCompletionTokens` takes precedence.
+Responses uses `max_output_tokens` and `reasoning.effort`.
+`createLLM()` also preserves camelCase credentials, token limits, and
+`reasoningEffort` / `reasoning_effort`.
+
+See the official [model catalog](https://developers.openai.com/api/docs/models)
+and [Astra migration guide](https://developers.openai.com/api/docs/guides/latest-model).
+
 ## OpenAI-Compatible Providers
 
 `OpenAICompatibleCompletion` extends `OpenAICompletion` and is configured for

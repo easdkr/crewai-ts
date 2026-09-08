@@ -10,15 +10,50 @@ export const TOOL_SEARCH_TOOL_TYPES = Object.freeze([
 export const ANTHROPIC_FILES_API_BETA = "files-api-2025-04-14";
 export const ANTHROPIC_STRUCTURED_OUTPUTS_BETA = "structured-outputs-2025-11-13";
 export const NATIVE_STRUCTURED_OUTPUT_MODELS = Object.freeze([
+  "claude-fable-5-1",
+  "claude-mythos-5-1",
+  "claude-fable-5",
+  "claude-mythos-5",
+  "claude-mythos-preview",
+  "claude-opus-5",
+  "claude-opus-4-8",
+  "claude-opus-4-7",
+  "claude-opus-4-6",
+  "claude-sonnet-5",
+  "claude-sonnet-4-6",
   "claude-sonnet-4-5",
+  "claude-sonnet-4-5-20250929",
   "claude-sonnet-4.5",
   "claude-opus-4-5",
+  "claude-opus-4-5-20251101",
   "claude-opus-4.5",
-  "claude-opus-4-1",
-  "claude-opus-4.1",
   "claude-haiku-4-5",
+  "claude-haiku-4-5-20251001",
   "claude-haiku-4.5",
 ] as const);
+type AnthropicModelCapabilities = {
+  adaptiveThinking?: true;
+  alwaysOnThinking?: true;
+  effort?: true;
+  manualThinkingRejected?: true;
+  samplingRestricted?: true;
+};
+
+const ANTHROPIC_MODEL_CAPABILITIES: Record<string, AnthropicModelCapabilities> = {
+  "claude-fable-5-1": { adaptiveThinking: true, alwaysOnThinking: true, effort: true, manualThinkingRejected: true, samplingRestricted: true },
+  "claude-mythos-5-1": { adaptiveThinking: true, alwaysOnThinking: true, effort: true, manualThinkingRejected: true, samplingRestricted: true },
+  "claude-fable-5": { adaptiveThinking: true, alwaysOnThinking: true, effort: true, manualThinkingRejected: true, samplingRestricted: true },
+  "claude-mythos-5": { adaptiveThinking: true, alwaysOnThinking: true, effort: true, manualThinkingRejected: true, samplingRestricted: true },
+  "claude-mythos-preview": { adaptiveThinking: true, alwaysOnThinking: true, effort: true, manualThinkingRejected: true, samplingRestricted: true },
+  "claude-opus-5": { adaptiveThinking: true, effort: true, manualThinkingRejected: true, samplingRestricted: true },
+  "claude-opus-4-8": { adaptiveThinking: true, effort: true, manualThinkingRejected: true, samplingRestricted: true },
+  "claude-opus-4-7": { adaptiveThinking: true, effort: true, manualThinkingRejected: true, samplingRestricted: true },
+  "claude-opus-4-6": { adaptiveThinking: true, effort: true },
+  "claude-sonnet-5": { adaptiveThinking: true, effort: true, manualThinkingRejected: true, samplingRestricted: true },
+  "claude-sonnet-4-6": { adaptiveThinking: true, effort: true },
+  "claude-opus-4-5": { effort: true },
+  "claude-opus-4-5-20251101": { effort: true },
+};
 const BEDROCK_DOCUMENT_FORMATS: Record<string, string> = {
   "application/pdf": "pdf",
   "text/csv": "csv",
@@ -43,20 +78,23 @@ const BEDROCK_VIDEO_FORMATS: Record<string, string> = {
 };
 
 export type AnthropicThinkingConfigOptions = {
-  type: "enabled" | "disabled";
+  type: "enabled" | "disabled" | "adaptive";
   budget_tokens?: number | null;
   budgetTokens?: number | null;
+  display?: "summarized" | "omitted";
 };
 
 export class AnthropicThinkingConfig {
-  readonly type: "enabled" | "disabled";
+  readonly type: "enabled" | "disabled" | "adaptive";
   readonly budget_tokens: number | null;
   readonly budgetTokens: number | null;
+  readonly display: "summarized" | "omitted" | "updates" | null;
 
   constructor(options: AnthropicThinkingConfigOptions) {
     this.type = options.type;
     this.budget_tokens = options.budget_tokens ?? options.budgetTokens ?? null;
     this.budgetTokens = this.budget_tokens;
+    this.display = options.display ?? null;
   }
 }
 
@@ -80,6 +118,9 @@ export type AnthropicCompletionOptions = BaseLLMOptions & {
   maxTokens?: number | null;
   top_p?: number | null;
   topP?: number | null;
+  effort?: "low" | "medium" | "high" | "xhigh" | "max" | null;
+  reasoning_effort?: "low" | "medium" | "high" | "xhigh" | "max" | null;
+  reasoningEffort?: "low" | "medium" | "high" | "xhigh" | "max" | null;
   stream?: boolean;
   client_params?: Record<string, unknown> | null;
   clientParams?: Record<string, unknown> | null;
@@ -97,6 +138,9 @@ export class AnthropicCompletion extends ConfiguredLLM {
   readonly max_tokens: number;
   readonly topP: number | null;
   readonly top_p: number | null;
+  readonly effort: "low" | "medium" | "high" | "xhigh" | "max" | null;
+  readonly reasoningEffort: "low" | "medium" | "high" | "xhigh" | "max" | null;
+  readonly reasoning_effort: "low" | "medium" | "high" | "xhigh" | "max" | null;
   readonly stream: boolean;
   readonly clientParams: Record<string, unknown> | null;
   readonly client_params: Record<string, unknown> | null;
@@ -136,6 +180,9 @@ export class AnthropicCompletion extends ConfiguredLLM {
     this.max_tokens = this.maxTokens;
     this.topP = options.topP ?? options.top_p ?? null;
     this.top_p = this.topP;
+    this.effort = options.effort ?? options.reasoningEffort ?? options.reasoning_effort ?? null;
+    this.reasoningEffort = this.effort;
+    this.reasoning_effort = this.effort;
     this.stream = options.stream ?? false;
     this.clientParams = options.clientParams ?? options.client_params ?? null;
     this.client_params = this.clientParams;
@@ -169,7 +216,16 @@ export class AnthropicCompletion extends ConfiguredLLM {
       availableFunctions,
     );
     const schema = anthropicResponseSchema(options?.responseModel ?? this.responseFormat);
-    if (schema) {
+    const nativeStructuredOutput = schema !== null && modelMatches(this.model, NATIVE_STRUCTURED_OUTPUT_MODELS);
+    if (schema && nativeStructuredOutput) {
+      params.output_config = {
+        ...readObject(params.output_config),
+        format: {
+          type: "json_schema",
+          schema: sanitizeToolParamsForAnthropicStrict(structuredClone(schema)),
+        },
+      };
+    } else if (schema) {
       const tools = Array.isArray(params.tools)
         ? params.tools.filter((tool): tool is Record<string, unknown> => typeof tool === "object" && tool !== null)
         : [];
@@ -213,13 +269,29 @@ export class AnthropicCompletion extends ConfiguredLLM {
     if (structuredOutput) {
       return structuredOutput as unknown as LLMResponse;
     }
-
     const toolUses = AnthropicCompletion.extractToolUsesFromResponse(body);
     if (toolUses.length > 0) {
       if (availableFunctions && Object.keys(availableFunctions).length > 0) {
         return await this.executeFirstTool(toolUses, availableFunctions) as LLMResponse;
       }
       return toolUses as unknown as LLMResponse;
+    }
+
+    if (nativeStructuredOutput) {
+      const stopReason = scalarToString(readObject(body).stop_reason);
+      if (stopReason === "refusal") {
+        throw new Error("Anthropic native structured output was refused.");
+      }
+      const text = anthropicResponseText(body);
+      try {
+        const parsed: unknown = JSON.parse(text);
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+          return parsed as LLMResponse;
+        }
+      } catch {
+        // Report the provider contract violation below.
+      }
+      throw new Error("Anthropic native structured output was not valid JSON.");
     }
 
     return this.applyStopWords(anthropicResponseText(body));
@@ -418,14 +490,25 @@ export class AnthropicCompletion extends ConfiguredLLM {
     if (systemMessage) {
       params.system = systemMessage;
     }
-    if (this.temperature !== null) {
-      params.temperature = this.temperature;
-    }
-    if (this.topP !== null) {
-      params.top_p = this.topP;
+    if (!modelHasCapability(this.model, "samplingRestricted")) {
+      if (this.temperature !== null) {
+        params.temperature = this.temperature;
+      }
+      if (this.topP !== null) {
+        params.top_p = this.topP;
+      }
     }
     if (this.stop.length > 0) {
       params.stop_sequences = [...this.stop];
+    }
+    if (this.effort !== null) {
+      if (!modelHasCapability(this.model, "effort")) {
+        throw new Error(`Anthropic model '${this.model}' does not support effort.`);
+      }
+      params.output_config = {
+        ...readObject(params.output_config),
+        effort: this.effort,
+      };
     }
     if (tools && tools.length > 0 && this.supportsTools) {
       let convertedTools = this.convertToolsForInterference(tools);
@@ -434,7 +517,9 @@ export class AnthropicCompletion extends ConfiguredLLM {
         convertedTools = this.applyToolSearch(convertedTools);
       }
       params.tools = convertedTools;
-      if (availableFunctions && regularTools.length === 1) {
+      if (availableFunctions && regularTools.length === 1
+        && (this.thinking === null || this.thinking.type === "adaptive")
+        && !modelHasCapability(this.model, "alwaysOnThinking")) {
         const toolName = regularTools[0]?.name;
         if (typeof toolName === "string" && toolName in availableFunctions) {
           params.tool_choice = { type: "tool", name: toolName };
@@ -442,9 +527,11 @@ export class AnthropicCompletion extends ConfiguredLLM {
       }
     }
     if (this.thinking) {
+      validateThinkingConfiguration(this.model, this.thinking);
       params.thinking = {
         type: this.thinking.type,
         ...(this.thinking.budget_tokens === null ? {} : { budget_tokens: this.thinking.budget_tokens }),
+        ...(this.thinking.display === null ? {} : { display: this.thinking.display }),
       };
     }
     return params;
@@ -750,8 +837,16 @@ export class AnthropicCompletion extends ConfiguredLLM {
 
   override supportsMultimodal(): boolean {
     const model = this.model.toLowerCase();
-    return ["claude-3", "claude-sonnet-4", "claude-opus-4", "claude-haiku-4"]
-      .some((prefix) => model.startsWith(prefix));
+    return [
+      "claude-3",
+      "claude-fable-5",
+      "claude-mythos-5",
+      "claude-sonnet-4",
+      "claude-opus-4",
+      "claude-haiku-4",
+      "claude-sonnet-5",
+      "claude-opus-5",
+    ].some((prefix) => model.startsWith(prefix));
   }
 
   override supports_multimodal(): boolean {
@@ -883,6 +978,36 @@ function parseToolArguments(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
     ? value as Record<string, unknown>
     : {};
+}
+function modelMatches(model: string, models: readonly string[] | Record<string, true>): boolean {
+  const normalized = model.toLowerCase();
+  const candidates = Array.isArray(models) ? models : Object.keys(models);
+  return candidates.some((candidate) => normalized === candidate || normalized.startsWith(`${candidate}-`));
+}
+
+function modelHasCapability<K extends keyof AnthropicModelCapabilities>(
+  model: string,
+  capability: K,
+): boolean {
+  const normalized = model.toLowerCase();
+  const candidate = Object.keys(ANTHROPIC_MODEL_CAPABILITIES)
+    .find((key) => normalized === key || normalized.startsWith(`${key}-`));
+  return candidate ? ANTHROPIC_MODEL_CAPABILITIES[candidate]?.[capability] === true : false;
+}
+
+function validateThinkingConfiguration(model: string, thinking: AnthropicThinkingConfig): void {
+  if (thinking.type === "adaptive" && !modelHasCapability(model, "adaptiveThinking")) {
+    throw new Error(`Anthropic model '${model}' does not support adaptive thinking.`);
+  }
+  if (thinking.type === "enabled" && modelHasCapability(model, "manualThinkingRejected")) {
+    throw new Error(`Anthropic model '${model}' does not support manual thinking.`);
+  }
+  if (thinking.type === "disabled" && modelHasCapability(model, "alwaysOnThinking")) {
+    throw new Error(`Anthropic model '${model}' does not support disabled thinking.`);
+  }
+  if (thinking.type === "adaptive" && thinking.budget_tokens !== null) {
+    throw new Error("Anthropic adaptive thinking does not accept budget_tokens; use effort instead.");
+  }
 }
 
 function anthropicResponseSchema(value: unknown): Record<string, unknown> | null {

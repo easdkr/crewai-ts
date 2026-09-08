@@ -516,6 +516,31 @@ export const OPENAI_MODELS = [
   "gpt-5-pro-2025-10-06",
   "gpt-5-search-api",
   "gpt-5-search-api-2025-10-14",
+  "gpt-5.1",
+  "gpt-5.1-chat-latest",
+  "gpt-5.1-codex",
+  "gpt-5.1-codex-mini",
+  "gpt-5.1-codex-max",
+  "gpt-5.2",
+  "gpt-5.2-2025-12-11",
+  "gpt-5.2-chat-latest",
+  "gpt-5.2-pro",
+  "gpt-5.2-codex",
+  "gpt-5.3-chat-latest",
+  "gpt-5.3-codex",
+  "gpt-5.4",
+  "gpt-5.4-2026-03-05",
+  "gpt-5.4-mini",
+  "gpt-5.4-mini-2026-03-17",
+  "gpt-5.4-nano",
+  "gpt-5.4-pro",
+  "gpt-5.5",
+  "gpt-5.5-pro",
+  "gpt-5.6",
+  "gpt-5.6-sol",
+  "gpt-5.6-terra",
+  "gpt-5.6-luna",
+  "gpt-6-astra",
   "gpt-audio",
   "gpt-audio-2025-08-28",
   "gpt-audio-mini",
@@ -539,6 +564,14 @@ export const OPENAI_MODELS = [
   "whisper-1",
 ] as const;
 export const ANTHROPIC_MODELS = [
+  "claude-fable-5-1",
+  "claude-fable-5",
+  "claude-opus-5",
+  "claude-sonnet-5",
+  "claude-opus-4-8",
+  "claude-opus-4-7",
+  "claude-opus-4-6",
+  "claude-sonnet-4-6",
   "claude-opus-4-5-20251101",
   "claude-opus-4-5",
   "claude-3-7-sonnet-latest",
@@ -982,6 +1015,24 @@ export const LLM_CONTEXT_WINDOW_SIZES: Readonly<Record<string, number>> = {
   "gpt-4.1": 1047576,
   "gpt-4.1-mini-2025-04-14": 1047576,
   "gpt-4.1-nano-2025-04-14": 1047576,
+  "gpt-5.2": 400000,
+  "gpt-5.2-chat-latest": 128000,
+  "gpt-5.4": 1050000,
+  "gpt-5.4-mini": 400000,
+  "gpt-5.4-nano": 400000,
+  "gpt-5.5": 1050000,
+  "gpt-5.6": 1050000,
+  "gpt-6-astra": 1050000,
+  "claude-fable-5": 1000000,
+  "claude-opus-5": 1000000,
+  "claude-sonnet-5": 1000000,
+  "claude-opus-4-6": 1000000,
+  "claude-opus-4-7": 1000000,
+  "claude-opus-4-8": 1000000,
+  "claude-sonnet-4-6": 1000000,
+  "claude-opus-4-5": 200000,
+  "claude-sonnet-4-5": 200000,
+  "claude-haiku-4-5": 200000,
   "o1-preview": 128000,
   "o1-mini": 128000,
   "o3-mini": 200000,
@@ -1183,26 +1234,26 @@ export function createLLM(
     ?? stringifyLLMValue(llmValue);
   const spec = resolveLLMModelSpec(model, stringProperty(llmValue, "provider"));
   const usesProviderFactory = registeredProviderFactories.has(spec.provider);
-  const apiKey = stringProperty(llmValue, "api_key");
-  const baseUrl = stringProperty(llmValue, "base_url");
-  const apiBase = stringProperty(llmValue, "api_base");
+  const apiKey = stringProperty(llmValue, "apiKey") ?? stringProperty(llmValue, "api_key");
+  const baseUrl = stringProperty(llmValue, "baseUrl") ?? stringProperty(llmValue, "base_url");
+  const apiBase = stringProperty(llmValue, "apiBase") ?? stringProperty(llmValue, "api_base");
   const usesOpenAICompatibleEndpoint = spec.provider === "openai" && (baseUrl !== undefined || apiBase !== undefined);
   const options: ConstructorParameters<typeof ConfiguredLLM>[0] = {
     model: usesProviderFactory || usesOpenAICompatibleEndpoint ? spec.model : model,
     provider: spec.provider,
     is_litellm: !spec.useNative && !usesProviderFactory && !usesOpenAICompatibleEndpoint,
     temperature: numberProperty(llmValue, "temperature"),
-    max_tokens: numberProperty(llmValue, "max_tokens"),
-    max_completion_tokens: numberProperty(llmValue, "max_completion_tokens"),
-    top_p: numberProperty(llmValue, "top_p"),
-    presence_penalty: numberProperty(llmValue, "presence_penalty"),
-    frequency_penalty: numberProperty(llmValue, "frequency_penalty"),
+    max_tokens: numberProperty(llmValue, "maxTokens") ?? numberProperty(llmValue, "max_tokens"),
+    max_completion_tokens: numberProperty(llmValue, "maxCompletionTokens") ?? numberProperty(llmValue, "max_completion_tokens"),
+    top_p: numberProperty(llmValue, "topP") ?? numberProperty(llmValue, "top_p"),
+    presence_penalty: numberProperty(llmValue, "presencePenalty") ?? numberProperty(llmValue, "presence_penalty"),
+    frequency_penalty: numberProperty(llmValue, "frequencyPenalty") ?? numberProperty(llmValue, "frequency_penalty"),
     seed: numberProperty(llmValue, "seed"),
     logprobs: booleanOrNumberProperty(llmValue, "logprobs"),
-    top_logprobs: numberProperty(llmValue, "top_logprobs"),
+    top_logprobs: numberProperty(llmValue, "topLogprobs") ?? numberProperty(llmValue, "top_logprobs"),
     timeout: numberProperty(llmValue, "timeout"),
   };
-  const stop = llmValue["stop"];
+  const stop = llmValue["stop"] ?? llmValue["stopSequences"] ?? llmValue["stop_sequences"];
   if (typeof stop === "string" || Array.isArray(stop)) {
     options.stop = stop as string | readonly string[];
   }
@@ -1223,6 +1274,12 @@ export function createLLM(
   const llmOptions = llmValue as Record<string, unknown>;
   for (const key of [
     "api",
+    "reasoningEffort",
+    "reasoning_effort",
+    "thinking",
+    "effort",
+    "maxRetries",
+    "max_retries",
     "instructions",
     "store",
     "previousResponseId",
@@ -2621,6 +2678,7 @@ export class ConfiguredLLM extends BaseLLM {
       "gpt-4-vision",
       "gpt-4.1",
       "gpt-5",
+      "gpt-6-astra",
       "o1",
       "o3",
       "o4-mini",
@@ -2630,6 +2688,9 @@ export class ConfiguredLLM extends BaseLLM {
       "claude-sonnet-4",
       "claude-opus-4",
       "claude-haiku-4",
+      "claude-sonnet-5",
+      "claude-opus-5",
+      "claude-fable-5",
       "gemini",
       "grok",
       "pixtral",
@@ -2942,7 +3003,7 @@ export function inferProviderFromModel(model: string): string {
   if (openAIModelSet.has(model)) {
     return "openai";
   }
-  if (anthropicModelSet.has(model)) {
+  if (anthropicModelSet.has(model) || model.toLowerCase().startsWith("claude-")) {
     return "anthropic";
   }
   if (matchesProviderPattern(model, "gemini")) {
@@ -3013,10 +3074,16 @@ export function validateContextWindowSizes(sizes: Readonly<Record<string, number
 export const validate_context_window_sizes = validateContextWindowSizes;
 
 function knownContextWindowSizeForModel(model: string): number | null {
-  const match = Object.entries(LLM_CONTEXT_WINDOW_SIZES)
-    .sort(([left], [right]) => right.length - left.length)
-    .find(([prefix]) => model.startsWith(prefix));
-  return match ? Math.trunc(match[1] * CONTEXT_WINDOW_USAGE_RATIO) : null;
+  const normalizedModel = model.replace(/^(?:openai|anthropic)\//i, "");
+  let matchedPrefixLength = 0;
+  let matchedSize: number | null = null;
+  for (const prefix in LLM_CONTEXT_WINDOW_SIZES) {
+    if (prefix.length > matchedPrefixLength && normalizedModel.startsWith(prefix)) {
+      matchedPrefixLength = prefix.length;
+      matchedSize = LLM_CONTEXT_WINDOW_SIZES[prefix] ?? null;
+    }
+  }
+  return matchedSize === null ? null : Math.trunc(matchedSize * CONTEXT_WINDOW_USAGE_RATIO);
 }
 
 function normalizeUsageMetrics(metrics: UsageMetricsLike): UsageMetrics {
