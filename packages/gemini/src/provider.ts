@@ -111,6 +111,8 @@ export type GeminiCompletionOptions = BaseLLMOptions & {
 
 const STRUCTURED_OUTPUT_TOOL_NAME = "structured_output";
 const DEFAULT_GEMINI_MAX_TOOL_ROUNDS = 8;
+const EMPTY_TOOL_RESPONSE_FOLLOWUP =
+  "The previous function responses contain the needed evidence. Do not call any functions again. Write the final answer as plain text.";
 
 export class GeminiCompletion extends ConfiguredLLM {
   readonly project: string | null;
@@ -676,6 +678,8 @@ export class GeminiCompletion extends ConfiguredLLM {
   ): Promise<unknown> {
     let currentResponse = response;
     let currentContents = [...contents];
+    let hasToolResponses = false;
+    let retriedEmptyToolResponse = false;
 
     for (let round = 0; round <= maxToolRounds; round += 1) {
       const candidates = readObject(currentResponse).candidates;
@@ -695,7 +699,23 @@ export class GeminiCompletion extends ConfiguredLLM {
       });
 
       if (nonStructuredParts.length === 0) {
-        return structuredOutput ?? GeminiCompletion.extractTextFromResponse(currentResponse);
+        const text = GeminiCompletion.extractTextFromResponse(currentResponse);
+        if (
+          !structuredOutput
+          && text.trim().length === 0
+          && hasToolResponses
+          && generateContent
+          && !retriedEmptyToolResponse
+        ) {
+          retriedEmptyToolResponse = true;
+          currentContents = [
+            ...currentContents,
+            { role: "user", parts: [{ text: EMPTY_TOOL_RESPONSE_FOLLOWUP }] },
+          ];
+          currentResponse = await generateContent(currentContents);
+          continue;
+        }
+        return structuredOutput ?? text;
       }
       if (!availableFunctions) {
         return nonStructuredParts;
@@ -740,6 +760,7 @@ export class GeminiCompletion extends ConfiguredLLM {
         { role: "model", parts: rawParts },
         { role: "user", parts: functionResponseParts },
       ];
+      hasToolResponses = true;
       currentResponse = await generateContent(currentContents);
     }
 

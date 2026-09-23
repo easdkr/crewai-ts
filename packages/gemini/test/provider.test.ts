@@ -788,6 +788,51 @@ describe("GeminiCompletion", () => {
     }
   });
 
+  it("recovers a final text answer when Gemini returns empty text after tool responses", async () => {
+    const grepCode = vi.fn((args: Record<string, unknown>) => `grep:${String(args.query)}`);
+    const tools = [geminiNativeTestTool("grep_code", grepCode)];
+    const [geminiTools, availableFunctions] = convertToolsToOpenAISchema(tools);
+    const fetchMock = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(geminiFetchResponse(geminiToolResponse([
+        { functionCall: { name: "grep_code", args: { query: "LeadBotFlow" } }, thoughtSignature: "sig-grep" },
+      ])))
+      .mockResolvedValueOnce(geminiFetchResponse(geminiToolResponse([
+        { text: "thinking without final text", thought: true },
+      ])))
+      .mockResolvedValueOnce(geminiFetchResponse(geminiToolResponse([
+        { text: "final answer after retry" },
+      ])));
+
+    try {
+      const llm = new GeminiCompletion({ model: "gemini-3.0-pro", apiKey: "test-key" });
+      const result = await llm.call([{ role: "user", content: "inspect LeadBot tools" }], {
+        tools: geminiTools as unknown as Tool[],
+        availableFunctions,
+      });
+
+      expect(result).toBe("final answer after retry");
+      expect(grepCode).toHaveBeenCalledWith({ query: "LeadBotFlow" });
+      expect(fetchMock).toHaveBeenCalledTimes(3);
+
+      const thirdRequest = parseGeminiFetchBody(fetchMock, 2);
+      const thirdContents = thirdRequest.contents as Record<string, unknown>[];
+      expect(thirdContents.at(-2)).toMatchObject({
+        role: "user",
+        parts: [
+          { functionResponse: { name: "grep_code", response: { result: "grep:LeadBotFlow" } } },
+        ],
+      });
+      expect(thirdContents.at(-1)).toMatchObject({
+        role: "user",
+        parts: [
+          { text: expect.stringContaining("Write the final answer as plain text") },
+        ],
+      });
+    } finally {
+      fetchMock.mockRestore();
+    }
+  });
+
   it("fails clearly when a response requests an unknown function", async () => {
     const [geminiTools, availableFunctions] = convertToolsToOpenAISchema([
       geminiNativeTestTool("grep_code", () => "unused"),
